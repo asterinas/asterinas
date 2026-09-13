@@ -725,7 +725,7 @@ mod test {
     fn stat_bsddf_subtracts_overhead() {
         let f = Ext4FixtureBuilder::new(3, 512).build().unwrap();
 
-        let stat = FileSystemTrait::sb(f.ext2.as_ref());
+        let stat = FileSystemTrait::sb(f.fs.as_ref());
         let expected_overhead = expected_overhead_blocks(&f.sb);
 
         assert_eq!(
@@ -757,7 +757,7 @@ mod test {
             .with_free_inodes(16, 16)
             .build()
             .unwrap();
-        let ext2 = &fixture.ext2;
+        let ext2 = &fixture.fs;
         let disk = &fixture.disk;
         let sb = &fixture.sb;
 
@@ -821,16 +821,16 @@ mod test {
             .build()
             .unwrap();
 
-        let before_sb_free = f.ext2.super_block().free_blocks_count();
-        let before_group_free = f.ext2.block_group(0).free_blocks_count();
+        let before_sb_free = f.fs.super_block().free_blocks_count();
+        let before_group_free = f.fs.block_group(0).free_blocks_count();
 
         let goal = f.sb.group_first_block_no(0);
-        let range = f.ext2.alloc_blocks(8, goal).unwrap();
+        let range = f.fs.alloc_blocks(8, goal).unwrap();
         let alloc_len = range.end - range.start;
         assert!((1..=8).contains(&alloc_len));
 
         {
-            let sb = f.ext2.super_block();
+            let sb = f.fs.super_block();
             assert!(sb.is_data_block_valid(range.start, alloc_len));
             let first_data = sb.first_data_block();
             let start_group = (range.start - first_data) / sb.nr_blocks_per_group();
@@ -839,17 +839,17 @@ mod test {
         }
 
         assert_eq!(
-            f.ext2.block_group(0).free_blocks_count(),
+            f.fs.block_group(0).free_blocks_count(),
             before_group_free - alloc_len as u16
         );
         assert_eq!(
-            f.ext2.super_block().free_blocks_count(),
+            f.fs.super_block().free_blocks_count(),
             before_sb_free - alloc_len
         );
 
-        f.ext2.free_blocks(range.start, alloc_len).unwrap();
-        assert_eq!(f.ext2.block_group(0).free_blocks_count(), before_group_free);
-        assert_eq!(f.ext2.super_block().free_blocks_count(), before_sb_free);
+        f.fs.free_blocks(range.start, alloc_len).unwrap();
+        assert_eq!(f.fs.block_group(0).free_blocks_count(), before_group_free);
+        assert_eq!(f.fs.super_block().free_blocks_count(), before_sb_free);
     }
 
     #[ktest]
@@ -861,11 +861,11 @@ mod test {
             .build()
             .unwrap();
         assert_errno!(
-            f_nospc.ext2.alloc_blocks(1, f_nospc.sb.first_data_block()),
+            f_nospc.fs.alloc_blocks(1, f_nospc.sb.first_data_block()),
             Errno::ENOSPC
         );
         assert_errno!(
-            f_nospc.ext2.alloc_blocks(0, f_nospc.sb.first_data_block()),
+            f_nospc.fs.alloc_blocks(0, f_nospc.sb.first_data_block()),
             Errno::EINVAL
         );
 
@@ -877,7 +877,7 @@ mod test {
             .unwrap();
         assert_errno!(
             f_corrupt
-                .ext2
+                .fs
                 .alloc_blocks(1, f_corrupt.sb.first_data_block()),
             Errno::EIO
         );
@@ -888,9 +888,9 @@ mod test {
             .block_bitmap(BlockBitmapInit::MetadataOnly)
             .build()
             .unwrap();
-        assert!(f_free.ext2.free_blocks(10, 0).is_ok());
+        assert!(f_free.fs.free_blocks(10, 0).is_ok());
         assert_errno!(
-            f_free.ext2.free_blocks(f_free.sb.first_data_block(), 1),
+            f_free.fs.free_blocks(f_free.sb.first_data_block(), 1),
             Errno::EIO
         );
     }
@@ -904,38 +904,38 @@ mod test {
             .build()
             .unwrap();
 
-        let before_sb_free = f.ext2.super_block().free_inodes_count();
-        let before_group_free = f.ext2.block_group(0).free_inodes_count();
+        let before_sb_free = f.fs.super_block().free_inodes_count();
+        let before_group_free = f.fs.block_group(0).free_inodes_count();
         let before_used_dirs = {
-            let metadata = f.ext2.block_group(0).metadata();
+            let metadata = f.fs.block_group(0).metadata();
             metadata.desc.used_dirs_count
         };
 
-        let ino = f.ext2.alloc_ino(ROOT_INO, InodeType::Dir).unwrap();
+        let ino = f.fs.alloc_ino(ROOT_INO, InodeType::Dir).unwrap();
         assert!(ino >= f.sb.first_ino() && ino <= f.sb.total_inodes());
 
         let bit = ((ino - 1) % f.sb.nr_inodes_per_group()) as u16;
-        let metadata = f.ext2.block_group(0).metadata();
+        let metadata = f.fs.block_group(0).metadata();
         assert!(metadata.inode_bitmap.is_allocated(bit));
         drop(metadata);
-        assert_eq!(f.ext2.super_block().free_inodes_count(), before_sb_free - 1);
+        assert_eq!(f.fs.super_block().free_inodes_count(), before_sb_free - 1);
         assert_eq!(
-            f.ext2.block_group(0).free_inodes_count(),
+            f.fs.block_group(0).free_inodes_count(),
             before_group_free - 1
         );
         assert_eq!(
-            f.ext2.block_group(0).metadata().desc.used_dirs_count,
+            f.fs.block_group(0).metadata().desc.used_dirs_count,
             before_used_dirs + 1
         );
 
         // Free path now takes caller-provided inode type; no inode-table read is needed.
         let raw_dir = make_raw_inode(0o040755, 1, 0);
-        f.ext2.write_back_inode_desc(ino, &raw_dir).unwrap();
-        f.ext2.free_inode(ino, InodeType::Dir).unwrap();
-        assert_eq!(f.ext2.super_block().free_inodes_count(), before_sb_free);
-        assert_eq!(f.ext2.block_group(0).free_inodes_count(), before_group_free);
+        f.fs.write_back_inode_desc(ino, &raw_dir).unwrap();
+        f.fs.free_inode(ino, InodeType::Dir).unwrap();
+        assert_eq!(f.fs.super_block().free_inodes_count(), before_sb_free);
+        assert_eq!(f.fs.block_group(0).free_inodes_count(), before_group_free);
         assert_eq!(
-            f.ext2.block_group(0).metadata().desc.used_dirs_count,
+            f.fs.block_group(0).metadata().desc.used_dirs_count,
             before_used_dirs
         );
     }
@@ -949,12 +949,12 @@ mod test {
             .build()
             .unwrap();
         assert_errno!(
-            f_nospc.ext2.alloc_ino(ROOT_INO, InodeType::File),
+            f_nospc.fs.alloc_ino(ROOT_INO, InodeType::File),
             Errno::ENOSPC
         );
         assert_errno!(
             f_nospc
-                .ext2
+                .fs
                 .alloc_ino(f_nospc.sb.total_inodes() + 1, InodeType::File),
             Errno::EIO
         );
@@ -966,7 +966,7 @@ mod test {
             .build()
             .unwrap();
         assert_errno!(
-            f_full.ext2.alloc_ino(ROOT_INO, InodeType::File),
+            f_full.fs.alloc_ino(ROOT_INO, InodeType::File),
             Errno::ENOSPC
         );
 
@@ -977,7 +977,7 @@ mod test {
             .unwrap();
         assert_errno!(
             f_free
-                .ext2
+                .fs
                 .free_inode(f_free.sb.first_ino() - 1, InodeType::File),
             Errno::EIO
         );
@@ -986,15 +986,15 @@ mod test {
         let target_ino = f_free.sb.first_ino();
         let raw_file = make_raw_inode(0o100644, 1, 0);
         f_free
-            .ext2
+            .fs
             .write_back_inode_desc(target_ino, &raw_file)
             .unwrap();
 
-        let before_sb = f_free.ext2.super_block().free_inodes_count();
-        let before_group = f_free.ext2.block_group(0).free_inodes_count();
-        f_free.ext2.free_inode(target_ino, InodeType::File).unwrap();
-        assert_eq!(f_free.ext2.super_block().free_inodes_count(), before_sb);
-        assert_eq!(f_free.ext2.block_group(0).free_inodes_count(), before_group);
+        let before_sb = f_free.fs.super_block().free_inodes_count();
+        let before_group = f_free.fs.block_group(0).free_inodes_count();
+        f_free.fs.free_inode(target_ino, InodeType::File).unwrap();
+        assert_eq!(f_free.fs.super_block().free_inodes_count(), before_sb);
+        assert_eq!(f_free.fs.block_group(0).free_inodes_count(), before_group);
     }
 
     #[ktest]
@@ -1024,18 +1024,18 @@ mod test {
         let child = create_file(&root, "cache_file");
         let child_ino = child.ino();
 
-        let cached = f.ext2.read_inode(child_ino).unwrap();
+        let cached = f.fs.read_inode(child_ino).unwrap();
         assert!(Arc::ptr_eq(&child, &cached));
 
         drop(cached);
         drop(child);
-        f.ext2.sync_all().unwrap();
+        f.fs.sync_all().unwrap();
 
-        let metadata = f.ext2.block_group(0).metadata();
+        let metadata = f.fs.block_group(0).metadata();
         assert!(metadata.inode_bitmap.is_allocated((child_ino - 1) as u16));
         drop(metadata);
 
-        let reloaded = f.ext2.read_inode(child_ino).unwrap();
+        let reloaded = f.fs.read_inode(child_ino).unwrap();
         assert_eq!(reloaded.ino(), child_ino);
     }
 
@@ -1045,7 +1045,7 @@ mod test {
             .block_bitmap(BlockBitmapInit::MetadataOnly)
             .build()
             .unwrap();
-        let group = f.ext2.block_group(0);
+        let group = f.fs.block_group(0);
         let first = f.sb.group_first_block_no(0);
 
         let metadata = group.metadata();

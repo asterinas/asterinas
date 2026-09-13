@@ -33,10 +33,10 @@
 
 use ostd::const_assert;
 
-use super::{block_group::RawBlockGroup, prelude::*};
+use super::{block_group::RawBlockGroup, inode::RawInode, prelude::*};
 use crate::fs::ext4::utils;
 
-/// The ext2 magic number.
+/// The magic number for ext4 and ext2.
 pub(super) const MAGIC_NUM: u16 = 0xef53;
 
 /// The main superblock is located at byte 1024 from the beginning of the device.
@@ -183,7 +183,7 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
                 if inode_size < 128 {
                     return_errno_with_message!(Errno::EINVAL, "inode size is too small");
                 }
-                if inode_size > BLOCK_SIZE {
+                if inode_size > size_of::<RawInode>() {
                     return_errno_with_message!(Errno::EINVAL, "inode size is too large");
                 }
                 if !inode_size.is_power_of_two() {

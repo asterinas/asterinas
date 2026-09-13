@@ -111,7 +111,7 @@ mod test {
         block_ptrs[7] = 60;
         block_ptrs[8] = 61;
 
-        let tree = make_block_ptr_tree(block_ptrs, 0, &f.ext2);
+        let tree = make_block_ptr_tree(block_ptrs, 0, &f.fs);
         let lock = RwMutex::new(tree);
         let guard = lock.read();
 

@@ -473,7 +473,7 @@ mod test {
 
         let mut reader = VmReader::from(base_data.as_slice()).to_fallible();
         file.write_direct_at(0, &mut reader).unwrap();
-        let free_before_fail = f.ext2.super_block().free_blocks_count();
+        let free_before_fail = f.fs.super_block().free_blocks_count();
         assert_eq!(free_before_fail, 1);
 
         let fail_payload = vec![0x66u8; BLOCK_SIZE * 2];
@@ -484,7 +484,7 @@ mod test {
         );
 
         assert_eq!(file.file_size(), BLOCK_SIZE);
-        assert_eq!(f.ext2.super_block().free_blocks_count(), free_before_fail);
+        assert_eq!(f.fs.super_block().free_blocks_count(), free_before_fail);
 
         let mut readback = vec![0u8; BLOCK_SIZE];
         let mut writer = VmWriter::from(readback.as_mut_slice()).to_fallible();
@@ -542,25 +542,19 @@ mod test {
             .with_free_blocks(2, 2)
             .build()
             .unwrap();
-        let file = make_live_file_inode(
-            &f.ext2,
-            69,
-            0,
-            0,
-            FileFlags::empty(),
-            [0; RAW_BLOCK_PTRS_LEN],
-        );
+        let file =
+            make_live_file_inode(&f.fs, 69, 0, 0, FileFlags::empty(), [0; RAW_BLOCK_PTRS_LEN]);
 
         file.fallocate(FallocMode::Allocate, 0, BLOCK_SIZE * 2)
             .unwrap();
-        assert_eq!(f.ext2.super_block().free_blocks_count(), 0);
+        assert_eq!(f.fs.super_block().free_blocks_count(), 0);
         assert_eq!(file.file_size(), BLOCK_SIZE * 2);
 
         assert_errno!(
             file.fallocate(FallocMode::Allocate, BLOCK_SIZE * 2, BLOCK_SIZE),
             Errno::ENOSPC
         );
-        assert_eq!(f.ext2.super_block().free_blocks_count(), 0);
+        assert_eq!(f.fs.super_block().free_blocks_count(), 0);
         assert_eq!(file.file_size(), BLOCK_SIZE * 2);
     }
 }

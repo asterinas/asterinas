@@ -1265,7 +1265,7 @@ mod test {
         block_ptrs[12] = indirect_bid;
         block_ptrs[13] = double_l1_bid;
         block_ptrs[14] = triple_l1_bid;
-        let block_ptr_tree = make_block_ptr_tree(block_ptrs, 0, &f.ext2);
+        let block_ptr_tree = make_block_ptr_tree(block_ptrs, 0, &f.fs);
 
         // Cover exact transition boundaries across all block-pointer tree levels.
         let direct_walk = block_ptr_tree.walk_at(0).unwrap();
@@ -1359,7 +1359,7 @@ mod test {
         block_ptrs[1] = 12;
         block_ptrs[2] = 13;
         block_ptrs[12] = indirect_bid;
-        let block_ptr_tree = make_block_ptr_tree(block_ptrs, 0, &f.ext2);
+        let block_ptr_tree = make_block_ptr_tree(block_ptrs, 0, &f.fs);
 
         assert_eq!(block_ptr_tree.lookup_block_range(0, 4).unwrap(), 11..14);
         assert_eq!(block_ptr_tree.lookup_block(0).unwrap(), Some(11));
@@ -1381,7 +1381,7 @@ mod test {
         let max_iblock = direct + indirect + double_blocks + triple_blocks - 1;
         let too_big = (max_iblock + 1) as u32;
 
-        let block_ptr_tree = make_block_ptr_tree([0; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let block_ptr_tree = make_block_ptr_tree([0; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
 
         // Accept the maximum valid logical block and reject the next one.
         block_ptr_tree.walk_at(max_iblock as u32).unwrap();
@@ -1395,7 +1395,7 @@ mod test {
         // Any zero pointer on the path is treated as a hole (None).
         let mut ptrs_for_indirect_hole = [0u32; RAW_BLOCK_PTRS_LEN];
         ptrs_for_indirect_hole[12] = 40;
-        let indirect_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_indirect_hole, 0, &f.ext2);
+        let indirect_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_indirect_hole, 0, &f.fs);
         assert_eq!(
             indirect_hole_block_ptr_tree.lookup_block(12 + 7).unwrap(),
             None
@@ -1404,7 +1404,7 @@ mod test {
         let mut ptrs_for_double_hole = [0u32; RAW_BLOCK_PTRS_LEN];
         ptrs_for_double_hole[13] = 41;
         write_indirect_ptr(disk.as_ref(), 41, 3, 0);
-        let double_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_double_hole, 0, &f.ext2);
+        let double_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_double_hole, 0, &f.fs);
         let double_hole_iblock = 12 + (ptrs as u32) + (3 << ptrs.trailing_zeros()) + 4;
         assert_eq!(
             double_hole_block_ptr_tree
@@ -1417,7 +1417,7 @@ mod test {
         ptrs_for_triple_hole[14] = 43;
         write_indirect_ptr(disk.as_ref(), 43, 2, 44);
         write_indirect_ptr(disk.as_ref(), 44, 3, 0);
-        let triple_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_triple_hole, 0, &f.ext2);
+        let triple_hole_block_ptr_tree = make_block_ptr_tree(ptrs_for_triple_hole, 0, &f.fs);
         let triple_hole_iblock = 12
             + (ptrs as u32)
             + (double_blocks as u32)
@@ -1444,7 +1444,7 @@ mod test {
         // before the first allocated slot.
         let mut direct_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
         direct_ptrs[2] = 91;
-        let direct_block_ptr_tree = make_block_ptr_tree(direct_ptrs, 0, &f.ext2);
+        let direct_block_ptr_tree = make_block_ptr_tree(direct_ptrs, 0, &f.fs);
         assert_eq!(direct_block_ptr_tree.approx_hole_blocks(0, 1).unwrap(), 1);
         assert_eq!(direct_block_ptr_tree.approx_hole_blocks(0, 8).unwrap(), 2);
         assert_eq!(direct_block_ptr_tree.approx_hole_blocks(1, 8).unwrap(), 1);
@@ -1456,7 +1456,7 @@ mod test {
         write_indirect_ptr(disk.as_ref(), indirect_bid, 2, 77);
         let mut indirect_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
         indirect_ptrs[12] = indirect_bid;
-        let indirect_block_ptr_tree = make_block_ptr_tree(indirect_ptrs, 0, &f.ext2);
+        let indirect_block_ptr_tree = make_block_ptr_tree(indirect_ptrs, 0, &f.fs);
         assert_eq!(
             indirect_block_ptr_tree.approx_hole_blocks(12, 1).unwrap(),
             1
@@ -1478,7 +1478,7 @@ mod test {
         // sparse, so the helper can skip it without reading child blocks.
         let double_hole_iblock = 12 + (ptrs as u32) + (3 << ptrs_bits) + 4;
         let expected_double_hole = ptrs.pow(2) as u32 - ((3 * ptrs) as u32 + 4);
-        let missing_double_root_map = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let missing_double_root_map = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
         assert_eq!(
             missing_double_root_map
                 .approx_hole_blocks(double_hole_iblock, expected_double_hole + 1)
@@ -1492,7 +1492,7 @@ mod test {
         write_indirect_ptr(disk.as_ref(), double_l1_bid, 3, 0);
         let mut double_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
         double_ptrs[13] = double_l1_bid;
-        let double_middle_hole_map = make_block_ptr_tree(double_ptrs, 0, &f.ext2);
+        let double_middle_hole_map = make_block_ptr_tree(double_ptrs, 0, &f.fs);
         assert_eq!(
             double_middle_hole_map
                 .approx_hole_blocks(double_hole_iblock, ptrs as u32)
@@ -1506,7 +1506,7 @@ mod test {
             12 + ptrs as u32 + ptrs.pow(2) as u32 + (2 << (ptrs_bits * 2)) + (3 << ptrs_bits) + 4;
         let expected_triple_top_hole =
             ptrs.pow(3) as u32 - ((2 * ptrs.pow(2)) as u32 + (3 * ptrs) as u32 + 4);
-        let missing_triple_root_map = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let missing_triple_root_map = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
         assert_eq!(
             missing_triple_root_map
                 .approx_hole_blocks(triple_hole_iblock, expected_triple_top_hole + 1)
@@ -1520,7 +1520,7 @@ mod test {
         write_indirect_ptr(disk.as_ref(), triple_l1_bid, 2, 0);
         let mut triple_l1_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
         triple_l1_ptrs[14] = triple_l1_bid;
-        let triple_l1_hole_map = make_block_ptr_tree(triple_l1_ptrs, 0, &f.ext2);
+        let triple_l1_hole_map = make_block_ptr_tree(triple_l1_ptrs, 0, &f.fs);
         let expected_triple_l1_hole = ptrs.pow(2) as u32 - ((3 * ptrs) as u32 + 4);
         assert_eq!(
             triple_l1_hole_map
@@ -1534,7 +1534,7 @@ mod test {
         let triple_l2_bid = 43u32;
         write_indirect_ptr(disk.as_ref(), triple_l1_bid, 2, triple_l2_bid);
         write_indirect_ptr(disk.as_ref(), triple_l2_bid, 3, 0);
-        let triple_l2_hole_map = make_block_ptr_tree(triple_l1_ptrs, 0, &f.ext2);
+        let triple_l2_hole_map = make_block_ptr_tree(triple_l1_ptrs, 0, &f.fs);
         assert_eq!(
             triple_l2_hole_map
                 .approx_hole_blocks(triple_hole_iblock, ptrs as u32)
@@ -1549,9 +1549,9 @@ mod test {
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
-        let ext2 = &f.ext2;
+        let ext2 = &f.fs;
 
-        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
         let free_before = ext2.super_block().free_blocks_count();
         let allocated_range =
             expect_allocated(block_ptr_tree.resolve_block_range(ext2, 0, 3).unwrap());
@@ -1591,9 +1591,9 @@ mod test {
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
-        let ext2 = &f.ext2;
+        let ext2 = &f.fs;
 
-        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
         let free_before = ext2.super_block().free_blocks_count();
         let allocated_range =
             expect_allocated(block_ptr_tree.resolve_block_range(ext2, 12, 4).unwrap());
@@ -1622,11 +1622,11 @@ mod test {
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
-        let ext2 = &f.ext2;
+        let ext2 = &f.fs;
         let ptrs = PTRS_PER_BLOCK as u32;
         let first_double_iblock = 12 + ptrs;
 
-        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
         alloc_single_block(&mut block_ptr_tree, ext2, first_double_iblock).unwrap();
         alloc_single_block(&mut block_ptr_tree, ext2, first_double_iblock + 1).unwrap();
         alloc_single_block(&mut block_ptr_tree, ext2, first_double_iblock + 2).unwrap();
@@ -1658,12 +1658,12 @@ mod test {
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
-        let ext2 = &f.ext2;
+        let ext2 = &f.fs;
         let ptrs = PTRS_PER_BLOCK as u32;
         let first_double_iblock = 12 + ptrs;
         let first_triple_iblock = 12 + ptrs + (1u32 << (ptrs.trailing_zeros() * 2));
 
-        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
         alloc_single_block(&mut block_ptr_tree, ext2, 12).unwrap();
         alloc_single_block(&mut block_ptr_tree, ext2, first_double_iblock).unwrap();
         alloc_single_block(&mut block_ptr_tree, ext2, first_triple_iblock).unwrap();
@@ -1693,12 +1693,12 @@ mod test {
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
-        let ext2 = &f.ext2;
+        let ext2 = &f.fs;
 
         let ptrs = PTRS_PER_BLOCK as u32;
         let first_triple_iblock = 12 + ptrs + (1u32 << (ptrs.trailing_zeros() * 2));
 
-        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.ext2);
+        let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
         alloc_single_block(&mut block_ptr_tree, ext2, first_triple_iblock).unwrap();
         let root = block_ptr_tree.raw_block_ptrs.block_ptrs[14];
         assert_ne!(root, 0);
