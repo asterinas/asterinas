@@ -28,7 +28,7 @@ impl EchoDevice {
             }),
             worker: None,
             stop: KernelEventFile::from_file(&EventFile::new(0, EventFileFlags::empty()))?,
-            idle: event(),
+            idle: create_event(),
         })
     }
 
@@ -123,7 +123,8 @@ fn vhost_echo_worker_copies_notifies_and_stops_before_reset() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, vmar| {
+    run_with_owner_memory(|memory| {
+        let vmar = memory.vmar().clone();
         let mut echo = EchoDevice::new().unwrap();
         // Control-plane ioctls require a POSIX caller. This kernel-thread fixture
         // supplies the configured state and runtime directly.
@@ -135,28 +136,34 @@ fn vhost_echo_worker_copies_notifies_and_stops_before_reset() {
             flags_padding: 0,
         }];
         echo.common.negotiated_features = VIRTIO_F_VERSION_1 | VIRTIO_RING_F_INDIRECT_DESC;
-        echo.common.queues[0] = queue_state();
+        echo.common.queues[0] = create_queue_state();
         assert!(echo.common.is_fully_configured());
-        let kick = event();
-        let call = event();
-        let err = event();
+        let kick = create_event();
+        let call = create_event();
+        let err = create_event();
         echo.common.queues[0].kick = Some(kick.clone());
         echo.common.queues[0].call = Some(call.clone());
         echo.common.queues[0].err = Some(err.clone());
-        echo.start(runtime(&echo.common, vmar.clone(), memory.clone()))
+        echo.start(create_runtime(&echo.common, vmar.clone(), memory.clone()))
             .unwrap();
         wait_event(&echo.idle);
 
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(GUEST_ADDR, 4, DescFlags::NEXT, 1),
-        );
-        memory.store(
-            DESC_ADDR + size_of::<Descriptor>(),
-            &Descriptor::new(GUEST_ADDR + 4, 4, DescFlags::WRITE, 0),
-        );
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::NEXT, 1),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                DESC_ADDR + size_of::<Descriptor>(),
+                &create_descriptor(GUEST_ADDR + 4, 4, DescFlags::WRITE, 0),
+            )
+            .unwrap();
         memory.write_owner_bytes(GUEST_UVA, b"echo").unwrap();
-        memory.store(AVAIL_ADDR + AvailRing::entry_offset(0).unwrap(), &0u16);
+        memory
+            .write_owner_val(AVAIL_ADDR + AvailRing::entry_offset(0).unwrap(), &0u16)
+            .unwrap();
         atomic::fence(Ordering::Release);
         memory
             .write_owner_val(AVAIL_ADDR + AvailRing::IDX_OFFSET, &1u16)
@@ -169,8 +176,13 @@ fn vhost_echo_worker_copies_notifies_and_stops_before_reset() {
             .read_owner_bytes(GUEST_UVA + 4, &mut response)
             .unwrap();
         assert_eq!(&response, b"echo");
-        assert_eq!(memory.load::<UsedRing>(USED_ADDR).idx(), 1);
-        let used = memory.load::<UsedElem>(USED_ADDR + UsedRing::entry_offset(0).unwrap());
+        assert_eq!(
+            memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap().idx(),
+            1
+        );
+        let used = memory
+            .read_owner_val::<UsedElem>(USED_ADDR + UsedRing::entry_offset(0).unwrap())
+            .unwrap();
         assert_eq!(used.id(), 0);
         assert_eq!(used.len(), 4);
         assert_eq!(err.consume(), None);
@@ -180,7 +192,7 @@ fn vhost_echo_worker_copies_notifies_and_stops_before_reset() {
         echo.stop();
         assert!(echo.worker.is_none());
         assert_eq!(echo.common.queue_base(0).unwrap(), 1);
-        echo.start(runtime(&echo.common, vmar.clone(), memory.clone()))
+        echo.start(create_runtime(&echo.common, vmar.clone(), memory.clone()))
             .unwrap();
         wait_event(&echo.idle);
         echo.stop();

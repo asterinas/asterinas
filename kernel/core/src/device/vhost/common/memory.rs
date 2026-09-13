@@ -15,7 +15,7 @@ pub(super) const VHOST_MAX_MEMORY_REGIONS: usize = 64;
 
 /// `struct vhost_memory` in Linux, the header of a memory table.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L122>.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L128>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(in vhost) struct VhostMemory {
@@ -25,7 +25,7 @@ pub(in vhost) struct VhostMemory {
 
 /// `struct vhost_memory_region` in Linux, a GPA range backed by owner memory.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L112>.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L118>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(in vhost) struct VhostMemoryRegion {
@@ -64,6 +64,10 @@ impl VhostMemorySpace {
         })
     }
 
+    pub(super) fn vmar(&self) -> &Arc<Vmar> {
+        &self.vmar
+    }
+
     pub(super) fn read_owner_bytes(&self, host_virt_addr: usize, dst: &mut [u8]) -> Result<()> {
         let mut reader = self.vmar.vm_space().reader(host_virt_addr, dst.len())?;
         let mut writer = VmWriter::from(dst);
@@ -96,7 +100,8 @@ impl VhostMemorySpace {
 
     /// Appends the host ranges covering `[guest_phys_addr, guest_phys_addr + len)`.
     /// Each range is clipped to the requested interval. Returns `EFAULT` if any
-    /// byte is unmapped, or `EINVAL` on overflow. On error, discard appended ranges.
+    /// byte is unmapped, or `EINVAL` on overflow. The caller must discard appended
+    /// ranges on error.
     pub(super) fn translate_into(
         &self,
         guest_phys_addr: usize,

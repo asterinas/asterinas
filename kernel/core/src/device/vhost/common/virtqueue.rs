@@ -44,8 +44,7 @@ impl VhostVirtQueue {
     ) -> Result<Self> {
         let addr = state.addr.as_ref().unwrap();
         let used_addr = addr.used_user_addr as usize;
-        let used_idx = memory.read_owner_val::<u16>(used_addr + UsedRing::IDX_OFFSET)?;
-        let used_flags = memory.read_owner_val::<u16>(used_addr + UsedRing::FLAGS_OFFSET)?;
+        let used = memory.read_owner_val::<UsedRing>(used_addr)?;
         Ok(Self {
             memory,
             desc_addr: addr.desc_user_addr as usize,
@@ -54,8 +53,8 @@ impl VhostVirtQueue {
             num: state.num as usize,
             allow_indirect,
             last_avail: state.base.clone(),
-            last_used: used_idx,
-            used_flags,
+            last_used: used.idx(),
+            used_flags: used.flags(),
             kick: state.kick.clone(),
             call: state.call.clone(),
             err: state.err.clone(),
@@ -269,8 +268,7 @@ impl VhostVirtQueue {
                 );
             }
             let offset = index * VIRTQ_DESC_SIZE;
-            let descriptor =
-                Descriptor::from_ne_bytes(&table[offset..offset + VIRTQ_DESC_SIZE]).unwrap();
+            let descriptor = Descriptor::from_bytes(&table[offset..offset + VIRTQ_DESC_SIZE]);
             self.append_descriptor(descriptor, readable, writable, has_writable)?;
             if !descriptor.flags().contains(DescFlags::NEXT) {
                 return Ok(());

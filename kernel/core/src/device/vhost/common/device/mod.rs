@@ -34,7 +34,7 @@ pub(in vhost) const VIRTIO_RING_F_INDIRECT_DESC: u64 = 1 << 28;
 
 /// `struct vhost_vring_state` in Linux, a queue index and its size or base.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L18>.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L19>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(in vhost) struct VhostVringState {
@@ -44,7 +44,7 @@ pub(in vhost) struct VhostVringState {
 
 /// `struct vhost_vring_file` in Linux, a queue index and its eventfd descriptor.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L23>.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L24>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(in vhost) struct VhostVringFile {
@@ -54,7 +54,7 @@ pub(in vhost) struct VhostVringFile {
 
 /// `struct vhost_vring_addr` in Linux, the owner virtual addresses of a queue.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L29>.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L30>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(in vhost) struct VhostVringAddr {

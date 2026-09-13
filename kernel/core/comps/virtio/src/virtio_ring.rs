@@ -14,7 +14,7 @@ pub const USED_F_NO_NOTIFY: u16 = 1;
 
 /// `struct vring_desc` in Linux, a split virtqueue descriptor.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L100>.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L107>.
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct Descriptor {
@@ -25,27 +25,6 @@ pub struct Descriptor {
 }
 
 impl Descriptor {
-    /// Creates a descriptor from native-endian field values.
-    pub fn new(addr: u64, len: u32, flags: DescFlags, next: u16) -> Self {
-        Self {
-            addr,
-            len,
-            flags,
-            next,
-        }
-    }
-
-    /// Decodes a descriptor from its native-endian wire representation.
-    pub fn from_ne_bytes(bytes: &[u8]) -> Option<Self> {
-        let bytes = bytes.get(..size_of::<Self>())?;
-        Some(Self::new(
-            u64::from_ne_bytes(*bytes[0..8].as_array().unwrap()),
-            u32::from_ne_bytes(*bytes[8..12].as_array().unwrap()),
-            DescFlags::from_bits_truncate(u16::from_ne_bytes(*bytes[12..14].as_array().unwrap())),
-            u16::from_ne_bytes(*bytes[14..16].as_array().unwrap()),
-        ))
-    }
-
     /// Returns the buffer address.
     pub fn addr(&self) -> u64 {
         self.addr
@@ -59,7 +38,7 @@ impl Descriptor {
 
     /// Returns the descriptor flags.
     pub fn flags(&self) -> DescFlags {
-        DescFlags::from_bits_truncate(self.flags.bits())
+        self.flags
     }
 
     /// Returns the next descriptor index.
@@ -71,7 +50,7 @@ impl Descriptor {
 bitflags! {
     /// The `VRING_DESC_F_*` descriptor flags in Linux.
     ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L40>.
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L41>.
     #[repr(C)]
     #[derive(Default, Pod)]
     pub struct DescFlags: u16 {
@@ -88,7 +67,7 @@ impl PodOnce for DescFlags {}
 
 /// `struct vring_used_elem` in Linux, a consumed descriptor chain.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L113>.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L121>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct UsedElem {
@@ -117,7 +96,7 @@ impl UsedElem {
 bitflags! {
     /// The `VRING_AVAIL_F_*` notification flags in Linux.
     ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L59>.
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L61>.
     #[repr(C)]
     #[derive(Default, Pod)]
     pub struct AvailFlags: u16 {
@@ -130,7 +109,7 @@ impl PodOnce for AvailFlags {}
 
 /// `struct vring_avail` in Linux, an available ring with a flexible head array.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L106>.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L114>.
 #[repr(C, align(2))]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct AvailRing {
@@ -156,7 +135,7 @@ impl AvailRing {
 
     /// Returns the available-ring flags.
     pub const fn flags(&self) -> AvailFlags {
-        AvailFlags::from_bits_truncate(self.flags.bits())
+        self.flags
     }
 
     /// Returns the next available-ring index.
@@ -172,7 +151,7 @@ impl AvailRing {
 
 /// `struct vring_used` in Linux, a used ring with a flexible element array.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L123>.
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/virtio_ring.h#L131>.
 #[repr(C, align(4))]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub struct UsedRing {

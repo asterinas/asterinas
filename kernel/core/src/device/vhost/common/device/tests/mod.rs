@@ -28,26 +28,14 @@ const GUEST_ADDR: u64 = 0x1000;
 const GUEST_UVA: usize = 0x2_0000;
 const QUEUE_SIZE: usize = 8;
 
-impl VhostMemorySpace {
-    fn store<T: Pod>(&self, addr: usize, value: &T) {
-        self.write_owner_bytes(addr, value.as_bytes()).unwrap();
-    }
-
-    fn load<T: Default + Pod>(&self, addr: usize) -> T {
-        let mut value = T::default();
-        self.read_owner_bytes(addr, value.as_mut_bytes()).unwrap();
-        value
-    }
-}
-
-fn with_owner_memory(test_fn: impl FnOnce(VhostMemorySpace, Arc<Vmar>) + Send + 'static) {
-    let owner = mapped_owner();
+fn run_with_owner_memory(test_fn: impl FnOnce(VhostMemorySpace) + Send + 'static) {
+    let owner = map_owner();
     let vmar = owner.clone_arc();
-    let memory = memory_space(vmar.clone());
+    let memory = create_memory_space(vmar.clone());
     let completed = Arc::new(AtomicU64::new(0));
     let worker_completed = completed.clone();
     let worker = ThreadOptions::new(move || {
-        test_fn(memory, vmar);
+        test_fn(memory);
         worker_completed.store(1, Ordering::Release);
     })
     .vmar(owner.clone_arc())
@@ -57,12 +45,21 @@ fn with_owner_memory(test_fn: impl FnOnce(VhostMemorySpace, Arc<Vmar>) + Send + 
     assert_eq!(completed.load(Ordering::Acquire), 1);
 }
 
-fn event() -> Arc<KernelEventFile> {
+fn create_descriptor(addr: u64, len: u32, flags: DescFlags, next: u16) -> Descriptor {
+    let mut bytes = [0u8; size_of::<Descriptor>()];
+    bytes[..8].copy_from_slice(&addr.to_ne_bytes());
+    bytes[8..12].copy_from_slice(&len.to_ne_bytes());
+    bytes[12..14].copy_from_slice(&flags.bits().to_ne_bytes());
+    bytes[14..].copy_from_slice(&next.to_ne_bytes());
+    Descriptor::from_bytes(&bytes)
+}
+
+fn create_event() -> Arc<KernelEventFile> {
     let event_file = EventFile::new(0, EventFileFlags::empty());
     KernelEventFile::from_file(&event_file).unwrap()
 }
 
-fn memory_space(vmar: Arc<Vmar>) -> VhostMemorySpace {
+fn create_memory_space(vmar: Arc<Vmar>) -> VhostMemorySpace {
     VhostMemorySpace::new(
         vmar,
         vec![VhostMemoryRegion {
@@ -75,17 +72,17 @@ fn memory_space(vmar: Arc<Vmar>) -> VhostMemorySpace {
     .unwrap()
 }
 
-fn queue(memory: VhostMemorySpace) -> (VhostVirtQueue, Arc<KernelEventFile>) {
+fn create_queue(memory: VhostMemorySpace) -> (VhostVirtQueue, Arc<KernelEventFile>) {
     memory
         .write_owner_bytes(USED_ADDR, UsedRing::default().as_bytes())
         .unwrap();
-    let state = queue_state();
+    let state = create_queue_state();
     let call = state.call.as_ref().unwrap().clone();
     let queue = VhostVirtQueue::new(memory, &state, true).unwrap();
     (queue, call)
 }
 
-fn queue_state() -> VhostQueueState {
+fn create_queue_state() -> VhostQueueState {
     VhostQueueState {
         num: QUEUE_SIZE as u32,
         base: Arc::new(AtomicU16::new(0)),
@@ -97,13 +94,13 @@ fn queue_state() -> VhostQueueState {
             avail_user_addr: AVAIL_ADDR as u64,
             log_guest_addr: 0,
         }),
-        kick: Some(event()),
-        call: Some(event()),
-        err: Some(event()),
+        kick: Some(create_event()),
+        call: Some(create_event()),
+        err: Some(create_event()),
     }
 }
 
-fn mapped_owner() -> VmarHandle {
+fn map_owner() -> VmarHandle {
     let vmar = VmarHandle::new(ProcessVm::new(SockFs::new_path()));
     vmar.new_map(OWNER_SIZE, VmPerms::READ | VmPerms::WRITE)
         .offset(VmarMapOffset::FixedNoReplace(OWNER_BASE))
@@ -119,8 +116,8 @@ fn vhost_bound_worker_copies_chain_after_context_switch() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    let owner = mapped_owner();
-    let other_owner = mapped_owner();
+    let owner = map_owner();
+    let other_owner = map_owner();
     let other_vmar = other_owner.clone_arc();
     let vmar = owner.clone_arc();
     let worker_vmar = vmar.clone();
@@ -129,9 +126,9 @@ fn vhost_bound_worker_copies_chain_after_context_switch() {
     let worker_completed = completed.clone();
 
     let worker = ThreadOptions::new(move || {
-        let memory = memory_space(worker_vmar.clone());
+        let memory = create_memory_space(worker_vmar.clone());
         let space = memory.clone();
-        let (queue, call) = queue(memory);
+        let (queue, call) = create_queue(memory);
         let mut runtime = VhostRuntime {
             vmar: worker_vmar,
             generation: 0,
@@ -146,7 +143,7 @@ fn vhost_bound_worker_copies_chain_after_context_switch() {
         space
             .write_owner_val(
                 DESC_ADDR,
-                &Descriptor::new(GUEST_ADDR + 17, len as u32, DescFlags::empty(), 0),
+                &create_descriptor(GUEST_ADDR + 17, len as u32, DescFlags::empty(), 0),
             )
             .unwrap();
         space
@@ -158,7 +155,7 @@ fn vhost_bound_worker_copies_chain_after_context_switch() {
 
         let switcher_completed = worker_completed.clone();
         let switcher = ThreadOptions::new(move || {
-            memory_space(other_vmar.clone())
+            create_memory_space(other_vmar.clone())
                 .write_owner_bytes(GUEST_UVA + 17, &[0xff])
                 .unwrap();
             switcher_completed.store(1, Ordering::Release);
@@ -181,7 +178,7 @@ fn vhost_bound_worker_copies_chain_after_context_switch() {
         space
             .write_owner_val(
                 DESC_ADDR,
-                &Descriptor::new(GUEST_ADDR + 17, len as u32, DescFlags::WRITE, 0),
+                &create_descriptor(GUEST_ADDR + 17, len as u32, DescFlags::WRITE, 0),
             )
             .unwrap();
         space
@@ -224,9 +221,9 @@ fn vhost_owner_memory_rejects_another_active_vmar() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    let owner = mapped_owner();
-    let other_owner = mapped_owner();
-    let memory = memory_space(owner.clone_arc());
+    let owner = map_owner();
+    let other_owner = map_owner();
+    let memory = create_memory_space(owner.clone_arc());
     let result = Arc::new(Mutex::new(None));
     let worker_result = result.clone();
     let worker = ThreadOptions::new(move || {
@@ -262,9 +259,9 @@ fn vhost_owner_memory_faults_after_owner_exit() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    let owner = mapped_owner();
+    let owner = map_owner();
     let vmar = owner.clone_arc();
-    let memory = memory_space(vmar.clone());
+    let memory = create_memory_space(vmar.clone());
     drop(owner);
 
     let result = Arc::new(Mutex::new(None));
@@ -296,7 +293,7 @@ fn vhost_owner_memory_faults_after_owner_exit() {
     );
 }
 
-fn vring_addr() -> VhostVringAddr {
+fn create_vring_addr() -> VhostVringAddr {
     VhostVringAddr {
         index: 0,
         flags: 0,
@@ -308,8 +305,12 @@ fn vring_addr() -> VhostVringAddr {
 }
 
 fn make_available(memory: &VhostMemorySpace, head: u16, flags: AvailFlags) {
-    memory.store(AVAIL_ADDR, &AvailRing::new(flags, 1));
-    memory.store(AVAIL_ADDR + size_of::<AvailRing>(), &head);
+    memory
+        .write_owner_val(AVAIL_ADDR, &AvailRing::new(flags, 1))
+        .unwrap();
+    memory
+        .write_owner_val(AVAIL_ADDR + size_of::<AvailRing>(), &head)
+        .unwrap();
 }
 
 #[ktest]
@@ -334,15 +335,14 @@ fn vhost_uapi_layout_matches_linux() {
     assert_eq!(UsedRing::IDX_OFFSET, 2);
 
     let bytes = [8, 7, 6, 5, 4, 3, 2, 1, 13, 12, 11, 10, 3, 0, 9, 0];
-    let descriptor = Descriptor::from_ne_bytes(&bytes).unwrap();
+    let descriptor = Descriptor::from_bytes(&bytes);
     assert_eq!(descriptor.addr(), 0x0102_0304_0506_0708);
     assert_eq!(descriptor.len(), 0x0a0b_0c0d);
     assert_eq!(descriptor.flags(), DescFlags::NEXT | DescFlags::WRITE);
     assert_eq!(descriptor.next(), 9);
     assert_eq!(descriptor.as_bytes(), bytes);
-    assert!(Descriptor::from_ne_bytes(&bytes[..15]).is_none());
     assert_eq!(
-        Descriptor::new(
+        create_descriptor(
             0,
             0,
             DescFlags::NEXT | DescFlags::WRITE | DescFlags::INDIRECT,
@@ -364,7 +364,8 @@ fn vhost_guest_range_can_span_adjacent_regions() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|_, vmar| {
+    run_with_owner_memory(|memory| {
+        let vmar = memory.vmar().clone();
         let space = VhostMemorySpace::new(
             vmar,
             vec![
@@ -400,7 +401,8 @@ fn vhost_guest_range_cannot_span_unmapped_gap() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|_, vmar| {
+    run_with_owner_memory(|memory| {
+        let vmar = memory.vmar().clone();
         let space = VhostMemorySpace::new(
             vmar,
             vec![
@@ -437,7 +439,7 @@ fn vhost_overlapping_guest_regions_are_rejected() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|_, _| {
+    run_with_owner_memory(|_| {
         let result = memory::sort_and_validate_memory_regions(&mut [
             VhostMemoryRegion {
                 guest_phys_addr: 0x1000,
@@ -458,7 +460,7 @@ fn vhost_overlapping_guest_regions_are_rejected() {
 
 #[ktest]
 fn vhost_vring_addr_can_precede_size_but_is_revalidated() {
-    let mut addr = vring_addr();
+    let mut addr = create_vring_addr();
     assert!(validate_vring_addr(&addr, 0).is_ok());
     assert!(validate_vring_addr(&addr, QUEUE_SIZE as u32).is_ok());
 
@@ -489,8 +491,9 @@ fn vhost_owner_reset_invalidates_old_runtime() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, owner| {
-        let (queue, _) = queue(memory);
+    run_with_owner_memory(|memory| {
+        let owner = memory.vmar().clone();
+        let (queue, _) = create_queue(memory);
         let config = VhostDeviceConfig {
             device_features: 0,
             backend_features: 0,
@@ -519,16 +522,20 @@ fn vhost_readable_chain_is_consumed_and_published() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, call) = queue(memory.clone());
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(GUEST_ADDR, 4, DescFlags::NEXT, 1),
-        );
-        memory.store(
-            DESC_ADDR + size_of::<Descriptor>(),
-            &Descriptor::new(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
-        );
+    run_with_owner_memory(|memory| {
+        let (mut queue, call) = create_queue(memory.clone());
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::NEXT, 1),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                DESC_ADDR + size_of::<Descriptor>(),
+                &create_descriptor(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
+            )
+            .unwrap();
         memory.write_owner_bytes(GUEST_UVA, b"abcdefgh").unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
@@ -542,8 +549,13 @@ fn vhost_readable_chain_is_consumed_and_published() {
         queue.add_used(&chain, 0).unwrap();
         queue.notify().unwrap();
         assert_eq!(call.consume(), Some(1));
-        assert_eq!(memory.load::<UsedRing>(USED_ADDR).idx(), 1);
-        let used = memory.load::<UsedElem>(USED_ADDR + size_of::<UsedRing>());
+        assert_eq!(
+            memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap().idx(),
+            1
+        );
+        let used = memory
+            .read_owner_val::<UsedElem>(USED_ADDR + size_of::<UsedRing>())
+            .unwrap();
         assert_eq!(used.id(), 0);
         assert_eq!(used.len(), 0);
     });
@@ -555,16 +567,20 @@ fn vhost_writable_chain_writes_across_descriptors() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, _) = queue(memory.clone());
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(GUEST_ADDR, 3, DescFlags::WRITE | DescFlags::NEXT, 1),
-        );
-        memory.store(
-            DESC_ADDR + size_of::<Descriptor>(),
-            &Descriptor::new(GUEST_ADDR + 3, 5, DescFlags::WRITE, 0),
-        );
+    run_with_owner_memory(|memory| {
+        let (mut queue, _) = create_queue(memory.clone());
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(GUEST_ADDR, 3, DescFlags::WRITE | DescFlags::NEXT, 1),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                DESC_ADDR + size_of::<Descriptor>(),
+                &create_descriptor(GUEST_ADDR + 3, 5, DescFlags::WRITE, 0),
+            )
+            .unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
         let chain = queue.try_pop().unwrap().unwrap();
@@ -579,7 +595,9 @@ fn vhost_writable_chain_writes_across_descriptors() {
         let mut bytes = [0u8; 8];
         memory.read_owner_bytes(GUEST_UVA, &mut bytes).unwrap();
         assert_eq!(&bytes, b"abcdefgh");
-        let used = memory.load::<UsedElem>(USED_ADDR + size_of::<UsedRing>());
+        let used = memory
+            .read_owner_val::<UsedElem>(USED_ADDR + size_of::<UsedRing>())
+            .unwrap();
         assert_eq!(used.len(), 8);
     });
 }
@@ -590,27 +608,33 @@ fn vhost_indirect_readable_chain_is_supported() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, _) = queue(memory.clone());
+    run_with_owner_memory(|memory| {
+        let (mut queue, _) = create_queue(memory.clone());
         let indirect_guest_addr = GUEST_ADDR + 0x800;
         let indirect_uva = GUEST_UVA + 0x800;
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(
-                indirect_guest_addr,
-                (2 * size_of::<Descriptor>()) as u32,
-                DescFlags::INDIRECT,
-                0,
-            ),
-        );
-        memory.store(
-            indirect_uva,
-            &Descriptor::new(GUEST_ADDR, 4, DescFlags::NEXT, 1),
-        );
-        memory.store(
-            indirect_uva + size_of::<Descriptor>(),
-            &Descriptor::new(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
-        );
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(
+                    indirect_guest_addr,
+                    (2 * size_of::<Descriptor>()) as u32,
+                    DescFlags::INDIRECT,
+                    0,
+                ),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                indirect_uva,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::NEXT, 1),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                indirect_uva + size_of::<Descriptor>(),
+                &create_descriptor(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
+            )
+            .unwrap();
         memory.write_owner_bytes(GUEST_UVA, b"indirect").unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
@@ -627,27 +651,33 @@ fn vhost_indirect_writable_chain_writes_across_descriptors() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, _) = queue(memory.clone());
+    run_with_owner_memory(|memory| {
+        let (mut queue, _) = create_queue(memory.clone());
         let indirect_guest_addr = GUEST_ADDR + 0x800;
         let indirect_uva = GUEST_UVA + 0x800;
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(
-                indirect_guest_addr,
-                (2 * size_of::<Descriptor>()) as u32,
-                DescFlags::INDIRECT,
-                0,
-            ),
-        );
-        memory.store(
-            indirect_uva,
-            &Descriptor::new(GUEST_ADDR, 16, DescFlags::WRITE | DescFlags::NEXT, 1),
-        );
-        memory.store(
-            indirect_uva + size_of::<Descriptor>(),
-            &Descriptor::new(GUEST_ADDR + 0x100, 28, DescFlags::WRITE, 0),
-        );
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(
+                    indirect_guest_addr,
+                    (2 * size_of::<Descriptor>()) as u32,
+                    DescFlags::INDIRECT,
+                    0,
+                ),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                indirect_uva,
+                &create_descriptor(GUEST_ADDR, 16, DescFlags::WRITE | DescFlags::NEXT, 1),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                indirect_uva + size_of::<Descriptor>(),
+                &create_descriptor(GUEST_ADDR + 0x100, 28, DescFlags::WRITE, 0),
+            )
+            .unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
         // The indirect table occupies 32 bytes, but describes 44 writable bytes.
@@ -663,13 +693,29 @@ fn vhost_indirect_writable_chain_writes_across_descriptors() {
             .add_used(&chain, writer.bytes_written() as u32)
             .unwrap();
 
-        assert_eq!(memory.load::<[u8; 16]>(GUEST_UVA), [0x12; 16]);
-        assert_eq!(memory.load::<[u8; 4]>(GUEST_UVA + 0x100), [0x12; 4]);
-        assert_eq!(memory.load::<[u8; 24]>(GUEST_UVA + 0x104), [0x34; 24]);
-        let used = memory.load::<UsedElem>(USED_ADDR + size_of::<UsedRing>());
+        assert_eq!(
+            memory.read_owner_val::<[u8; 16]>(GUEST_UVA).unwrap(),
+            [0x12; 16]
+        );
+        assert_eq!(
+            memory.read_owner_val::<[u8; 4]>(GUEST_UVA + 0x100).unwrap(),
+            [0x12; 4]
+        );
+        assert_eq!(
+            memory
+                .read_owner_val::<[u8; 24]>(GUEST_UVA + 0x104)
+                .unwrap(),
+            [0x34; 24]
+        );
+        let used = memory
+            .read_owner_val::<UsedElem>(USED_ADDR + size_of::<UsedRing>())
+            .unwrap();
         assert_eq!(used.id(), chain.head_index() as u32);
         assert_eq!(used.len(), 44);
-        assert_eq!(memory.load::<UsedRing>(USED_ADDR).idx(), 1);
+        assert_eq!(
+            memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap().idx(),
+            1
+        );
     });
 }
 
@@ -679,12 +725,14 @@ fn vhost_invalid_chain_does_not_advance_available_base() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, _) = queue(memory.clone());
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(GUEST_ADDR, 4, DescFlags::NEXT, 0),
-        );
+    run_with_owner_memory(|memory| {
+        let (mut queue, _) = create_queue(memory.clone());
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::NEXT, 0),
+            )
+            .unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
         assert!(queue.try_pop().is_err());
@@ -698,16 +746,20 @@ fn vhost_readable_descriptor_after_writable_is_rejected() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, _) = queue(memory.clone());
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(GUEST_ADDR, 4, DescFlags::WRITE | DescFlags::NEXT, 1),
-        );
-        memory.store(
-            DESC_ADDR + size_of::<Descriptor>(),
-            &Descriptor::new(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
-        );
+    run_with_owner_memory(|memory| {
+        let (mut queue, _) = create_queue(memory.clone());
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::WRITE | DescFlags::NEXT, 1),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                DESC_ADDR + size_of::<Descriptor>(),
+                &create_descriptor(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
+            )
+            .unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
         assert!(queue.try_pop().is_err());
@@ -721,8 +773,8 @@ fn vhost_notification_respects_no_interrupt_flag() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (queue, call) = queue(memory.clone());
+    run_with_owner_memory(|memory| {
+        let (queue, call) = create_queue(memory.clone());
         make_available(&memory, 0, AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT);
 
         queue.notify().unwrap();
@@ -736,18 +788,27 @@ fn vhost_kick_notifications_recheck_available_ring() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, _) = queue(memory.clone());
+    run_with_owner_memory(|memory| {
+        let (mut queue, _) = create_queue(memory.clone());
 
         queue.disable_kick_notifications().unwrap();
         assert_eq!(
-            memory.load::<UsedRing>(USED_ADDR).flags(),
+            memory
+                .read_owner_val::<UsedRing>(USED_ADDR)
+                .unwrap()
+                .flags(),
             virtio_ring::USED_F_NO_NOTIFY
         );
 
         make_available(&memory, 0, AvailFlags::empty());
         assert!(queue.enable_kick_notifications().unwrap());
-        assert_eq!(memory.load::<UsedRing>(USED_ADDR).flags(), 0);
+        assert_eq!(
+            memory
+                .read_owner_val::<UsedRing>(USED_ADDR)
+                .unwrap()
+                .flags(),
+            0
+        );
     });
 }
 
@@ -757,12 +818,14 @@ fn vhost_descriptor_segments_are_bounded() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
+    run_with_owner_memory(|memory| {
         const LARGE_QUEUE_SIZE: usize = 2048;
         const LARGE_AVAIL_ADDR: usize = 0x1_9000;
         const LARGE_USED_ADDR: usize = 0x1_a000;
 
-        memory.store(LARGE_USED_ADDR, &UsedRing::default());
+        memory
+            .write_owner_val(LARGE_USED_ADDR, &UsedRing::default())
+            .unwrap();
         let state = VhostQueueState {
             num: LARGE_QUEUE_SIZE as u32,
             base: Arc::new(AtomicU16::new(0)),
@@ -786,13 +849,19 @@ fn vhost_descriptor_segments_are_bounded() {
             } else {
                 DescFlags::NEXT
             };
-            memory.store(
-                DESC_ADDR + index * size_of::<Descriptor>(),
-                &Descriptor::new(GUEST_ADDR, 1, flags, (index + 1) as u16),
-            );
+            memory
+                .write_owner_val(
+                    DESC_ADDR + index * size_of::<Descriptor>(),
+                    &create_descriptor(GUEST_ADDR, 1, flags, (index + 1) as u16),
+                )
+                .unwrap();
         }
-        memory.store(LARGE_AVAIL_ADDR, &AvailRing::new(AvailFlags::empty(), 1));
-        memory.store(LARGE_AVAIL_ADDR + size_of::<AvailRing>(), &0u16);
+        memory
+            .write_owner_val(LARGE_AVAIL_ADDR, &AvailRing::new(AvailFlags::empty(), 1))
+            .unwrap();
+        memory
+            .write_owner_val(LARGE_AVAIL_ADDR + size_of::<AvailRing>(), &0u16)
+            .unwrap();
 
         assert_eq!(queue.try_pop().err().unwrap().error(), Errno::ENOBUFS);
         assert_eq!(queue.current_avail(), 0);
@@ -805,21 +874,25 @@ fn vhost_indirect_table_write_flag_is_ignored() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, _) = queue(memory.clone());
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(
-                GUEST_ADDR + 0x800,
-                size_of::<Descriptor>() as u32,
-                DescFlags::INDIRECT | DescFlags::WRITE,
-                0,
-            ),
-        );
-        memory.store(
-            GUEST_UVA + 0x800,
-            &Descriptor::new(GUEST_ADDR, 4, DescFlags::empty(), 0),
-        );
+    run_with_owner_memory(|memory| {
+        let (mut queue, _) = create_queue(memory.clone());
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(
+                    GUEST_ADDR + 0x800,
+                    size_of::<Descriptor>() as u32,
+                    DescFlags::INDIRECT | DescFlags::WRITE,
+                    0,
+                ),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                GUEST_UVA + 0x800,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::empty(), 0),
+            )
+            .unwrap();
         memory.write_owner_bytes(GUEST_UVA, b"test").unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
@@ -837,25 +910,31 @@ fn vhost_direct_prefix_with_indirect_suffix_is_supported() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, _) = queue(memory.clone());
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(GUEST_ADDR, 4, DescFlags::NEXT, 1),
-        );
-        memory.store(
-            DESC_ADDR + size_of::<Descriptor>(),
-            &Descriptor::new(
-                GUEST_ADDR + 0x800,
-                size_of::<Descriptor>() as u32,
-                DescFlags::INDIRECT,
-                0,
-            ),
-        );
-        memory.store(
-            GUEST_UVA + 0x800,
-            &Descriptor::new(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
-        );
+    run_with_owner_memory(|memory| {
+        let (mut queue, _) = create_queue(memory.clone());
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::NEXT, 1),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                DESC_ADDR + size_of::<Descriptor>(),
+                &create_descriptor(
+                    GUEST_ADDR + 0x800,
+                    size_of::<Descriptor>() as u32,
+                    DescFlags::INDIRECT,
+                    0,
+                ),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                GUEST_UVA + 0x800,
+                &create_descriptor(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
+            )
+            .unwrap();
         memory.write_owner_bytes(GUEST_UVA, b"directly").unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
@@ -873,8 +952,8 @@ fn vhost_invalid_indirect_tables_are_rejected() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, _) = queue(memory.clone());
+    run_with_owner_memory(|memory| {
+        let (mut queue, _) = create_queue(memory.clone());
         make_available(&memory, 0, AvailFlags::empty());
         let table_len = size_of::<Descriptor>() as u32;
         for (outer_flags, inner_flags, len) in [
@@ -887,14 +966,18 @@ fn vhost_invalid_indirect_tables_are_rejected() {
             (DescFlags::INDIRECT, DescFlags::empty(), 0),
             (DescFlags::INDIRECT, DescFlags::empty(), table_len + 1),
         ] {
-            memory.store(
-                DESC_ADDR,
-                &Descriptor::new(GUEST_ADDR + 0x800, len, outer_flags, 0),
-            );
-            memory.store(
-                GUEST_UVA + 0x800,
-                &Descriptor::new(GUEST_ADDR, 4, inner_flags, 0),
-            );
+            memory
+                .write_owner_val(
+                    DESC_ADDR,
+                    &create_descriptor(GUEST_ADDR + 0x800, len, outer_flags, 0),
+                )
+                .unwrap();
+            memory
+                .write_owner_val(
+                    GUEST_UVA + 0x800,
+                    &create_descriptor(GUEST_ADDR, 4, inner_flags, 0),
+                )
+                .unwrap();
 
             assert_eq!(queue.try_pop().err().unwrap().error(), Errno::EINVAL);
             assert_eq!(queue.current_avail(), 0);
@@ -908,17 +991,19 @@ fn vhost_indirect_descriptors_require_negotiation() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let mut queue = VhostVirtQueue::new(memory.clone(), &queue_state(), false).unwrap();
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(
-                GUEST_ADDR + 0x800,
-                size_of::<Descriptor>() as u32,
-                DescFlags::INDIRECT,
-                0,
-            ),
-        );
+    run_with_owner_memory(|memory| {
+        let mut queue = VhostVirtQueue::new(memory.clone(), &create_queue_state(), false).unwrap();
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(
+                    GUEST_ADDR + 0x800,
+                    size_of::<Descriptor>() as u32,
+                    DescFlags::INDIRECT,
+                    0,
+                ),
+            )
+            .unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
         assert_eq!(queue.try_pop().err().unwrap().error(), Errno::EINVAL);
@@ -932,25 +1017,31 @@ fn vhost_indirect_suffix_preserves_descriptor_direction_order() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
-        let (mut queue, _) = queue(memory.clone());
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(GUEST_ADDR, 4, DescFlags::NEXT | DescFlags::WRITE, 1),
-        );
-        memory.store(
-            DESC_ADDR + size_of::<Descriptor>(),
-            &Descriptor::new(
-                GUEST_ADDR + 0x800,
-                size_of::<Descriptor>() as u32,
-                DescFlags::INDIRECT,
-                0,
-            ),
-        );
-        memory.store(
-            GUEST_UVA + 0x800,
-            &Descriptor::new(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
-        );
+    run_with_owner_memory(|memory| {
+        let (mut queue, _) = create_queue(memory.clone());
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::NEXT | DescFlags::WRITE, 1),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                DESC_ADDR + size_of::<Descriptor>(),
+                &create_descriptor(
+                    GUEST_ADDR + 0x800,
+                    size_of::<Descriptor>() as u32,
+                    DescFlags::INDIRECT,
+                    0,
+                ),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                GUEST_UVA + 0x800,
+                &create_descriptor(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
+            )
+            .unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
         assert_eq!(queue.try_pop().err().unwrap().error(), Errno::EINVAL);
@@ -964,37 +1055,48 @@ fn vhost_ring_indices_wrap_with_two_byte_avail_alignment() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, _| {
+    run_with_owner_memory(|memory| {
         let avail_addr = AVAIL_ADDR + 2;
-        let mut state = queue_state();
+        let mut state = create_queue_state();
         state.addr.as_mut().unwrap().avail_user_addr = avail_addr as u64;
         validate_vring_addr(state.addr.as_ref().unwrap(), state.num).unwrap();
-        memory.store(
-            DESC_ADDR,
-            &Descriptor::new(GUEST_ADDR, 4, DescFlags::empty(), 0),
-        );
-        memory.store(
-            avail_addr + AvailRing::entry_offset(QUEUE_SIZE - 1).unwrap(),
-            &0u16,
-        );
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::empty(), 0),
+            )
+            .unwrap();
+        memory
+            .write_owner_val(
+                avail_addr + AvailRing::entry_offset(QUEUE_SIZE - 1).unwrap(),
+                &0u16,
+            )
+            .unwrap();
 
         for base in [0x00ffu16, u16::MAX] {
             let next = base.wrapping_add(1);
             state.base.store(base, Ordering::Relaxed);
-            memory.store(USED_ADDR, &UsedRing::new(0, base));
-            memory.store(avail_addr, &AvailRing::new(AvailFlags::empty(), next));
+            memory
+                .write_owner_val(USED_ADDR, &UsedRing::new(0, base))
+                .unwrap();
+            memory
+                .write_owner_val(avail_addr, &AvailRing::new(AvailFlags::empty(), next))
+                .unwrap();
             let mut queue = VhostVirtQueue::new(memory.clone(), &state, true).unwrap();
 
             let chain = queue.try_pop().unwrap().unwrap();
             assert_eq!(queue.current_avail(), next);
             queue.add_used(&chain, 0).unwrap();
-            assert_eq!(memory.load::<UsedRing>(USED_ADDR).idx(), next);
+            assert_eq!(
+                memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap().idx(),
+                next
+            );
             queue.disable_kick_notifications().unwrap();
-            let used = memory.load::<UsedRing>(USED_ADDR);
+            let used = memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap();
             assert_eq!(used.flags(), virtio_ring::USED_F_NO_NOTIFY);
             assert_eq!(used.idx(), next);
             assert!(!queue.enable_kick_notifications().unwrap());
-            let used = memory.load::<UsedRing>(USED_ADDR);
+            let used = memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap();
             assert_eq!(used.flags(), 0);
             assert_eq!(used.idx(), next);
         }
@@ -1040,7 +1142,7 @@ fn vhost_memory_table_errors_match_linux() {
 
 mod echo;
 
-fn runtime<const N: usize>(
+fn create_runtime<const N: usize>(
     state: &VhostDeviceState<N>,
     vmar: Arc<Vmar>,
     memory: VhostMemorySpace,
@@ -1066,7 +1168,8 @@ fn vhost_activation_requires_each_backend_queue() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
 
-    with_owner_memory(|memory, vmar| {
+    run_with_owner_memory(|memory| {
+        let vmar = memory.vmar().clone();
         let mut state = VhostDeviceState::<2>::new(VhostDeviceConfig {
             device_features: VIRTIO_F_VERSION_1,
             backend_features: 0,
@@ -1079,12 +1182,12 @@ fn vhost_activation_requires_each_backend_queue() {
             host_virt_addr: GUEST_UVA as u64,
             flags_padding: 0,
         }];
-        state.queues[0] = queue_state();
+        state.queues[0] = create_queue_state();
         assert!(!state.is_fully_configured());
-        state.queues[1] = queue_state();
+        state.queues[1] = create_queue_state();
         state.queues[1].addr.as_mut().unwrap().index = 1;
         assert!(state.is_fully_configured());
-        let mut runtime = runtime(&state, vmar, memory);
+        let mut runtime = create_runtime(&state, vmar, memory);
         assert!(runtime.queue_mut(0).is_ok());
         assert!(runtime.queue_mut(1).is_ok());
         assert_eq!(runtime.queue_mut(2).err().unwrap().error(), Errno::EINVAL);
