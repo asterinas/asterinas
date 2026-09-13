@@ -16,7 +16,7 @@ use crate::{
     device,
     fs::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, SyncMode},
-        fs_impls::ext2::{FilePerm, Inode as Ext2Inode},
+        fs_impls::ext4::{FilePerm, Inode as Ext4Inode},
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
@@ -33,7 +33,7 @@ use crate::{
     vm::page_cache::Vmo,
 };
 
-impl FileOps for Ext2Inode {
+impl FileOps for Ext4Inode {
     fn read_at(
         &self,
         offset: usize,
@@ -65,7 +65,7 @@ impl FileOps for Ext2Inode {
     }
 }
 
-impl Inode for Ext2Inode {
+impl Inode for Ext4Inode {
     fn size(&self) -> usize {
         self.file_size()
     }
@@ -220,17 +220,17 @@ impl Inode for Ext2Inode {
     }
 
     fn link(&self, _self_dentry: &Dentry, old_dentry: &Dentry, name: &str) -> Result<()> {
-        let old = old_dentry.inode().downcast_ref::<Ext2Inode>().unwrap();
+        let old = old_dentry.inode().downcast_ref::<Ext4Inode>().unwrap();
         self.link(old, name)
     }
 
     fn unlink(&self, child_dentry: &Dentry) -> Result<()> {
-        let child = child_dentry.inode().downcast_ref::<Ext2Inode>().unwrap();
+        let child = child_dentry.inode().downcast_ref::<Ext4Inode>().unwrap();
         self.unlink(&child_dentry.name(), child)
     }
 
     fn rmdir(&self, child_dentry: &Dentry) -> Result<()> {
-        let child = child_dentry.inode().downcast_ref::<Ext2Inode>().unwrap();
+        let child = child_dentry.inode().downcast_ref::<Ext4Inode>().unwrap();
         self.rmdir(&child_dentry.name(), child)
     }
 
@@ -246,12 +246,12 @@ impl Inode for Ext2Inode {
             return_errno_with_message!(Errno::EINVAL, "RENAME_EXCHANGE is not supported on ext2");
         }
 
-        let new_dir_inode = new_dir_dentry.inode().downcast_ref::<Ext2Inode>().unwrap();
+        let new_dir_inode = new_dir_dentry.inode().downcast_ref::<Ext4Inode>().unwrap();
         let old_inode = old_child_dentry
             .inode()
-            .downcast_ref::<Ext2Inode>()
+            .downcast_ref::<Ext4Inode>()
             .unwrap();
-        let replaced_inode = replaced_inode.map(|inode| inode.downcast_ref::<Ext2Inode>().unwrap());
+        let replaced_inode = replaced_inode.map(|inode| inode.downcast_ref::<Ext4Inode>().unwrap());
 
         self.rename(
             &old_child_dentry.name(),
