@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Test-only fixtures and helpers for ext2 kernel tests.
+//! Test-only fixtures and helpers for shared EXT kernel tests.
 
 use core::{
     fmt,
@@ -17,7 +17,7 @@ use ostd::mm::{FrameAllocOptions, HasSize, Segment, VmIo, io::util::HasVmReaderW
 
 use super::{
     block_group::RawBlockGroup,
-    fs::{Ext4, ROOT_INO},
+    fs::{Ext4, MountFlavor, ROOT_INO},
     inode::{FilePerm, Inode, RAW_BLOCK_PTRS_LEN, RawInode},
     super_block::{
         ErrorsBehavior, FsState, MAGIC_NUM, OsId, RawSuperBlock, RevLevel, SUPER_BLOCK_OFFSET,
@@ -492,7 +492,7 @@ pub(super) enum InodeBitmapInit {
 
 pub(super) struct Ext4Fixture {
     pub disk: Arc<Ext4MemoryDisk>,
-    pub ext2: Arc<Ext4>,
+    pub fs: Arc<Ext4>,
     pub sb: SuperBlock,
     pub descs: Vec<RawBlockGroup>,
 }
@@ -507,7 +507,7 @@ type PreparedFixture = (
 
 impl Ext4Fixture {
     pub(super) fn root(&self) -> Arc<Inode> {
-        self.ext2.read_inode(ROOT_INO).unwrap()
+        self.fs.read_inode(ROOT_INO).unwrap()
     }
 }
 
@@ -526,6 +526,7 @@ pub(super) struct Ext4FixtureBuilder {
     block_bitmap: Option<BlockBitmapInit>,
     inode_bitmap: Option<InodeBitmapInit>,
     custom_device: Option<Arc<dyn BlockDevice>>,
+    mount_flavor: MountFlavor,
 }
 
 impl Ext4FixtureBuilder {
@@ -545,7 +546,13 @@ impl Ext4FixtureBuilder {
             block_bitmap: None,
             inode_bitmap: None,
             custom_device: None,
+            mount_flavor: MountFlavor::Ext2,
         }
+    }
+
+    pub(super) fn with_mount_flavor(mut self, mount_flavor: MountFlavor) -> Self {
+        self.mount_flavor = mount_flavor;
+        self
     }
 
     pub(super) fn with_free_blocks(mut self, sb_free_blocks: u32, group0_free_blocks: u16) -> Self {
@@ -592,6 +599,10 @@ impl Ext4FixtureBuilder {
 
     fn prepare(&self) -> Result<PreparedFixture> {
         let mut raw_sb = make_valid_raw_super_block(self.groups);
+        if self.mount_flavor == MountFlavor::Ext4 {
+            const EXTENTS_FEATURE: u32 = 1 << 6;
+            raw_sb.feature_incompat |= EXTENTS_FEATURE;
+        }
         if let Some(inode_size) = self.inode_size {
             raw_sb.rev_level = RevLevel::Dynamic as u32;
             raw_sb.first_ino = 11;
@@ -786,11 +797,11 @@ impl Ext4FixtureBuilder {
         let device: Arc<dyn BlockDevice> = self
             .custom_device
             .unwrap_or_else(|| disk.clone() as Arc<dyn BlockDevice>);
-        let ext2 = Ext4::open(device, FsFlags::empty(), super::fs::MountFlavor::Ext2, None)?;
+        let fs = Ext4::open(device, FsFlags::empty(), self.mount_flavor, None)?;
 
         Ok(Ext4Fixture {
             disk,
-            ext2,
+            fs,
             sb,
             descs,
         })

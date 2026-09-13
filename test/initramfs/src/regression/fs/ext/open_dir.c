@@ -8,8 +8,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define TEST_DIR "/ext2/open_dir_test"
+#define TEST_DIR EXT_TEST_ROOT "/open_dir_test"
 #define TARGET_DIR TEST_DIR "/objd"
 
 FN_SETUP(prepare)

@@ -9,8 +9,9 @@
 #include <unistd.h>
 
 #include "../../common/test.h"
+#include "fs_test.h"
 
-#define BASE_DIR "/ext2/ext2_symlink_test"
+#define BASE_DIR EXT_TEST_ROOT "/shared_symlink_test"
 
 static void ensure_dir(const char *path)
 {
@@ -148,5 +149,6 @@ FN_TEST(dangling_symlink_enoent)
 	TEST_SUCC(lstat(link, &st));
 
 	unlink_if_exists(link);
+	rmdir_if_exists(BASE_DIR);
 }
 END_TEST()
