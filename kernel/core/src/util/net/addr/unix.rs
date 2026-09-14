@@ -53,9 +53,8 @@ where
     let copied = match value {
         UnixSocketAddr::Unnamed => 0,
         UnixSocketAddr::Path(path) => {
-            let bytes = path.as_bytes();
-            let len = bytes.len();
-            sun_path[..len].copy_from_slice(bytes);
+            let len = path.len();
+            sun_path[..len].copy_from_slice(path);
             sun_path[len] = 0;
             len + 1
         }
@@ -95,11 +94,14 @@ pub(super) fn from_c_bytes(bytes: &[u8]) -> Result<UnixSocketAddr> {
 
     // Again, Linux always appends a null terminator to the pathname if none is supplied. So we
     // need to deal with the case where `CStr::from_bytes_until_nul` fails.
-    if let Ok(c_str) = CStr::from_bytes_until_nul(sun_path) {
-        Ok(UnixSocketAddr::Path(Arc::from(c_str.to_string_lossy())))
-    } else {
-        Ok(UnixSocketAddr::Path(Arc::from(String::from_utf8_lossy(
-            sun_path,
-        ))))
-    }
+    //
+    // Preserve the original bytes. Pathname addresses are not required to be valid UTF-8, and
+    // converting them with `from_utf8_lossy` can expand the length past the `sockaddr_un`
+    // encoding buffer.
+    let path = match CStr::from_bytes_until_nul(sun_path) {
+        Ok(path) => path.to_bytes(),
+        Err(_) => sun_path,
+    };
+
+    Ok(UnixSocketAddr::Path(Arc::from(path)))
 }

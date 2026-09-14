@@ -26,6 +26,7 @@ FN_TEST(socket_addresses)
 	int sk;
 	socklen_t addrlen;
 	struct sockaddr_un addr;
+	char non_utf8_path[sizeof(addr.sun_path) + 1];
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
@@ -82,6 +83,18 @@ FN_TEST(socket_addresses)
 
 	MAKE_TEST(LONG_PATH "a", 108, 108, 108, 109, LONG_PATH "a");
 	TEST_SUCC(unlink(LONG_PATH "a"));
+
+	// A full-length pathname that is not valid UTF-8 must not panic the
+	// kernel when the address is serialized back to userspace.
+	memset(non_utf8_path, 'a', sizeof(addr.sun_path));
+	memcpy(non_utf8_path, "/tmp/", 5);
+	non_utf8_path[sizeof(addr.sun_path) - 1] = (char)0xff;
+	non_utf8_path[sizeof(addr.sun_path)] = '\0';
+
+	MAKE_TEST(non_utf8_path, sizeof(addr.sun_path), sizeof(addr.sun_path),
+		  sizeof(addr.sun_path), sizeof(addr.sun_path) + 1,
+		  non_utf8_path);
+	TEST_SUCC(unlink(non_utf8_path));
 
 #undef LONG_PATH
 #undef MAKE_TEST

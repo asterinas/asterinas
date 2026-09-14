@@ -12,7 +12,7 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum UnixSocketAddr {
     Unnamed,
-    Path(Arc<str>),
+    Path(Arc<[u8]>),
     Abstract(Arc<[u8]>),
 }
 
@@ -21,7 +21,7 @@ impl UnixSocketAddr {
         let bound = match self {
             Self::Unnamed => UnixSocketAddrBound::Abstract(ns::alloc_ephemeral_abstract_name()?),
             Self::Path(path_name) => {
-                let path = ns::create_socket_file(&path_name)?;
+                let path = ns::create_socket_file(&String::from_utf8_lossy(&path_name))?;
                 UnixSocketAddrBound::Path(path_name, path)
             }
             Self::Abstract(name) => UnixSocketAddrBound::Abstract(ns::create_abstract_name(name)?),
@@ -45,7 +45,9 @@ impl UnixSocketAddr {
                 "the unnamed UNIX domain socket address is not valid for connecting"
             ),
             Self::Path(path) => UnixSocketAddrKey::Path(KeyableArc::from(
-                ns::lookup_socket_file(path)?.inode().clone(),
+                ns::lookup_socket_file(&String::from_utf8_lossy(path))?
+                    .inode()
+                    .clone(),
             )),
             Self::Abstract(name) => {
                 UnixSocketAddrKey::Abstract(KeyableArc::from(ns::lookup_abstract_name(name)?))
@@ -72,7 +74,7 @@ impl TryFrom<SocketAddr> for UnixSocketAddr {
 
 #[derive(Clone, Debug)]
 pub(super) enum UnixSocketAddrBound {
-    Path(Arc<str>, Path),
+    Path(Arc<[u8]>, Path),
     Abstract(Arc<AbstractHandle>),
 }
 
