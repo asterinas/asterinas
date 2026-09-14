@@ -36,8 +36,6 @@ use crate::{
 };
 
 mod hwrng;
-#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
-pub(crate) mod tdxguest;
 
 /// The result type used by misc device operations.
 pub type Result<T> = core::result::Result<T, Error>;
@@ -198,9 +196,4 @@ pub(super) fn init_in_first_kthread() {
     MISC_MAJOR.call_once(|| acquire_major(MajorId::new(10)).unwrap());
 
     hwrng::init_in_first_kthread();
-
-    #[cfg(target_arch = "x86_64")]
-    ostd::if_tdx_enabled!({
-        tdxguest::init().unwrap();
-    });
 }

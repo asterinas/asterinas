@@ -1,6 +1,7 @@
 # template
 [components]
 block = { name = "aster-block" }
+configfs = { name = "aster-configfs" }
 cmdline = { name = "aster-cmdline" }
 console = { name = "aster-console" }
 core = { name = "aster-core" }
@@ -14,7 +15,9 @@ nvme = { name = "aster-nvme" }
 pci = { name = "aster-pci" }
 softirq = { name = "aster-softirq" }
 systree = { name = "aster-systree" }
+tdx_guest = { name = "aster-tdx-guest" }
 time = { name = "aster-time" }
+tsm_configfs = { name = "aster-tsm-configfs" }
 uart = { name = "aster-uart" }
 virtio = { name = "aster-virtio" }
 
