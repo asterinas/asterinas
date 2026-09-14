@@ -140,6 +140,62 @@ FN_TEST(write_enospc)
 }
 END_TEST()
 
+FN_TEST(mmap_with_map_private)
+{
+	// FIXME: Asterinas does not currently support private device mappings.
+	// When adding support, complete this to ensure correct copying and
+	// copy-on-write (COW) behavior.
+#ifdef __asterinas__
+	TEST_ERRNO(mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE,
+			fb_fd, 0),
+		   EINVAL);
+#else
+	uint8_t *mapped = TEST_SUCC((uint8_t *)mmap(NULL, PAGE_SIZE,
+						    PROT_READ | PROT_WRITE,
+						    MAP_PRIVATE, fb_fd, 0));
+	TEST_RES(munmap(mapped, PAGE_SIZE), _ret == 0);
+#endif
+}
+END_TEST()
+
+FN_TEST(mmap_and_mprotect)
+{
+	uint8_t *mapped = TEST_SUCC((uint8_t *)mmap(NULL, PAGE_SIZE, PROT_READ,
+						    MAP_SHARED, fb_fd, 0));
+	uint8_t byte = *mapped;
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		// Child process
+		*mapped = byte ^ 0xee;
+		exit(EXIT_SUCCESS);
+	}
+
+	// Parent process
+	int status = 0;
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFSIGNALED(status) &&
+			 WTERMSIG(status) == SIGSEGV && *mapped == byte);
+
+	TEST_SUCC(mprotect(mapped, PAGE_SIZE, PROT_READ | PROT_WRITE));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		// Child process
+		*mapped = byte ^ 0xee;
+		exit(EXIT_SUCCESS);
+	}
+
+	// Parent process
+	status = 0;
+	TEST_RES(waitpid(pid, &status, 0), _ret == pid && WIFEXITED(status) &&
+						   WEXITSTATUS(status) == 0 &&
+						   *mapped == (byte ^ 0xee));
+
+	TEST_RES(munmap(mapped, PAGE_SIZE), _ret == 0);
+}
+END_TEST()
+
 FN_TEST(mmap_mremap_and_fork)
 {
 	static uint8_t pattern[PAGE_SIZE];
