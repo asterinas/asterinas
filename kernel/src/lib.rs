@@ -12,8 +12,13 @@
 // Each high-level component crate must have an explicit `extern crate` declaration
 // to ensure that its component registration and initialization code are linked into
 // the kernel, because the assembler does not otherwise reference symbols from that crate.
+extern crate aster_configfs as _;
 extern crate aster_drm as _;
 extern crate aster_simpledrm as _;
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+extern crate aster_tdx_guest as _;
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+extern crate aster_tsm_configfs as _;
 extern crate aster_uart as _;
 
 #[ostd::main]

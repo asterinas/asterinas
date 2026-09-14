@@ -11,14 +11,22 @@
 //! For more information about the interface,
 //! checkout Linux's [documentation](https://www.kernel.org/doc/Documentation/ABI/testing/configfs-tsm).
 
+#![no_std]
+#![deny(unsafe_code)]
+#![cfg(target_arch = "x86_64")]
+#![cfg(feature = "cvm_guest")]
+extern crate alloc;
+
 use alloc::{boxed::Box, string::ToString, sync::Arc};
 use core::fmt::Debug;
 
+use aster_configfs::register_subsystem;
 use aster_systree::{
     BranchNodeFields, Error, NormalNodeFields, Result, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
     inherit_sys_branch_node, inherit_sys_leaf_node,
 };
 use aster_util::printer::VmPrinter;
+use component::{ComponentInitError, init_component};
 use inherit_methods_macro::inherit_methods;
 use ostd::{
     mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
@@ -26,10 +34,8 @@ use ostd::{
 };
 use spin::Mutex;
 
-use crate::fs::configfs;
-
 /// A backend capable of generating attestation reports for the TSM frontend.
-pub(crate) trait ReportProvider: Debug + Sync {
+pub trait ReportProvider: Debug + Sync {
     /// Returns the provider name exposed through the Configfs ABI.
     fn name(&self) -> &'static str;
 
@@ -42,11 +48,11 @@ pub(crate) trait ReportProvider: Debug + Sync {
 /// The Configfs frontend intentionally exposes provider failures as
 /// an invalid operation.
 #[derive(Debug)]
-pub(crate) struct ReportProviderError;
+pub struct ReportProviderError;
 
 /// The error returned when a report provider is already registered.
 #[derive(Debug)]
-pub(crate) struct ReportProviderAlreadyRegistered;
+pub struct ReportProviderAlreadyRegistered;
 
 static REPORT_PROVIDER: Mutex<Option<&'static dyn ReportProvider>> = Mutex::new(None);
 
@@ -54,7 +60,7 @@ static REPORT_PROVIDER: Mutex<Option<&'static dyn ReportProvider>> = Mutex::new(
 ///
 /// The provider must remain valid for the lifetime of the kernel. Only one
 /// provider can be registered.
-pub(crate) fn register_report_provider(
+pub fn register_report_provider(
     provider: &'static dyn ReportProvider,
 ) -> core::result::Result<(), ReportProviderAlreadyRegistered> {
     let mut registered_provider = REPORT_PROVIDER.lock();
@@ -361,6 +367,11 @@ inherit_sys_leaf_node!(ReportNode, fields, {
     }
 });
 
-pub(super) fn init() {
-    configfs::register_subsystem(Tsm::new()).unwrap();
+#[init_component(kthread)]
+fn init() -> core::result::Result<(), ComponentInitError> {
+    ostd::if_tdx_enabled!({
+        register_subsystem(Tsm::new()).unwrap();
+    });
+
+    Ok(())
 }

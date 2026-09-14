@@ -13,11 +13,7 @@ pub mod utils;
 pub mod vfs;
 
 pub use fs_impls::devtmpfs;
-#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
-pub(crate) use fs_impls::configfs;
-pub(crate) use fs_impls::{
-    cgroupfs, devpts, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
-};
+pub(crate) use fs_impls::{cgroupfs, devpts, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs};
 
 use crate::{
     fs::{

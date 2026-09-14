@@ -123,6 +123,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-configfs"
+version = "0.1.0"
+dependencies = [
+ "aster-core",
+ "aster-systree",
+ "component",
+ "inherit-methods-macro",
+ "ostd",
+ "spin",
+]
+
+[[package]]
 name = "aster-console"
 version = "0.1.0"
 dependencies = [
@@ -387,6 +399,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-tdx-guest"
+version = "0.1.0"
+dependencies = [
+ "aster-core",
+ "aster-systree",
+ "aster-tsm-configfs",
+ "aster-util",
+ "component",
+ "inherit-methods-macro",
+ "ostd",
+ "ostd-pod",
+ "spin",
+ "tdx-guest",
+ "zerocopy",
+]
+
+[[package]]
 name = "aster-time"
 version = "0.1.0"
 dependencies = [
@@ -397,6 +426,20 @@ dependencies = [
  "fdt-util",
  "ostd",
  "spin",
+]
+
+[[package]]
+name = "aster-tsm-configfs"
+version = "0.1.0"
+dependencies = [
+ "aster-configfs",
+ "aster-systree",
+ "aster-util",
+ "component",
+ "inherit-methods-macro",
+ "ostd",
+ "spin",
+ "tdx-guest",
 ]
 
 [[package]]
@@ -463,9 +506,12 @@ dependencies = [
 name = "asterinas"
 version = "0.1.0"
 dependencies = [
+ "aster-configfs",
  "aster-core",
  "aster-drm",
  "aster-simpledrm",
+ "aster-tdx-guest",
+ "aster-tsm-configfs",
  "aster-uart",
  "ostd",
 ]

@@ -10,14 +10,25 @@ ostd.workspace = true
 # High-level component crates.
 #
 # Keep this list in sync with the `extern crate` declarations in `src/lib.rs`.
+aster-configfs.workspace = true
 aster-drm.workspace = true
 aster-simpledrm.workspace = true
 aster-uart.workspace = true
 
+[target.x86_64-unknown-none.dependencies]
+aster-tdx-guest = { workspace = true, optional = true }
+aster-tsm-configfs = { workspace = true, optional = true }
+
 [features]
 default = ["cvm_guest"]
 coverage = ["aster-core/coverage"]
-cvm_guest = ["aster-core/cvm_guest"]
+cvm_guest = [
+    "aster-core/cvm_guest",
+    "aster-tdx-guest/cvm_guest",
+    "dep:aster-tdx-guest",
+    "aster-tsm-configfs/cvm_guest",
+    "dep:aster-tsm-configfs",
+]
 pvh_boot = ["aster-core/pvh_boot"]
 riscv_sv39_mode = ["aster-core/riscv_sv39_mode"]
 

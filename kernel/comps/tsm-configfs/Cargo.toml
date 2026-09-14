@@ -1,0 +1,23 @@
+[package]
+name = "aster-tsm-configfs"
+version = "0.1.0"
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[target.x86_64-unknown-none.dependencies]
+aster-configfs.workspace = true
+aster-systree.workspace = true
+aster-util.workspace = true
+component.workspace = true
+inherit-methods-macro.workspace = true
+ostd.workspace = true
+spin.workspace = true
+tdx-guest = { workspace = true, optional = true }
+
+[features]
+default = ["cvm_guest"]
+cvm_guest = ["dep:tdx-guest", "ostd/cvm_guest"]
+
+[lints]
+workspace = true
