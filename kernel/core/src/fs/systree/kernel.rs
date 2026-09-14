@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Implementation of the `/sys/kernel` sysfs directory.
+//! The `kernel` namespace of the primary SysTree.
 //!
-//! This module provides the `/sys/kernel` directory in sysfs, which contains
-//! kernel-specific attributes and information. Currently implemented attributes:
+//! Sysfs renders this model as `/sys/kernel`. Currently implemented attributes:
 //!
 //! - `cpu_byteorder`: The endianness of the running kernel ("little" or "big")
 //! - `address_bits`: The address size of the running kernel in bits
@@ -24,21 +23,15 @@ use ostd::mm::{VmReader, VmWriter};
 use spin::Once;
 
 /// Registers a new kernel `SysNode`.
-pub(super) fn register(config_obj: Arc<dyn SysNode>) -> crate::prelude::Result<()> {
-    KERNEL_SYS_NODE_ROOT.get().unwrap().add_child(config_obj)?;
-    Ok(())
-}
-
-/// Unregisters a kernel `SysNode`.
-pub(super) fn unregister(name: &str) -> crate::prelude::Result<()> {
-    let _ = KERNEL_SYS_NODE_ROOT.get().unwrap().remove_child(name)?;
+pub(super) fn register(node: Arc<dyn SysNode>) -> crate::prelude::Result<()> {
+    KERNEL_SYS_NODE_ROOT.get().unwrap().add_child(node)?;
     Ok(())
 }
 
 pub(super) fn init() {
     KERNEL_SYS_NODE_ROOT.call_once(|| {
         let singleton = KernelSysNodeRoot::new();
-        super::systree_singleton()
+        aster_systree::primary_tree()
             .root()
             .add_child(singleton.clone())
             .unwrap();
@@ -49,14 +42,12 @@ pub(super) fn init() {
 
 static KERNEL_SYS_NODE_ROOT: Once<Arc<KernelSysNodeRoot>> = Once::new();
 
-/// A systree node representing the `/sys/kernel` directory.
+/// The `kernel` namespace of the primary SysTree.
 ///
-/// This node serves as the root for all kernel-related sysfs entries,
-/// including kernel parameters, debugging interfaces, and various
-/// kernel subsystem information. It corresponds to the `/kernel`
-/// directory in the sysfs filesystem.
+/// This node contains kernel parameters, debugging interfaces, and other
+/// kernel subsystem information. Sysfs renders it as `/sys/kernel`.
 #[derive(Debug)]
-pub(crate) struct KernelSysNodeRoot {
+struct KernelSysNodeRoot {
     fields: BranchNodeFields<dyn SysNode, Self>,
 }
 

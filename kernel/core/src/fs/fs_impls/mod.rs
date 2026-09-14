@@ -20,6 +20,7 @@ pub(crate) mod virtiofs;
 
 pub(super) fn init() {
     sysfs::init();
+    super::systree::init();
     procfs::init();
     cgroupfs::init();
     configfs::init();
