@@ -123,6 +123,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-configfs"
+version = "0.1.0"
+dependencies = [
+ "aster-core",
+ "aster-systree",
+ "component",
+ "inherit-methods-macro",
+ "ostd",
+ "spin",
+]
+
+[[package]]
 name = "aster-console"
 version = "0.1.0"
 dependencies = [
@@ -419,6 +431,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-tsm-configfs"
+version = "0.1.0"
+dependencies = [
+ "aster-configfs",
+ "aster-systree",
+ "aster-util",
+ "component",
+ "inherit-methods-macro",
+ "ostd",
+ "spin",
+]
+
+[[package]]
 name = "aster-uart"
 version = "0.1.0"
 dependencies = [
@@ -484,10 +509,12 @@ dependencies = [
 name = "asterinas"
 version = "0.1.0"
 dependencies = [
+ "aster-configfs",
  "aster-core",
  "aster-drm",
  "aster-i8042",
  "aster-simpledrm",
+ "aster-tsm-configfs",
  "aster-uart",
  "ostd",
 ]

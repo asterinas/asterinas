@@ -3,13 +3,18 @@
 //! Configfs exposes configurable kernel objects through a RAM-based file system.
 //! User space can create and configure objects through the `SysTree` model.
 
-use aster_systree::{EmptyNode, SysBranchNode};
-use systree_node::ConfigRootNode;
+#![no_std]
+#![deny(unsafe_code)]
 
-use crate::{
-    fs::systree::{SingletonSysTreeFs, register_kernel_node},
-    prelude::*,
-};
+extern crate alloc;
+
+use alloc::sync::Arc;
+
+use aster_core::fs::systree::{SingletonSysTreeFs, register_kernel_node};
+use aster_systree::{EmptyNode, Result, SysBranchNode};
+use component::{ComponentInitError, init_component};
+
+use self::systree_node::ConfigRootNode;
 
 mod systree_node;
 #[cfg(ktest)]
@@ -26,43 +31,21 @@ fn config_root() -> Arc<dyn SysBranchNode> {
 static CONFIG_FS_TYPE: SingletonSysTreeFs =
     SingletonSysTreeFs::new("configfs", MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, config_root);
 
-// This method should be called during kernel file system initialization,
-// _after_ `aster_systree::init`.
-pub(super) fn init() {
+#[init_component(kthread)]
+fn init() -> core::result::Result<(), ComponentInitError> {
     let config_kernel_sysnode = EmptyNode::new("config".into());
     register_kernel_node(config_kernel_sysnode).unwrap();
 
     CONFIG_FS_TYPE.register().unwrap();
+    Ok(())
 }
 
 /// Registers a subsystem `SysTree` node under the Configfs root.
 ///
 /// If a subsystem with the same name has already been registered,
 /// this function returns an error.
-#[cfg_attr(
-    not(any(ktest, all(target_arch = "x86_64", feature = "cvm_guest"))),
-    expect(dead_code)
-)]
-pub(crate) fn register_subsystem(subsystem: Arc<dyn SysBranchNode>) -> Result<()> {
+pub fn register_subsystem(subsystem: Arc<dyn SysBranchNode>) -> Result<()> {
     ConfigRootNode::singleton().add_child(subsystem)?;
 
     Ok(())
-}
-
-/// Unregisters a subsystem from the Configfs root by its name.
-///
-/// If no subsystem with the given name exists, this function returns an error.
-#[expect(dead_code)]
-pub(crate) fn unregister_subsystem(name: &str) -> Result<()> {
-    ConfigRootNode::singleton().remove_child(name)?;
-
-    Ok(())
-}
-
-#[cfg(ktest)]
-pub(crate) fn init_for_ktest() {
-    aster_systree::init_for_ktest();
-    crate::fs::vfs::init();
-    super::sysfs::init();
-    init();
 }

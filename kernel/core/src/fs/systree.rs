@@ -3,6 +3,8 @@
 //! Registration interfaces for file systems and kernel models backed by SysTree.
 
 mod kernel;
+#[cfg(ktest)]
+mod test;
 
 use alloc::sync::Arc;
 
