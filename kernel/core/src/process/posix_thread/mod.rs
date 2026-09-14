@@ -19,8 +19,9 @@ use crate::{
     fs::{file::file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
-        ExitCode, Pid,
+        ExitCode,
         namespace::nsproxy::NsProxy,
+        pid_table::PidEntry,
         posix_thread::ptrace::TraceeStatus,
         signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
@@ -54,6 +55,8 @@ pub(crate) struct PosixThread {
 
     // Mutable part
     tid: AtomicU32,
+    /// The identity represented by `tid`, independent of numeric ID reuse.
+    pid_entry: Mutex<Arc<PidEntry>>,
 
     name: Mutex<ThreadName>,
 
@@ -122,11 +125,23 @@ impl PosixThread {
         self.tid.load(Ordering::Relaxed)
     }
 
+    /// Returns the stable PID entry for this thread.
+    ///
+    /// A caller that also compares [`Self::tid`] must hold the process task-set
+    /// lock to exclude the identity change performed by [`Self::set_main`].
+    pub(crate) fn pid_entry(&self) -> Arc<PidEntry> {
+        self.pid_entry.lock().clone()
+    }
+
     /// Sets the thread as the main thread by changing its thread ID.
-    pub(super) fn set_main(&self, pid: Pid) {
+    ///
+    /// The caller must hold both the PID table and the process task-set lock.
+    pub(super) fn set_main(&self, pid_entry: Arc<PidEntry>) {
+        let pid = pid_entry.id();
         debug_assert_eq!(pid, self.process.upgrade().unwrap().pid());
         debug_assert_ne!(pid, self.tid.load(Ordering::Relaxed));
 
+        *self.pid_entry.lock() = pid_entry;
         self.tid.store(pid, Ordering::Relaxed);
     }
 
@@ -404,38 +419,6 @@ pub(crate) fn derive_thread_name(exec_path: &str) -> ThreadName {
 
     ThreadName::from_str_truncated(path)
 }
-
-/// The TID of the first POSIX thread (i.e., the main thread of the init process).
-pub(crate) const FIRST_POSIX_TID: Tid = 1;
-
-static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(FIRST_POSIX_TID);
-
-/// Allocates a new TID for the new POSIX thread.
-pub(crate) fn allocate_posix_tid() -> Tid {
-    let tid = POSIX_TID_ALLOCATOR.fetch_add(1, Ordering::Relaxed);
-    if tid >= PID_MAX {
-        // When the kernel's next PID value reaches `PID_MAX`,
-        // it should wrap back to a minimum PID value.
-        // PIDs with a value of `PID_MAX` or larger should not be allocated.
-        // Reference: <https://docs.kernel.org/admin-guide/sysctl/kernel.html#pid-max>.
-        //
-        // FIXME: Currently, we cannot determine which PID is recycled,
-        // so we are unable to allocate smaller PIDs.
-        warn!("the allocated ID is greater than the maximum allowed PID");
-    }
-    tid
-}
-
-/// Returns the last allocated TID.
-pub(crate) fn last_tid() -> Tid {
-    POSIX_TID_ALLOCATOR.load(Ordering::Relaxed) - 1
-}
-
-/// The maximum allowed process ID.
-//
-// FIXME: The current value is chosen arbitrarily.
-// This value can be modified by the user by writing to `/proc/sys/kernel/pid_max`.
-pub(crate) const PID_MAX: u32 = u32::MAX / 2;
 
 /// The sleeping state of a thread.
 #[derive(Clone, Copy, Debug)]

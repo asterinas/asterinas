@@ -8,7 +8,7 @@ use aster_util::printer::VmPrinter;
 use ostd::mm::{VmReader, VmWriter};
 
 use super::TryChargeError;
-use crate::{process::posix_thread::PID_MAX, util::ReadCString};
+use crate::{process::pid_table::PID_MAX, util::ReadCString};
 
 /// A sub-controller responsible for PID resource management in the cgroup subsystem.
 ///
@@ -111,7 +111,7 @@ impl super::SubControl for PidsController {
                 let value = if value == "max" {
                     u32::MAX
                 } else if let Ok(value) = value.parse::<u32>() {
-                    if value >= PID_MAX {
+                    if value > PID_MAX {
                         return Err(Error::InvalidOperation);
                     }
                     value
