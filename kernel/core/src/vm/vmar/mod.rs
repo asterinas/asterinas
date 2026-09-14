@@ -16,7 +16,10 @@ pub(crate) use self::{
     handle::VmarHandle,
     rmap::{Rmap, RmapEntry},
     vmar_impls::{
-        RssType, Vmar, map::VmarMapOffset, page_fault::PageFaultInfo, remap::RemapOldMappingAction,
+        RssType, Vmar,
+        map::{FileMmapRequest, MmapMode, VmarMapOffset},
+        page_fault::PageFaultInfo,
+        remap::RemapOldMappingAction,
     },
 };
 
