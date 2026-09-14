@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Validated traversal of an EXT4 extent tree.
+//! Validated traversal and replacement of an EXT4 extent tree.
 //!
 //! [`ExtentTree`] keeps the inode-resident root in memory. Lookup follows index
-//! entries to a leaf. Before returning a mapping, traversal validates the
-//! supported tree and rejects duplicate or overlapping block ownership.
+//! entries to a leaf, while mutation obtains a flat, validated extent sequence
+//! and serializes a replacement tree. Replacement is intentionally bounded to
+//! depth zero or one; it is a correctness-first implementation rather than the
+//! local node splitting and rebalancing used by a full EXT4 extent writer.
 
-use super::node::{Extent, ExtentHeader, ExtentIdx, RawExtent, RawExtentIdx};
+use super::node::{Extent, ExtentHeader, ExtentIdx, RawExtent, RawExtentHeader, RawExtentIdx};
 use crate::fs::fs_impls::ext4::{fs::Ext4, inode::RAW_BLOCK_PTRS_LEN, prelude::*};
 
 pub(super) const ENTRY_SIZE: usize = 12;
+const INLINE_CAPACITY: usize = (RAW_BLOCK_PTRS_LEN * size_of::<u32>() - ENTRY_SIZE) / ENTRY_SIZE;
+const BLOCK_CAPACITY: usize = (BLOCK_SIZE - ENTRY_SIZE) / ENTRY_SIZE;
 
 /// An EXT4 extent tree rooted in an inode's 60-byte `i_block` field.
 ///
@@ -37,8 +41,8 @@ impl ExtentTree {
     /// Finds the extent containing `iblock`.
     ///
     /// `None` means that `iblock` is a hole. A returned extent has a validated
-    /// physical range. The current pre-lookup ownership check validates the
-    /// complete supported tree before trusting the selected lookup path.
+    /// physical range. The current pre-lookup ownership check flattens the tree
+    /// and therefore limits this operation to trees supported by the writer.
     pub(super) fn find(&self, fs: &Ext4, iblock: Iblock) -> Result<Option<Extent>> {
         // Validate every supported leaf before trusting the lookup path. A point
         // lookup alone cannot detect ownership corruption in a sibling leaf.
@@ -72,6 +76,52 @@ impl ExtentTree {
         self.root
     }
 
+    /// Returns all extents in logical-block order after full-tree validation.
+    pub(super) fn extents(&self, fs: &Ext4) -> Result<Vec<Extent>> {
+        let (mut extents, _) = self.flatten(fs)?;
+        extents.sort_by_key(|extent| extent.block());
+        Ok(extents)
+    }
+
+    /// Replaces the tree with `extents` and reports metadata block changes.
+    ///
+    /// `extents` must be in logical-block order and obey the non-overlap
+    /// invariants. New external leaves are written before the in-memory root is
+    /// replaced; old external leaves are released afterwards.
+    pub(super) fn rebuild(&mut self, fs: &Ext4, extents: &[Extent]) -> Result<TreeDelta> {
+        let (_, external) = self.flatten(fs)?;
+        self.replace(fs, extents, &external)
+    }
+
+    /// Predicts the external metadata block changes for a rebuild.
+    ///
+    /// Callers use this to validate `i_blocks` arithmetic before mutating the
+    /// tree. The result assumes the subsequent rebuild receives the same extent
+    /// sequence while the caller retains exclusive access to the tree.
+    pub(super) fn anticipated_rebuild_delta(&self, extents: &[Extent]) -> Result<TreeDelta> {
+        if self.depth > 1 {
+            return_errno_with_message!(Errno::EOPNOTSUPP, "writable extent depth exceeds one");
+        }
+        let allocated = Self::required_external_blocks(extents.len())?;
+        let freed = if self.depth == 0 {
+            0
+        } else {
+            ExtentHeader::parse(self.root.as_bytes(), Some(1))?.entries() as u32
+        };
+        Ok(TreeDelta { allocated, freed })
+    }
+
+    fn required_external_blocks(extent_count: usize) -> Result<u32> {
+        if extent_count <= INLINE_CAPACITY {
+            return Ok(0);
+        }
+        let leaf_count = extent_count.div_ceil(BLOCK_CAPACITY);
+        if leaf_count > INLINE_CAPACITY {
+            return_errno_with_message!(Errno::EFBIG, "extent tree exceeds writable depth");
+        }
+        Ok(leaf_count as u32)
+    }
+
     fn flatten(&self, fs: &Ext4) -> Result<(Vec<Extent>, Vec<Ext4Bid>)> {
         let root_header = ExtentHeader::parse(self.root.as_bytes(), Some(self.depth))?;
         if root_header.is_leaf() {
@@ -84,10 +134,7 @@ impl ExtentTree {
             return Self::validate_ownership(extents, Vec::new());
         }
         if root_header.depth() != 1 {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
-                "extent validation supports depth up to one"
-            );
+            return_errno_with_message!(Errno::EOPNOTSUPP, "writable extent depth exceeds one");
         }
 
         let mut extents = Vec::new();
@@ -140,6 +187,104 @@ impl ExtentTree {
             }
         }
         Ok((extents, external))
+    }
+
+    fn replace(
+        &mut self,
+        fs: &Ext4,
+        extents: &[Extent],
+        old_external: &[Ext4Bid],
+    ) -> Result<TreeDelta> {
+        if extents.len() <= INLINE_CAPACITY {
+            self.root = Self::leaf_root(extents);
+            self.depth = 0;
+            let freed = free_old_external_blocks(fs, old_external)?;
+            return Ok(TreeDelta {
+                allocated: 0,
+                freed,
+            });
+        }
+
+        let leaf_count = Self::required_external_blocks(extents.len())? as usize;
+
+        let mut new_blocks = Vec::with_capacity(leaf_count);
+        let goal = extents.first().map(|extent| extent.start()).unwrap_or(0);
+        for _ in 0..leaf_count {
+            match fs.alloc_blocks(1, goal) {
+                Ok(range) => new_blocks.push(range.start),
+                Err(error) => {
+                    for &block in &new_blocks {
+                        let _ = fs.free_blocks(block, 1);
+                    }
+                    return Err(error);
+                }
+            }
+        }
+
+        for (chunk, &block) in extents.chunks(BLOCK_CAPACITY).zip(&new_blocks) {
+            let bytes = Self::leaf_block(chunk);
+            if let Err(error) = fs
+                .block_device()
+                .write_val(Bid::new(block.into()).to_offset(), &bytes)
+            {
+                for &allocated in &new_blocks {
+                    let _ = fs.free_blocks(allocated, 1);
+                }
+                return Err(error.into());
+            }
+        }
+
+        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
+        let bytes = root.as_mut_bytes();
+        let header = RawExtentHeader {
+            magic: super::node::EXTENT_MAGIC,
+            entries: leaf_count as u16,
+            max: INLINE_CAPACITY as u16,
+            depth: 1,
+            generation: 0,
+        };
+        bytes[..ENTRY_SIZE].copy_from_slice(header.as_bytes());
+        for (index, (chunk, &block)) in extents.chunks(BLOCK_CAPACITY).zip(&new_blocks).enumerate()
+        {
+            let offset = ENTRY_SIZE * (index + 1);
+            bytes[offset..offset + ENTRY_SIZE]
+                .copy_from_slice(RawExtentIdx::new(chunk[0].block(), block).as_bytes());
+        }
+        self.root = root;
+        self.depth = 1;
+        let freed = free_old_external_blocks(fs, old_external)?;
+        Ok(TreeDelta {
+            allocated: new_blocks.len() as u32,
+            freed,
+        })
+    }
+
+    fn leaf_root(extents: &[Extent]) -> [u32; RAW_BLOCK_PTRS_LEN] {
+        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
+        let bytes = root.as_mut_bytes();
+        Self::write_leaf(bytes, INLINE_CAPACITY, extents);
+        root
+    }
+
+    fn leaf_block(extents: &[Extent]) -> [u8; BLOCK_SIZE] {
+        let mut block = [0u8; BLOCK_SIZE];
+        Self::write_leaf(&mut block, BLOCK_CAPACITY, extents);
+        block
+    }
+
+    fn write_leaf(bytes: &mut [u8], capacity: usize, extents: &[Extent]) {
+        let header = RawExtentHeader {
+            magic: super::node::EXTENT_MAGIC,
+            entries: extents.len() as u16,
+            max: capacity as u16,
+            depth: 0,
+            generation: 0,
+        };
+        bytes[..ENTRY_SIZE].copy_from_slice(header.as_bytes());
+        for (index, extent) in extents.iter().enumerate() {
+            let offset = ENTRY_SIZE * (index + 1);
+            bytes[offset..offset + ENTRY_SIZE].copy_from_slice(extent.to_raw().as_bytes());
+        }
     }
 
     fn search_node(bytes: &[u8], expected_depth: u16, iblock: Iblock) -> Result<Step> {
@@ -218,4 +363,20 @@ enum Step {
     Found(Extent),
     Hole,
     Descend(Ext4Bid),
+}
+
+/// The external extent-tree blocks allocated and freed by a replacement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct TreeDelta {
+    pub(super) allocated: u32,
+    pub(super) freed: u32,
+}
+
+fn free_old_external_blocks(fs: &Ext4, blocks: &[Ext4Bid]) -> Result<u32> {
+    let mut freed = 0;
+    for &block in blocks {
+        fs.free_blocks(block, 1)?;
+        freed += 1;
+    }
+    Ok(freed)
 }

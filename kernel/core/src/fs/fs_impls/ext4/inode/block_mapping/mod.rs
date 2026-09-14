@@ -5,7 +5,7 @@
 //! [`BlockMapping`] is the single owner of mapping synchronization, page-count
 //! bounds, and the filesystem reference. The format-specific manager stores
 //! only the on-disk mapping state. Callers therefore use one interface whether
-//! an inode uses classic block pointers or an EXT4 extent tree.
+//! an inode uses classic block pointers or another EXT mapping format.
 //!
 //! Page-cache I/O releases the mapping lock before data BIO submission.
 //! Direct-I/O range iteration keeps a read guard while its mapping plan is
@@ -159,8 +159,7 @@ impl BlockMapping {
     ) -> Result<Self> {
         Ok(Self {
             manager: RwMutex::new(InodeBlockManager::ExtentTree(ExtentState::new(
-                raw_block_ptrs.block_ptrs,
-                raw_block_ptrs.sector_count,
+                raw_block_ptrs,
             )?)),
             npages: AtomicUsize::new(npages),
             fs,
@@ -208,10 +207,7 @@ impl BlockMapping {
         let fs = self.fs()?;
         let mut manager = self.manager.write();
         match &mut *manager {
-            InodeBlockManager::ExtentTree(_) => return_errno_with_message!(
-                Errno::EOPNOTSUPP,
-                "extent truncation requires writable extent support"
-            ),
+            InodeBlockManager::ExtentTree(state) => state.truncate_to_byte_len(&fs, new_size),
             InodeBlockManager::BlockPtrTree(tree) => {
                 tree.truncate_to_byte_len(&fs, new_size);
                 Ok(())
@@ -232,11 +228,8 @@ impl BlockMapping {
     pub(super) fn allocate_range_blocks(&self, start_block: usize, end_block: usize) -> Result<()> {
         let fs = self.fs()?;
         let mut manager = self.manager.write();
-        if matches!(&*manager, InodeBlockManager::ExtentTree(_)) {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
-                "extent allocation requires writable extent support"
-            );
+        if let InodeBlockManager::ExtentTree(state) = &mut *manager {
+            return state.allocate_range_blocks(&fs, start_block, end_block);
         }
         let InodeBlockManager::BlockPtrTree(tree) = &mut *manager else {
             unreachable!()
@@ -348,13 +341,6 @@ impl BlockAsPageCacheBackend for BlockMapping {
         let iblock = Iblock::try_from(idx)
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
         let fs = self.fs()?;
-
-        if matches!(&*self.manager.read(), InodeBlockManager::ExtentTree(_)) {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
-                "extent writes require writable extent support"
-            );
-        }
 
         if self.lookup_block(iblock)?.is_none() {
             self.allocate_range_blocks(idx, idx + bio_segment.nblocks())?;

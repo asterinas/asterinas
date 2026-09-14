@@ -13,8 +13,7 @@
 //! introduced in 1993 as a replacement for the original ext filesystem.
 //! It was the default Linux filesystem throughout the 1990s and remains
 //! the on-disk foundation for ext3 and ext4. This implementation covers the
-//! base ext2 feature set and read-only traversal of ext4 extents. Writable
-//! extent updates, journaling, inline
+//! base ext2 feature set and basic writable ext4 extents. Journaling, inline
 //! data, metadata checksums, 64-bit block addresses, and HTree directories are
 //! not supported.
 //!
