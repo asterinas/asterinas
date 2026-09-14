@@ -3,10 +3,9 @@
 use int_to_c_enum::TryFromInt;
 
 /// Error number.
-#[expect(clippy::upper_case_acronyms)]
 #[repr(i32)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, TryFromInt)]
-pub(crate) enum Errno {
+pub enum Errno {
     EPERM = 1,    /* Operation not permitted */
     ENOENT = 2,   /* No such file or directory */
     ESRCH = 3,    /* No such process */
@@ -155,26 +154,29 @@ pub(crate) enum Errno {
     ERESTARTSYS = 512, /* Restart of an interrupted system call. For kernel internal use only. */
 }
 
-/// error used in this crate
+/// An error reported by the kernel core or one of its components.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Error {
+pub struct Error {
     errno: Errno,
     #[expect(dead_code)]
     msg: Option<&'static str>,
 }
 
 impl Error {
+    /// Creates an error without an explanatory message.
     pub(crate) const fn new(errno: Errno) -> Self {
         Error { errno, msg: None }
     }
 
-    pub(crate) const fn with_message(errno: Errno, msg: &'static str) -> Self {
+    /// Creates an error with a static explanatory message.
+    pub const fn with_message(errno: Errno, msg: &'static str) -> Self {
         Error {
             errno,
             msg: Some(msg),
         }
     }
 
+    /// Returns the error number.
     pub(crate) const fn error(&self) -> Errno {
         self.errno
     }

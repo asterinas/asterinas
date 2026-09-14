@@ -41,7 +41,6 @@
 use core::{mem::offset_of, time::Duration};
 
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use device_id::{DeviceId, MinorId};
 use ostd::{
     const_assert,
     mm::{FrameAllocOptions, HasPaddr, HasSize, USegment, VmIo, dma::DmaCoherent},
@@ -53,51 +52,16 @@ use tdx_guest::{
     tdvmcall::{self, TdVmcallError},
 };
 
-use crate::{
-    device::{Device, DeviceType, registry::char::register},
-    events::IoEvents,
-    fs::{
-        devtmpfs::DevtmpfsNodeMeta,
-        file::{PerOpenFileOps, StatusFlags},
-        vfs::{inode::FileOps, path::Path},
-    },
-    prelude::*,
-    process::signal::{PollHandle, Pollable},
-    util::ioctl::{RawIoctl, dispatch_ioctl},
-};
+use super::{InOutIoctl, MiscDevice, MiscDeviceFile, RawIoctl, register_misc_device};
+use crate::prelude::*;
 
 const TDX_GUEST_MINOR: u32 = 0x7b;
 
 /// The `/dev/tdx_guest` device.
-#[derive(Debug)]
-pub(crate) struct TdxGuest {
-    id: DeviceId,
-}
+struct TdxGuest;
 
-impl TdxGuest {
-    pub(crate) fn new() -> Arc<Self> {
-        let major = super::MISC_MAJOR.get().unwrap().get();
-        let minor = MinorId::new(TDX_GUEST_MINOR);
-
-        let id = DeviceId::new(major, minor);
-        Arc::new(Self { id })
-    }
-}
-
-impl Device for TdxGuest {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Char
-    }
-
-    fn id(&self) -> DeviceId {
-        self.id
-    }
-
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
-        Some(DevtmpfsNodeMeta::new("tdx_guest").unwrap())
-    }
-
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+impl MiscDevice for TdxGuest {
+    fn open(&self) -> Result<Box<dyn MiscDeviceFile>> {
         Ok(Box::new(TdxGuestFile))
     }
 }
@@ -148,62 +112,36 @@ impl From<TdVmcallError> for Error {
 
 struct TdxGuestFile;
 
-impl Pollable for TdxGuestFile {
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
-    }
-}
-
-impl FileOps for TdxGuestFile {
-    fn read_at(
-        &self,
-        _offset: usize,
-        _writer: &mut VmWriter,
-        _status_flags: StatusFlags,
-    ) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "the file is not valid for reading")
-    }
-
-    fn write_at(
-        &self,
-        _offset: usize,
-        _reader: &mut VmReader,
-        _status_flags: StatusFlags,
-    ) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "the file not valid for writing")
-    }
-}
-
-impl PerOpenFileOps for TdxGuestFile {
+impl MiscDeviceFile for TdxGuestFile {
     fn check_seekable(&self) -> Result<()> {
         return_errno_with_message!(Errno::ESPIPE, "seek is not supported")
     }
 
-    fn is_offset_aware(&self) -> bool {
-        false
+    fn read(&self, _writer: &mut VmWriter, _is_nonblocking: bool) -> Result<usize> {
+        return_errno_with_message!(Errno::EINVAL, "the file is not valid for reading")
     }
 
-    fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
-        use ioctl_defs::*;
+    fn write(&self, _reader: &mut VmReader, _is_nonblocking: bool) -> Result<usize> {
+        return_errno_with_message!(Errno::EINVAL, "the file not valid for writing")
+    }
 
-        dispatch_ioctl!(match raw_ioctl {
-            cmd @ GetTdxReport => {
-                cmd.with_data_ptr(|data_ptr| {
-                    let inblob = {
-                        let inblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, report_data);
-                        inblob_ptr.read()?
-                    };
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        let Some(command) = ioctl_defs::GetTdxReport::try_from_raw(raw_ioctl) else {
+            return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown");
+        };
 
-                    let report = tdx_report_or_err()?.write();
-                    refresh_tdx_report_locked(&report, Some(inblob.as_bytes()))?;
-                    let outblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, tdx_report);
-                    outblob_ptr.copy_from(&SafePtr::new(&*report, 0))?;
+        command.with_data_ptr(|data_ptr| {
+            let inblob = {
+                let inblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, report_data);
+                inblob_ptr.read()?
+            };
 
-                    Ok(0)
-                })
-            }
-            _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+            let report = tdx_report_or_err()?.write();
+            refresh_tdx_report_locked(&report, Some(inblob.as_bytes()))?;
+            let outblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, tdx_report);
+            outblob_ptr.copy_from(&SafePtr::new(&*report, 0))?;
+
+            Ok(0)
         })
     }
 }
@@ -374,7 +312,7 @@ pub(super) fn init() -> Result<()> {
         RwMutex::new(report)
     });
     refresh_tdx_report(None)?;
-    register(TdxGuest::new())?;
+    register_misc_device(TDX_GUEST_MINOR, "tdx_guest", Arc::new(TdxGuest))?;
     Ok(())
 }
 
@@ -487,11 +425,9 @@ impl TdReport {
 }
 
 mod ioctl_defs {
-    use super::TdxReportRequest;
-    use crate::util::ioctl::{InOutData, ioc};
+    use super::{InOutIoctl, TdxReportRequest};
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/tdx-guest.h#L40>
 
-    pub(super) type GetTdxReport =
-        ioc!(TDX_CMD_GET_REPORT0, b'T', 0x01, InOutData<TdxReportRequest>);
+    pub(super) type GetTdxReport = InOutIoctl<b'T', 0x01, TdxReportRequest>;
 }

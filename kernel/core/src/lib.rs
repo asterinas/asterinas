@@ -43,7 +43,7 @@ mod arch;
 
 mod context;
 mod cpu;
-mod device;
+pub mod device;
 mod driver;
 mod error;
 mod events;
