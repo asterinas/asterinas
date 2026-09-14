@@ -25,6 +25,8 @@ impl FileSystem for Ext4 {
     }
 
     fn sync(&self) -> Result<()> {
+        // Stage all local state before issuing the single filesystem-wide
+        // completion flush. No journal supplies crash-atomic checkpointing.
         self.sync_all()?;
         if self.block_device().sync()? != BioStatus::Complete {
             return_errno_with_message!(Errno::EIO, "failed to flush block device");

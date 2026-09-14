@@ -239,6 +239,9 @@ impl Inode for Ext4Inode {
     }
 
     fn sync(&self, mode: SyncMode) -> Result<()> {
+        // Without a journal this makes only this inode's selected state and the
+        // shared allocation metadata it depends on durable. The final flush is
+        // the completion boundary; it is not a filesystem-wide checkpoint.
         match mode {
             SyncMode::Data => self.sync_data()?,
             SyncMode::Full => self.sync_all()?,
@@ -246,6 +249,7 @@ impl Inode for Ext4Inode {
         let fs = self.fs()?;
         let block_group = fs.block_group(self.block_group_idx());
         block_group.sync_inode_table()?;
+        fs.sync_allocation_metadata()?;
         if fs.block_device().sync()? != BioStatus::Complete {
             return_errno_with_message!(Errno::EIO, "failed to flush block device");
         }

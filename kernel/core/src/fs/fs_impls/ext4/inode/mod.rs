@@ -257,6 +257,10 @@ pub(super) struct InodeDesc {
 }
 
 impl InodeDesc {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the arguments describe the initial on-disk inode attributes"
+    )]
     pub(super) fn new(
         type_: InodeType,
         perm: FilePerm,
@@ -265,7 +269,9 @@ impl InodeDesc {
         link_count: u16,
         generation: u32,
         now: Duration,
+        extent_based: bool,
     ) -> Self {
+        let extent_based = extent_based && matches!(type_, InodeType::File | InodeType::Dir);
         Self {
             type_,
             perm,
@@ -278,10 +284,18 @@ impl InodeDesc {
             dtime: Duration::ZERO,
             link_count,
             sector_count: 0,
-            flags: FileFlags::empty(),
+            flags: if extent_based {
+                FileFlags::EXTENTS
+            } else {
+                FileFlags::empty()
+            },
             file_acl: 0,
             generation,
-            block_ptrs: [0; RAW_BLOCK_PTRS_LEN],
+            block_ptrs: if extent_based {
+                block_mapping::extent::empty_extent_root()
+            } else {
+                [0; RAW_BLOCK_PTRS_LEN]
+            },
             raw: RawInode::default(),
         }
     }

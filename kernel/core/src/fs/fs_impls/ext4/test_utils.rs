@@ -64,6 +64,7 @@ pub(super) fn set_bit_lsb0(buf: &mut [u8], bit: usize) {
 pub(super) struct Ext4MemoryDisk {
     segment: Segment<()>,
     flush_count: AtomicUsize,
+    max_write_blocks: AtomicUsize,
     fail_flush: AtomicBool,
 }
 
@@ -77,8 +78,25 @@ impl Ext4MemoryDisk {
         Self {
             segment,
             flush_count: AtomicUsize::new(0),
+            max_write_blocks: AtomicUsize::new(0),
             fail_flush: AtomicBool::new(false),
         }
+    }
+
+    pub(super) fn max_write_blocks(&self) -> usize {
+        self.max_write_blocks.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn flush_count(&self) -> usize {
+        self.flush_count.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn reset_flush_count(&self) {
+        self.flush_count.store(0, Ordering::Relaxed);
+    }
+
+    pub(super) fn set_fail_flush(&self, fail_flush: bool) {
+        self.fail_flush.store(fail_flush, Ordering::Relaxed);
     }
 
     pub(super) fn segment(&self) -> &Segment<()> {
@@ -117,6 +135,14 @@ impl BlockDevice for Ext4MemoryDisk {
             };
             bio.complete(status);
             return Ok(());
+        }
+
+        if bio.type_() == BioType::Write {
+            let sid_range = bio.sid_range();
+            let blocks = ((sid_range.end.to_raw() - sid_range.start.to_raw()) as usize
+                * SECTOR_SIZE)
+                .div_ceil(BLOCK_SIZE);
+            self.max_write_blocks.fetch_max(blocks, Ordering::Relaxed);
         }
 
         let mut cur_device_ofs = bio.sid_range().start.to_raw() as usize * SECTOR_SIZE;
@@ -495,6 +521,7 @@ pub(super) struct Ext4FixtureBuilder {
     group0_used_dirs: Option<u16>,
     inode_size: Option<usize>,
     inodes_per_group: Option<u32>,
+    blocks_per_group: Option<u32>,
     init_root: bool,
     block_bitmap: Option<BlockBitmapInit>,
     inode_bitmap: Option<InodeBitmapInit>,
@@ -513,6 +540,7 @@ impl Ext4FixtureBuilder {
             group0_used_dirs: None,
             inode_size: None,
             inodes_per_group: None,
+            blocks_per_group: None,
             init_root: true,
             block_bitmap: None,
             inode_bitmap: None,
@@ -547,6 +575,11 @@ impl Ext4FixtureBuilder {
         self
     }
 
+    pub(super) fn with_blocks_per_group(mut self, blocks_per_group: u32) -> Self {
+        self.blocks_per_group = Some(blocks_per_group);
+        self
+    }
+
     pub(super) fn block_bitmap(mut self, init: BlockBitmapInit) -> Self {
         self.block_bitmap = Some(init);
         self
@@ -567,6 +600,11 @@ impl Ext4FixtureBuilder {
         if let Some(inodes_per_group) = self.inodes_per_group {
             raw_sb.inodes_per_group = inodes_per_group;
             raw_sb.inodes_count = self.groups * inodes_per_group;
+        }
+        if let Some(blocks_per_group) = self.blocks_per_group {
+            raw_sb.blocks_per_group = blocks_per_group;
+            raw_sb.frags_per_group = blocks_per_group;
+            raw_sb.blocks_count = self.groups * blocks_per_group;
         }
         if let Some(sb_free_blocks) = self.sb_free_blocks {
             raw_sb.free_blocks_count = sb_free_blocks;
