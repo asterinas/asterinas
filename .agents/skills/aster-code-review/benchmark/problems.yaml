@@ -768,18 +768,19 @@
       severity: major
       desc: >
         Each `/proc/[pid]/fd/N` inode stores an `Arc<dyn FileLike>` captured when
-        the procfs entry is created. If the process later unshares its file table
-        or closes and reopens the same descriptor, the cached procfs symlink can
-        continue to point at the old file object and return the wrong target.
+        the procfs entry is created. The `/proc/[pid]/fd` directory registers its
+        observer only with the file table that exists at that time. If the calling task
+        later unshares its file table, a subsequent close and reuse of the same descriptor
+        is not reported to procfs. The cached symlink can then continue to refer to the
+        old `FileLike` and return the wrong target.
       fix: >
         Store the task identity and numeric file descriptor in the procfs fd
         symlink, not the old `FileLike`. On `read_link`, look up the current file
         descriptor in the current file table and refresh cached fd entries when
         the descriptor disappears or its access mode changes.
       expectation: >
-        A reviewer should flag that caching `Arc<dyn FileLike>` makes
-        `/proc/.../fd/N` stale across unshare or descriptor reuse, and require
-        lookup against the current file table.
+        A reviewer should flag that caching `Arc<dyn FileLike>` makes `/proc/.../fd/N`
+        descriptor reuse, and require lookup against the current file table.
 
     - target:
         kind: file
@@ -948,8 +949,7 @@
         stale and possibly reporting input that can never be read.
       fix: >
         Update packet/count state immediately after a successful pop, before
-        the fallible user write. Remove the redundant event counter and
-        decrement the packet count before `write_val`.
+        the fallible user write. Decrement the packet count before `write_val`.
       expectation: >
         A reviewer should notice that ring-buffer consumption and availability
         counters must be updated atomically with respect to the pop, not after
