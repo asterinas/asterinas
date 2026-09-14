@@ -177,14 +177,14 @@ impl Bundle {
 
         // Checkout if the files on disk supports the boot method
         match config_action.boot.method {
-            BootMethod::QemuDirect => {
+            BootMethod::DirectElf => {
                 if self.manifest.aster_bin.is_none() {
-                    return Err("Kernel binary is required for direct QEMU booting".to_owned());
+                    return Err("Kernel ELF is required for direct ELF booting".to_owned());
                 };
 
                 // Validate the kernel binary type against the configured boot protocol.
                 // This prevents reusing an incompatible binary (e.g. ELF vs. `bzImage`) when
-                // switching boot methods (for example, from a Grub ISO to `qemu-direct`),
+                // switching boot methods (for example, from a Grub ISO to `direct-elf`),
                 // which would otherwise cause boot failures.
                 let aster_bin_type = self.manifest.aster_bin.as_ref().unwrap().typ();
                 let expects_linux = matches!(aster_bin_type, AsterBinType::BzImage(_));
@@ -266,7 +266,7 @@ impl Bundle {
         qemu_cmd.current_dir(&config.work_dir);
 
         match action.boot.method {
-            BootMethod::QemuDirect => {
+            BootMethod::DirectElf => {
                 let aster_bin = self.manifest.aster_bin.as_ref().unwrap();
                 qemu_cmd
                     .arg("-kernel")
