@@ -36,11 +36,6 @@ Partially supported mount flags:
 * `MS_STRICTATIME` can be set but have no actual effect.
 * `MS_SYNCHRONOUS` can be set but have no actual effect.
 
-Unsupported mount flags:
-* `MS_SHARED`
-* `MS_SLAVE`
-* `MS_UNBINDABLE`
-
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/mount.2.html).
 
