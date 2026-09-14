@@ -26,6 +26,7 @@ sleep 0.2
 ./socketpair
 ./socket_ioctl
 ./sockoption
+./sockoption_short
 ./sockoption_unix
 ./tcp_accept_reset
 ./tcp_err

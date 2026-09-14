@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use int_to_c_enum::TryFromInt;
+use core::num::NonZeroU8;
 
-use super::{RawSocketOption, SocketOption, impl_raw_socket_option};
+use int_to_c_enum::TryFromInt;
+use ostd::mm::VmIo;
+
+use super::RawSocketOption;
 use crate::{
-    net::socket::ip::options::{Hdrincl, Recverr, Tos, Ttl},
+    context::current_userspace,
+    net::socket::ip::options::{Hdrincl, IpTtl, Recverr, Tos, Ttl},
     prelude::*,
 };
 
@@ -75,7 +79,75 @@ pub(crate) fn new_ip_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     }
 }
 
-impl_raw_socket_option!(Ttl);
-impl_raw_socket_option!(Tos);
-impl_raw_socket_option!(Hdrincl);
-impl_raw_socket_option!(Recverr);
+trait ReadIpOption: Sized {
+    fn read_ip_option(addr: Vaddr, max_len: u32) -> Result<Self>;
+}
+
+macro_rules! impl_raw_ip_socket_option {
+    ($option:ty) => {
+        impl RawSocketOption for $option {
+            fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()> {
+                let input = ReadIpOption::read_ip_option(addr, max_len)?;
+                self.set(input);
+                Ok(())
+            }
+
+            fn write_to_user(&self, addr: Vaddr, max_len: &mut u32) -> Result<usize> {
+                use $crate::util::net::options::utils::WriteToUser;
+
+                let output = self.get().unwrap();
+                output.write_to_user(addr, *max_len)
+            }
+
+            fn as_sock_option_mut(&mut self) -> &mut dyn super::SocketOption {
+                self
+            }
+
+            fn as_sock_option(&self) -> &dyn super::SocketOption {
+                self
+            }
+        }
+    };
+}
+
+impl_raw_ip_socket_option!(Ttl);
+impl_raw_ip_socket_option!(Tos);
+impl_raw_ip_socket_option!(Hdrincl);
+impl_raw_ip_socket_option!(Recverr);
+
+impl ReadIpOption for i32 {
+    fn read_ip_option(addr: Vaddr, max_len: u32) -> Result<Self> {
+        read_ip_int(addr, max_len)
+    }
+}
+
+impl ReadIpOption for bool {
+    fn read_ip_option(addr: Vaddr, max_len: u32) -> Result<Self> {
+        Ok(read_ip_int(addr, max_len)? != 0)
+    }
+}
+
+impl ReadIpOption for IpTtl {
+    fn read_ip_option(addr: Vaddr, max_len: u32) -> Result<Self> {
+        let val = read_ip_int(addr, max_len)?;
+
+        let ttl_value = match val {
+            -1 => None,
+            1..=255 => Some(NonZeroU8::new(val as u8).unwrap()),
+            _ => return_errno_with_message!(Errno::EINVAL, "invalid ttl value"),
+        };
+
+        Ok(IpTtl::new(ttl_value))
+    }
+}
+
+// Reference: <https://elixir.bootlin.com/linux/v7.2.5/source/net/ipv4/ip_sockglue.c#L927-L936>.
+fn read_ip_int(addr: Vaddr, max_len: u32) -> Result<i32> {
+    if max_len >= size_of::<i32>() as u32 {
+        Ok(current_userspace!().read_val::<i32>(addr)?)
+    } else if max_len >= 1 {
+        Ok(current_userspace!().read_val::<u8>(addr)? as i32)
+    } else {
+        Ok(0)
+    }
+}
