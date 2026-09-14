@@ -1424,11 +1424,14 @@
       grounding: consistent heap locking for maps and fork
       severity: major
       desc: >
-        The base code lets `/proc/[pid]/maps` observe heap state after taking
-        the VMAR lock, while heap mutation and `Vmar::fork_from()` do not hold
-        a stable heap guard across the whole operation. That makes the heap/VMAR
-        lock protocol inconsistent and can race heap snapshots against concurrent
-        `brk()`/fork work.
+        The heap lock and the VMAR lock are acquired in opposite orders. The
+        `brk()` path takes the heap lock before modifying the VMAR, whereas
+        `/proc/[pid]/maps` holds the VMAR lock and acquires the heap lock while
+        classifying mappings as `[heap]`. Concurrent `brk()` and maps generation
+        can therefore deadlock. In addition, `Vmar::fork_from()` does not keep
+        the heap locked while it clones the VMAR mappings, so a concurrent
+        `brk()` can leave the child with heap metadata that does not match its
+        copied mappings.
       fix: >
         Introduce a locked heap guard, take the heap lock before walking VMAR
         state, and pass that guarded heap state through the fork and maps paths
