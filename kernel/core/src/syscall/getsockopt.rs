@@ -20,7 +20,11 @@ pub(super) fn sys_getsockopt(
     let level = CSocketOptionLevel::try_from(level).map_err(|_| Errno::EOPNOTSUPP)?;
 
     let user_space = ctx.user_space();
-    let optlen: u32 = user_space.read_val(optlen_addr)?;
+    let optlen = user_space.read_val::<i32>(optlen_addr)?;
+    if optlen < 0 {
+        return_errno_with_message!(Errno::EINVAL, "optlen is negative");
+    }
+    let optlen = optlen.cast_unsigned();
 
     debug!("level = {level:?}, sockfd = {sockfd}, optname = {optname:?}, optlen = {optlen}");
 
