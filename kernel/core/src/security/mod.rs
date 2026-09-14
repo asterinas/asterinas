@@ -5,6 +5,7 @@ pub(crate) mod lsm;
 cfg_select! {
     all(target_arch = "x86_64", feature = "cvm_guest") => {
         mod tsm;
+        pub(crate) use tsm::{ReportProvider, ReportProviderError, register_report_provider};
         mod tsm_mr;
     }
     _ => {}

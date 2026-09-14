@@ -53,12 +53,30 @@ use tdx_guest::{
 };
 
 use super::{InOutIoctl, MiscDevice, MiscDeviceFile, RawIoctl, register_misc_device};
-use crate::prelude::*;
+use crate::{
+    prelude::*,
+    security::{ReportProvider, ReportProviderError, register_report_provider},
+};
 
 const TDX_GUEST_MINOR: u32 = 0x7b;
 
 /// The `/dev/tdx_guest` device.
 struct TdxGuest;
+
+#[derive(Debug)]
+struct TdxReportProvider;
+
+impl ReportProvider for TdxReportProvider {
+    fn name(&self) -> &'static str {
+        "tdx_guest"
+    }
+
+    fn get_report(&self, inblob: &[u8]) -> core::result::Result<Box<[u8]>, ReportProviderError> {
+        tdx_get_quote(inblob).map_err(|_| ReportProviderError)
+    }
+}
+
+static TDX_REPORT_PROVIDER: TdxReportProvider = TdxReportProvider;
 
 impl MiscDevice for TdxGuest {
     fn open(&self) -> Result<Box<dyn MiscDeviceFile>> {
@@ -313,6 +331,7 @@ pub(super) fn init() -> Result<()> {
     });
     refresh_tdx_report(None)?;
     register_misc_device(TDX_GUEST_MINOR, "tdx_guest", Arc::new(TdxGuest))?;
+    register_report_provider(&TDX_REPORT_PROVIDER).unwrap();
     Ok(())
 }
 
