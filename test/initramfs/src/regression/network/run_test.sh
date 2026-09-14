@@ -35,6 +35,7 @@ sleep 0.2
 ./udp_broadcast
 ./udp_err
 ./unix_datagram_err
+./unix_non_utf8_path
 ./unix_seqpacket_err
 ./unix_stream_err
 
