@@ -40,7 +40,7 @@ use super::{
 };
 use crate::{
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, SyncMode},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, RwfFlags, StatusFlags, SyncMode},
         utils::DirentVisitor,
         vfs::{
             file_system::FileSystem,
@@ -569,6 +569,7 @@ impl FileOps for VirtioFsInode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         if self.type_ != InodeType::File {
             return_errno_with_message!(
@@ -590,6 +591,7 @@ impl FileOps for VirtioFsInode {
         _offset: usize,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         // No current path should call inode-level `write_at` for virtio-fs:
         // normal writes go through the per-open `VirtioFsFile`, which owns the

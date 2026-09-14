@@ -6,7 +6,7 @@ use super::TidDirOps;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, PerOpenFileOps, StatusFlags, mkmod},
+        file::{AccessMode, PerOpenFileOps, RwfFlags, StatusFlags, mkmod},
         procfs::template::{ProcFile, ProcFileOpsByHandle},
         vfs::inode::{FileOps, Inode},
     },
@@ -78,6 +78,7 @@ impl FileOps for MapsFileHandle {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
@@ -114,6 +115,7 @@ impl FileOps for MapsFileHandle {
         _offset: usize,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "`/proc/[pid]/maps` is not writable");
     }

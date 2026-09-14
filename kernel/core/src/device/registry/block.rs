@@ -14,7 +14,7 @@ use crate::{
     events::IoEvents,
     fs::{
         devtmpfs::{self, DevtmpfsNode, DevtmpfsNodeMeta},
-        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags, SyncMode},
+        file::{PerOpenFileOps, RwfFlags, SettableStatusFlags, StatusFlags, SyncMode},
         vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
@@ -140,6 +140,7 @@ impl FileOps for OpenBlockFile {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let total = writer.avail();
         if total == 0 {
@@ -168,6 +169,7 @@ impl FileOps for OpenBlockFile {
         offset: usize,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let total = reader.remain();
         if total == 0 {

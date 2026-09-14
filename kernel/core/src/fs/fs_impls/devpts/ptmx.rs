@@ -9,7 +9,7 @@ use crate::{
     device::{Device, DeviceType},
     fs::{
         devtmpfs::DevtmpfsNodeMeta,
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, RwfFlags, StatusFlags, mkmod},
         vfs::{
             file_system::{FileSystem, SuperBlock},
             inode::{Extension, FileOps, Inode, Metadata},
@@ -67,6 +67,7 @@ impl FileOps for Ptmx {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         Ok(0)
     }
@@ -76,6 +77,7 @@ impl FileOps for Ptmx {
         _offset: usize,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         Ok(0)
     }

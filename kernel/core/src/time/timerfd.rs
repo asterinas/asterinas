@@ -11,7 +11,10 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use crate::{
     events::IoEvents,
     fs::{
-        file::{AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags, file_table::FdFlags},
+        file::{
+            AccessMode, CreationFlags, FileCommon, FileLike, RwfFlags, StatusFlags,
+            file_table::FdFlags,
+        },
         pseudofs::AnonInodeFs,
     },
     prelude::*,
@@ -213,7 +216,7 @@ impl Pollable for TimerfdFile {
 }
 
 impl FileLike for TimerfdFile {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _rwf_flags: RwfFlags) -> Result<usize> {
         let read_len = size_of::<u64>();
 
         if writer.avail() < read_len {

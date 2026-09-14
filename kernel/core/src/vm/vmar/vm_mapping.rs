@@ -398,6 +398,14 @@ impl VmMapping {
     ) -> Result<()> {
         self.check_perms_for_page_fault(page_fault_info)?;
 
+        // Hold the page cache's dio lock while populating pages so a
+        // concurrent direct I/O cannot miss a page committed by this fault.
+        let _dio_guard = if let MappedMemory::Vmo(vmo) = &self.mapped_mem {
+            Some(vmo.vmo().dio_lock().read())
+        } else {
+            None
+        };
+
         let page_aligned_addr = page_fault_info.address.align_down(PAGE_SIZE);
         let is_write = page_fault_info.required_perms.contains(VmPerms::WRITE);
 

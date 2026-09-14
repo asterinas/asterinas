@@ -793,7 +793,8 @@ mod test {
         let old_ino = old.ino();
         let payload = vec![0x6au8; BLOCK_SIZE];
         let mut payload_reader = VmReader::from(payload.as_slice()).to_fallible();
-        old.write_direct_at(0, &mut payload_reader).unwrap();
+        old.write_direct_at(0, &mut payload_reader, crate::fs::file::RwfFlags::empty())
+            .unwrap();
 
         let free_blocks_before = f.ext2.super_block().free_blocks_count();
         root.unlink("old", old.as_ref()).unwrap();

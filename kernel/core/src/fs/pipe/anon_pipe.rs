@@ -6,7 +6,10 @@ use inherit_methods_macro::inherit_methods;
 
 use crate::{
     fs::{
-        file::{AccessMode, InodeHandle, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
+        file::{
+            AccessMode, InodeHandle, InodeMode, InodeType, PerOpenFileOps, RwfFlags, StatusFlags,
+            mkmod,
+        },
         pipe::Pipe,
         pseudofs::{PipeFs, PseudoInode, PseudoInodeType},
         vfs::{
@@ -67,12 +70,14 @@ impl FileOps for AnonPipeInode {
         _offset: usize,
         _writer: &mut VmWriter,
         _status: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize>;
     fn write_at(
         &self,
         _offset: usize,
         _reader: &mut VmReader,
         _status: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize>;
 }
 
