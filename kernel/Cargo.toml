@@ -19,6 +19,7 @@ cvm_guest = ["aster-core/cvm_guest"]
 pvh_boot = ["aster-core/pvh_boot"]
 riscv_sv39_mode = ["aster-core/riscv_sv39_mode"]
 riscv_thead_mae = ["aster-core/riscv_thead_mae"]
+riscv_legacy_sbi_console = ["aster-core/riscv_legacy_sbi_console"]
 
 [lints]
 workspace = true

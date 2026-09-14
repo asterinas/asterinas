@@ -28,8 +28,17 @@ impl SbiSerial {
 
 impl fmt::Write for SbiSerial {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        for c in s.as_bytes() {
-            sbi_rt::console_write_byte(*c);
+        for &c in s.as_bytes() {
+            #[cfg(feature = "riscv_legacy_sbi_console")]
+            {
+                // The deprecated extension is intentionally selected for firmware that
+                // does not implement the SBI debug console extension.
+                #[allow(deprecated)]
+                let _ = sbi_rt::legacy::console_putchar(usize::from(c));
+            }
+
+            #[cfg(not(feature = "riscv_legacy_sbi_console"))]
+            sbi_rt::console_write_byte(c);
         }
         Ok(())
     }

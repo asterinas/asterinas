@@ -82,6 +82,7 @@ pvh_boot = ["ostd/pvh_boot"]
 # By default we use the Sv48 address translation mode.
 riscv_sv39_mode = ["ostd/riscv_sv39_mode"]
 riscv_thead_mae = ["ostd/riscv_thead_mae"]
+riscv_legacy_sbi_console = ["ostd/riscv_legacy_sbi_console"]
 
 [lints]
 workspace = true

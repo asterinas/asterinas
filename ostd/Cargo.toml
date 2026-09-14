@@ -77,6 +77,7 @@ coverage = ["minicov"]
 pvh_boot = []
 riscv_sv39_mode = []
 riscv_thead_mae = []
+riscv_legacy_sbi_console = ["sbi-rt/legacy"]
 
 [lints]
 workspace = true
