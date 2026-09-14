@@ -1058,7 +1058,12 @@ impl FileOps for RamInode {
         Ok(written_len)
     }
 
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    fn readdir_at(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         if self.typ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }

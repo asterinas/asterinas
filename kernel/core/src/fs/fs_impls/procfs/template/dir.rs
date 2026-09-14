@@ -114,7 +114,12 @@ impl<D: ProcDirOps + 'static> FileOps for ProcDir<D> {
         Err(Error::new(Errno::EISDIR))
     }
 
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    fn readdir_at(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         /// Returns the always-present `.` and `..` entries for a procfs directory.
         fn special_entries<D: ProcDirOps + 'static>(
             dir: &ProcDir<D>,

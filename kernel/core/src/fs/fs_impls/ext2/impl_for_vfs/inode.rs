@@ -59,7 +59,12 @@ impl FileOps for Ext2Inode {
         }
     }
 
-    fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+    fn readdir_at(
+        &self,
+        offset: usize,
+        visitor: &mut dyn DirentVisitor,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
         self.readdir_at(offset, visitor)
     }
 }
