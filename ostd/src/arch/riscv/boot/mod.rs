@@ -18,7 +18,16 @@ use crate::{
     mm::paddr_to_vaddr,
 };
 
-global_asm!(include_str!("bsp_boot.S"));
+#[cfg(feature = "riscv_thead_mae")]
+const BOOT_RAM_PTE_ATTR: usize = 0x7000_0000_0000_0000;
+
+#[cfg(not(feature = "riscv_thead_mae"))]
+const BOOT_RAM_PTE_ATTR: usize = 0;
+
+global_asm!(
+    include_str!("bsp_boot.S"),
+    BOOT_RAM_PTE_ATTR = const BOOT_RAM_PTE_ATTR,
+);
 
 /// The Flattened Device Tree of the platform.
 pub static DEVICE_TREE: Once<Fdt> = Once::new();

@@ -76,6 +76,7 @@ cvm_guest = ["dep:tdx-guest"]
 coverage = ["minicov"]
 pvh_boot = []
 riscv_sv39_mode = []
+riscv_thead_mae = []
 
 [lints]
 workspace = true

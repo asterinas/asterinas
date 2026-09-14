@@ -10,6 +10,8 @@ PTE_V                  = 0x01
 PTE_R                  = 0x02
 PTE_W                  = 0x04
 PTE_X                  = 0x08
+PTE_A                  = 0x40
+PTE_D                  = 0x80
 PTE_PPN_SHIFT          = 10
 PTE_SIZE               = 8
 
@@ -75,7 +77,8 @@ bsp_flush_tlb:
     or     t0, t0, t1
     jr     t0
 
-PTE_VRWX = PTE_V | PTE_R | PTE_W | PTE_X
+PTE_VRWX = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
+PTE_RAM = PTE_VRWX | {BOOT_RAM_PTE_ATTR}
 
 .balign 4096
 sv48_boot_l4pt:
@@ -95,19 +98,27 @@ sv48_boot_l3pt:  # 0xffff_ffff_0000_0000 -> 0x0000_0000_0000_0000
 sv39_boot_l3pt:
     .set i, 0
     .rept 128  # identity 0~128 GiB
-        .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRWX
+        .if i == 2
+            .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_RAM
+        .else
+            .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRWX
+        .endif
         .set i, i + 1
     .endr
     .zero 128 * PTE_SIZE
     .set i, 0
     .rept 128  # linear 0~128 GiB
-        .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRWX
+        .if i == 2
+            .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_RAM
+        .else
+            .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRWX
+        .endif
         .set i, i + 1
     .endr
     .zero 124 * PTE_SIZE
     .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRWX  # code 0~1 GiB
     .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRWX  # code 1~2 GiB
-    .quad (0x80000 << PTE_PPN_SHIFT) | PTE_VRWX  # code 2~3 GiB
+    .quad (0x80000 << PTE_PPN_SHIFT) | PTE_RAM  # code 2~3 GiB
     .quad 0
 
 .section ".boot.stack", "aw", @nobits

@@ -83,6 +83,16 @@ bitflags::bitflags! {
         const NAPOT =           1 << 63;
     }
 }
+// T-Head MAE encodes the memory type in PTE bits 59..63. These values
+// are mutually exclusive field encodings rather than independent flags.
+#[cfg(feature = "riscv_thead_mae")]
+const THEAD_MT_PMA: usize = 0x7000_0000_0000_0000;
+
+#[cfg(feature = "riscv_thead_mae")]
+const THEAD_MT_IO: usize = 0x9000_0000_0000_0000;
+
+#[cfg(feature = "riscv_thead_mae")]
+const THEAD_MT_MASK: usize = 0xf800_0000_0000_0000;
 
 const SHARED_ASID: usize = 0;
 
@@ -229,10 +239,24 @@ impl PageTableEntry {
             | parse_flags!(self.0, PteFlags::GLOBAL, PrivFlags::GLOBAL)
             | parse_flags!(self.0, PteFlags::RSV1, PrivFlags::AVAIL1);
 
-        let cache = if self.0 & PteFlags::PBMT_IO.bits() != 0 {
-            CachePolicy::Uncacheable
-        } else {
-            CachePolicy::Writeback
+        let cache = {
+            #[cfg(feature = "riscv_thead_mae")]
+            {
+                match self.0 & THEAD_MT_MASK {
+                    THEAD_MT_PMA => CachePolicy::Writeback,
+                    THEAD_MT_IO => CachePolicy::Uncacheable,
+                    _ => CachePolicy::Uncacheable,
+                }
+            }
+
+            #[cfg(not(feature = "riscv_thead_mae"))]
+            {
+                if self.0 & PteFlags::PBMT_IO.bits() != 0 {
+                    CachePolicy::Uncacheable
+                } else {
+                    CachePolicy::Writeback
+                }
+            }
         };
 
         PageProperty {
@@ -261,14 +285,38 @@ impl PageTableEntry {
             | parse_flags!(prop.priv_flags.bits(), PrivFlags::AVAIL1, PteFlags::RSV1)
             | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PteFlags::RSV2);
 
+        #[cfg(feature = "riscv_thead_mae")]
+        {
+            // C906 raises a page fault instead of updating the accessed and dirty
+            // bits automatically, so software must initialize them.
+            flags |= PteFlags::ACCESSED.bits();
+
+            if prop.flags.contains(PageFlags::W) {
+                flags |= PteFlags::DIRTY.bits();
+            }
+        }
+
         match prop.cache {
-            CachePolicy::Writeback => (),
+            CachePolicy::Writeback => {
+                #[cfg(feature = "riscv_thead_mae")]
+                {
+                    flags |= THEAD_MT_PMA;
+                }
+            }
             CachePolicy::Uncacheable => {
                 // TODO: Currently Asterinas uses `Uncacheable` only for I/O
                 // memory. Normal memory can also be `Noncacheable`, where the
                 // PBMT should be set to `PBMT_NC`.
-                if has_extensions(IsaExtensions::SVPBMT) {
-                    flags |= PteFlags::PBMT_IO.bits()
+                #[cfg(feature = "riscv_thead_mae")]
+                {
+                    flags |= THEAD_MT_IO;
+                }
+
+                #[cfg(not(feature = "riscv_thead_mae"))]
+                {
+                    if has_extensions(IsaExtensions::SVPBMT) {
+                        flags |= PteFlags::PBMT_IO.bits();
+                    }
                 }
             }
             _ => panic!("unsupported cache policy"),
