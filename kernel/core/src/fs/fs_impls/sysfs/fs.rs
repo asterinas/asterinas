@@ -5,7 +5,7 @@ use spin::Once;
 use crate::{
     fs::{
         pseudofs::AnonDeviceId,
-        sysfs::{self, inode::SysFsInode},
+        sysfs::inode::SysFsInode,
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
@@ -47,7 +47,7 @@ impl SysFs {
             let anon_device_id =
                 AnonDeviceId::acquire().expect("no device ID is available for sysfs");
             let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-            let systree_ref = sysfs::systree_singleton();
+            let systree_ref = aster_systree::primary_tree();
             let weak_fs: Weak<dyn FileSystem> = weak_self.clone();
             let root_inode = SysFsInode::new_root(systree_ref.root().clone(), &sb, weak_fs);
 

@@ -47,7 +47,7 @@ pub mod device;
 mod driver;
 mod error;
 mod events;
-mod fs;
+pub mod fs;
 mod init;
 mod ipc;
 mod net;

@@ -1309,7 +1309,7 @@ mod tests {
 
     fn create_overlay_fs() -> Arc<dyn FileSystem> {
         crate::time::clocks::init_for_ktest();
-        crate::fs::vfs::init();
+        crate::fs::vfs::init_for_ktest();
 
         let mode = InodeMode::all();
         let upper = {
@@ -1359,7 +1359,7 @@ mod tests {
     #[ktest]
     fn work_and_upper_should_be_in_same_mount() {
         crate::time::clocks::init_for_ktest();
-        crate::fs::vfs::init();
+        crate::fs::vfs::init_for_ktest();
 
         let upper = Path::new_root(new_dummy_mount());
         let lower = vec![Path::new_root(new_dummy_mount())];
@@ -1374,7 +1374,7 @@ mod tests {
     #[ktest]
     fn work_should_be_empty() {
         crate::time::clocks::init_for_ktest();
-        crate::fs::vfs::init();
+        crate::fs::vfs::init_for_ktest();
 
         let mode = InodeMode::all();
         let upper = {
@@ -1394,7 +1394,7 @@ mod tests {
     #[ktest]
     fn obscured_multi_layers() {
         crate::time::clocks::init_for_ktest();
-        crate::fs::vfs::init();
+        crate::fs::vfs::init_for_ktest();
 
         let mode = InodeMode::all();
         let root = Path::new_root(new_dummy_mount());
@@ -1558,7 +1558,7 @@ mod tests {
     #[ktest]
     fn resuming_readdir_should_not_produce_duplicates() {
         crate::time::clocks::init_for_ktest();
-        crate::fs::vfs::init();
+        crate::fs::vfs::init_for_ktest();
 
         let mode = InodeMode::all();
         let root = Path::new_root(new_dummy_mount());

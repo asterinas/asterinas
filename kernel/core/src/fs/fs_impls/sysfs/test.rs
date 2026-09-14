@@ -14,7 +14,7 @@ use ostd::prelude::ktest;
 use crate::{
     fs::{
         file::{InodeType, StatusFlags, mkmod},
-        sysfs::{self, fs::SysFs},
+        sysfs::fs::SysFs,
         utils::DirentVisitor,
         vfs::file_system::FileSystem,
     },
@@ -215,7 +215,7 @@ fn create_mock_systree_instance() {
     time_init_for_ktest();
     init_for_ktest();
     // Create nodes
-    let root = sysfs::systree_singleton().root();
+    let root = aster_systree::primary_tree().root();
     let branch1 = MockBranchNode::new("branch1");
     let leaf1 = MockLeafNode::new("leaf1".into(), &["r_attr1"], &["rw_attr1"]);
     let leaf2 = MockLeafNode::new("leaf2".into(), &["r_attr2"], &[]);
