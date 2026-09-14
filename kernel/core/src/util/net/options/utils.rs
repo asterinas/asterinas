@@ -40,28 +40,37 @@ pub(crate) trait WriteToUser {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize>;
 }
 
+fn read_partial_pod<T: Pod>(addr: Vaddr, max_len: u32) -> Result<T> {
+    let mut value = T::new_zeroed();
+    let read_len = size_of::<T>().min(max_len as usize);
+    if read_len == 0 {
+        return Ok(value);
+    }
+    current_userspace!().read_bytes(addr, &mut value.as_mut_bytes()[..read_len])?;
+    Ok(value)
+}
+
+fn write_partial_pod<T: Pod>(value: &T, addr: Vaddr, max_len: u32) -> Result<usize> {
+    let write_len = size_of::<T>().min(max_len as usize);
+    if write_len == 0 {
+        return Ok(0);
+    }
+    current_userspace!().write_bytes(addr, &value.as_bytes()[..write_len])?;
+    Ok(write_len)
+}
+
 /// This macro is used to implement `ReadFromUser` and `WriteToUser` for u32 and i32.
 macro_rules! impl_read_write_for_32bit_type {
     ($pod_ty: ty) => {
         impl ReadFromUser for $pod_ty {
             fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
-                if (max_len as usize) < size_of::<$pod_ty>() {
-                    return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-                }
-                Ok(crate::context::current_userspace!().read_val::<$pod_ty>(addr)?)
+                read_partial_pod::<$pod_ty>(addr, max_len)
             }
         }
 
         impl WriteToUser for $pod_ty {
             fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-                let write_len = size_of::<$pod_ty>();
-
-                if (max_len as usize) < write_len {
-                    return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-                }
-
-                crate::context::current_userspace!().write_val(addr, self)?;
-                Ok(write_len)
+                write_partial_pod(self, addr, max_len)
             }
         }
     };
@@ -125,29 +134,17 @@ impl WriteToUser for IpTtl {
 
 impl WriteToUser for Option<Error> {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = size_of::<i32>();
-
-        if (max_len as usize) < write_len {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        }
-
         let val = match self {
             None => 0i32,
             Some(error) => error.error() as i32,
         };
-
-        current_userspace!().write_val(addr, &val)?;
-        Ok(write_len)
+        val.write_to_user(addr, max_len)
     }
 }
 
 impl ReadFromUser for LingerOption {
     fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
-        if (max_len as usize) < size_of::<CLinger>() {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        }
-
-        let c_linger = current_userspace!().read_val::<CLinger>(addr)?;
+        let c_linger = read_partial_pod::<CLinger>(addr, max_len)?;
 
         Ok(LingerOption::from(c_linger))
     }
@@ -155,25 +152,14 @@ impl ReadFromUser for LingerOption {
 
 impl WriteToUser for LingerOption {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = size_of::<CLinger>();
-
-        if (max_len as usize) < write_len {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        }
-
         let linger = CLinger::from(*self);
-        current_userspace!().write_val(addr, &linger)?;
-        Ok(write_len)
+        write_partial_pod(&linger, addr, max_len)
     }
 }
 
 impl ReadFromUser for SocketTimeout {
     fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
-        if (max_len as usize) < size_of::<timeval_t>() {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        }
-
-        let timeval = current_userspace!().read_val::<timeval_t>(addr)?;
+        let timeval = read_partial_pod::<timeval_t>(addr, max_len)?;
         if timeval.sec < 0 {
             return Ok(Self::new(None));
         }
@@ -187,16 +173,8 @@ impl ReadFromUser for SocketTimeout {
 
 impl WriteToUser for SocketTimeout {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = size_of::<timeval_t>();
-
-        if (max_len as usize) < write_len {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        }
-
         let timeval = timeval_t::from(self.duration().unwrap_or_default());
-        current_userspace!().write_val(addr, &timeval)?;
-
-        Ok(write_len)
+        write_partial_pod(&timeval, addr, max_len)
     }
 }
 
@@ -268,14 +246,6 @@ impl From<CLinger> for LingerOption {
 
 impl WriteToUser for CUserCred {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = size_of::<CUserCred>();
-
-        if (max_len as usize) < write_len {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        };
-
-        current_userspace!().write_val(addr, self)?;
-
-        Ok(write_len)
+        write_partial_pod(self, addr, max_len)
     }
 }
