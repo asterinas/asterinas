@@ -14,7 +14,7 @@
 use alloc::sync::Arc;
 
 use aster_systree::{
-    BranchNodeFields, Error, Result, SysAttrSetBuilder, SysBranchNode, SysNode, SysPerms, SysStr,
+    BranchNodeFields, Error, Result, SysAttrSetBuilder, SysNode, SysPerms, SysStr,
     inherit_sys_branch_node,
 };
 use aster_util::printer::VmPrinter;

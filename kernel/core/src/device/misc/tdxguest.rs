@@ -64,6 +64,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    security::{ReportProvider, ReportProviderError, register_report_provider},
     util::ioctl::RawIoctl,
 };
 
@@ -74,6 +75,21 @@ const TDX_GUEST_MINOR: u32 = 0x7b;
 pub(crate) struct TdxGuest {
     id: DeviceId,
 }
+
+#[derive(Debug)]
+struct TdxReportProvider;
+
+impl ReportProvider for TdxReportProvider {
+    fn name(&self) -> &'static str {
+        "tdx_guest"
+    }
+
+    fn get_report(&self, inblob: &[u8]) -> core::result::Result<Box<[u8]>, ReportProviderError> {
+        tdx_get_quote(inblob).map_err(|_| ReportProviderError)
+    }
+}
+
+static TDX_REPORT_PROVIDER: TdxReportProvider = TdxReportProvider;
 
 impl TdxGuest {
     pub(crate) fn new() -> Arc<Self> {
@@ -376,6 +392,7 @@ pub(super) fn init() -> Result<()> {
     });
     refresh_tdx_report(None)?;
     register(TdxGuest::new())?;
+    register_report_provider(&TDX_REPORT_PROVIDER).unwrap();
     Ok(())
 }
 
