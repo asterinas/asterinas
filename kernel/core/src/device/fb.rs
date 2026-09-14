@@ -19,14 +19,18 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::{RawIoctl, dispatch_ioctl},
+    vm::dmo::{DeviceMappable, Dmo, MapOperation, PendingDmoMapping},
 };
 
 #[derive(Debug)]
-struct Fb;
+struct Fb {
+    dmo: Arc<Dmo>,
+}
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct FbHandle {
     framebuffer: Arc<FrameBuffer>,
+    dmo: Arc<Dmo>,
 }
 
 /// Bitfields describing the color channel layout; `struct fb_bitfield` in Linux.
@@ -244,7 +248,10 @@ impl Device for Fb {
             ));
         };
         let framebuffer = framebuffer.clone();
-        Ok(Box::new(FbHandle { framebuffer }))
+        Ok(Box::new(FbHandle {
+            framebuffer,
+            dmo: self.dmo.clone(),
+        }))
     }
 }
 
@@ -500,8 +507,7 @@ impl PerOpenFileOps for FbHandle {
     }
 
     fn mappable(&self) -> Result<Mappable> {
-        let iomem = self.framebuffer.io_mem();
-        Ok(Mappable::IoMem(iomem.clone()))
+        Ok(Mappable::Dmo(Arc::new(self.clone())))
     }
 
     fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
@@ -555,5 +561,18 @@ pub(super) fn init_in_first_kthread() {
         return;
     }
 
-    char::register(Arc::new(Fb)).expect("failed to register framebuffer char device");
+    char::register(Arc::new(Fb { dmo: Dmo::new() }))
+        .expect("failed to register framebuffer char device");
+}
+
+impl DeviceMappable for FbHandle {
+    fn prepare_mapping(&self, range: core::ops::Range<usize>) -> Result<PendingDmoMapping> {
+        let memory = self.framebuffer.mapping_io_mem();
+        if range.start >= range.end || range.end > memory.size() {
+            return_errno_with_message!(Errno::EINVAL, "framebuffer mapping exceeds device memory");
+        }
+        // The boot framebuffer is immutable and is never migrated or revoked.
+        let operation = MapOperation::IoMem(memory.slice(range.clone()), range.start);
+        self.dmo.prepare(range, vec![operation])
+    }
 }

@@ -2,16 +2,19 @@
 
 //! Virtual memory (VM).
 //!
-//! There are two primary VM abstractions:
+//! There are three primary VM abstractions:
 //!  * The VMAR (used to be Virtual Memory Address Region, now an orphan
 //!    initialism) represents the entire virtual address space of a process;
 //!  * The VMO (Virtual Memory Object) is a set of logically contiguous memory
 //!    frames that can be mapped into one virtual address range. Frames in a
 //!    VMO can be non-contiguous in physical memory.
+//!  * The DMO (Device Memory Object) tracks pending mmap operations and reverse
+//!    mappings of driver-owned RAM and MMIO memory.
 
 use osdk_frame_allocator::FrameAllocator;
 use osdk_heap_allocator::{HeapAllocator, type_from_layout};
 
+pub(crate) mod dmo;
 pub(crate) mod page_cache;
 pub(crate) mod perms;
 pub(crate) mod vmar;
