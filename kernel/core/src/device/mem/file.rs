@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::mm::FrameAllocOptions;
+
 use crate::{
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags},
+        file::{Mappable, MappedObject, PerOpenFileOps, StatusFlags},
         vfs::inode::FileOps,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::random,
+    vm::{perms::VmPerms, vmar::MapHandle},
 };
 
 pub(crate) fn geturandom(writer: &mut VmWriter) -> Result<usize> {
@@ -143,5 +146,38 @@ impl PerOpenFileOps for MemFile {
 
     fn is_offset_aware(&self) -> bool {
         false
+    }
+
+    fn mappable(&self) -> Result<&dyn Mappable> {
+        match self {
+            MemFile::Zero => Ok(&ZeroMmap),
+            _ => return_errno_with_message!(Errno::ENODEV, "mmap is not supported yet"),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ZeroMmap;
+
+impl Mappable for ZeroMmap {
+    fn map(&self, _offset: usize, _handle: MapHandle) -> Box<dyn MappedObject> {
+        Box::new(Self)
+    }
+}
+
+impl MappedObject for ZeroMmap {
+    fn dup_at_offset(&self, _offset: usize) -> Box<dyn MappedObject> {
+        Box::new(Self)
+    }
+
+    fn handle_page_fault(
+        &self,
+        offset: usize,
+        _required_perms: VmPerms,
+        mut handle: MapHandle,
+    ) -> Result<()> {
+        let frame = FrameAllocOptions::new().zeroed(true).alloc_frame()?;
+        handle.map_frame(offset, frame.into());
+        Ok(())
     }
 }
