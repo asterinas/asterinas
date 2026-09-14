@@ -17,7 +17,7 @@ use crate::{
     fs::{
         file::{InodeType, StatusFlags, mkmod},
         sysfs::fs::SysFs,
-        utils::{DirentVisitor, systree_inode::SysTreeInodeTy},
+        utils::DirentVisitor,
         vfs::{file_system::FileSystem, path::Dentry},
     },
     prelude::*,

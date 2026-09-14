@@ -49,7 +49,7 @@ pub(super) fn init() {
         devices_node
     };
 
-    crate::fs::sysfs::systree_singleton()
+    aster_systree::primary_tree()
         .root()
         .add_child(node.clone())
         .unwrap();

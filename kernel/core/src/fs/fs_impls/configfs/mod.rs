@@ -6,7 +6,10 @@
 use aster_systree::{EmptyNode, SysBranchNode};
 use systree_node::ConfigRootNode;
 
-use crate::{fs::utils::systree_fs::SingletonSysTreeFsType, prelude::*};
+use crate::{
+    fs::systree::{SingletonSysTreeFs, register_kernel_node},
+    prelude::*,
+};
 
 mod systree_node;
 #[cfg(ktest)]
@@ -20,16 +23,16 @@ fn config_root() -> Arc<dyn SysBranchNode> {
     ConfigRootNode::singleton().clone()
 }
 
-static CONFIG_FS_TYPE: SingletonSysTreeFsType =
-    SingletonSysTreeFsType::new("configfs", MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, config_root);
+static CONFIG_FS_TYPE: SingletonSysTreeFs =
+    SingletonSysTreeFs::new("configfs", MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, config_root);
 
 // This method should be called during kernel file system initialization,
 // _after_ `aster_systree::init`.
 pub(super) fn init() {
     let config_kernel_sysnode = EmptyNode::new("config".into());
-    super::sysfs::register_kernel_sysnode(config_kernel_sysnode).unwrap();
+    register_kernel_node(config_kernel_sysnode).unwrap();
 
-    crate::fs::vfs::registry::register(&CONFIG_FS_TYPE).unwrap();
+    CONFIG_FS_TYPE.register().unwrap();
 }
 
 /// Registers a subsystem `SysTree` node under the Configfs root.

@@ -5,7 +5,7 @@ use spin::Once;
 use crate::{
     fs::{
         pseudofs::AnonDeviceId,
-        sysfs::{self, inode::SysFsInode},
+        sysfs::inode::SysFsInode,
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
@@ -43,7 +43,7 @@ impl SysFs {
     }
 
     fn new() -> Arc<Self> {
-        let root_node = sysfs::systree_singleton().root().clone();
+        let root_node = aster_systree::primary_tree().root().clone();
         Self::new_with_root(root_node)
     }
 
