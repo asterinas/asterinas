@@ -43,6 +43,12 @@ use crate::{
 /// The root inode number defined by the ext2 on-disk format.
 pub(super) const ROOT_INO: u32 = 2;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum MountFlavor {
+    Ext2,
+    Ext4,
+}
+
 /// Top-level handle for a mounted ext2 filesystem.
 ///
 /// Owns the superblock, block group array, and group descriptor table.
@@ -54,6 +60,8 @@ pub(crate) struct Ext4 {
     block_device: Arc<dyn BlockDevice>,
     /// Superblock with dirty tracking.
     super_block: RwMutex<Dirty<SuperBlock>>,
+    /// Immutable feature flags selected at mount time.
+    features: ExtFeatures,
     /// Block group descriptors and caches.
     block_groups: Vec<BlockGroup>,
     /// Inodes per group.
@@ -70,6 +78,13 @@ pub(crate) struct Ext4 {
     next_generation: AtomicU32,
     /// Weak self reference for inode back-pointers.
     self_ref: Weak<Ext4>,
+    /// VFS mount name used to open this instance.
+    mount_flavor: MountFlavor,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ExtFeatures {
+    extents: bool,
 }
 
 /// Policy for how `statfs` reports the total block count.
@@ -118,12 +133,31 @@ impl Ext4 {
     pub(super) fn open(
         device: Arc<dyn BlockDevice>,
         flags: FsFlags,
+        mount_flavor: MountFlavor,
         data: Option<&str>,
     ) -> Result<Arc<Self>> {
         let super_block = {
             let raw_super_block = device.read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)?;
             SuperBlock::try_from(raw_super_block)?
         };
+        if super_block.has_journal() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "journaled ext filesystems are unsupported"
+            );
+        }
+        if mount_flavor == MountFlavor::Ext2 && super_block.has_extents() {
+            return_errno_with_message!(Errno::EINVAL, "an extent filesystem cannot mount as ext2");
+        }
+        if mount_flavor == MountFlavor::Ext4 && !super_block.has_extents() {
+            return_errno_with_message!(Errno::EINVAL, "ext4 mount requires the extents feature");
+        }
+        if mount_flavor == MountFlavor::Ext4 && super_block.has_dir_index() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "hash-indexed directories are unsupported"
+            );
+        }
         let block_size = super_block.block_size();
         if block_size != BLOCK_SIZE {
             return_errno_with_message!(Errno::EINVAL, "currently only 4096-byte block size");
@@ -132,6 +166,9 @@ impl Ext4 {
         let mount_options = Ext4MountOptions::parse(data);
 
         let nr_inodes_per_group = super_block.nr_inodes_per_group();
+        let features = ExtFeatures {
+            extents: super_block.has_extents(),
+        };
 
         let group_descriptors_segment = {
             let nr_block_groups = super_block.nr_block_groups() as usize;
@@ -178,6 +215,7 @@ impl Ext4 {
         let ext2 = Arc::new_cyclic(|weak_self| Ext4 {
             block_device: device,
             super_block: RwMutex::new(Dirty::new(super_block)),
+            features,
             block_groups,
             nr_inodes_per_group,
             group_descriptors_segment,
@@ -186,6 +224,7 @@ impl Ext4 {
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             next_generation: AtomicU32::new(utils::duration_to_ext2_secs(utils::now())),
             self_ref: weak_self.clone(),
+            mount_flavor,
         });
 
         Ok(ext2)
@@ -194,6 +233,21 @@ impl Ext4 {
     /// Returns the block device.
     pub(super) fn block_device(&self) -> &dyn BlockDevice {
         self.block_device.as_ref()
+    }
+
+    pub(super) const fn fs_name(&self) -> &'static str {
+        match self.mount_flavor {
+            MountFlavor::Ext2 => "ext2",
+            MountFlavor::Ext4 => "ext4",
+        }
+    }
+
+    pub(super) const fn mount_flavor(&self) -> MountFlavor {
+        self.mount_flavor
+    }
+
+    pub(super) const fn has_extents(&self) -> bool {
+        self.features.extents
     }
 
     /// Returns the maximum regular file size supported by this ext2 instance.
@@ -406,7 +460,16 @@ impl Ext4 {
             .unwrap_or((0, 0));
         let now = utils::now();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
-        let inode_desc = InodeDesc::new(inode_type, perm, uid, gid, link_count, generation, now);
+        let inode_desc = InodeDesc::new(
+            inode_type,
+            perm,
+            uid,
+            gid,
+            link_count,
+            generation,
+            now,
+            self.has_extents(),
+        );
         let raw_inode = RawInode::from(&inode_desc);
 
         let block_group = self
@@ -514,7 +577,10 @@ impl Ext4 {
         }
     }
 
-    /// Syncs cached inodes and block-group-local metadata in all groups.
+    /// Stages cached inodes and block-group-local metadata in all groups.
+    ///
+    /// This intentionally performs no device flush: callers issue one final
+    /// flush after all inode, allocation, and superblock state is staged.
     pub(super) fn sync_all(&self) -> Result<()> {
         // `group_descriptors_segment` is updated without a filesystem-wide lock,
         // but each group writes only its own descriptor slice under its
@@ -522,7 +588,15 @@ impl Ext4 {
         // their descriptor offsets are disjoint, no two writers touch the same
         // bytes, so the segment is always consistent.
         for group in &self.block_groups {
-            group.sync_all(&self.group_descriptors_segment)?;
+            group.sync_inodes()?;
+        }
+        self.sync_allocation_metadata()
+    }
+
+    /// Persists dirty allocation bitmaps, group descriptors, and block counts.
+    pub(super) fn sync_allocation_metadata(&self) -> Result<()> {
+        for group in &self.block_groups {
+            group.sync_metadata(&self.group_descriptors_segment)?;
         }
         self.sync_metadata()
     }
@@ -692,12 +766,13 @@ mod test {
     use super::*;
     use crate::{
         fs::{
+            file::SyncMode,
             fs_impls::ext4::test_utils::{
                 BlockBitmapInit, Ext4FixtureBuilder, Ext4MemoryDisk, InodeBitmapInit,
                 RawInodeBuilder, assert_errno, create_file, default_fixture, make_valid_group_desc,
-                make_valid_super_block,
+                make_valid_super_block, write_raw_inode_to_disk,
             },
-            vfs::file_system::FileSystem as FileSystemTrait,
+            vfs::{file_system::FileSystem as FileSystemTrait, inode::Inode as VfsInodeTrait},
         },
         time::clocks,
     };
@@ -728,7 +803,7 @@ mod test {
     fn stat_bsddf_subtracts_overhead() {
         let f = Ext4FixtureBuilder::new(3, 512).build().unwrap();
 
-        let stat = FileSystemTrait::sb(f.ext2.as_ref());
+        let stat = FileSystemTrait::sb(f.fs.as_ref());
         let expected_overhead = expected_overhead_blocks(&f.sb);
 
         assert_eq!(
@@ -744,12 +819,399 @@ mod test {
         let ext2 = Ext4::open(
             f.disk.clone() as Arc<dyn BlockDevice>,
             FsFlags::empty(),
+            MountFlavor::Ext2,
             Some("minixdf"),
         )
         .unwrap();
 
         let stat = FileSystemTrait::sb(ext2.as_ref());
         assert_eq!(stat.blocks, f.sb.total_blocks() as usize);
+    }
+
+    #[ktest]
+    fn ext4_mount_creates_and_writes_an_extent_inode() {
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 256)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw);
+
+        let ext4 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        assert_eq!(FileSystemTrait::name(ext4.as_ref()), "ext4");
+        let file = ext4
+            .create_inode(
+                ROOT_INO,
+                InodeType::File,
+                FilePerm::from_bits_truncate(0o644),
+            )
+            .unwrap();
+        let data = [0x5au8; BLOCK_SIZE];
+        let mut reader = VmReader::from(&data[..]).to_fallible();
+        assert_eq!(file.write_at(0, &mut reader).unwrap(), BLOCK_SIZE);
+        file.sync_data().unwrap();
+
+        let mut readback = [0u8; BLOCK_SIZE];
+        let mut writer = VmWriter::from(&mut readback[..]).to_fallible();
+        assert_eq!(file.read_at(0, &mut writer).unwrap(), BLOCK_SIZE);
+        assert_eq!(readback, data);
+    }
+
+    #[ktest]
+    fn mount_flavor_rejects_extent_as_ext2_and_rejects_journal() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw);
+        let result = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext2,
+            None,
+        );
+        assert_errno!(result, Errno::EINVAL);
+
+        raw.feature_incompat &= !(1 << 6);
+        f.disk.write_super_block(&raw);
+        let result = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        );
+        assert_errno!(result, Errno::EINVAL);
+
+        raw.feature_compat |= 1 << 2;
+        f.disk.write_super_block(&raw);
+        let result = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        );
+        assert_errno!(result, Errno::EOPNOTSUPP);
+    }
+
+    #[ktest]
+    fn ext4_rejects_dir_index_but_ext2_accepts_it() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_incompat |= 1 << 6;
+        raw.feature_compat |= 1 << 5;
+        f.disk.write_super_block(&raw);
+
+        let result = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        );
+        assert_errno!(result, Errno::EOPNOTSUPP);
+
+        raw.feature_incompat &= !(1 << 6);
+        f.disk.write_super_block(&raw);
+        Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext2,
+            None,
+        )
+        .unwrap();
+    }
+
+    #[ktest]
+    fn ext4_rejects_indexed_directory_without_dir_index_feature() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw_super_block = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw_super_block.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw_super_block);
+
+        let mut raw_root = RawInodeBuilder::new(InodeType::Dir as u16 | 0o755)
+            .link_count(2)
+            .build();
+        raw_root.flags = 1 << 12;
+        write_raw_inode_to_disk(&f.sb, &f.descs, ROOT_INO, &raw_root, &f.disk);
+
+        let ext4 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        assert_errno!(ext4.root_inode(), Errno::EOPNOTSUPP);
+    }
+
+    #[ktest]
+    fn ext2_loads_indexed_directory_inode() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw_root = RawInodeBuilder::new(InodeType::Dir as u16 | 0o755)
+            .link_count(2)
+            .build();
+        raw_root.flags = 1 << 12;
+        write_raw_inode_to_disk(&f.sb, &f.descs, ROOT_INO, &raw_root, &f.disk);
+
+        f.fs.root_inode().unwrap();
+    }
+
+    #[ktest]
+    fn ext4_loads_linear_directory_inode() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw_super_block = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw_super_block.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw_super_block);
+
+        let ext4 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        ext4.root_inode().unwrap();
+    }
+
+    #[ktest]
+    fn inode_sync_persists_allocation_counts() {
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 256)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw);
+        let ext4 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        let file = ext4
+            .create_inode(
+                ROOT_INO,
+                InodeType::File,
+                FilePerm::from_bits_truncate(0o644),
+            )
+            .unwrap();
+        let ino = file.ino();
+        let block_bitmap_offset = Bid::new(f.descs[0].block_bitmap_bid.into()).to_offset();
+        let mut block_bitmap_before = [0u8; BLOCK_SIZE];
+        f.disk
+            .segment()
+            .read_bytes(block_bitmap_offset, &mut block_bitmap_before)
+            .unwrap();
+        let data = [0x5au8; BLOCK_SIZE];
+        let mut reader = VmReader::from(&data[..]).to_fallible();
+        file.write_at(0, &mut reader).unwrap();
+
+        VfsInodeTrait::sync(file.as_ref(), SyncMode::Full).unwrap();
+        assert_eq!(f.disk.flush_count(), 1);
+
+        let persisted_sb = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        assert_eq!(
+            persisted_sb.free_blocks_count,
+            ext4.super_block().free_blocks_count()
+        );
+        let desc_offset = Bid::new(f.sb.group_descriptors_bid(0).into()).to_offset();
+        let persisted_desc = f
+            .disk
+            .segment()
+            .read_val::<RawBlockGroup>(desc_offset)
+            .unwrap();
+        assert_eq!(
+            persisted_desc.free_blocks_count,
+            ext4.block_group(0).free_blocks_count()
+        );
+        let mut block_bitmap_after = [0u8; BLOCK_SIZE];
+        f.disk
+            .segment()
+            .read_bytes(block_bitmap_offset, &mut block_bitmap_after)
+            .unwrap();
+        assert_ne!(block_bitmap_after, block_bitmap_before);
+
+        drop(file);
+        drop(ext4);
+        let remounted = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        let persisted_file = remounted.read_inode(ino).unwrap();
+        let mut readback = [0u8; BLOCK_SIZE];
+        let mut writer = VmWriter::from(&mut readback[..]).to_fallible();
+        assert_eq!(persisted_file.read_at(0, &mut writer).unwrap(), BLOCK_SIZE);
+        assert_eq!(readback, data);
+    }
+
+    #[ktest]
+    fn allocation_metadata_sync_preserves_unknown_compatible_feature() {
+        const UNKNOWN_COMPAT: u32 = 1 << 31;
+
+        let f = Ext4FixtureBuilder::new(1, 256)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .build()
+            .unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_compat |= UNKNOWN_COMPAT;
+        f.disk.write_super_block(&raw);
+
+        let ext2 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext2,
+            None,
+        )
+        .unwrap();
+        let free_before = ext2.super_block().free_blocks_count();
+        ext2.alloc_blocks(1, 0).unwrap();
+        ext2.alloc_ino(ROOT_INO, InodeType::File).unwrap();
+        ext2.sync_allocation_metadata().unwrap();
+
+        let persisted = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        assert_ne!(persisted.feature_compat & UNKNOWN_COMPAT, 0);
+        assert_eq!(persisted.free_blocks_count, free_before - 1);
+    }
+
+    #[ktest]
+    fn inode_sync_reports_flush_failure() {
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 256)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let file =
+            f.fs.create_inode(
+                ROOT_INO,
+                InodeType::File,
+                FilePerm::from_bits_truncate(0o644),
+            )
+            .unwrap();
+        f.disk.set_fail_flush(true);
+
+        assert_errno!(
+            VfsInodeTrait::sync(file.as_ref(), SyncMode::Full),
+            Errno::EIO
+        );
+        assert_eq!(f.disk.flush_count(), 1);
+    }
+
+    #[ktest]
+    fn filesystem_sync_stages_cached_inodes_before_one_final_flush() {
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 256)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let root = f.root();
+        let first = create_file(&root, "first");
+        let second = create_file(&root, "second");
+        let first_ino = first.ino();
+        let second_ino = second.ino();
+        let data = [0x5au8; BLOCK_SIZE];
+        let mut first_reader = VmReader::from(&data[..]).to_fallible();
+        let mut second_reader = VmReader::from(&data[..]).to_fallible();
+        first.write_at(0, &mut first_reader).unwrap();
+        second.write_at(0, &mut second_reader).unwrap();
+        f.disk.reset_flush_count();
+
+        FileSystemTrait::sync(f.fs.as_ref()).unwrap();
+
+        assert_eq!(f.disk.flush_count(), 1);
+        let persisted_sb = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        assert_eq!(
+            persisted_sb.free_blocks_count,
+            f.fs.super_block().free_blocks_count()
+        );
+        assert_eq!(
+            persisted_sb.free_inodes_count,
+            f.fs.super_block().free_inodes_count()
+        );
+        let desc_offset = Bid::new(f.sb.group_descriptors_bid(0).into()).to_offset();
+        let persisted_desc = f
+            .disk
+            .segment()
+            .read_val::<RawBlockGroup>(desc_offset)
+            .unwrap();
+        assert_eq!(
+            persisted_desc.free_blocks_count,
+            f.fs.block_group(0).free_blocks_count()
+        );
+
+        let remounted = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext2,
+            None,
+        )
+        .unwrap();
+        for ino in [first_ino, second_ino] {
+            let persisted_file = remounted.read_inode(ino).unwrap();
+            let mut readback = [0u8; BLOCK_SIZE];
+            let mut writer = VmWriter::from(&mut readback[..]).to_fallible();
+            assert_eq!(persisted_file.read_at(0, &mut writer).unwrap(), BLOCK_SIZE);
+            assert_eq!(readback, data);
+        }
     }
 
     #[ktest]
@@ -760,7 +1222,7 @@ mod test {
             .with_free_inodes(16, 16)
             .build()
             .unwrap();
-        let ext2 = &fixture.ext2;
+        let ext2 = &fixture.fs;
         let disk = &fixture.disk;
         let sb = &fixture.sb;
 
@@ -824,16 +1286,16 @@ mod test {
             .build()
             .unwrap();
 
-        let before_sb_free = f.ext2.super_block().free_blocks_count();
-        let before_group_free = f.ext2.block_group(0).free_blocks_count();
+        let before_sb_free = f.fs.super_block().free_blocks_count();
+        let before_group_free = f.fs.block_group(0).free_blocks_count();
 
         let goal = f.sb.group_first_block_no(0);
-        let range = f.ext2.alloc_blocks(8, goal).unwrap();
+        let range = f.fs.alloc_blocks(8, goal).unwrap();
         let alloc_len = range.end - range.start;
         assert!((1..=8).contains(&alloc_len));
 
         {
-            let sb = f.ext2.super_block();
+            let sb = f.fs.super_block();
             assert!(sb.is_data_block_valid(range.start, alloc_len));
             let first_data = sb.first_data_block();
             let start_group = (range.start - first_data) / sb.nr_blocks_per_group();
@@ -842,17 +1304,17 @@ mod test {
         }
 
         assert_eq!(
-            f.ext2.block_group(0).free_blocks_count(),
+            f.fs.block_group(0).free_blocks_count(),
             before_group_free - alloc_len as u16
         );
         assert_eq!(
-            f.ext2.super_block().free_blocks_count(),
+            f.fs.super_block().free_blocks_count(),
             before_sb_free - alloc_len
         );
 
-        f.ext2.free_blocks(range.start, alloc_len).unwrap();
-        assert_eq!(f.ext2.block_group(0).free_blocks_count(), before_group_free);
-        assert_eq!(f.ext2.super_block().free_blocks_count(), before_sb_free);
+        f.fs.free_blocks(range.start, alloc_len).unwrap();
+        assert_eq!(f.fs.block_group(0).free_blocks_count(), before_group_free);
+        assert_eq!(f.fs.super_block().free_blocks_count(), before_sb_free);
     }
 
     #[ktest]
@@ -864,11 +1326,11 @@ mod test {
             .build()
             .unwrap();
         assert_errno!(
-            f_nospc.ext2.alloc_blocks(1, f_nospc.sb.first_data_block()),
+            f_nospc.fs.alloc_blocks(1, f_nospc.sb.first_data_block()),
             Errno::ENOSPC
         );
         assert_errno!(
-            f_nospc.ext2.alloc_blocks(0, f_nospc.sb.first_data_block()),
+            f_nospc.fs.alloc_blocks(0, f_nospc.sb.first_data_block()),
             Errno::EINVAL
         );
 
@@ -880,7 +1342,7 @@ mod test {
             .unwrap();
         assert_errno!(
             f_corrupt
-                .ext2
+                .fs
                 .alloc_blocks(1, f_corrupt.sb.first_data_block()),
             Errno::EIO
         );
@@ -891,9 +1353,9 @@ mod test {
             .block_bitmap(BlockBitmapInit::MetadataOnly)
             .build()
             .unwrap();
-        assert!(f_free.ext2.free_blocks(10, 0).is_ok());
+        assert!(f_free.fs.free_blocks(10, 0).is_ok());
         assert_errno!(
-            f_free.ext2.free_blocks(f_free.sb.first_data_block(), 1),
+            f_free.fs.free_blocks(f_free.sb.first_data_block(), 1),
             Errno::EIO
         );
     }
@@ -907,38 +1369,38 @@ mod test {
             .build()
             .unwrap();
 
-        let before_sb_free = f.ext2.super_block().free_inodes_count();
-        let before_group_free = f.ext2.block_group(0).free_inodes_count();
+        let before_sb_free = f.fs.super_block().free_inodes_count();
+        let before_group_free = f.fs.block_group(0).free_inodes_count();
         let before_used_dirs = {
-            let metadata = f.ext2.block_group(0).metadata();
+            let metadata = f.fs.block_group(0).metadata();
             metadata.desc.used_dirs_count
         };
 
-        let ino = f.ext2.alloc_ino(ROOT_INO, InodeType::Dir).unwrap();
+        let ino = f.fs.alloc_ino(ROOT_INO, InodeType::Dir).unwrap();
         assert!(ino >= f.sb.first_ino() && ino <= f.sb.total_inodes());
 
         let bit = ((ino - 1) % f.sb.nr_inodes_per_group()) as u16;
-        let metadata = f.ext2.block_group(0).metadata();
+        let metadata = f.fs.block_group(0).metadata();
         assert!(metadata.inode_bitmap.is_allocated(bit));
         drop(metadata);
-        assert_eq!(f.ext2.super_block().free_inodes_count(), before_sb_free - 1);
+        assert_eq!(f.fs.super_block().free_inodes_count(), before_sb_free - 1);
         assert_eq!(
-            f.ext2.block_group(0).free_inodes_count(),
+            f.fs.block_group(0).free_inodes_count(),
             before_group_free - 1
         );
         assert_eq!(
-            f.ext2.block_group(0).metadata().desc.used_dirs_count,
+            f.fs.block_group(0).metadata().desc.used_dirs_count,
             before_used_dirs + 1
         );
 
         // Free path now takes caller-provided inode type; no inode-table read is needed.
         let raw_dir = make_raw_inode(0o040755, 1, 0);
-        f.ext2.write_back_inode_desc(ino, &raw_dir).unwrap();
-        f.ext2.free_inode(ino, InodeType::Dir).unwrap();
-        assert_eq!(f.ext2.super_block().free_inodes_count(), before_sb_free);
-        assert_eq!(f.ext2.block_group(0).free_inodes_count(), before_group_free);
+        f.fs.write_back_inode_desc(ino, &raw_dir).unwrap();
+        f.fs.free_inode(ino, InodeType::Dir).unwrap();
+        assert_eq!(f.fs.super_block().free_inodes_count(), before_sb_free);
+        assert_eq!(f.fs.block_group(0).free_inodes_count(), before_group_free);
         assert_eq!(
-            f.ext2.block_group(0).metadata().desc.used_dirs_count,
+            f.fs.block_group(0).metadata().desc.used_dirs_count,
             before_used_dirs
         );
     }
@@ -952,12 +1414,12 @@ mod test {
             .build()
             .unwrap();
         assert_errno!(
-            f_nospc.ext2.alloc_ino(ROOT_INO, InodeType::File),
+            f_nospc.fs.alloc_ino(ROOT_INO, InodeType::File),
             Errno::ENOSPC
         );
         assert_errno!(
             f_nospc
-                .ext2
+                .fs
                 .alloc_ino(f_nospc.sb.total_inodes() + 1, InodeType::File),
             Errno::EIO
         );
@@ -969,7 +1431,7 @@ mod test {
             .build()
             .unwrap();
         assert_errno!(
-            f_full.ext2.alloc_ino(ROOT_INO, InodeType::File),
+            f_full.fs.alloc_ino(ROOT_INO, InodeType::File),
             Errno::ENOSPC
         );
 
@@ -980,7 +1442,7 @@ mod test {
             .unwrap();
         assert_errno!(
             f_free
-                .ext2
+                .fs
                 .free_inode(f_free.sb.first_ino() - 1, InodeType::File),
             Errno::EIO
         );
@@ -989,15 +1451,15 @@ mod test {
         let target_ino = f_free.sb.first_ino();
         let raw_file = make_raw_inode(0o100644, 1, 0);
         f_free
-            .ext2
+            .fs
             .write_back_inode_desc(target_ino, &raw_file)
             .unwrap();
 
-        let before_sb = f_free.ext2.super_block().free_inodes_count();
-        let before_group = f_free.ext2.block_group(0).free_inodes_count();
-        f_free.ext2.free_inode(target_ino, InodeType::File).unwrap();
-        assert_eq!(f_free.ext2.super_block().free_inodes_count(), before_sb);
-        assert_eq!(f_free.ext2.block_group(0).free_inodes_count(), before_group);
+        let before_sb = f_free.fs.super_block().free_inodes_count();
+        let before_group = f_free.fs.block_group(0).free_inodes_count();
+        f_free.fs.free_inode(target_ino, InodeType::File).unwrap();
+        assert_eq!(f_free.fs.super_block().free_inodes_count(), before_sb);
+        assert_eq!(f_free.fs.block_group(0).free_inodes_count(), before_group);
     }
 
     #[ktest]
@@ -1027,18 +1489,18 @@ mod test {
         let child = create_file(&root, "cache_file");
         let child_ino = child.ino();
 
-        let cached = f.ext2.read_inode(child_ino).unwrap();
+        let cached = f.fs.read_inode(child_ino).unwrap();
         assert!(Arc::ptr_eq(&child, &cached));
 
         drop(cached);
         drop(child);
-        f.ext2.sync_all().unwrap();
+        f.fs.sync_all().unwrap();
 
-        let metadata = f.ext2.block_group(0).metadata();
+        let metadata = f.fs.block_group(0).metadata();
         assert!(metadata.inode_bitmap.is_allocated((child_ino - 1) as u16));
         drop(metadata);
 
-        let reloaded = f.ext2.read_inode(child_ino).unwrap();
+        let reloaded = f.fs.read_inode(child_ino).unwrap();
         assert_eq!(reloaded.ino(), child_ino);
     }
 
@@ -1048,7 +1510,7 @@ mod test {
             .block_bitmap(BlockBitmapInit::MetadataOnly)
             .build()
             .unwrap();
-        let group = f.ext2.block_group(0);
+        let group = f.fs.block_group(0);
         let first = f.sb.group_first_block_no(0);
 
         let metadata = group.metadata();

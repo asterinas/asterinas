@@ -7,18 +7,24 @@
 //! only the on-disk mapping state. Callers therefore use one interface whether
 //! an inode uses classic block pointers or another EXT mapping format.
 //!
-//! Mapping locks protect only in-memory mapping lookup and mutation. They must
-//! not be held while submitting data BIOs. The inode lock remains responsible
-//! for coordinating mapping changes with inode size and metadata updates.
+//! Page-cache I/O releases the mapping lock before data BIO submission.
+//! Direct-I/O range iteration keeps a read guard while its mapping plan is
+//! consumed, giving both mapping formats the same stable-iteration behavior.
+//! The inode lock remains responsible for coordinating mapping changes with
+//! inode size and metadata updates.
 
 mod block_manager;
+pub(super) mod extent;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use aster_block::bio::BioCompleteFn;
 use device_id::{decode_device_numbers, encode_device_numbers};
 
-use self::block_manager::{BlockPtrTree, ResolvedBlockRange};
+use self::{
+    block_manager::{BlockPtrTree, ResolvedBlockRange},
+    extent::ExtentState,
+};
 use super::{
     Iblock, RAW_BLOCK_PTRS_LEN,
     io_range::{IoRange, IoRangeIter},
@@ -39,6 +45,8 @@ pub(super) struct BlockMapping {
 /// Format-specific mutable mapping state.
 #[derive(Debug)]
 pub(super) enum InodeBlockManager {
+    /// An EXT4 extent tree rooted in the inode's `i_block` field.
+    ExtentTree(ExtentState),
     /// A classic EXT direct/indirect block-pointer tree.
     BlockPtrTree(BlockPtrTree),
 }
@@ -88,6 +96,44 @@ impl RawBlockPtrs {
     }
 }
 
+impl InodeBlockManager {
+    pub(super) fn next_io_range(
+        &self,
+        fs: &Ext4,
+        range: &mut Range<Iblock>,
+    ) -> Result<Option<IoRange>> {
+        if range.start >= range.end {
+            return Ok(None);
+        }
+        let start = range.start;
+        let max_blocks = range.len() as u32;
+        match self {
+            Self::BlockPtrTree(tree) => {
+                let mapped = tree.lookup_block_range(start, max_blocks)?;
+                if mapped.is_empty() {
+                    let hole_len = tree.approx_hole_blocks(start, max_blocks)?;
+                    debug_assert!(hole_len > 0);
+                    range.start += hole_len;
+                    Ok(Some(IoRange::Hole(start..start + hole_len)))
+                } else {
+                    range.start += mapped.len() as u32;
+                    Ok(Some(IoRange::Mapped(mapped)))
+                }
+            }
+            Self::ExtentTree(state) => match state.mapped_run(fs, start, max_blocks)? {
+                Some(mapped) => {
+                    range.start += mapped.len() as u32;
+                    Ok(Some(IoRange::Mapped(mapped)))
+                }
+                None => {
+                    range.start += 1;
+                    Ok(Some(IoRange::Hole(start..start + 1)))
+                }
+            },
+        }
+    }
+}
+
 impl BlockMapping {
     /// Creates an indirect mapping from the inode's pointer array.
     pub(super) fn new_indirect(
@@ -105,10 +151,26 @@ impl BlockMapping {
         }
     }
 
+    /// Creates an extent mapping from a validated on-disk `i_block` root.
+    pub(super) fn new_extent(
+        raw_block_ptrs: RawBlockPtrs,
+        fs: Weak<Ext4>,
+        npages: usize,
+    ) -> Result<Self> {
+        Ok(Self {
+            manager: RwMutex::new(InodeBlockManager::ExtentTree(ExtentState::new(
+                raw_block_ptrs,
+            )?)),
+            npages: AtomicUsize::new(npages),
+            fs,
+        })
+    }
+
     /// Returns the mapping root and sector count to store in the raw inode.
     pub(super) fn raw_block_ptrs(&self) -> RawBlockPtrs {
         let manager = self.manager.read();
         match &*manager {
+            InodeBlockManager::ExtentTree(state) => state.raw_block_ptrs(),
             InodeBlockManager::BlockPtrTree(tree) => *tree.raw_block_ptrs(),
         }
     }
@@ -117,6 +179,7 @@ impl BlockMapping {
     pub(super) fn is_dirty(&self) -> bool {
         let manager = self.manager.read();
         match &*manager {
+            InodeBlockManager::ExtentTree(state) => state.is_dirty(),
             InodeBlockManager::BlockPtrTree(tree) => tree.is_dirty(),
         }
     }
@@ -125,27 +188,30 @@ impl BlockMapping {
     pub(super) fn clear_dirty(&self) {
         let mut manager = self.manager.write();
         match &mut *manager {
+            InodeBlockManager::ExtentTree(state) => state.clear_dirty(),
             InodeBlockManager::BlockPtrTree(tree) => tree.clear_dirty(),
         }
     }
 
     /// Returns mapped physical runs and holes over a logical block range.
-    pub(super) fn iter_io_ranges(&self, block_range: Range<Iblock>) -> IoRangeIter<'_> {
-        IoRangeIter::new_indirect(block_range, self.manager.read())
+    pub(super) fn iter_io_ranges(&self, block_range: Range<Iblock>) -> Result<IoRangeIter<'_>> {
+        Ok(IoRangeIter::new(
+            block_range,
+            self.manager.read(),
+            self.fs()?,
+        ))
     }
 
     /// Removes mappings beyond the block containing `new_size`.
-    pub(super) fn truncate_to_byte_len(&self, new_size: usize) {
-        let fs = match self.fs() {
-            Ok(fs) => fs,
-            Err(err) => {
-                error!("truncate: failed to get fs reference, err: {:?}", err);
-                return;
-            }
-        };
+    pub(super) fn truncate_to_byte_len(&self, new_size: usize) -> Result<()> {
+        let fs = self.fs()?;
         let mut manager = self.manager.write();
         match &mut *manager {
-            InodeBlockManager::BlockPtrTree(tree) => tree.truncate_to_byte_len(&fs, new_size),
+            InodeBlockManager::ExtentTree(state) => state.truncate_to_byte_len(&fs, new_size),
+            InodeBlockManager::BlockPtrTree(tree) => {
+                tree.truncate_to_byte_len(&fs, new_size);
+                Ok(())
+            }
         }
     }
 
@@ -153,6 +219,7 @@ impl BlockMapping {
     pub(super) fn sync_metadata(&self) -> Result<()> {
         let manager = self.manager.read();
         match &*manager {
+            InodeBlockManager::ExtentTree(_) => Ok(()),
             InodeBlockManager::BlockPtrTree(tree) => tree.sync_indirect_blocks(),
         }
     }
@@ -161,7 +228,12 @@ impl BlockMapping {
     pub(super) fn allocate_range_blocks(&self, start_block: usize, end_block: usize) -> Result<()> {
         let fs = self.fs()?;
         let mut manager = self.manager.write();
-        let InodeBlockManager::BlockPtrTree(tree) = &mut *manager;
+        if let InodeBlockManager::ExtentTree(state) = &mut *manager {
+            return state.allocate_range_blocks(&fs, start_block, end_block);
+        }
+        let InodeBlockManager::BlockPtrTree(tree) = &mut *manager else {
+            unreachable!()
+        };
         let mut current_block = start_block;
         while current_block < end_block {
             let iblock = Iblock::try_from(current_block)
@@ -191,8 +263,10 @@ impl BlockMapping {
     }
 
     fn lookup_block(&self, iblock: Iblock) -> Result<Option<Ext4Bid>> {
+        let fs = self.fs()?;
         let manager = self.manager.read();
         match &*manager {
+            InodeBlockManager::ExtentTree(state) => state.map_block(&fs, iblock),
             InodeBlockManager::BlockPtrTree(tree) => tree.lookup_block(iblock),
         }
     }
@@ -231,7 +305,7 @@ impl BlockAsPageCacheBackend for BlockMapping {
         }
 
         let fs = self.fs()?;
-        let mut io_ranges = self.iter_io_ranges(start_idx as Iblock..end_idx as Iblock);
+        let mut io_ranges = self.iter_io_ranges(start_idx as Iblock..end_idx as Iblock)?;
         while let Some(io_range) = io_ranges.next()? {
             match io_range {
                 IoRange::Mapped(device_range) => {
@@ -268,19 +342,12 @@ impl BlockAsPageCacheBackend for BlockMapping {
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
         let fs = self.fs()?;
 
-        if let Some(bid) = self.lookup_block(iblock)? {
-            return fs.write_blocks_async(bid, bio_segment, Some(complete_fn), io_batch);
+        if self.lookup_block(iblock)?.is_none() {
+            self.allocate_range_blocks(idx, idx + bio_segment.nblocks())?;
         }
-
-        let bid = {
-            let mut manager = self.manager.write();
-            let InodeBlockManager::BlockPtrTree(tree) = &mut *manager;
-            match tree.resolve_block_range(&fs, iblock, bio_segment.nblocks() as u32)? {
-                ResolvedBlockRange::NewlyAllocated(range) | ResolvedBlockRange::Existing(range) => {
-                    range.start
-                }
-            }
-        };
+        let bid = self
+            .lookup_block(iblock)?
+            .ok_or_else(|| Error::with_message(Errno::EIO, "block allocation produced a hole"))?;
 
         fs.write_blocks_async(bid, bio_segment, Some(complete_fn), io_batch)
     }
@@ -294,7 +361,7 @@ impl BlockAsPageCacheBackend for BlockMapping {
 
         self.allocate_range_blocks(start_idx, end_idx)?;
         let fs = self.fs()?;
-        let mut io_ranges = self.iter_io_ranges(start_idx as Iblock..end_idx as Iblock);
+        let mut io_ranges = self.iter_io_ranges(start_idx as Iblock..end_idx as Iblock)?;
         while let Some(io_range) = io_ranges.next()? {
             match io_range {
                 IoRange::Mapped(device_range) => {

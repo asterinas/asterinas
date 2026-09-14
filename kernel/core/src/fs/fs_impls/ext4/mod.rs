@@ -3,18 +3,19 @@
 //! Ext4 filesystem implementation, providing file I/O, directory operations,
 //! symlinks, and extended attributes through the Asterinas VFS trait interfaces.
 //!
-//! This module is the entry point for ext2 support in Asterinas. A caller
-//! registers `Ext4` as a filesystem type via `init`, after which the VFS
-//! can mount ext2 volumes and operate on them through the standard
-//! filesystem trait interfaces. Buffered I/O is delegated to the
-//! `PageCache` subsystem; this module does not cache block data itself.
+//! This module is the shared entry point for ext2 and the currently supported
+//! subset of ext4 in Asterinas. A caller registers both filesystem types via
+//! `init`, after which the VFS can mount ext2 volumes or non-journaled ext4
+//! volumes that use extents. Buffered I/O is delegated to the `PageCache`
+//! subsystem; this module does not cache block data itself.
 //!
 //! The Second Extended File System (ext2) is a classic Linux filesystem
 //! introduced in 1993 as a replacement for the original ext filesystem.
 //! It was the default Linux filesystem throughout the 1990s and remains
-//! the on-disk foundation for ext3 and ext4. This implementation covers
-//! the base ext2 feature set; it does not include ext3/ext4 extensions
-//! such as journaling, extents, or inline data.
+//! the on-disk foundation for ext3 and ext4. This implementation covers the
+//! base ext2 feature set and basic writable ext4 extents. Journaling, inline
+//! data, metadata checksums, 64-bit block addresses, and HTree directories are
+//! not supported.
 //!
 //! # On-disk layout
 //!
@@ -63,7 +64,7 @@ macro_rules! __log_prefix {
 pub(crate) use fs::Ext4;
 pub(crate) use inode::{FilePerm, Inode};
 
-pub(in crate::fs) use self::fs_type::EXT2_TYPE;
+pub(in crate::fs) use self::fs_type::{EXT2_TYPE, EXT4_TYPE};
 use crate::fs::vfs::registry;
 
 mod block_group;
@@ -79,7 +80,8 @@ mod xattr;
 #[cfg(ktest)]
 mod test_utils;
 
-/// Registers the ext2 filesystem type with the VFS registry.
+/// Registers the ext2 and ext4 filesystem types with the VFS registry.
 pub(super) fn init() {
+    registry::register(&EXT4_TYPE).unwrap();
     registry::register(&EXT2_TYPE).unwrap();
 }
