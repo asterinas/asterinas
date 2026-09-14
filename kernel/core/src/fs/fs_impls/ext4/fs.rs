@@ -43,6 +43,16 @@ use crate::{
 /// The root inode number defined by the ext2 on-disk format.
 pub(super) const ROOT_INO: u32 = 2;
 
+fn ranges_overlap<T: Ord>(left: &Range<T>, right: &Range<T>) -> bool {
+    left.start < right.end && right.start < left.end
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum MountFlavor {
+    Ext2,
+    Ext4,
+}
+
 /// Top-level handle for a mounted ext2 filesystem.
 ///
 /// Owns the superblock, block group array, and group descriptor table.
@@ -70,6 +80,8 @@ pub(crate) struct Ext4 {
     next_generation: AtomicU32,
     /// Weak self reference for inode back-pointers.
     self_ref: Weak<Ext4>,
+    /// VFS mount name used to open this instance.
+    mount_flavor: MountFlavor,
 }
 
 /// Policy for how `statfs` reports the total block count.
@@ -118,12 +130,37 @@ impl Ext4 {
     pub(super) fn open(
         device: Arc<dyn BlockDevice>,
         flags: FsFlags,
+        mount_flavor: MountFlavor,
         data: Option<&str>,
     ) -> Result<Arc<Self>> {
         let super_block = {
             let raw_super_block = device.read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)?;
             SuperBlock::try_from(raw_super_block)?
         };
+        if super_block.has_journal() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "journaled ext filesystems are unsupported"
+            );
+        }
+        if mount_flavor == MountFlavor::Ext2 && super_block.has_extents() {
+            return_errno_with_message!(Errno::EINVAL, "an extent filesystem cannot mount as ext2");
+        }
+        if mount_flavor == MountFlavor::Ext4 && !super_block.has_extents() {
+            return_errno_with_message!(Errno::EINVAL, "ext4 mount requires the extents feature");
+        }
+        if mount_flavor == MountFlavor::Ext4 && super_block.has_dir_index() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "hash-indexed directories are unsupported"
+            );
+        }
+        if mount_flavor == MountFlavor::Ext4 && !flags.contains(FsFlags::RDONLY) {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "writable ext4 mounts require writable extent support"
+            );
+        }
         let block_size = super_block.block_size();
         if block_size != BLOCK_SIZE {
             return_errno_with_message!(Errno::EINVAL, "currently only 4096-byte block size");
@@ -186,6 +223,7 @@ impl Ext4 {
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             next_generation: AtomicU32::new(utils::duration_to_ext2_secs(utils::now())),
             self_ref: weak_self.clone(),
+            mount_flavor,
         });
 
         Ok(ext2)
@@ -194,6 +232,17 @@ impl Ext4 {
     /// Returns the block device.
     pub(super) fn block_device(&self) -> &dyn BlockDevice {
         self.block_device.as_ref()
+    }
+
+    pub(super) const fn fs_name(&self) -> &'static str {
+        match self.mount_flavor {
+            MountFlavor::Ext2 => "ext2",
+            MountFlavor::Ext4 => "ext4",
+        }
+    }
+
+    pub(super) const fn mount_flavor(&self) -> MountFlavor {
+        self.mount_flavor
     }
 
     /// Returns the maximum regular file size supported by this ext2 instance.
@@ -375,6 +424,49 @@ impl Ext4 {
             remaining_blocks -= blocks_in_group;
         }
 
+        Ok(())
+    }
+
+    /// Validates a physical range referenced by an inode extent tree.
+    pub(super) fn validate_extent_block_range(&self, start: Ext4Bid, count: u32) -> Result<()> {
+        let sb = self.super_block.read();
+        if !sb.is_data_block_valid(start, count) {
+            return_errno_with_message!(Errno::EUCLEAN, "extent block range is outside filesystem");
+        }
+
+        let end = start
+            .checked_add(count)
+            .ok_or_else(|| Error::with_message(Errno::EUCLEAN, "extent block range overflow"))?;
+        let blocks_per_group = sb.nr_blocks_per_group();
+        let first_data_block = sb.first_data_block();
+        let mut current = start;
+        while current < end {
+            let group_idx = ((current - first_data_block) / blocks_per_group) as usize;
+            let group = self.block_groups.get(group_idx).ok_or_else(|| {
+                Error::with_message(Errno::EUCLEAN, "extent block group is outside filesystem")
+            })?;
+            let group_end = end.min(group.last_block() + 1);
+            let range = current..group_end;
+            if sb.has_super_block(group_idx) {
+                let super_block = sb.bid(group_idx)..sb.bid(group_idx) + 1;
+                let descriptors_start = sb.group_descriptors_bid(group_idx);
+                let descriptors =
+                    descriptors_start..descriptors_start + sb.group_descriptor_blocks_count();
+                if ranges_overlap(&range, &super_block) || ranges_overlap(&range, &descriptors) {
+                    return_errno_with_message!(
+                        Errno::EUCLEAN,
+                        "extent block range overlaps superblock metadata"
+                    );
+                }
+            }
+            if !group.is_allocated_data_range(range) {
+                return_errno_with_message!(
+                    Errno::EUCLEAN,
+                    "extent block range is free or overlaps filesystem metadata"
+                );
+            }
+            current = group_end;
+        }
         Ok(())
     }
 
@@ -744,12 +836,57 @@ mod test {
         let ext2 = Ext4::open(
             f.disk.clone() as Arc<dyn BlockDevice>,
             FsFlags::empty(),
+            MountFlavor::Ext2,
             Some("minixdf"),
         )
         .unwrap();
 
         let stat = FileSystemTrait::sb(ext2.as_ref());
         assert_eq!(stat.blocks, f.sb.total_blocks() as usize);
+    }
+
+    #[ktest]
+    fn mounts_extent_filesystem_read_only() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw);
+
+        let ext4 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::RDONLY,
+            MountFlavor::Ext4,
+            None,
+        )
+        .unwrap();
+        assert_eq!(FileSystemTrait::name(ext4.as_ref()), "ext4");
+        ext4.root_inode().unwrap();
+    }
+
+    #[ktest]
+    fn rejects_writable_extent_mount_before_writable_support() {
+        let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+        let mut raw = f
+            .disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        raw.feature_incompat |= 1 << 6;
+        f.disk.write_super_block(&raw);
+
+        assert_errno!(
+            Ext4::open(
+                f.disk.clone() as Arc<dyn BlockDevice>,
+                FsFlags::empty(),
+                MountFlavor::Ext4,
+                None,
+            ),
+            Errno::EOPNOTSUPP
+        );
     }
 
     #[ktest]

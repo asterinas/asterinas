@@ -1,34 +1,42 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! VFS filesystem-type registration for ext2.
-//!
-//! `Ext4Type` implements the `FsType` trait so the VFS layer can
-//! discover and mount ext2 volumes by name (`"ext2"`).
+//! VFS filesystem-type registration for ext2 and ext4.
 
 use aster_systree::SysNode;
 use device_id::DeviceId;
 
-use super::{fs::Ext4, prelude::*};
+use super::{
+    fs::{Ext4, MountFlavor},
+    prelude::*,
+};
 use crate::fs::vfs::{
     file_system::FileSystem,
     registry::{FsCache, FsCreationCtx, FsProperties, FsType},
 };
 
-/// VFS-visible Ext4 filesystem type.
-pub(in crate::fs) struct Ext4Type {
+pub(in crate::fs) struct ExtFsType {
     cache: FsCache<DeviceId>,
+    name: &'static str,
+    flavor: MountFlavor,
 }
 
-/// The VFS filesystem type descriptor for Ext4.
-pub(in crate::fs) static EXT2_TYPE: Ext4Type = Ext4Type {
+pub(in crate::fs) static EXT2_TYPE: ExtFsType = ExtFsType {
     cache: FsCache::new(),
+    name: "ext2",
+    flavor: MountFlavor::Ext2,
 };
 
-impl FsType for Ext4Type {
+pub(in crate::fs) static EXT4_TYPE: ExtFsType = ExtFsType {
+    cache: FsCache::new(),
+    name: "ext4",
+    flavor: MountFlavor::Ext4,
+};
+
+impl FsType for ExtFsType {
     type Key = DeviceId;
 
     fn name(&self) -> &'static str {
-        "ext2"
+        self.name
     }
 
     fn properties(&self) -> FsProperties {
@@ -39,7 +47,7 @@ impl FsType for Ext4Type {
         let disk = fs_creation_ctx.resolve_block_device()?.clone();
         let flags = fs_creation_ctx.flags();
         let args = fs_creation_ctx.args();
-        Ext4::open(disk, flags, args).map(|fs| fs as Arc<dyn FileSystem>)
+        Ext4::open(disk, flags, self.flavor, args).map(|fs| fs as Arc<dyn FileSystem>)
     }
 
     fn obtain_key_and_cache(
