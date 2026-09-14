@@ -36,7 +36,7 @@ impl Ns16550aRegister {
     pub const MAX: Self = Self::ModemStat;
 }
 
-/// A trait that provides methods to access NS16550A registers.
+/// A trait that provides platform-specific methods for accessing NS16550A registers.
 pub trait Ns16550aAccess {
     /// Reads from an NS16550A register.
     fn read(&self, reg: Ns16550aRegister) -> u8;
@@ -66,29 +66,38 @@ impl<A: Ns16550aAccess> Ns16550aUart<A> {
         Self { access }
     }
 
-    /// Initializes the device.
+    /// Initializes the UART with the default baud-rate divisor.
     ///
-    /// This will set the baud rate to 115200 bps and configure IRQs to trigger when new data is
-    /// received.
+    /// Receive interrupts remain disabled until [`Self::enable_receive_interrupt`] is called.
     pub fn init(&mut self) {
-        // Divisor Latch Access Bit.
-        const DLAB: u8 = 0x80;
-
-        // Baud Rate: 115200 bps / divisor
-        self.access.write(Ns16550aRegister::LineCtrl, DLAB);
-        self.access.write(Ns16550aRegister::DataOrDivisorLo, 0x01);
-        self.access.write(Ns16550aRegister::IntEnOrDivisorHi, 0x00);
-
-        // Line Control: 8-bit, no parity, one stop bit.
-        self.access.write(Ns16550aRegister::LineCtrl, 0x03);
-        // FIFO Control: Disabled.
-        self.access.write(Ns16550aRegister::FifoCtrl, 0x00);
-        // Modem Control: IRQs enabled, RTS/DSR set.
-        self.access.write(Ns16550aRegister::ModemCtrl, 0x0B);
-        // Interrupt Enable: IRQs on received data.
-        self.access.write(Ns16550aRegister::IntEnOrDivisorHi, 0x01);
+        self.init_with_divisor(1);
     }
 
+    /// Initializes the UART with the specified baud-rate divisor.
+    pub fn init_with_divisor(&mut self, divisor: u16) {
+        assert_ne!(divisor, 0);
+        self.access.write(Ns16550aRegister::IntEnOrDivisorHi, 0x00);
+        // Enable divisor-latch access.
+        const DLAB: u8 = 0x80;
+        self.access.write(Ns16550aRegister::LineCtrl, DLAB);
+        // Set the baud-rate divisor.
+        self.access
+            .write(Ns16550aRegister::DataOrDivisorLo, divisor as u8);
+        self.access
+            .write(Ns16550aRegister::IntEnOrDivisorHi, (divisor >> 8) as u8);
+        // Configure 8 data bits, no parity, and one stop bit.
+        self.access.write(Ns16550aRegister::LineCtrl, 0x03);
+        self.access.write(Ns16550aRegister::FifoCtrl, 0x00);
+        self.access.write(Ns16550aRegister::ModemCtrl, 0x0b);
+        self.access.write(Ns16550aRegister::IntEnOrDivisorHi, 0x00);
+    }
+    /// Enables the received-data-available interrupt.
+    pub fn enable_receive_interrupt(&mut self) {
+        let interrupt_enable = self.access.read(Ns16550aRegister::IntEnOrDivisorHi);
+
+        self.access
+            .write(Ns16550aRegister::IntEnOrDivisorHi, interrupt_enable | 0x01);
+    }
     /// Sends a byte.
     ///
     /// If no room is available, it will spin until there is room.

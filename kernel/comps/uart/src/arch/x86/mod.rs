@@ -44,6 +44,7 @@ pub(super) fn init() {
 
     irq_line.on_active(move |_| uart_console.trigger_input_callbacks());
     IRQ_LINE.call_once(move || irq_line);
+    uart.lock().enable_receive_interrupt();
     uart.flush();
 
     ostd::info!("Registered NS16550A as a console");
