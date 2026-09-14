@@ -21,7 +21,7 @@ use crate::{
 
 impl FileSystem for Ext4 {
     fn name(&self) -> &'static str {
-        "ext2"
+        self.fs_name()
     }
 
     fn sync(&self) -> Result<()> {

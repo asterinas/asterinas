@@ -2,7 +2,7 @@
 
 //! Classification of logical block ranges as mapped runs or sparse holes.
 
-use super::block_mapping::InodeBlockManager;
+use super::block_mapping::{BlockMapping, InodeBlockManager};
 use crate::fs::ext4::prelude::*;
 
 /// Direct-I/O block-range classification for the current logical interval.
@@ -16,54 +16,84 @@ pub(super) enum IoRange {
 
 /// Iterator over mapped runs and sparse holes in a logical block range.
 ///
-/// Each item preserves the range classification needed by direct I/O:
-/// contiguous device-block mappings remain grouped,
-/// and sparse logical ranges remain explicit holes.
-pub(super) struct IoRangeIter<'a> {
-    range: Range<Iblock>,
-    manager: RwMutexReadGuard<'a, InodeBlockManager>,
+/// The indirect variant retains a read guard while the mapping plan is
+/// consumed. The extent variant locks [`BlockMapping`] for one lookup at a
+/// time; extent metadata traversal completes under that lock, which is then
+/// released before the caller submits the corresponding data I/O.
+pub(super) enum IoRangeIter<'a> {
+    Indirect {
+        range: Range<Iblock>,
+        manager: RwMutexReadGuard<'a, InodeBlockManager>,
+    },
+    Extent {
+        range: Range<Iblock>,
+        mapping: &'a BlockMapping,
+    },
 }
 
 impl<'a> IoRangeIter<'a> {
-    /// Creates an iterator over an indirect block mapping.
     pub(super) fn new_indirect(
         range: Range<Iblock>,
         manager: RwMutexReadGuard<'a, InodeBlockManager>,
     ) -> Self {
-        Self { range, manager }
+        Self::Indirect { range, manager }
+    }
+
+    pub(super) fn new_extent(range: Range<Iblock>, mapping: &'a BlockMapping) -> Self {
+        Self::Extent { range, mapping }
     }
 
     /// Returns the next logical run for direct I/O planning.
-    ///
-    /// `IoRange::Mapped` returns one run whose logical blocks are backed by
-    /// contiguous physical device blocks. `IoRange::Hole` returns a known hole
-    /// run that may stop early at direct/indirect region boundaries.
     pub(super) fn next(&mut self) -> Result<Option<IoRange>> {
-        if self.range.is_empty() {
+        match self {
+            Self::Indirect { range, manager } => {
+                let InodeBlockManager::BlockPtrTree(tree) = &**manager else {
+                    return_errno_with_message!(Errno::EINVAL, "mapping is not block-pointer based");
+                };
+                Self::next_indirect(range, tree)
+            }
+            Self::Extent { range, mapping } => Self::next_extent(range, mapping),
+        }
+    }
+
+    fn next_indirect(
+        range: &mut Range<Iblock>,
+        block_ptr_tree: &super::block_mapping::BlockPtrTree,
+    ) -> Result<Option<IoRange>> {
+        if range.start >= range.end {
             return Ok(None);
         }
 
-        let start_iblock = self.range.start;
-        let max_blocks = self.range.len() as u32;
-        let InodeBlockManager::BlockPtrTree(tree) = &*self.manager;
-        let device_block_range = tree.lookup_block_range(start_iblock, max_blocks)?;
-
+        let start_iblock = range.start;
+        let max_blocks = range.len() as u32;
+        let device_block_range = block_ptr_tree.lookup_block_range(start_iblock, max_blocks)?;
         if device_block_range.is_empty() {
-            // Linux's ext2 documents the slow case where it iterates unmapped
-            // space block by block, as shown in the reference link below. We
-            // keep the same sparse-file semantics, but optimize by asking the
-            // block-pointer tree for a conservative hole run instead of
-            // re-walking from the root for every logical block.
-            //
-            // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/ext2/inode.c#L905>
-            let hole_len = tree.approx_hole_blocks(start_iblock, max_blocks)?;
+            let hole_len = block_ptr_tree.approx_hole_blocks(start_iblock, max_blocks)?;
             debug_assert!(hole_len > 0);
-            self.range.start += hole_len;
+            range.start += hole_len;
             return Ok(Some(IoRange::Hole(start_iblock..start_iblock + hole_len)));
         }
 
-        self.range.start += device_block_range.len() as u32;
+        range.start += device_block_range.len() as u32;
         Ok(Some(IoRange::Mapped(device_block_range)))
+    }
+
+    fn next_extent(range: &mut Range<Iblock>, mapping: &BlockMapping) -> Result<Option<IoRange>> {
+        if range.start >= range.end {
+            return Ok(None);
+        }
+        let start = range.start;
+        let max_blocks = range.len() as u32;
+        match mapping.mapped_run(start, max_blocks)? {
+            Some(mapped) => {
+                range.start += mapped.len() as u32;
+                Ok(Some(IoRange::Mapped(mapped)))
+            }
+            None => {
+                range.start += 1;
+                Ok(Some(IoRange::Hole(start..start + 1)))
+            }
+        }
     }
 }
 
@@ -80,49 +110,27 @@ mod test {
         time::clocks,
     };
 
-    fn make_block_mapping(
-        block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
-        sector_count: u32,
-        fs: &Arc<crate::fs::fs_impls::ext4::fs::Ext4>,
-    ) -> super::super::block_mapping::BlockMapping {
-        super::super::block_mapping::BlockMapping::new_indirect(
-            RawBlockPtrs::new(sector_count, block_ptrs),
-            Arc::downgrade(fs),
-            0,
-        )
-    }
-
     #[ktest]
     fn io_range_iter_yields_mapped_and_holes() {
         clocks::init_for_ktest();
         let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
-
-        // Set up direct pointers: blocks 0-2 mapped, 3-6 holes, 7-8 mapped.
         let mut block_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
         block_ptrs[0] = 50;
         block_ptrs[1] = 51;
         block_ptrs[2] = 52;
-        // 3..7 are holes (zero)
         block_ptrs[7] = 60;
         block_ptrs[8] = 61;
 
-        let mapping = make_block_mapping(block_ptrs, 0, &f.ext2);
+        let mapping = BlockMapping::new_indirect(
+            RawBlockPtrs::new(0, block_ptrs),
+            Arc::downgrade(&f.ext2),
+            0,
+        );
         let mut iter = mapping.iter_io_ranges(0..9);
 
-        // First: mapped blocks 0-2 -> device bids 50..53
-        let item = iter.next().unwrap().unwrap();
-        assert_eq!(item, IoRange::Mapped(50..53));
-
-        // Second: hole covering blocks 3..7
-        let item = iter.next().unwrap().unwrap();
-        assert_eq!(item, IoRange::Hole(3..7));
-
-        // Third: mapped blocks 7-8 -> device bids 60..62
-        let item = iter.next().unwrap().unwrap();
-        assert_eq!(item, IoRange::Mapped(60..62));
-
-        // Done
-        let item = iter.next().unwrap();
-        assert!(item.is_none());
+        assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(50..53)));
+        assert_eq!(iter.next().unwrap(), Some(IoRange::Hole(3..7)));
+        assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(60..62)));
+        assert!(iter.next().unwrap().is_none());
     }
 }

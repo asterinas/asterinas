@@ -141,6 +141,12 @@ impl Inode {
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "fallocate range overflow"))?;
         let fs = self.fs()?;
         let mut inner = self.inner.write();
+        if inner.uses_extents() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "fallocate is not supported for extent-based inodes"
+            );
+        }
         let old_size = inner.file_size();
         if end > old_size {
             inner.ensure_size_within_limit(&fs, end)?;
@@ -213,15 +219,19 @@ impl InodeInner {
             );
         }
 
-        if let Ok(block_manager) = self.block_manager() {
-            block_manager.truncate_to_byte_len(old_size);
+        if let Ok(block_manager) = self.block_manager()
+            && let Err(err) = block_manager.truncate_to_byte_len(old_size)
+        {
+            error!("write_at: cleanup block truncate failed: {:?}", err);
         }
     }
 
     /// Truncates only block mappings after a failed fallocate.
     fn rollback_fallocate(&mut self, old_size: usize) {
-        if let Ok(block_manager) = self.block_manager() {
-            block_manager.truncate_to_byte_len(old_size);
+        if let Ok(block_manager) = self.block_manager()
+            && let Err(err) = block_manager.truncate_to_byte_len(old_size)
+        {
+            error!("fallocate: cleanup block truncate failed: {:?}", err);
         }
     }
 
@@ -410,7 +420,7 @@ impl InodeInner {
         let old_size = self.desc.size as usize;
 
         self.resize_page_cache(new_size, old_size)?;
-        self.block_manager()?.truncate_to_byte_len(new_size);
+        self.block_manager()?.truncate_to_byte_len(new_size)?;
 
         self.set_file_size(new_size);
         Ok(())

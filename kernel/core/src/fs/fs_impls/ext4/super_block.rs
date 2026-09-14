@@ -22,8 +22,7 @@
 //! - Error behavior must be `Continue`.
 //! - Incompatible and read-only compatible feature sets are checked against
 //!   the supported masks. Unknown incompatible or read-only compatible
-//!   features cause mount failure; compatible features are retained only when
-//!   represented by the known bitflags.
+//!   features cause mount failure; compatible features are retained unchanged.
 //!
 //! # Superblock copies
 //!
@@ -240,9 +239,10 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             return_errno_with_message!(Errno::EINVAL, "free inodes count exceeds inodes count");
         }
 
-        let feature_compat = FeatureCompatSet::from_bits_truncate(sb.feature_compat);
+        let feature_compat = FeatureCompatSet::from_bits_retain(sb.feature_compat);
 
-        let allowed_incompat = FeatureInCompatSet::FILETYPE.bits();
+        let allowed_incompat =
+            FeatureInCompatSet::FILETYPE.bits() | FeatureInCompatSet::EXTENTS.bits();
         if (sb.feature_incompat & !allowed_incompat) != 0 {
             return_errno_with_message!(Errno::EINVAL, "unsupported incompat feature");
         }
@@ -614,14 +614,16 @@ impl SuperBlock {
         self.rev_level
     }
 
-    #[expect(dead_code)]
-    const fn feature_compat(&self) -> FeatureCompatSet {
-        self.feature_compat
+    pub(super) const fn has_journal(&self) -> bool {
+        self.feature_compat.contains(FeatureCompatSet::HAS_JOURNAL)
     }
 
-    #[expect(dead_code)]
-    const fn feature_incompat(&self) -> FeatureInCompatSet {
-        self.feature_incompat
+    pub(super) const fn has_dir_index(&self) -> bool {
+        self.feature_compat.contains(FeatureCompatSet::DIR_INDEX)
+    }
+
+    pub(super) const fn has_extents(&self) -> bool {
+        self.feature_incompat.contains(FeatureInCompatSet::EXTENTS)
     }
 
     #[expect(dead_code)]
@@ -648,6 +650,14 @@ bitflags! {
     }
 }
 
+impl FeatureCompatSet {
+    // Unknown compatible bits are valid to ignore and preserve; known unsupported
+    // behaviors remain mount-gated through their incompatible feature classes.
+    const fn from_bits_retain(bits: u32) -> Self {
+        Self { bits }
+    }
+}
+
 bitflags! {
     /// Incompatible feature set.
     struct FeatureInCompatSet: u32 {
@@ -661,6 +671,10 @@ bitflags! {
         const JOURNAL_DEV = 1 << 3;
         /// Metablock block group.
         const META_BG = 1 << 4;
+        /// Inodes may use extent trees instead of indirect block pointers.
+        const EXTENTS = 1 << 6;
+        /// Filesystem block numbers and group descriptors use 64-bit fields.
+        const BIT64 = 1 << 7;
     }
 }
 
@@ -907,5 +921,28 @@ mod test {
         raw.inode_size = 512;
 
         assert!(SuperBlock::try_from(raw).is_err());
+    }
+
+    #[ktest]
+    fn rejects_64bit_and_metadata_checksum_features() {
+        let mut raw = make_valid_raw_super_block(1);
+        raw.feature_incompat |= FeatureInCompatSet::BIT64.bits();
+        assert!(SuperBlock::try_from(raw).is_err());
+
+        let mut raw = make_valid_raw_super_block(1);
+        raw.feature_ro_compat |= 1 << 10;
+        assert!(SuperBlock::try_from(raw).is_err());
+    }
+
+    #[ktest]
+    fn compatible_features_round_trip_unknown_bits() {
+        const UNKNOWN_COMPAT: u32 = 1 << 31;
+
+        let mut raw = make_valid_raw_super_block(1);
+        raw.feature_compat |= UNKNOWN_COMPAT;
+        let parsed = SuperBlock::try_from(raw).unwrap();
+        let encoded = RawSuperBlock::from(&parsed);
+
+        assert_eq!(encoded.feature_compat, raw.feature_compat);
     }
 }

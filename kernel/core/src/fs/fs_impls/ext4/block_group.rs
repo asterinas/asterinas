@@ -33,7 +33,7 @@ use aster_block::bio::BioCompleteFn;
 use ostd::const_assert;
 
 use super::{
-    fs::Ext4,
+    fs::{Ext4, MountFlavor},
     inode::{Inode, InodeDesc, RawInode},
     prelude::*,
     super_block::SuperBlock,
@@ -191,8 +191,29 @@ impl BlockGroup {
         }
 
         let inode_desc = self.read_inode_desc(inode_idx)?;
+        let filesystem = fs
+            .upgrade()
+            .ok_or_else(|| Error::with_message(Errno::EIO, "filesystem already dropped"))?;
+        if inode_desc.uses_extents() && !filesystem.super_block().has_extents() {
+            return_errno_with_message!(
+                Errno::EUCLEAN,
+                "extent inode found on a filesystem without the extents feature"
+            );
+        }
+        if filesystem.mount_flavor() == MountFlavor::Ext4 && inode_desc.is_indexed_directory() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "hash-indexed directories are unsupported"
+            );
+        }
         let inode_desc = Dirty::new(inode_desc);
-        let inode = Inode::new(ino, inode_desc.type_(), inode_desc, self.group_idx, fs);
+        let inode = Inode::new(
+            ino,
+            inode_desc.type_(),
+            inode_desc,
+            self.group_idx,
+            Arc::downgrade(&filesystem),
+        );
         inode_cache.insert(inode_idx, inode.clone());
         Ok(inode)
     }
@@ -366,6 +387,25 @@ impl BlockGroup {
             .ok_or_else(|| Error::with_message(Errno::EIO, "free block count overflow in group"))?;
 
         Ok(actually_freed)
+    }
+
+    /// Returns whether every block in an absolute range is allocated and is
+    /// outside this group's bitmap and inode-table metadata.
+    pub(super) fn is_allocated_data_range(&self, range: Range<Ext4Bid>) -> bool {
+        if range.is_empty() || range.start < self.first_block || range.end > self.last_block + 1 {
+            return false;
+        }
+
+        let metadata = self.metadata.read();
+        if self.overlaps_system_zone_with(&metadata.desc, range.clone()) {
+            return false;
+        }
+
+        (range.start..range.end).all(|block| {
+            metadata
+                .block_bitmap
+                .is_allocated((block - self.first_block) as u16)
+        })
     }
 
     /// Attempts to allocate one inode within this group.
