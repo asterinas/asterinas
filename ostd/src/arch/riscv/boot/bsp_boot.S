@@ -122,6 +122,17 @@ boot_stack_top:
 .text
 
 bsp_boot_virt:
+    # A flat binary loader does not initialize ELF NOBITS sections.
+    lla     t0, __bss
+    lla     t1, __bss_end
+
+1:
+    bgeu    t0, t1, 2f
+    sb      zero, 0(t0)
+    addi    t0, t0, 1
+    j       1b
+
+2:
     # Initialize GP to the CPU-local storage's base address.
 .extern __cpu_local_start
     lla    gp, __cpu_local_start
