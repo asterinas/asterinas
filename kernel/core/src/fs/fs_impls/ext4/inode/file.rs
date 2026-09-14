@@ -142,6 +142,12 @@ impl Inode {
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "fallocate range overflow"))?;
         let fs = self.fs()?;
         let inner = self.inner.write();
+        if inner.uses_extents() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "fallocate is not supported for extent-based inodes"
+            );
+        }
         let old_size = inner.file_size();
         if end > old_size {
             inner.ensure_size_within_limit(&fs, end)?;
@@ -208,15 +214,19 @@ impl InodeInner {
             );
         }
 
-        if let Ok(block_manager) = self.block_manager() {
-            block_manager.truncate_to_byte_len(old_size);
+        if let Ok(block_manager) = self.block_manager()
+            && let Err(err) = block_manager.truncate_to_byte_len(old_size)
+        {
+            error!("write_at: cleanup block truncate failed: {:?}", err);
         }
     }
 
     /// Truncates only block mappings after a failed fallocate.
     fn rollback_fallocate(&mut self, old_size: usize) {
-        if let Ok(block_manager) = self.block_manager() {
-            block_manager.truncate_to_byte_len(old_size);
+        if let Ok(block_manager) = self.block_manager()
+            && let Err(err) = block_manager.truncate_to_byte_len(old_size)
+        {
+            error!("fallocate: cleanup block truncate failed: {:?}", err);
         }
     }
 
@@ -328,7 +338,7 @@ impl InodeInner {
         let iblock_end = Iblock::try_from(end.div_ceil(BLOCK_SIZE))
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
         let iblock_range = iblock_start..iblock_end;
-        let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range);
+        let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range)?;
 
         while let Some(range) = range_iter.next()? {
             match range {
@@ -365,7 +375,7 @@ impl InodeInner {
         let iblock_end = Iblock::try_from(end.div_ceil(BLOCK_SIZE))
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
         let iblock_range = iblock_start..iblock_end;
-        let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range);
+        let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range)?;
 
         let mut io_batch = IoBatch::new();
         while let Some(range) = range_iter.next()? {
@@ -395,7 +405,7 @@ impl InodeInner {
         let old_size = self.desc.size as usize;
 
         self.resize_page_cache(new_size, old_size)?;
-        self.block_manager()?.truncate_to_byte_len(new_size);
+        self.block_manager()?.truncate_to_byte_len(new_size)?;
 
         self.set_file_size(new_size);
         Ok(())

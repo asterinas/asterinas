@@ -22,8 +22,7 @@
 //! - Error behavior must be `Continue`.
 //! - Incompatible and read-only compatible feature sets are checked against
 //!   the supported masks. Unknown incompatible or read-only compatible
-//!   features cause mount failure; compatible features are retained only when
-//!   represented by the known bitflags.
+//!   features cause mount failure; compatible features are retained unchanged.
 //!
 //! # Superblock copies
 //!
@@ -240,9 +239,11 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             return_errno_with_message!(Errno::EINVAL, "free inodes count exceeds inodes count");
         }
 
-        let feature_compat = FeatureCompatSet::from_bits_truncate(sb.feature_compat);
+        // Unknown compatible bits may be ignored but must survive writeback.
+        let feature_compat = FeatureCompatSet::from_bits_retain(sb.feature_compat);
 
-        let allowed_incompat = FeatureInCompatSet::FILETYPE.bits();
+        let allowed_incompat =
+            FeatureInCompatSet::FILETYPE.bits() | FeatureInCompatSet::EXTENTS.bits();
         if (sb.feature_incompat & !allowed_incompat) != 0 {
             return_errno_with_message!(Errno::EINVAL, "unsupported incompat feature");
         }
@@ -610,14 +611,16 @@ impl SuperBlock {
         self.rev_level
     }
 
-    #[expect(dead_code)]
-    const fn feature_compat(&self) -> FeatureCompatSet {
-        self.feature_compat
+    pub(super) const fn has_journal(&self) -> bool {
+        self.feature_compat.contains(FeatureCompatSet::HAS_JOURNAL)
     }
 
-    #[expect(dead_code)]
-    const fn feature_incompat(&self) -> FeatureInCompatSet {
-        self.feature_incompat
+    pub(super) const fn has_dir_index(&self) -> bool {
+        self.feature_compat.contains(FeatureCompatSet::DIR_INDEX)
+    }
+
+    pub(super) const fn has_extents(&self) -> bool {
+        self.feature_incompat.contains(FeatureInCompatSet::EXTENTS)
     }
 
     #[expect(dead_code)]
@@ -659,6 +662,10 @@ bitflags! {
         const JOURNAL_DEV = 1 << 3;
         /// Metablock block group.
         const META_BG     = 1 << 4;
+        /// Inodes may use extent trees instead of indirect block pointers.
+        const EXTENTS     = 1 << 6;
+        /// Filesystem block numbers and group descriptors use 64-bit fields.
+        const BIT64       = 1 << 7;
     }
 }
 

@@ -257,6 +257,10 @@ pub(super) struct InodeDesc {
 }
 
 impl InodeDesc {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the arguments describe the initial on-disk inode attributes"
+    )]
     pub(super) fn new(
         type_: InodeType,
         perm: FilePerm,
@@ -265,7 +269,9 @@ impl InodeDesc {
         link_count: u16,
         generation: u32,
         now: Duration,
+        extent_based: bool,
     ) -> Self {
+        let extent_based = extent_based && matches!(type_, InodeType::File | InodeType::Dir);
         Self {
             type_,
             perm,
@@ -278,10 +284,18 @@ impl InodeDesc {
             dtime: Duration::ZERO,
             link_count,
             sector_count: 0,
-            flags: FileFlags::empty(),
+            flags: if extent_based {
+                FileFlags::EXTENTS
+            } else {
+                FileFlags::empty()
+            },
             file_acl: 0,
             generation,
-            block_ptrs: [0; RAW_BLOCK_PTRS_LEN],
+            block_ptrs: if extent_based {
+                block_mapping::extent::empty_extent_root()
+            } else {
+                [0; RAW_BLOCK_PTRS_LEN]
+            },
             raw: RawInode::default(),
         }
     }
@@ -289,6 +303,14 @@ impl InodeDesc {
     /// Returns the inode type stored in this descriptor.
     pub(super) fn type_(&self) -> InodeType {
         self.type_
+    }
+
+    pub(super) fn uses_extents(&self) -> bool {
+        self.flags.contains(FileFlags::EXTENTS)
+    }
+
+    pub(super) fn is_indexed_directory(&self) -> bool {
+        self.type_ == InodeType::Dir && self.flags.contains(FileFlags::INDEX_DIR)
     }
 }
 
@@ -323,6 +345,9 @@ impl TryFrom<&RawInode> for InodeDesc {
 
         let flags = FileFlags::from_bits(raw.flags)
             .ok_or_else(|| Error::with_message(Errno::EIO, "invalid inode flags"))?;
+        if flags.contains(FileFlags::EXTENTS) {
+            block_mapping::extent::validate_extent_root(raw.block)?;
+        }
         let raw_block_ptrs = RawBlockPtrs::new(raw.sector_count, raw.block);
 
         Ok(InodeDesc {
@@ -550,6 +575,10 @@ impl InodeInner {
         self.desc.size as usize
     }
 
+    fn uses_extents(&self) -> bool {
+        self.desc.flags.contains(FileFlags::EXTENTS)
+    }
+
     fn set_file_size(&mut self, new_size: usize) {
         self.desc.size = new_size as u64;
     }
@@ -617,15 +646,16 @@ impl InodeInner {
 impl InodePayload {
     fn new(inode_desc: &Dirty<InodeDesc>, fs: Weak<Ext4>) -> Self {
         let raw_block_ptrs = RawBlockPtrs::new(inode_desc.sector_count, inode_desc.block_ptrs);
+        let extent_based = inode_desc.flags.contains(FileFlags::EXTENTS);
         match inode_desc.type_ {
             InodeType::File | InodeType::Dir => {
-                Self::new_data_backed(inode_desc.size as usize, raw_block_ptrs, fs)
+                Self::new_data_backed(inode_desc.size as usize, raw_block_ptrs, fs, extent_based)
             }
             InodeType::SymLink if Self::is_fast_symlink(inode_desc) => Self::FastSymlink {
                 target: FastSymlinkTarget::new(inode_desc.block_ptrs),
             },
             InodeType::SymLink => {
-                Self::new_data_backed(inode_desc.size as usize, raw_block_ptrs, fs)
+                Self::new_data_backed(inode_desc.size as usize, raw_block_ptrs, fs, extent_based)
             }
             InodeType::CharDevice | InodeType::BlockDevice => Self::Device {
                 device_id: raw_block_ptrs.read_device_id(),
@@ -634,10 +664,20 @@ impl InodePayload {
         }
     }
 
-    fn new_data_backed(size: usize, raw_block_ptrs: RawBlockPtrs, fs: Weak<Ext4>) -> Self {
+    fn new_data_backed(
+        size: usize,
+        raw_block_ptrs: RawBlockPtrs,
+        fs: Weak<Ext4>,
+        extent_based: bool,
+    ) -> Self {
         let page_cache_size = size.align_up(PAGE_SIZE);
         let page_count = page_cache_size / PAGE_SIZE;
-        let block_manager = Arc::new(BlockMapping::new_indirect(raw_block_ptrs, fs, page_count));
+        let block_manager = Arc::new(if extent_based {
+            BlockMapping::new_extent(raw_block_ptrs, fs, page_count)
+                .expect("extent root was validated while decoding the inode")
+        } else {
+            BlockMapping::new_indirect(raw_block_ptrs, fs, page_count)
+        });
         let page_cache_backend: Weak<dyn PageCacheBackend> = Arc::downgrade(&block_manager) as _;
         // Keep page-cache capacity aligned with inode size so `npages`/VMO window
         // and on-disk data extent stay consistent from mount time.

@@ -82,7 +82,7 @@ impl Inode {
         if inner.desc.sector_count > 0
             && let Some(block_manager) = block_manager
         {
-            block_manager.truncate_to_byte_len(0);
+            block_manager.truncate_to_byte_len(0)?;
         }
         inner.write_back_inode_desc(&fs, self.ino)?;
 
