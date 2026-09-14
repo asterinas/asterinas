@@ -5,7 +5,7 @@
 use core::sync::atomic::Ordering;
 
 use super::{
-    Backend, NUM_QUEUES, RX_QUEUE, TX_QUEUE, VhostVsockShared,
+    Backend, NUM_QUEUES, RX_QUEUE, TX_QUEUE,
     packet::{self, HEADER_LEN, MAX_PAYLOAD_LEN},
 };
 use crate::{
@@ -19,40 +19,39 @@ use crate::{
 
 const WORK_BUDGET: usize = 64;
 
-pub(super) fn run(shared: Arc<VhostVsockShared>) {
-    if run_queues(&shared).is_ok() {
+pub(super) fn run(backend: Arc<Backend>) {
+    if run_queues(&backend).is_ok() {
         return;
     }
     let cid = {
-        let mut common = shared.common.lock();
+        let mut common = backend.common.lock();
         common.deactivate();
         for index in 0..NUM_QUEUES {
             if let Ok(queue) = common.queue_mut(index) {
                 queue.signal_error();
             }
         }
-        let mut pending = shared.backend.pending.lock();
+        let mut pending = backend.pending.lock();
         pending.is_active = false;
         pending.failed = true;
         pending.generation = pending.generation.wrapping_add(1);
         pending.discard();
-        shared.backend.cid()
+        backend.cid()
     };
     if cid != 0 {
         vsock::reset_vhost_orphaned_connections();
     }
 }
 
-fn run_queues(shared: &VhostVsockShared) -> Result<()> {
-    let backend = &shared.backend;
+fn run_queues(backend: &Backend) -> Result<()> {
     loop {
         let mut poller = Poller::new(None);
         backend
             .wake
             .poll(IoEvents::IN, Some(poller.as_handle_mut()));
         let has_wakeup = backend.wake.consume().is_some();
-        let mut common = shared.common.lock();
-        if shared.exiting.load(Ordering::Acquire) {
+        let mut common = backend.common.lock();
+        if backend.exiting.load(Ordering::Acquire) {
             return Ok(());
         }
         if backend.pending.lock().failed {
