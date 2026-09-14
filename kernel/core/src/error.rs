@@ -154,7 +154,7 @@ pub enum Errno {
     ERESTARTSYS = 512, /* Restart of an interrupted system call. For kernel internal use only. */
 }
 
-/// error used in this crate
+/// An error reported by the kernel core or one of its components.
 #[derive(Clone, Copy, Debug)]
 pub struct Error {
     errno: Errno,
@@ -163,10 +163,12 @@ pub struct Error {
 }
 
 impl Error {
+    /// Creates an error without an explanatory message.
     pub const fn new(errno: Errno) -> Self {
         Error { errno, msg: None }
     }
 
+    /// Creates an error with a static explanatory message.
     pub const fn with_message(errno: Errno, msg: &'static str) -> Self {
         Error {
             errno,
@@ -174,6 +176,7 @@ impl Error {
         }
     }
 
+    /// Returns the error number.
     pub const fn error(&self) -> Errno {
         self.errno
     }

@@ -40,6 +40,9 @@ impl Context<'_> {
 /// The user's memory space of the current task.
 ///
 /// It provides methods to read from or write to the user space efficiently.
+///
+/// Components receive this type through controlled user-memory access APIs;
+/// they cannot construct it or access its underlying VMAR directly.
 pub struct CurrentUserSpace<'a>(Ref<'a, Option<VmarHandle>>);
 
 /// Gets the [`CurrentUserSpace`] from the current task.
