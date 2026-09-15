@@ -24,13 +24,10 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use aster_virtio::device::socket::header::VirtioVsockHdr;
 use device_id::{DeviceId, MinorId};
 
-use super::common::{
-    device::{self as vhost, VhostDevice, VhostDeviceConfig},
-    worker::VhostWorker,
-};
+use super::common::device::{self as vhost, VhostDevice, VhostDeviceConfig, VhostDeviceGuard};
 use crate::{
     device::{Device, DeviceType, registry::char},
-    events::{IoEvents, KernelEventFile},
+    events::IoEvents,
     fs::{
         devtmpfs::DevtmpfsNodeMeta,
         file::{PerOpenFileOps, StatusFlags},
@@ -145,41 +142,34 @@ impl Drop for VhostVsockFile {
     }
 }
 
-// Lock order: worker -> common -> socket/pending locks. The worker thread never
-// takes the worker mutex; socket callbacks take neither sleeping mutex.
+// Lock order: common worker -> common data -> socket/pending locks. The worker
+// never takes the worker mutex; socket callbacks take neither sleeping mutex.
 // No guest copy holds a pending spinlock.
 struct Backend {
-    // Serializes ioctl and shutdown; the common worker owns the thread handle.
-    worker: Mutex<VhostWorker<NUM_QUEUES>>,
-    common: Arc<Mutex<VhostDevice<NUM_QUEUES>>>,
+    common: VhostDevice<NUM_QUEUES>,
     // Zero means that SET_GUEST_CID has not assigned a route yet.
     cid: AtomicU32,
     pending: SpinLock<PendingPackets>,
-    wake: Arc<KernelEventFile>,
 }
 
 impl Backend {
     fn new() -> Arc<Self> {
-        let common = Arc::new(Mutex::new(VhostDevice::new(VhostDeviceConfig {
+        let common = VhostDevice::new(VhostDeviceConfig {
             device_features: vhost::VIRTIO_F_VERSION_1 | vhost::VIRTIO_RING_F_INDIRECT_DESC,
             backend_features: 0,
             max_queue_size: 32768,
-        })));
-        let worker = VhostWorker::new(common.clone());
-        let wake = worker.wake_event().clone();
+        });
         Arc::new(Self {
-            worker: Mutex::new(worker),
             common,
             cid: AtomicU32::new(0),
             pending: SpinLock::new(PendingPackets::new()),
-            wake,
         })
     }
 
     fn ioctl(self: &Arc<Self>, raw: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 
-        let mut worker = self.worker.lock();
+        let mut device = self.common.lock();
         dispatch_ioctl!(match raw {
             cmd @ SetGuestCid => {
                 // CID reservations belong to the file, independently of owner.
@@ -188,21 +178,21 @@ impl Backend {
             }
             cmd @ SetRunning => {
                 let running = cmd.read()?;
-                self.common.lock().check_owner()?;
+                self.common.lock_data().check_owner()?;
                 if running != 0 {
-                    self.start(&mut worker)?;
+                    self.start(&mut device)?;
                 } else {
-                    worker.deactivate();
+                    device.deactivate();
                 }
                 Ok(0)
             }
-            _ => worker.handle_ioctl(raw, self.clone()),
+            _ => device.handle_ioctl(raw, self.clone()),
         })
     }
 
     fn set_guest_cid(self: &Arc<Self>, cid: u64) -> Result<()> {
         let cid = validate_guest_cid(cid)?;
-        let _common = self.common.lock();
+        let _common = self.common.lock_data();
         let mut backends = BACKENDS.lock();
         if let Some(other) = backends.get(&cid).and_then(Weak::upgrade)
             && !Arc::ptr_eq(&other, self)
@@ -219,35 +209,34 @@ impl Backend {
         self.cid.store(cid, Ordering::Release);
         backends.insert(cid, Arc::downgrade(self));
         drop(backends);
-        self.wake.signal();
+        self.common.wake_event().signal();
         Ok(())
     }
 
-    fn start(self: &Arc<Self>, worker: &mut VhostWorker<NUM_QUEUES>) -> Result<()> {
+    fn start(self: &Arc<Self>, device: &mut VhostDeviceGuard<'_, NUM_QUEUES>) -> Result<()> {
         vsock::ensure_vhost_backend()?;
         let worker_failed = self.pending.lock().failed;
         if worker_failed {
-            worker.stop();
+            device.stop_worker();
             {
                 let mut pending = self.pending.lock();
                 pending.failed = false;
                 pending.is_active = true;
             }
-            let vmar = self.common.lock().owner_vmar().unwrap().clone();
-            worker.start(vmar, self.clone());
+            device.start_worker(self.clone())?;
         }
-        worker.activate()
+        device.activate()
     }
 
     fn shutdown(&self) {
-        let mut worker = self.worker.lock();
-        worker.deactivate();
+        let mut device = self.common.lock();
+        device.deactivate();
         {
             let mut pending = self.pending.lock();
             pending.is_active = false;
             pending.generation = pending.generation.wrapping_add(1);
         }
-        worker.stop();
+        device.stop_worker();
         let cid = self.cid();
         if cid != 0 {
             // Keep the CID reserved until old sockets are reset, so a new
@@ -258,7 +247,7 @@ impl Backend {
         }
         self.pending.lock().discard();
         // Reservations may retain Backend; release owner resources on close.
-        self.common.lock().reset_owner();
+        self.common.lock_data().reset_owner();
     }
 
     fn cid(&self) -> u32 {
@@ -301,13 +290,13 @@ pub(crate) fn send_packet(header: &VirtioVsockHdr, payload: &[u8]) -> Result<boo
             pending.failed = true;
             pending.is_active = false;
             drop(pending);
-            backend.wake.signal();
+            backend.common.wake_event().signal();
             return_errno_with_message!(Errno::ENOBUFS, "the vsock control queue is full");
         }
         return Ok(false);
     }
     drop(pending);
-    backend.wake.signal();
+    backend.common.wake_event().signal();
     Ok(true)
 }
 
@@ -336,7 +325,7 @@ impl VhostTxReservation {
         pending.push_reserved(packet);
         self.committed = true;
         drop(pending);
-        self.backend.wake.signal();
+        self.backend.common.wake_event().signal();
         Ok(true)
     }
 }
@@ -345,7 +334,7 @@ impl Drop for VhostTxReservation {
     fn drop(&mut self) {
         if !self.committed {
             self.backend.pending.lock().release(self.len);
-            self.backend.wake.signal();
+            self.backend.common.wake_event().signal();
         }
     }
 }

@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     device::vhost::common::{
-        device::VhostDevice,
+        device::VhostDeviceData,
         virtqueue::VhostQueue,
         worker::{VhostWork, VhostWorkStatus},
     },
@@ -19,7 +19,7 @@ use crate::{
 const WORK_BUDGET: usize = 64;
 
 impl VhostWork<NUM_QUEUES> for Arc<Backend> {
-    fn process(&mut self, common: &mut VhostDevice<NUM_QUEUES>) -> Result<VhostWorkStatus> {
+    fn process(&mut self, common: &mut VhostDeviceData<NUM_QUEUES>) -> Result<VhostWorkStatus> {
         if self.pending.lock().failed {
             return_errno_with_message!(Errno::ENOBUFS, "the vsock endpoint failed");
         }
@@ -118,7 +118,7 @@ impl VhostWork<NUM_QUEUES> for Arc<Backend> {
             return;
         }
         let cid = {
-            let mut common = self.common.lock();
+            let mut common = self.common.lock_data();
             common.deactivate();
             for index in 0..NUM_QUEUES {
                 if let Ok(queue) = common.queue_mut(index) {

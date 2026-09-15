@@ -7,7 +7,10 @@ use ostd::prelude::ktest;
 
 use super::*;
 use crate::{
-    device::vhost::common::worker::{VhostWork, VhostWorkStatus},
+    device::vhost::common::{
+        device::VhostDeviceData,
+        worker::{VhostWork, VhostWorkStatus},
+    },
     fs::pseudofs::SockFs,
     process::ProcessVm,
     vm::vmar::VmarHandle,
@@ -135,7 +138,7 @@ fn vhost_vsock_pause_preserves_accepted_packets_and_reservations() {
     let mut packet_header = create_header(3);
     packet_header.dst_cid = cid;
 
-    file.backend.worker.lock().deactivate();
+    file.backend.common.lock().deactivate();
     assert!(can_connect_remote_cid(cid as u32));
     assert!(reservation.send(&packet_header, &[1, 2, 3]).unwrap());
     let (packet, offset) = file.backend.pending.lock().front().unwrap();
@@ -154,7 +157,7 @@ fn vhost_vsock_control_exhaustion_fails_endpoint() {
     let mut packet_header = create_header(0);
     packet_header.dst_cid = cid;
     let backend = file.backend.clone();
-    backend.wake.consume();
+    backend.common.wake_event().consume();
 
     let error = loop {
         match send_packet(&packet_header, &[]) {
@@ -166,7 +169,7 @@ fn vhost_vsock_control_exhaustion_fails_endpoint() {
     assert_eq!(error.error(), Errno::ENOBUFS);
     assert!(!can_connect_remote_cid(cid as u32));
     assert!(backend.pending.lock().failed);
-    assert!(backend.wake.consume().is_some());
+    assert!(backend.common.wake_event().consume().is_some());
     drop(file);
 }
 
@@ -186,13 +189,17 @@ fn vhost_vsock_close_joins_worker_with_outstanding_reservation() {
     let completed = Arc::new(AtomicBool::new(false));
     let owner = VmarHandle::new(ProcessVm::new(SockFs::new_path()));
     // The paused common worker needs an address space but no guest mappings.
-    file.backend.worker.lock().start(
-        owner.clone_arc(),
-        CloseWork {
-            backend: file.backend.clone(),
-            completed: completed.clone(),
-        },
-    );
+    file.backend
+        .common
+        .lock()
+        .set_owner(
+            owner.clone_arc(),
+            CloseWork {
+                backend: file.backend.clone(),
+                completed: completed.clone(),
+            },
+        )
+        .unwrap();
 
     drop(file);
     assert!(completed.load(Ordering::Acquire));
@@ -209,7 +216,7 @@ struct CloseWork {
 }
 
 impl VhostWork<NUM_QUEUES> for CloseWork {
-    fn process(&mut self, device: &mut VhostDevice<NUM_QUEUES>) -> Result<VhostWorkStatus> {
+    fn process(&mut self, device: &mut VhostDeviceData<NUM_QUEUES>) -> Result<VhostWorkStatus> {
         self.backend.process(device)
     }
 
