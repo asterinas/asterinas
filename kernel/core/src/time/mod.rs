@@ -5,6 +5,7 @@
 pub(crate) use core::{Clock, timer};
 
 use ::core::time::Duration;
+use ostd::sync::Waiter;
 pub(crate) use system_time::{START_TIME, SystemTime};
 pub(crate) use timer::{Timer, TimerManager};
 
@@ -24,6 +25,16 @@ pub(crate) type timer_t = i32;
 pub(crate) type suseconds_t = i64;
 
 const NSEC_PER_USEC: i64 = 1_000;
+
+/// Suspends the current task for at least the specified duration.
+///
+/// The caller can reuse `waiter` across calls to avoid allocating a new waiter and
+/// task reference for each sleep. The current task must be allowed to sleep, and the
+/// kernel timer subsystem must be initialized.
+pub fn sleep(waiter: &Waiter, duration: &Duration) {
+    let _ = waiter.wait_until_or_timeout(|| -> Option<()> { None }, duration);
+}
+
 const USEC_PER_SEC: i64 = 1_000_000;
 pub(crate) const NSEC_PER_SEC: i64 = 1_000_000_000;
 

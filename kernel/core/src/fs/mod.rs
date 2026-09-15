@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Filesystem implementation and component-facing registration interfaces.
+
 pub(crate) mod file;
 mod fs_impls;
 pub(crate) mod initramfs;
 pub(crate) mod pipe;
 pub(crate) mod rootfs;
+pub mod systree;
 pub(crate) mod thread_info;
 pub(crate) mod utils;
 pub(crate) mod vfs;
 
 pub(crate) use fs_impls::{
-    cgroupfs, configfs, devpts, devtmpfs, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
+    cgroupfs, devpts, devtmpfs, exfat, ext2, procfs, pseudofs, ramfs, sysfs, tmpfs,
 };
 
 use crate::{

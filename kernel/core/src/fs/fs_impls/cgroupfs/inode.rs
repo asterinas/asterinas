@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::fs::CgroupFs;
 use crate::{
     fs::{
         cgroupfs::CgroupNode,
@@ -26,6 +25,7 @@ pub(super) struct CgroupInode {
     mode: RwLock<InodeMode>,
     /// Weak reference to the parent inode.
     parent: Weak<CgroupInode>,
+    fs: Weak<dyn FileSystem>,
     /// Weak self-reference for cyclic data structures.
     this: Weak<CgroupInode>,
 }
@@ -36,6 +36,7 @@ impl SysTreeInodeTy for CgroupInode {
         metadata: Metadata,
         mode: InodeMode,
         parent: Weak<Self>,
+        fs: Weak<dyn FileSystem>,
     ) -> Arc<Self>
     where
         Self: Sized,
@@ -46,6 +47,7 @@ impl SysTreeInodeTy for CgroupInode {
             extension: Extension::new(),
             mode: RwLock::new(mode),
             parent,
+            fs,
             this: this.clone(),
         })
     }
@@ -60,6 +62,10 @@ impl SysTreeInodeTy for CgroupInode {
 
     fn extension(&self) -> &Extension {
         &self.extension
+    }
+
+    fn fs_weak(&self) -> &Weak<dyn FileSystem> {
+        &self.fs
     }
 
     fn mode(&self) -> Result<InodeMode> {
@@ -83,10 +89,6 @@ impl SysTreeInodeTy for CgroupInode {
 }
 
 impl Inode for CgroupInode {
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        CgroupFs::singleton().clone()
-    }
-
     fn rmdir(&self, name: &str, _child: &Arc<dyn Inode>) -> Result<()> {
         let SysTreeNodeKind::Branch(branch_node) = self.node_kind() else {
             return_errno_with_message!(Errno::ENOTDIR, "the current node is not a branch node");
