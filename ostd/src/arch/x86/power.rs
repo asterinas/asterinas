@@ -9,11 +9,7 @@ mod qemu_isa_debug {
 
     use spin::Once;
 
-    use crate::{
-        arch::device::io_port::WriteOnlyAccess,
-        io::IoPort,
-        power::{ExitCode, inject_poweroff_handler},
-    };
+    use crate::{arch::device::io_port::WriteOnlyAccess, io::IoPort, power::ExitCode};
 
     // For `qemu-system-x86_64`, the exit code will be `(code << 1) | 1`. So it is not possible to
     // let QEMU invoke `exit(0)`. We also need to check if the exit code is returned by the kernel,
@@ -24,7 +20,7 @@ mod qemu_isa_debug {
 
     static DEBUG_EXIT_PORT: Once<IoPort<u32, WriteOnlyAccess>> = Once::new();
 
-    fn try_exit_qemu(code: ExitCode) {
+    pub(super) fn try_exit_qemu(code: ExitCode) {
         let value = match code {
             ExitCode::Success => EXIT_SUCCESS,
             ExitCode::Failure => EXIT_FAILURE,
@@ -42,7 +38,6 @@ mod qemu_isa_debug {
         let debug_exit_port = IoPort::acquire(DEBUG_EXIT_PORT_NUM).unwrap();
 
         DEBUG_EXIT_PORT.call_once(|| debug_exit_port);
-        inject_poweroff_handler(try_exit_qemu);
     }
 }
 
@@ -59,4 +54,19 @@ pub(super) fn init() {
     crate::info!("QEMU hypervisor detected, assuming that the isa-debug-exit device exists");
 
     qemu_isa_debug::init();
+}
+
+/// Attempts to power off the system using an architecture-specific mechanism.
+///
+/// On x86, this function attempts to power off the system through QEMU's ISA debug-exit device if
+/// QEMU was detected during initialization. Otherwise, it does nothing and returns.
+pub fn try_poweroff(code: crate::power::ExitCode) {
+    qemu_isa_debug::try_exit_qemu(code);
+}
+
+/// Attempts to restart the system using an architecture-specific mechanism.
+///
+/// On x86, this function currently does nothing and returns.
+pub fn try_restart(_code: crate::power::ExitCode) {
+    // TODO: Add an OSTD-level restart mechanism for x86.
 }

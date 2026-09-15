@@ -27,13 +27,13 @@ members = [
     "ostd/libs/ostd-test",
     "ostd/libs/padding-struct",
     "kernel",
+    "kernel/comps/i8042",
     "kernel/comps/uart",
     "kernel/core",
     "kernel/core/comps/block",
     "kernel/core/comps/cmdline",
     "kernel/core/comps/console",
     "kernel/core/comps/framebuffer",
-    "kernel/core/comps/i8042",
     "kernel/core/comps/input",
     "kernel/core/comps/logger",
     "kernel/core/comps/mlsdisk",
@@ -78,13 +78,13 @@ default-members = [
     "osdk/deps/test-kernel",
     "ostd",
     "kernel",
+    "kernel/comps/i8042",
     "kernel/comps/uart",
     "kernel/core",
     "kernel/core/comps/block",
     "kernel/core/comps/cmdline",
     "kernel/core/comps/console",
     "kernel/core/comps/framebuffer",
-    "kernel/core/comps/i8042",
     "kernel/core/comps/input",
     "kernel/core/comps/logger",
     "kernel/core/comps/mlsdisk",
@@ -159,6 +159,7 @@ padding-struct = { path = "ostd/libs/padding-struct", version = "0.2.0" }
 aster-core = { path = "kernel/core", default-features = false }
 
 # Crates under kernel/comps
+aster-i8042 = { path = "kernel/comps/i8042" }
 aster-uart = { path = "kernel/comps/uart" }
 
 # Crates under kernel/core/comps
@@ -166,7 +167,6 @@ aster-block = { path = "kernel/core/comps/block" }
 aster-cmdline = { path = "kernel/core/comps/cmdline" }
 aster-console = { path = "kernel/core/comps/console" }
 aster-framebuffer = { path = "kernel/core/comps/framebuffer" }
-aster-i8042 = { path = "kernel/core/comps/i8042" }
 aster-input = { path = "kernel/core/comps/input" }
 aster-logger = { path = "kernel/core/comps/logger" }
 aster-mlsdisk = { path = "kernel/core/comps/mlsdisk" }
