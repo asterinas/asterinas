@@ -25,7 +25,7 @@ const VIRTQ_DESC_SIZE: usize = size_of::<Descriptor>();
 const VIRTQ_MAX_INDIRECT_DESCRIPTORS: usize = u16::MAX as usize + 1;
 
 /// Persistent configuration and progress of one split virtqueue.
-pub(super) struct VhostVirtQueue {
+pub(in vhost) struct VhostVirtQueue {
     num: usize,
     addr: Option<VhostVringAddr>,
     last_avail: u16,
@@ -160,106 +160,84 @@ impl VhostVirtQueue {
         )?;
         Ok(())
     }
-}
 
-/// Exclusive access to a queue and the device's current memory table.
-///
-/// The borrow keeps the device locked while a backend accesses guest memory.
-pub(in vhost) struct VhostQueue<'a> {
-    queue: &'a mut VhostVirtQueue,
-    memory: &'a VhostMemorySpace,
-    allow_indirect: bool,
-}
-
-impl<'a> VhostQueue<'a> {
-    pub(super) fn new(
-        queue: &'a mut VhostVirtQueue,
-        memory: &'a VhostMemorySpace,
-        features: Feature,
-    ) -> Self {
-        Self {
-            queue,
-            memory,
-            allow_indirect: features.contains(Feature::RING_INDIRECT_DESC),
-        }
-    }
-
-    pub(super) fn enable(&mut self) -> Result<()> {
-        self.queue
-            .validate_access(self.queue.addr()?)
+    pub(super) fn enable(&mut self, memory: &VhostMemorySpace) -> Result<()> {
+        self.validate_access(self.addr()?)
             .map_err(|_| Error::with_message(Errno::EFAULT, "vhost ring is inaccessible"))?;
-        if self.queue.is_enabled {
+        if self.is_enabled {
             return Ok(());
         }
-        let used_addr = self.queue.addr()?.used_user_addr as usize;
-        let used = self.memory.read_owner_val::<UsedRing>(used_addr)?;
-        self.memory
-            .write_owner_val(used_addr + UsedRing::FLAGS_OFFSET, &self.queue.used_flags)?;
-        self.queue.last_used = used.idx();
-        self.queue.is_enabled = true;
+        let used_addr = self.addr()?.used_user_addr as usize;
+        let used = memory.read_owner_val::<UsedRing>(used_addr)?;
+        memory.write_owner_val(used_addr + UsedRing::FLAGS_OFFSET, &self.used_flags)?;
+        self.last_used = used.idx();
+        self.is_enabled = true;
         Ok(())
-    }
-
-    pub(in vhost) fn consume_kick(&self) -> Option<u64> {
-        self.queue.kick.as_ref().and_then(|event| event.consume())
-    }
-
-    pub(in vhost) fn current_avail(&self) -> u16 {
-        self.queue.last_avail
     }
 
     /// Returns the next available chain after validating its descriptor links
     /// and translating each guest address into the owner's address space.
     /// Readable descriptors precede writable descriptors, as required by
     /// split-ring virtio; a backend decides which directions its protocol uses.
-    pub(in vhost) fn try_pop(&mut self) -> Result<Option<VhostDescriptorChain<'_>>> {
-        if !self.queue.is_enabled {
+    pub(in vhost) fn try_pop<'a>(
+        &'a mut self,
+        memory: &'a VhostMemorySpace,
+        features: Feature,
+    ) -> Result<Option<VhostDescriptorChain<'a>>> {
+        if !self.is_enabled {
             return Ok(None);
         }
-        let avail_idx = self.read_avail_idx()?;
-        let last_avail = self.queue.last_avail;
+        let avail_idx = self.read_avail_idx(memory)?;
+        let last_avail = self.last_avail;
         if last_avail == avail_idx {
             return Ok(None);
         }
         let pending = avail_idx.wrapping_sub(last_avail);
-        if usize::from(pending) > self.queue.num {
+        if usize::from(pending) > self.num {
             return_errno_with_message!(Errno::EINVAL, "vhost available ring advanced too far");
         }
 
         // The driver publishes the available index after its descriptor writes.
         atomic::fence(Ordering::Acquire);
 
-        let slot = usize::from(last_avail) % self.queue.num;
+        let slot = usize::from(last_avail) % self.num;
         let head_addr =
-            self.queue.addr()?.avail_user_addr as usize + AvailRing::entry_offset(slot).unwrap();
-        let head = usize::from(self.memory.read_owner_val::<u16>(head_addr)?);
+            self.addr()?.avail_user_addr as usize + AvailRing::entry_offset(slot).unwrap();
+        let head = usize::from(memory.read_owner_val::<u16>(head_addr)?);
         let mut readable = Vec::new();
         let mut writable = Vec::new();
         // Zero-length writable descriptors produce no translated segments.
         let mut has_writable = false;
-        self.walk_chain(head, &mut readable, &mut writable, &mut has_writable)?;
+        self.walk_chain(
+            memory,
+            features,
+            head,
+            &mut readable,
+            &mut writable,
+            &mut has_writable,
+        )?;
 
         // Publish consumption only after the complete chain has been validated.
-        self.queue.last_avail = last_avail.wrapping_add(1);
+        self.last_avail = last_avail.wrapping_add(1);
         Ok(Some(VhostDescriptorChain {
-            queue: self.queue,
-            memory: self.memory,
+            queue: self,
+            memory,
             head_index: head as u16,
             readable,
             writable,
         }))
     }
 
-    pub(in vhost) fn notify(&self) -> Result<()> {
-        let Some(call) = self.queue.call.as_ref() else {
+    pub(in vhost) fn notify(&self, memory: &VhostMemorySpace) -> Result<()> {
+        let Some(call) = self.call.as_ref() else {
             return Ok(());
         };
         // Paired with the guest's barrier when it enables interrupts. The
         // used-index publication must be globally visible before suppression
         // state is sampled, otherwise a notification can be lost.
         atomic::fence(Ordering::SeqCst);
-        let flags = self.memory.read_owner_val::<AvailFlags>(
-            self.queue.addr()?.avail_user_addr as usize + AvailRing::FLAGS_OFFSET,
+        let flags = memory.read_owner_val::<AvailFlags>(
+            self.addr()?.avail_user_addr as usize + AvailRing::FLAGS_OFFSET,
         )?;
         // FIXME: Honor the event-index notification scheme when
         // `VIRTIO_RING_F_EVENT_IDX` is negotiated. The current common layer
@@ -271,16 +249,19 @@ impl<'a> VhostQueue<'a> {
     }
 
     /// Suppresses guest kicks while the backend drains this queue.
-    pub(in vhost) fn disable_kick_notifications(&mut self) -> Result<()> {
-        if self.queue.used_flags.contains(UsedFlags::NO_NOTIFY) {
+    pub(in vhost) fn disable_kick_notifications(
+        &mut self,
+        memory: &VhostMemorySpace,
+    ) -> Result<()> {
+        if self.used_flags.contains(UsedFlags::NO_NOTIFY) {
             return Ok(());
         }
-        let flags = self.queue.used_flags | UsedFlags::NO_NOTIFY;
-        self.memory.write_owner_val(
-            self.queue.addr()?.used_user_addr as usize + UsedRing::FLAGS_OFFSET,
+        let flags = self.used_flags | UsedFlags::NO_NOTIFY;
+        memory.write_owner_val(
+            self.addr()?.used_user_addr as usize + UsedRing::FLAGS_OFFSET,
             &flags,
         )?;
-        self.queue.used_flags = flags;
+        self.used_flags = flags;
         Ok(())
     }
 
@@ -288,37 +269,42 @@ impl<'a> VhostQueue<'a> {
     ///
     /// If this returns `true`, the backend must disable notifications again
     /// and continue draining instead of sleeping.
-    pub(in vhost) fn enable_kick_notifications(&mut self) -> Result<bool> {
-        if !self.queue.used_flags.contains(UsedFlags::NO_NOTIFY) {
+    pub(in vhost) fn enable_kick_notifications(
+        &mut self,
+        memory: &VhostMemorySpace,
+    ) -> Result<bool> {
+        if !self.used_flags.contains(UsedFlags::NO_NOTIFY) {
             return Ok(false);
         }
-        let flags = self.queue.used_flags & !UsedFlags::NO_NOTIFY;
-        self.memory.write_owner_val(
-            self.queue.addr()?.used_user_addr as usize + UsedRing::FLAGS_OFFSET,
+        let flags = self.used_flags & !UsedFlags::NO_NOTIFY;
+        memory.write_owner_val(
+            self.addr()?.used_user_addr as usize + UsedRing::FLAGS_OFFSET,
             &flags,
         )?;
-        self.queue.used_flags = flags;
+        self.used_flags = flags;
 
         // Paired with the guest's barrier before it reads used.flags and
         // decides whether to signal the kick eventfd.
         atomic::fence(Ordering::SeqCst);
-        let avail_idx = self.read_avail_idx()?;
-        let last_avail = self.queue.last_avail;
+        let avail_idx = self.read_avail_idx(memory)?;
+        let last_avail = self.last_avail;
         let pending = avail_idx.wrapping_sub(last_avail);
-        if usize::from(pending) > self.queue.num {
+        if usize::from(pending) > self.num {
             return_errno_with_message!(Errno::EINVAL, "vhost available ring advanced too far");
         }
         Ok(pending != 0)
     }
 
     pub(in vhost) fn signal_error(&self) {
-        if let Some(err) = self.queue.err.as_ref() {
+        if let Some(err) = self.err.as_ref() {
             err.signal();
         }
     }
 
     fn walk_chain(
         &self,
+        memory: &VhostMemorySpace,
+        features: Feature,
         head: usize,
         readable: &mut Vec<TranslatedMemoryRegion>,
         writable: &mut Vec<TranslatedMemoryRegion>,
@@ -327,12 +313,24 @@ impl<'a> VhostQueue<'a> {
         let mut index = head;
         // Count descriptors, not translated segments: empty buffers and buffers
         // spanning multiple memory regions make the two counts differ.
-        for _ in 0..self.queue.num {
-            let descriptor = self.read_descriptor(index)?;
+        for _ in 0..self.num {
+            let descriptor = self.read_descriptor(memory, index)?;
             if descriptor.flags().contains(DescFlags::INDIRECT) {
-                return self.walk_indirect_chain(descriptor, readable, writable, has_writable);
+                if !features.contains(Feature::RING_INDIRECT_DESC) {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "vhost indirect descriptors were not negotiated"
+                    );
+                }
+                return Self::walk_indirect_chain(
+                    memory,
+                    descriptor,
+                    readable,
+                    writable,
+                    has_writable,
+                );
             }
-            self.append_descriptor(descriptor, readable, writable, has_writable)?;
+            Self::append_descriptor(memory, descriptor, readable, writable, has_writable)?;
             if !descriptor.flags().contains(DescFlags::NEXT) {
                 return Ok(());
             }
@@ -342,18 +340,12 @@ impl<'a> VhostQueue<'a> {
     }
 
     fn walk_indirect_chain(
-        &self,
+        memory: &VhostMemorySpace,
         descriptor: Descriptor,
         readable: &mut Vec<TranslatedMemoryRegion>,
         writable: &mut Vec<TranslatedMemoryRegion>,
         has_writable: &mut bool,
     ) -> Result<()> {
-        if !self.allow_indirect {
-            return_errno_with_message!(
-                Errno::EINVAL,
-                "vhost indirect descriptors were not negotiated"
-            );
-        }
         // Virtio 1.2, section 2.7.5.3.2: ignore WRITE on the table descriptor,
         // and allow a direct chain to end with an indirect table.
         if descriptor.flags().contains(DescFlags::NEXT) || descriptor.len() == 0 {
@@ -375,8 +367,7 @@ impl<'a> VhostQueue<'a> {
         }
         // Validate the entire GPA range, but copy only the entries we visit.
         let mut table = Vec::new();
-        self.memory
-            .translate_into(descriptor.addr() as usize, table_len, &mut table)?;
+        memory.translate_into(descriptor.addr() as usize, table_len, &mut table)?;
 
         let mut index = 0;
         for _ in 0..table_num {
@@ -398,7 +389,7 @@ impl<'a> VhostQueue<'a> {
                 })
                 .unwrap();
             let mut reader = VhostChainReader {
-                memory: self.memory,
+                memory,
                 segments: &table,
                 index: segment_index,
                 offset,
@@ -406,7 +397,7 @@ impl<'a> VhostQueue<'a> {
             let mut bytes = [0; VIRTQ_DESC_SIZE];
             reader.read_exact(&mut bytes)?;
             let descriptor = Descriptor::from_bytes(&bytes);
-            self.append_descriptor(descriptor, readable, writable, has_writable)?;
+            Self::append_descriptor(memory, descriptor, readable, writable, has_writable)?;
             if !descriptor.flags().contains(DescFlags::NEXT) {
                 return Ok(());
             }
@@ -416,7 +407,7 @@ impl<'a> VhostQueue<'a> {
     }
 
     fn append_descriptor(
-        &self,
+        memory: &VhostMemorySpace,
         descriptor: Descriptor,
         readable: &mut Vec<TranslatedMemoryRegion>,
         writable: &mut Vec<TranslatedMemoryRegion>,
@@ -430,7 +421,7 @@ impl<'a> VhostQueue<'a> {
         }
         if descriptor.flags().contains(DescFlags::WRITE) {
             *has_writable = true;
-            self.memory.translate_into(
+            memory.translate_into(
                 descriptor.addr() as usize,
                 descriptor.len() as usize,
                 writable,
@@ -442,7 +433,7 @@ impl<'a> VhostQueue<'a> {
                     "readable descriptor follows writable descriptor"
                 );
             }
-            self.memory.translate_into(
+            memory.translate_into(
                 descriptor.addr() as usize,
                 descriptor.len() as usize,
                 readable,
@@ -457,18 +448,16 @@ impl<'a> VhostQueue<'a> {
         Ok(())
     }
 
-    fn read_descriptor(&self, index: usize) -> Result<Descriptor> {
-        if index >= self.queue.num {
+    fn read_descriptor(&self, memory: &VhostMemorySpace, index: usize) -> Result<Descriptor> {
+        if index >= self.num {
             return_errno_with_message!(Errno::EINVAL, "vhost descriptor index is out of range");
         }
-        let addr = self.queue.addr()?.desc_user_addr as usize + index * VIRTQ_DESC_SIZE;
-        self.memory.read_owner_val(addr)
+        let addr = self.addr()?.desc_user_addr as usize + index * VIRTQ_DESC_SIZE;
+        memory.read_owner_val(addr)
     }
 
-    fn read_avail_idx(&self) -> Result<u16> {
-        self.memory.read_owner_val::<u16>(
-            self.queue.addr()?.avail_user_addr as usize + AvailRing::IDX_OFFSET,
-        )
+    fn read_avail_idx(&self, memory: &VhostMemorySpace) -> Result<u16> {
+        memory.read_owner_val::<u16>(self.addr()?.avail_user_addr as usize + AvailRing::IDX_OFFSET)
     }
 }
 

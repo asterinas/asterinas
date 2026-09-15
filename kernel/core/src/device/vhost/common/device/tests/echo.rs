@@ -56,13 +56,15 @@ struct EchoWork {
 
 impl VhostWork<1> for EchoWork {
     fn process(&mut self, device: &mut VhostDeviceData<1>) -> Result<VhostWorkStatus> {
-        let mut queue = device.queue_mut(0)?;
-        queue.disable_kick_notifications()?;
-        if Self::copy_next(&mut queue)? {
-            queue.notify()?;
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (memory, queues) = device.memory_and_queues_mut()?;
+        let queue = &mut queues[0];
+        queue.disable_kick_notifications(memory)?;
+        if Self::copy_next(queue, memory, features)? {
+            queue.notify(memory)?;
             return Ok(VhostWorkStatus::Pending);
         }
-        Ok(if queue.enable_kick_notifications()? {
+        Ok(if queue.enable_kick_notifications(memory)? {
             VhostWorkStatus::Pending
         } else {
             VhostWorkStatus::Idle
@@ -78,15 +80,21 @@ impl VhostWork<1> for EchoWork {
 
     fn on_exit(self, result: Result<()>) {
         if result.is_err() {
-            self.common.lock_data().queue_mut(0).unwrap().signal_error();
+            let mut device = self.common.lock_data();
+            let (_, queues) = device.memory_and_queues_mut().unwrap();
+            queues[0].signal_error();
         }
         self.completed.store(result.is_ok(), Ordering::Release);
     }
 }
 
 impl EchoWork {
-    fn copy_next(queue: &mut VhostQueue<'_>) -> Result<bool> {
-        let Some(chain) = queue.try_pop()? else {
+    fn copy_next(
+        queue: &mut VhostVirtQueue,
+        memory: &VhostMemorySpace,
+        features: Feature,
+    ) -> Result<bool> {
+        let Some(chain) = queue.try_pop(memory, features)? else {
             return Ok(false);
         };
         if chain.readable_len() != 4 || chain.writable_len() != 4 {

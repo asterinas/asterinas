@@ -2,8 +2,9 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use aster_virtio::virtio_ring::{
-    AvailFlags, AvailRing, DescFlags, Descriptor, UsedElem, UsedFlags, UsedRing,
+use aster_virtio::{
+    Feature,
+    virtio_ring::{AvailFlags, AvailRing, DescFlags, Descriptor, UsedElem, UsedFlags, UsedRing},
 };
 use ostd::{cpu::CpuId, prelude::ktest};
 
@@ -191,8 +192,10 @@ fn vhost_bound_worker_copies_chain_after_context_switch() {
                 .reader(GUEST_UVA, 1)
                 .is_ok()
         );
-        let mut queue = device.queue_mut(0).unwrap();
-        let chain = queue.try_pop().unwrap().unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
+        let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
         let mut output = vec![0; len];
         chain.reader().read_exact(&mut output).unwrap();
         assert_eq!(output, payload);
@@ -214,12 +217,12 @@ fn vhost_bound_worker_copies_chain_after_context_switch() {
         space
             .write_owner_val(AVAIL_ADDR, &AvailRing::new(AvailFlags::empty(), 2))
             .unwrap();
-        let chain = queue.try_pop().unwrap().unwrap();
+        let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
         let mut writer = chain.writer();
         writer.write_all(&vec![0xa5; len]).unwrap();
         let written = (chain.writable_len() - writer.remaining()) as u32;
         chain.complete(written).unwrap();
-        queue.notify().unwrap();
+        queue.notify(queue_memory).unwrap();
 
         space.read_owner_bytes(GUEST_UVA + 17, &mut output).unwrap();
         assert_eq!(output, vec![0xa5; len]);
@@ -517,7 +520,10 @@ fn vhost_owner_reset_clears_queues_and_memory() {
         assert!(!device.is_owned());
         assert!(!device.is_running());
         assert_eq!(device.queue_base(0).unwrap(), 0);
-        assert_eq!(device.queue_mut(0).err().unwrap().error(), Errno::EPERM);
+        assert_eq!(
+            device.memory_and_queues_mut().err().unwrap().error(),
+            Errno::EPERM
+        );
     });
 }
 
@@ -529,7 +535,9 @@ fn vhost_readable_chain_is_consumed_and_published() {
 
     run_with_owner_memory(|memory| {
         let (mut device, call) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         memory
             .write_owner_val(
                 DESC_ADDR,
@@ -545,7 +553,7 @@ fn vhost_readable_chain_is_consumed_and_published() {
         memory.write_owner_bytes(GUEST_UVA, b"abcdefgh").unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
-        let chain = queue.try_pop().unwrap().unwrap();
+        let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
         assert_eq!(chain.head_index(), 0);
         assert_eq!(chain.readable_len(), 8);
         let mut bytes = [0u8; 8];
@@ -553,7 +561,7 @@ fn vhost_readable_chain_is_consumed_and_published() {
         assert_eq!(&bytes, b"abcdefgh");
 
         chain.complete(0).unwrap();
-        queue.notify().unwrap();
+        queue.notify(queue_memory).unwrap();
         assert_eq!(call.consume(), Some(1));
         assert_eq!(
             memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap().idx(),
@@ -575,7 +583,9 @@ fn vhost_writable_chain_writes_across_descriptors() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         memory
             .write_owner_val(
                 DESC_ADDR,
@@ -590,7 +600,7 @@ fn vhost_writable_chain_writes_across_descriptors() {
             .unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
-        let chain = queue.try_pop().unwrap().unwrap();
+        let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
         assert_eq!(chain.writable_len(), 8);
         let mut writer = chain.writer();
         writer.write_all(b"abcdefgh").unwrap();
@@ -616,7 +626,9 @@ fn vhost_indirect_readable_chain_is_supported() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         let indirect_guest_addr = GUEST_ADDR + 0x800;
         let indirect_uva = GUEST_UVA + 0x800;
         memory
@@ -645,7 +657,7 @@ fn vhost_indirect_readable_chain_is_supported() {
         memory.write_owner_bytes(GUEST_UVA, b"indirect").unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
-        let chain = queue.try_pop().unwrap().unwrap();
+        let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
         let mut bytes = [0u8; 8];
         chain.reader().read_exact(&mut bytes).unwrap();
         assert_eq!(&bytes, b"indirect");
@@ -660,7 +672,9 @@ fn vhost_indirect_writable_chain_writes_across_descriptors() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         let indirect_guest_addr = GUEST_ADDR + 0x800;
         let indirect_uva = GUEST_UVA + 0x800;
         memory
@@ -689,7 +703,7 @@ fn vhost_indirect_writable_chain_writes_across_descriptors() {
         make_available(&memory, 0, AvailFlags::empty());
 
         // The indirect table occupies 32 bytes, but describes 44 writable bytes.
-        let chain = queue.try_pop().unwrap().unwrap();
+        let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
         assert_eq!(chain.readable_len(), 0);
         assert_eq!(chain.writable_len(), 44);
         let mut writer = chain.writer();
@@ -734,7 +748,9 @@ fn vhost_invalid_chain_does_not_advance_available_base() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         for len in [0, 4] {
             memory
                 .write_owner_val(
@@ -744,8 +760,8 @@ fn vhost_invalid_chain_does_not_advance_available_base() {
                 .unwrap();
             make_available(&memory, 0, AvailFlags::empty());
 
-            assert!(queue.try_pop().is_err());
-            assert_eq!(queue.current_avail(), 0);
+            assert!(queue.try_pop(queue_memory, features).is_err());
+            assert_eq!(queue.base(), 0);
         }
     });
 }
@@ -758,7 +774,9 @@ fn vhost_readable_descriptor_after_writable_is_rejected() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         for len in [0, 4] {
             memory
                 .write_owner_val(
@@ -774,8 +792,8 @@ fn vhost_readable_descriptor_after_writable_is_rejected() {
                 .unwrap();
             make_available(&memory, 0, AvailFlags::empty());
 
-            assert!(queue.try_pop().is_err());
-            assert_eq!(queue.current_avail(), 0);
+            assert!(queue.try_pop(queue_memory, features).is_err());
+            assert_eq!(queue.base(), 0);
         }
     });
 }
@@ -788,10 +806,11 @@ fn vhost_notification_respects_no_interrupt_flag() {
 
     run_with_owner_memory(|memory| {
         let (mut device, call) = create_device(memory.clone());
-        let queue = device.queue_mut(0).unwrap();
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         make_available(&memory, 0, AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT);
 
-        queue.notify().unwrap();
+        queue.notify(queue_memory).unwrap();
         assert_eq!(call.consume(), None);
     });
 }
@@ -806,9 +825,10 @@ fn vhost_kick_notifications_recheck_available_ring() {
         let (mut device, _) = create_device(memory.clone());
         // Suppression is a ring protocol operation, independent of eventfd binding.
         device.queues[0].set_kick(None);
-        let mut queue = device.queue_mut(0).unwrap();
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
 
-        queue.disable_kick_notifications().unwrap();
+        queue.disable_kick_notifications(queue_memory).unwrap();
         assert_eq!(
             memory
                 .read_owner_val::<UsedRing>(USED_ADDR)
@@ -818,7 +838,7 @@ fn vhost_kick_notifications_recheck_available_ring() {
         );
 
         make_available(&memory, 0, AvailFlags::empty());
-        assert!(queue.enable_kick_notifications().unwrap());
+        assert!(queue.enable_kick_notifications(queue_memory).unwrap());
         assert_eq!(
             memory
                 .read_owner_val::<UsedRing>(USED_ADDR)
@@ -851,14 +871,18 @@ fn vhost_unbound_events_allow_queue_completion() {
         memory.write_owner_bytes(GUEST_UVA, b"none").unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
-        let mut queue = device.queue_mut(0).unwrap();
-        assert_eq!(queue.consume_kick(), None);
-        let chain = queue.try_pop().unwrap().unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+
+        let queue = &mut queues[0];
+        assert_eq!(queue.kick_event().and_then(|event| event.consume()), None);
+        let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
         let mut payload = [0; 4];
         chain.reader().read_exact(&mut payload).unwrap();
         assert_eq!(&payload, b"none");
         chain.complete(0).unwrap();
-        queue.notify().unwrap();
+        queue.notify(queue_memory).unwrap();
         queue.signal_error();
         assert_eq!(
             memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap().idx(),
@@ -896,7 +920,9 @@ fn vhost_descriptor_segments_are_bounded() {
             })
             .unwrap();
         let mut device = create_configured_device(memory.clone(), state, 0);
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
 
         for index in 0..=virtqueue::VHOST_MAX_IOV {
             let flags = if index == virtqueue::VHOST_MAX_IOV {
@@ -918,8 +944,11 @@ fn vhost_descriptor_segments_are_bounded() {
             .write_owner_val(LARGE_AVAIL_ADDR + size_of::<AvailRing>(), &0u16)
             .unwrap();
 
-        assert_eq!(queue.try_pop().err().unwrap().error(), Errno::ENOBUFS);
-        assert_eq!(queue.current_avail(), 0);
+        assert_eq!(
+            queue.try_pop(queue_memory, features).err().unwrap().error(),
+            Errno::ENOBUFS
+        );
+        assert_eq!(queue.base(), 0);
     });
 }
 
@@ -931,7 +960,9 @@ fn vhost_indirect_table_write_flag_is_ignored() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         memory
             .write_owner_val(
                 DESC_ADDR,
@@ -952,7 +983,7 @@ fn vhost_indirect_table_write_flag_is_ignored() {
         memory.write_owner_bytes(GUEST_UVA, b"test").unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
-        let chain = queue.try_pop().unwrap().unwrap();
+        let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
         let mut output = [0; 4];
         chain.reader().read_exact(&mut output).unwrap();
         assert_eq!(&output, b"test");
@@ -968,7 +999,9 @@ fn vhost_direct_prefix_with_indirect_suffix_is_supported() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         memory
             .write_owner_val(
                 DESC_ADDR,
@@ -995,7 +1028,7 @@ fn vhost_direct_prefix_with_indirect_suffix_is_supported() {
         memory.write_owner_bytes(GUEST_UVA, b"directly").unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
-        let chain = queue.try_pop().unwrap().unwrap();
+        let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
         let mut output = [0; 8];
         chain.reader().read_exact(&mut output).unwrap();
         assert_eq!(&output, b"directly");
@@ -1011,7 +1044,9 @@ fn vhost_invalid_indirect_tables_are_rejected() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         make_available(&memory, 0, AvailFlags::empty());
         let table_len = size_of::<Descriptor>() as u32;
         for (outer_flags, inner_flags, len) in [
@@ -1038,8 +1073,11 @@ fn vhost_invalid_indirect_tables_are_rejected() {
                 )
                 .unwrap();
 
-            assert_eq!(queue.try_pop().err().unwrap().error(), Errno::EINVAL);
-            assert_eq!(queue.current_avail(), 0);
+            assert_eq!(
+                queue.try_pop(queue_memory, features).err().unwrap().error(),
+                Errno::EINVAL
+            );
+            assert_eq!(queue.base(), 0);
         }
     });
 }
@@ -1052,7 +1090,9 @@ fn vhost_indirect_table_reads_only_linked_descriptors() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         // The table GPA is valid, but the second entry has no owner mapping.
         let offset = 0x1000 - size_of::<Descriptor>();
         memory
@@ -1076,8 +1116,11 @@ fn vhost_indirect_table_reads_only_linked_descriptors() {
                 &create_descriptor(GUEST_ADDR, 4, DescFlags::NEXT, 1),
             )
             .unwrap();
-        assert_eq!(queue.try_pop().err().unwrap().error(), Errno::EFAULT);
-        assert_eq!(queue.current_avail(), 0);
+        assert_eq!(
+            queue.try_pop(queue_memory, features).err().unwrap().error(),
+            Errno::EFAULT
+        );
+        assert_eq!(queue.base(), 0);
 
         // An unvisited entry must not be read, even when it is unmapped.
         memory
@@ -1087,12 +1130,12 @@ fn vhost_indirect_table_reads_only_linked_descriptors() {
             )
             .unwrap();
         memory.write_owner_bytes(GUEST_UVA, b"lazy").unwrap();
-        let chain = queue.try_pop().unwrap().unwrap();
+        let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
         let mut bytes = [0; 4];
         chain.reader().read_exact(&mut bytes).unwrap();
         assert_eq!(&bytes, b"lazy");
         chain.complete(0).unwrap();
-        assert_eq!(queue.current_avail(), 1);
+        assert_eq!(queue.base(), 1);
     });
 }
 
@@ -1104,7 +1147,9 @@ fn vhost_indirect_descriptors_require_negotiation() {
 
     run_with_owner_memory(|memory| {
         let mut device = create_configured_device(memory.clone(), create_virtqueue(), 0);
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         memory
             .write_owner_val(
                 DESC_ADDR,
@@ -1118,8 +1163,11 @@ fn vhost_indirect_descriptors_require_negotiation() {
             .unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
-        assert_eq!(queue.try_pop().err().unwrap().error(), Errno::EINVAL);
-        assert_eq!(queue.current_avail(), 0);
+        assert_eq!(
+            queue.try_pop(queue_memory, features).err().unwrap().error(),
+            Errno::EINVAL
+        );
+        assert_eq!(queue.base(), 0);
     });
 }
 
@@ -1131,7 +1179,9 @@ fn vhost_indirect_suffix_preserves_descriptor_direction_order() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        let mut queue = device.queue_mut(0).unwrap();
+        let features = Feature::from_bits_truncate(device.negotiated_features());
+        let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+        let queue = &mut queues[0];
         memory
             .write_owner_val(
                 DESC_ADDR,
@@ -1157,8 +1207,11 @@ fn vhost_indirect_suffix_preserves_descriptor_direction_order() {
             .unwrap();
         make_available(&memory, 0, AvailFlags::empty());
 
-        assert_eq!(queue.try_pop().err().unwrap().error(), Errno::EINVAL);
-        assert_eq!(queue.current_avail(), 0);
+        assert_eq!(
+            queue.try_pop(queue_memory, features).err().unwrap().error(),
+            Errno::EINVAL
+        );
+        assert_eq!(queue.base(), 0);
     });
 }
 
@@ -1199,20 +1252,22 @@ fn vhost_ring_indices_wrap_with_two_byte_avail_alignment() {
                 .unwrap();
             let mut device =
                 create_configured_device(memory.clone(), state, Feature::RING_INDIRECT_DESC.bits());
-            let mut queue = device.queue_mut(0).unwrap();
+            let features = Feature::from_bits_truncate(device.negotiated_features());
+            let (queue_memory, queues) = device.memory_and_queues_mut().unwrap();
+            let queue = &mut queues[0];
 
-            let chain = queue.try_pop().unwrap().unwrap();
+            let chain = queue.try_pop(queue_memory, features).unwrap().unwrap();
             chain.complete(0).unwrap();
-            assert_eq!(queue.current_avail(), next);
+            assert_eq!(queue.base(), next);
             assert_eq!(
                 memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap().idx(),
                 next
             );
-            queue.disable_kick_notifications().unwrap();
+            queue.disable_kick_notifications(queue_memory).unwrap();
             let used = memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap();
             assert_eq!(used.flags(), UsedFlags::NO_NOTIFY);
             assert_eq!(used.idx(), next);
-            assert!(!queue.enable_kick_notifications().unwrap());
+            assert!(!queue.enable_kick_notifications(queue_memory).unwrap());
             let used = memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap();
             assert_eq!(used.flags(), UsedFlags::empty());
             assert_eq!(used.idx(), next);
@@ -1280,7 +1335,6 @@ fn vhost_activation_requires_each_backend_queue() {
         device.queues[1].set_addr(addr).unwrap();
         device.enable_queues().unwrap();
         assert!(device.is_running());
-        assert_eq!(device.queue_mut(2).err().unwrap().error(), Errno::ENOBUFS);
         assert_eq!(device.queue_base(2).unwrap_err().error(), Errno::ENOBUFS);
     });
 }

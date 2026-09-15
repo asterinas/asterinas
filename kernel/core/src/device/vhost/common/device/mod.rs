@@ -6,12 +6,11 @@
 
 use core::array;
 
-use aster_virtio::Feature;
 use ostd::{mm::VmIo, task::Task};
 
 use super::{
     memory::{self, VhostMemory, VhostMemorySpace},
-    virtqueue::{VhostQueue, VhostVirtQueue},
+    virtqueue::VhostVirtQueue,
     worker::{VhostWork, VhostWorker},
 };
 use crate::{
@@ -267,26 +266,23 @@ impl<const NUM_QUEUES: usize> VhostDeviceData<NUM_QUEUES> {
         self.queues.get(index).and_then(|queue| queue.kick_event())
     }
 
-    pub(in vhost) fn queue_mut(&mut self, index: usize) -> Result<VhostQueue<'_>> {
-        let queue = self.queues.get_mut(index).ok_or_else(|| {
-            Error::with_message(Errno::ENOBUFS, "vhost queue index is out of range")
-        })?;
+    /// Borrows the current memory table and queues from the same locked device.
+    pub(in vhost) fn memory_and_queues_mut(
+        &mut self,
+    ) -> Result<(&VhostMemorySpace, &mut [VhostVirtQueue; NUM_QUEUES])> {
         let memory = self
             .memory
             .as_ref()
             .ok_or_else(|| Error::with_message(Errno::EPERM, "vhost owner is not set"))?;
-        Ok(VhostQueue::new(
-            queue,
-            memory,
-            Feature::from_bits_truncate(self.negotiated_features),
-        ))
+        Ok((memory, &mut self.queues))
     }
 
     /// Enables all queues, or leaves all queues disabled if activation fails.
     /// Repeated activation checks access without resetting active cursors.
     pub(in vhost) fn enable_queues(&mut self) -> Result<()> {
-        for index in 0..NUM_QUEUES {
-            if let Err(error) = self.queue_mut(index).and_then(|mut queue| queue.enable()) {
+        let (memory, queues) = self.memory_and_queues_mut()?;
+        for queue in queues {
+            if let Err(error) = queue.enable(memory) {
                 self.disable_queues();
                 return Err(error);
             }

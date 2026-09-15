@@ -47,7 +47,7 @@ pub(super) struct TranslatedMemoryRegion {
 /// The `Arc` keeps the VMAR alive, but does not pin its mappings;
 /// all accesses remain fallible, including after the owner exits.
 #[cfg_attr(ktest, derive(Clone))]
-pub(super) struct VhostMemorySpace {
+pub(in vhost) struct VhostMemorySpace {
     vmar: Arc<Vmar>,
     regions: Vec<VhostMemoryRegion>,
 }
