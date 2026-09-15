@@ -2,13 +2,13 @@
 
 //! Size-classed DMA buffer allocation.
 //!
-//! This module provides `SizeClassedDmaPool`, a size-class allocator backed by
-//! [`DmaPool`] segments for small buffers and [`DmaStream`] for large ones.
+//! This module provides `VirtiofsDmaPool`, a size-class allocator backed by
+//! [`DmaPool`] segments for small buffers and a shared DMA arena for large ones.
 
 use alloc::sync::Arc;
 
 use aster_util::mem_obj_slice::Slice;
-use dma_pool::{DmaBuffer, DmaPool};
+use dma_pool::{DmaArenaPool, DmaBuffer, DmaPool};
 use ostd::{
     Result,
     mm::{
@@ -17,6 +17,7 @@ use ostd::{
         io::util::{HasVmReaderWriter, VmReaderWriterResult},
     },
 };
+use spin::Once;
 
 use crate::dma_buf::DmaBuf;
 
@@ -41,20 +42,47 @@ const POOL_INIT_SIZE: usize = 8;
 /// Retains enough free segments for request bursts.
 const POOL_HIGH_WATERMARK: usize = 64;
 
-/// A size-classed DMA buffer allocator.
-#[derive(Debug)]
-pub(super) struct SizeClassedDmaPool<D: DmaDirection> {
-    classes: [Arc<DmaPool<D>>; N_CLASSES],
+/// Preserves the previous worst-case budget of eight cached 1-MiB streams.
+const DMA_ARENA_SIZE_PAGES: usize = 8 * 1024 * 1024 / PAGE_SIZE;
+
+/// A pool of DMA arenas for buffers received from the device.
+static VIRTIOFS_DMA_ARENA_RPOOL: Once<Arc<DmaArenaPool<FromDevice>>> = Once::new();
+/// A pool of DMA arenas for buffers sent to the device.
+static VIRTIOFS_DMA_ARENA_WPOOL: Once<Arc<DmaArenaPool<ToDevice>>> = Once::new();
+
+/// Returns the shared virtio-fs DMA arena pools, initializing them on first use.
+pub(super) fn dma_arena_pools_singleton() -> (
+    &'static Arc<DmaArenaPool<ToDevice>>,
+    &'static Arc<DmaArenaPool<FromDevice>>,
+) {
+    VIRTIOFS_DMA_ARENA_RPOOL.call_once(|| DmaArenaPool::new(DMA_ARENA_SIZE_PAGES).unwrap());
+    VIRTIOFS_DMA_ARENA_WPOOL.call_once(|| DmaArenaPool::new(DMA_ARENA_SIZE_PAGES).unwrap());
+
+    (
+        VIRTIOFS_DMA_ARENA_WPOOL.get().unwrap(),
+        VIRTIOFS_DMA_ARENA_RPOOL.get().unwrap(),
+    )
 }
 
-impl<D: DmaDirection> SizeClassedDmaPool<D> {
+/// A virtio-fs DMA buffer allocator for pooled segments and large arenas.
+#[derive(Debug)]
+pub(super) struct VirtiofsDmaPool<D: DmaDirection> {
+    classes: [Arc<DmaPool<D>>; N_CLASSES],
+    arena_pool: &'static Arc<DmaArenaPool<D>>,
+}
+
+impl<D: DmaDirection> VirtiofsDmaPool<D> {
     /// Creates a DMA buffer pool with predefined size classes.
-    pub(super) fn new() -> Self {
+    pub(super) fn new(arena_pool: &'static Arc<DmaArenaPool<D>>) -> Self {
         let classes = core::array::from_fn(|i| {
             let segment_size = 1 << (MIN_SHIFT + i);
             DmaPool::<D>::new(segment_size, POOL_INIT_SIZE, POOL_HIGH_WATERMARK, false)
         });
-        Self { classes }
+
+        Self {
+            classes,
+            arena_pool,
+        }
     }
 
     /// Allocates a DMA buffer whose visible length is `len`.
@@ -65,25 +93,27 @@ impl<D: DmaDirection> SizeClassedDmaPool<D> {
 
         let storage = if len <= MAX_CLASS_SIZE {
             let shift = MIN_SHIFT.max(len.next_power_of_two().trailing_zeros() as usize);
-            let segment = self.classes[shift - MIN_SHIFT].alloc_segment()?;
-            DmaBuffer::Pooled(segment)
+            DmaBuffer::Pooled(self.classes[shift - MIN_SHIFT].alloc_segment()?)
         } else {
-            let stream = DmaStream::alloc_uninit(len.div_ceil(PAGE_SIZE), false)?;
-            DmaBuffer::Direct(stream)
+            let pages = len.div_ceil(PAGE_SIZE);
+            match self.arena_pool.alloc(pages) {
+                Some(arena) => DmaBuffer::Arena(arena),
+                None => DmaBuffer::Direct(DmaStream::alloc_uninit(pages, false)?),
+            }
         };
 
         Ok(Arc::new(Slice::new(storage, 0..len)))
     }
 }
 
-impl SizeClassedDmaPool<FromDevice> {
+impl VirtiofsDmaPool<FromDevice> {
     /// Allocates a DMA buffer for FUSE reply payloads.
     pub(super) fn alloc_reply_buf(&self, len: usize) -> Result<FuseReplyBuf> {
         self.alloc_buf(len).map(FuseReplyBuf)
     }
 }
 
-impl SizeClassedDmaPool<ToDevice> {
+impl VirtiofsDmaPool<ToDevice> {
     /// Allocates a DMA buffer for FUSE requests.
     pub(super) fn alloc_request_buf(&self, len: usize) -> Result<FuseRequestBuf> {
         self.alloc_buf(len).map(FuseRequestBuf)
