@@ -23,6 +23,10 @@ COVERAGE ?= 0
 INITRAMFS ?= on
 CMDLINE ?=
 
+# Tools used to build board images.
+DTC ?= dtc
+RUST_OBJCOPY ?= rust-objcopy
+
 # Specify the primary system console (supported: tty0, ttyS0, hvc0).
 # - tty0: The active virtual terminal (VT).
 # - ttyS0: The serial (UART) terminal.
@@ -316,6 +320,41 @@ kernel: rootfs
 endif
 kernel:
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
+
+MILKV_DUO256M_OUTPUT_DIR := target/milkv_duo256m
+MILKV_DUO256M_ELF := target/riscv64imac-unknown-none-elf/release/asterinas-osdk-bin
+MILKV_DUO256M_BIN := $(MILKV_DUO256M_OUTPUT_DIR)/asterinas-sg2002.bin
+MILKV_DUO256M_DTS := tools/milkv_duo_256m/sg2002_asterinas.dts
+MILKV_DUO256M_DTB := $(MILKV_DUO256M_OUTPUT_DIR)/sg2002_asterinas.dtb
+
+# Build the kernel and device tree for Milk-V Duo 256M.
+.PHONY: milkv_duo256m
+milkv_duo256m:
+	@command -v $(RUST_OBJCOPY) >/dev/null || { \
+		echo "Error: rust-objcopy is required."; \
+		exit 1; \
+	}
+	@command -v $(DTC) >/dev/null || { \
+		echo "Error: dtc is required."; \
+		exit 1; \
+	}
+	@$(MAKE) --no-print-directory \
+		kernel \
+		TARGET_ARCH=riscv64 \
+		SCHEME=milkv_duo256m \
+		RELEASE=1
+	@mkdir -p $(MILKV_DUO256M_OUTPUT_DIR)
+	@$(RUST_OBJCOPY) \
+		-O binary \
+		$(MILKV_DUO256M_ELF) \
+		$(MILKV_DUO256M_BIN)
+	@$(DTC) \
+		-I dts \
+		-O dtb \
+		-o $(MILKV_DUO256M_DTB) \
+		$(MILKV_DUO256M_DTS)
+	@echo "Built $(MILKV_DUO256M_BIN)"
+	@echo "Built $(MILKV_DUO256M_DTB)"
 
 # Build the kernel with an initramfs and then run it
 .PHONY: run_kernel

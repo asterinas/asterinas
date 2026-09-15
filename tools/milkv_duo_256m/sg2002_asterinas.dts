@@ -1,0 +1,74 @@
+// SPDX-License-Identifier: MPL-2.0
+
+/dts-v1/;
+
+/*
+ * Vendor firmware and OpenSBI occupy the first 512 KiB.
+ */
+ /memreserve/ 0x0000000080000000 0x0000000000080000;
+
+/ {
+	model = "Milk-V Duo 256M";
+	compatible = "milkv,duo256m", "sophgo,sg2002";
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x00 0x80000000 0x00 0x0fe00000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		timebase-frequency = <25000000>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			reg = <0>;
+			status = "okay";
+			compatible = "thead,c906", "riscv";
+			riscv,isa = "rv64imafdc";
+			mmu-type = "riscv,sv39";
+
+			cpu_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+
+	uart0: serial@4140000 {
+		compatible = "snps,dw-apb-uart";
+		reg = <0x00 0x04140000 0x00 0x1000>;
+		clock-frequency = <25000000>;
+		current-speed = <115200>;
+		reg-shift = <2>;
+		reg-io-width = <4>;
+		interrupt-parent = <&plic>;
+		interrupts = <44 4>;
+		status = "okay";
+	};
+
+	plic: interrupt-controller@70000000 {
+		compatible = "sophgo,sg2002-plic", "thead,c900-plic";
+		reg = <0x0 0x70000000 0x0 0x04000000>;
+		riscv,ndev = <101>;
+		interrupts-extended = <&cpu_intc 0xffffffff>,
+							<&cpu_intc 9>;
+		interrupt-controller;
+		#interrupt-cells = <2>;
+		#address-cells = <0>;
+	};
+};
