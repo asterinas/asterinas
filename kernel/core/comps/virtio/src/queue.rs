@@ -18,7 +18,7 @@ use crate::{
     transport::{
         ConfigManager, VirtioTransport, VirtioTransportError, pci::legacy::VirtioPciLegacyTransport,
     },
-    virtio_ring::{AvailFlags, DescFlags, USED_F_NO_NOTIFY},
+    virtio_ring::{AvailFlags, DescFlags, UsedFlags},
 };
 
 /// The mechanism for bulk data transport on virtio devices.
@@ -486,7 +486,7 @@ impl VirtQueue {
         fence(Ordering::SeqCst);
 
         let flags = field_ptr!(&self.used, UsedRing, flags).read_once().unwrap();
-        flags & USED_F_NO_NOTIFY == 0
+        !flags.contains(UsedFlags::NO_NOTIFY)
     }
 
     /// Notifies the device that there are available elements.

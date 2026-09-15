@@ -6,15 +6,18 @@
 
 use core::sync::atomic::{self, Ordering};
 
-use aster_virtio::virtio_ring::{
-    self, AvailFlags, AvailRing, DescFlags, Descriptor, UsedElem, UsedRing,
+use aster_virtio::{
+    Feature,
+    virtio_ring::{AvailFlags, AvailRing, DescFlags, Descriptor, UsedElem, UsedFlags, UsedRing},
 };
 
 use super::{
-    device::{VhostVringAddr, validate_vring_access},
-    memory::{TranslatedMemoryRegion, VhostMemorySpace},
+    device::VhostVringAddr,
+    memory::{self, TranslatedMemoryRegion, VhostMemorySpace},
 };
 use crate::{events::KernelEventFile, prelude::*};
+
+pub(super) const VHOST_MAX_VRING_NUM: u32 = 32768;
 
 pub(super) const VHOST_MAX_IOV: usize = 1024;
 
@@ -23,25 +26,26 @@ const VIRTQ_MAX_INDIRECT_DESCRIPTORS: usize = u16::MAX as usize + 1;
 
 /// Persistent configuration and progress of one split virtqueue.
 pub(super) struct VhostVirtQueue {
-    pub(super) num: usize,
-    pub(super) addr: VhostVringAddr,
-    pub(super) last_avail: u16,
-    pub(super) last_used: u16,
-    pub(super) used_flags: u16,
-    pub(super) kick: Option<Arc<KernelEventFile>>,
-    pub(super) call: Option<Arc<KernelEventFile>>,
-    pub(super) err: Option<Arc<KernelEventFile>>,
-    pub(super) is_enabled: bool,
+    num: usize,
+    addr: Option<VhostVringAddr>,
+    last_avail: u16,
+    last_used: u16,
+    used_flags: UsedFlags,
+    kick: Option<Arc<KernelEventFile>>,
+    call: Option<Arc<KernelEventFile>>,
+    err: Option<Arc<KernelEventFile>>,
+    is_enabled: bool,
 }
 
 impl Default for VhostVirtQueue {
     fn default() -> Self {
         Self {
+            // Linux initializes the descriptor count to one before SET_VRING_NUM.
             num: 1,
-            addr: VhostVringAddr::default(),
+            addr: None,
             last_avail: 0,
             last_used: 0,
-            used_flags: 0,
+            used_flags: UsedFlags::empty(),
             kick: None,
             call: None,
             err: None,
@@ -50,23 +54,144 @@ impl Default for VhostVirtQueue {
     }
 }
 
+impl VhostVirtQueue {
+    /// Returns the number of slots in the descriptor table and each ring.
+    pub(super) fn size(&self) -> usize {
+        self.num
+    }
+
+    pub(super) fn is_enabled(&self) -> bool {
+        self.is_enabled
+    }
+
+    pub(super) fn disable(&mut self) {
+        self.is_enabled = false;
+    }
+
+    pub(super) fn base(&self) -> u16 {
+        self.last_avail
+    }
+
+    pub(super) fn kick_event(&self) -> Option<&Arc<KernelEventFile>> {
+        self.kick.as_ref()
+    }
+
+    pub(super) fn set_kick(&mut self, event: Option<Arc<KernelEventFile>>) {
+        self.kick = event;
+    }
+
+    pub(super) fn set_call(&mut self, event: Option<Arc<KernelEventFile>>) {
+        self.call = event;
+    }
+
+    pub(super) fn set_err(&mut self, event: Option<Arc<KernelEventFile>>) {
+        self.err = event;
+    }
+
+    pub(super) fn check_stopped(&self) -> Result<()> {
+        if self.is_enabled {
+            return_errno_with_message!(Errno::EBUSY, "vhost queue is running");
+        }
+        Ok(())
+    }
+
+    pub(super) fn set_num(&mut self, num: u32, max: u32) -> Result<()> {
+        self.check_stopped()?;
+        if num == 0 || num > max || num > VHOST_MAX_VRING_NUM || !num.is_power_of_two() {
+            return_errno_with_message!(Errno::EINVAL, "vhost vring size is invalid");
+        }
+        self.num = num as usize;
+        Ok(())
+    }
+
+    pub(super) fn set_base(&mut self, base: u32) -> Result<()> {
+        self.check_stopped()?;
+        if base > u32::from(u16::MAX) {
+            return_errno_with_message!(Errno::EINVAL, "vhost vring base is too large");
+        }
+        self.last_avail = base as u16;
+        Ok(())
+    }
+
+    pub(super) fn set_addr(&mut self, addr: VhostVringAddr) -> Result<()> {
+        Self::validate_addr(&addr)?;
+        if self.is_enabled {
+            self.validate_access(&addr)?;
+        }
+        self.addr = Some(addr);
+        Ok(())
+    }
+
+    pub(super) fn addr(&self) -> Result<&VhostVringAddr> {
+        self.addr
+            .as_ref()
+            .ok_or_else(|| Error::with_message(Errno::EFAULT, "vhost ring addresses are not set"))
+    }
+
+    fn validate_addr(addr: &VhostVringAddr) -> Result<()> {
+        if addr.flags != 0 {
+            return_errno_with_message!(Errno::EOPNOTSUPP, "vhost vring logging is unsupported");
+        }
+        if !addr
+            .avail_user_addr
+            .is_multiple_of(align_of::<AvailRing>() as u64)
+            || !addr
+                .used_user_addr
+                .is_multiple_of(align_of::<UsedRing>() as u64)
+            || !addr
+                .log_guest_addr
+                .is_multiple_of(align_of::<UsedRing>() as u64)
+        {
+            return_errno_with_message!(Errno::EINVAL, "vhost vring address is misaligned");
+        }
+        Ok(())
+    }
+
+    fn validate_access(&self, addr: &VhostVringAddr) -> Result<()> {
+        let num = self.size();
+        memory::validate_owner_range(addr.desc_user_addr as usize, num * size_of::<Descriptor>())?;
+        memory::validate_owner_range(
+            addr.avail_user_addr as usize,
+            AvailRing::entry_offset(num).unwrap(),
+        )?;
+        memory::validate_owner_range(
+            addr.used_user_addr as usize,
+            UsedRing::entry_offset(num).unwrap(),
+        )?;
+        Ok(())
+    }
+}
+
 /// Exclusive access to a queue and the device's current memory table.
 ///
 /// The borrow keeps the device locked while a backend accesses guest memory.
 pub(in vhost) struct VhostQueue<'a> {
-    pub(super) queue: &'a mut VhostVirtQueue,
-    pub(super) memory: &'a VhostMemorySpace,
-    pub(super) allow_indirect: bool,
+    queue: &'a mut VhostVirtQueue,
+    memory: &'a VhostMemorySpace,
+    allow_indirect: bool,
 }
 
-impl VhostQueue<'_> {
+impl<'a> VhostQueue<'a> {
+    pub(super) fn new(
+        queue: &'a mut VhostVirtQueue,
+        memory: &'a VhostMemorySpace,
+        features: Feature,
+    ) -> Self {
+        Self {
+            queue,
+            memory,
+            allow_indirect: features.contains(Feature::RING_INDIRECT_DESC),
+        }
+    }
+
     pub(super) fn enable(&mut self) -> Result<()> {
-        validate_vring_access(&self.queue.addr, self.queue.num as u32)
+        self.queue
+            .validate_access(self.queue.addr()?)
             .map_err(|_| Error::with_message(Errno::EFAULT, "vhost ring is inaccessible"))?;
         if self.queue.is_enabled {
             return Ok(());
         }
-        let used_addr = self.queue.addr.used_user_addr as usize;
+        let used_addr = self.queue.addr()?.used_user_addr as usize;
         let used = self.memory.read_owner_val::<UsedRing>(used_addr)?;
         self.memory
             .write_owner_val(used_addr + UsedRing::FLAGS_OFFSET, &self.queue.used_flags)?;
@@ -106,15 +231,13 @@ impl VhostQueue<'_> {
 
         let slot = usize::from(last_avail) % self.queue.num;
         let head_addr =
-            self.queue.addr.avail_user_addr as usize + AvailRing::entry_offset(slot).unwrap();
+            self.queue.addr()?.avail_user_addr as usize + AvailRing::entry_offset(slot).unwrap();
         let head = usize::from(self.memory.read_owner_val::<u16>(head_addr)?);
-        if head >= self.queue.num {
-            return_errno_with_message!(Errno::EINVAL, "vhost descriptor head is out of range");
-        }
         let mut readable = Vec::new();
         let mut writable = Vec::new();
+        // Zero-length writable descriptors produce no translated segments.
         let mut has_writable = false;
-        self.walk_direct_chain(head, &mut readable, &mut writable, &mut has_writable)?;
+        self.walk_chain(head, &mut readable, &mut writable, &mut has_writable)?;
 
         // Publish consumption only after the complete chain has been validated.
         self.queue.last_avail = last_avail.wrapping_add(1);
@@ -135,10 +258,9 @@ impl VhostQueue<'_> {
         // used-index publication must be globally visible before suppression
         // state is sampled, otherwise a notification can be lost.
         atomic::fence(Ordering::SeqCst);
-        let flags = self.memory.read_owner_val::<u16>(
-            self.queue.addr.avail_user_addr as usize + AvailRing::FLAGS_OFFSET,
+        let flags = self.memory.read_owner_val::<AvailFlags>(
+            self.queue.addr()?.avail_user_addr as usize + AvailRing::FLAGS_OFFSET,
         )?;
-        let flags = AvailFlags::from_bits_truncate(flags);
         // FIXME: Honor the event-index notification scheme when
         // `VIRTIO_RING_F_EVENT_IDX` is negotiated. The current common layer
         // implements the legacy `VIRTQ_AVAIL_F_NO_INTERRUPT` path only.
@@ -150,12 +272,12 @@ impl VhostQueue<'_> {
 
     /// Suppresses guest kicks while the backend drains this queue.
     pub(in vhost) fn disable_kick_notifications(&mut self) -> Result<()> {
-        if self.queue.used_flags & virtio_ring::USED_F_NO_NOTIFY != 0 {
+        if self.queue.used_flags.contains(UsedFlags::NO_NOTIFY) {
             return Ok(());
         }
-        let flags = self.queue.used_flags | virtio_ring::USED_F_NO_NOTIFY;
+        let flags = self.queue.used_flags | UsedFlags::NO_NOTIFY;
         self.memory.write_owner_val(
-            self.queue.addr.used_user_addr as usize + UsedRing::FLAGS_OFFSET,
+            self.queue.addr()?.used_user_addr as usize + UsedRing::FLAGS_OFFSET,
             &flags,
         )?;
         self.queue.used_flags = flags;
@@ -167,12 +289,12 @@ impl VhostQueue<'_> {
     /// If this returns `true`, the backend must disable notifications again
     /// and continue draining instead of sleeping.
     pub(in vhost) fn enable_kick_notifications(&mut self) -> Result<bool> {
-        if self.queue.used_flags & virtio_ring::USED_F_NO_NOTIFY == 0 {
+        if !self.queue.used_flags.contains(UsedFlags::NO_NOTIFY) {
             return Ok(false);
         }
-        let flags = self.queue.used_flags & !virtio_ring::USED_F_NO_NOTIFY;
+        let flags = self.queue.used_flags & !UsedFlags::NO_NOTIFY;
         self.memory.write_owner_val(
-            self.queue.addr.used_user_addr as usize + UsedRing::FLAGS_OFFSET,
+            self.queue.addr()?.used_user_addr as usize + UsedRing::FLAGS_OFFSET,
             &flags,
         )?;
         self.queue.used_flags = flags;
@@ -195,7 +317,7 @@ impl VhostQueue<'_> {
         }
     }
 
-    fn walk_direct_chain(
+    fn walk_chain(
         &self,
         head: usize,
         readable: &mut Vec<TranslatedMemoryRegion>,
@@ -203,6 +325,8 @@ impl VhostQueue<'_> {
         has_writable: &mut bool,
     ) -> Result<()> {
         let mut index = head;
+        // Count descriptors, not translated segments: empty buffers and buffers
+        // spanning multiple memory regions make the two counts differ.
         for _ in 0..self.queue.num {
             let descriptor = self.read_descriptor(index)?;
             if descriptor.flags().contains(DescFlags::INDIRECT) {
@@ -213,9 +337,6 @@ impl VhostQueue<'_> {
                 return Ok(());
             }
             index = usize::from(descriptor.next());
-            if index >= self.queue.num {
-                return_errno_with_message!(Errno::EINVAL, "vhost descriptor next is out of range");
-            }
         }
         return_errno_with_message!(Errno::EINVAL, "vhost descriptor chain is too long");
     }
@@ -252,9 +373,10 @@ impl VhostQueue<'_> {
                 "vhost indirect descriptor table is too large"
             );
         }
-        let mut table = vec![0u8; table_len];
+        // Validate the entire GPA range, but copy only the entries we visit.
+        let mut table = Vec::new();
         self.memory
-            .read_guest_bytes(descriptor.addr() as usize, &mut table)?;
+            .translate_into(descriptor.addr() as usize, table_len, &mut table)?;
 
         let mut index = 0;
         for _ in 0..table_num {
@@ -264,8 +386,26 @@ impl VhostQueue<'_> {
                     "vhost indirect descriptor index is out of range"
                 );
             }
-            let offset = index * VIRTQ_DESC_SIZE;
-            let descriptor = Descriptor::from_bytes(&table[offset..offset + VIRTQ_DESC_SIZE]);
+            let mut offset = index * VIRTQ_DESC_SIZE;
+            let segment_index = table
+                .iter()
+                .position(|segment| {
+                    if offset < segment.len {
+                        return true;
+                    }
+                    offset -= segment.len;
+                    false
+                })
+                .unwrap();
+            let mut reader = VhostChainReader {
+                memory: self.memory,
+                segments: &table,
+                index: segment_index,
+                offset,
+            };
+            let mut bytes = [0; VIRTQ_DESC_SIZE];
+            reader.read_exact(&mut bytes)?;
+            let descriptor = Descriptor::from_bytes(&bytes);
             self.append_descriptor(descriptor, readable, writable, has_writable)?;
             if !descriptor.flags().contains(DescFlags::NEXT) {
                 return Ok(());
@@ -318,13 +458,17 @@ impl VhostQueue<'_> {
     }
 
     fn read_descriptor(&self, index: usize) -> Result<Descriptor> {
-        let addr = self.queue.addr.desc_user_addr as usize + index * VIRTQ_DESC_SIZE;
+        if index >= self.queue.num {
+            return_errno_with_message!(Errno::EINVAL, "vhost descriptor index is out of range");
+        }
+        let addr = self.queue.addr()?.desc_user_addr as usize + index * VIRTQ_DESC_SIZE;
         self.memory.read_owner_val(addr)
     }
 
     fn read_avail_idx(&self) -> Result<u16> {
-        self.memory
-            .read_owner_val::<u16>(self.queue.addr.avail_user_addr as usize + AvailRing::IDX_OFFSET)
+        self.memory.read_owner_val::<u16>(
+            self.queue.addr()?.avail_user_addr as usize + AvailRing::IDX_OFFSET,
+        )
     }
 }
 
@@ -345,14 +489,14 @@ impl VhostDescriptorChain<'_> {
     pub(in vhost) fn complete(self, len: u32) -> Result<()> {
         let slot = usize::from(self.queue.last_used) % self.queue.num;
         let element_addr =
-            self.queue.addr.used_user_addr as usize + UsedRing::entry_offset(slot).unwrap();
+            self.queue.addr()?.used_user_addr as usize + UsedRing::entry_offset(slot).unwrap();
         let element = UsedElem::new(u32::from(self.head_index), len);
         self.memory.write_owner_val(element_addr, &element)?;
         atomic::fence(Ordering::Release);
 
         let next_used = self.queue.last_used.wrapping_add(1);
         self.memory.write_owner_val(
-            self.queue.addr.used_user_addr as usize + UsedRing::IDX_OFFSET,
+            self.queue.addr()?.used_user_addr as usize + UsedRing::IDX_OFFSET,
             &next_used,
         )?;
         self.queue.last_used = next_used;
@@ -386,7 +530,6 @@ impl VhostDescriptorChain<'_> {
             segments: &self.writable,
             index: 0,
             offset: 0,
-            bytes_written: 0,
         }
     }
 }
@@ -436,7 +579,6 @@ pub(in vhost) struct VhostChainWriter<'a> {
     segments: &'a [TranslatedMemoryRegion],
     index: usize,
     offset: usize,
-    bytes_written: usize,
 }
 
 impl VhostChainWriter<'_> {
@@ -460,7 +602,6 @@ impl VhostChainWriter<'_> {
             let addr = segment.hva + self.offset;
             self.memory.write_owner_bytes(addr, &src[..count])?;
             self.offset += count;
-            self.bytes_written += count;
             src = &src[count..];
             if self.offset == segment.len {
                 self.index += 1;
@@ -468,9 +609,5 @@ impl VhostChainWriter<'_> {
             }
         }
         Ok(())
-    }
-
-    pub(in vhost) fn bytes_written(&self) -> usize {
-        self.bytes_written
     }
 }

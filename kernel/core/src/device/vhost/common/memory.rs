@@ -15,7 +15,7 @@ pub(super) const VHOST_MAX_MEMORY_REGIONS: usize = 64;
 
 /// `struct vhost_memory` in Linux, the header of a memory table.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L128>.
+/// Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost_types.h#L128>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(in vhost) struct VhostMemory {
@@ -25,7 +25,7 @@ pub(in vhost) struct VhostMemory {
 
 /// `struct vhost_memory_region` in Linux, a GPA range backed by owner memory.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L118>.
+/// Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost_types.h#L118>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(in vhost) struct VhostMemoryRegion {

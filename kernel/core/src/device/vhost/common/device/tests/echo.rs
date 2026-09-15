@@ -15,15 +15,15 @@ use crate::{
 };
 
 struct EchoDevice {
-    common: Arc<VhostDevice<1>>,
+    common: Arc<VhostDeviceSession<1>>,
     idle: Arc<KernelEventFile>,
     completed: Arc<AtomicBool>,
 }
 
 impl EchoDevice {
     fn new(mut device: VhostDeviceData<1>) -> Self {
-        device.deactivate();
-        let common = Arc::new(VhostDevice::from_data(device));
+        device.disable_queues();
+        let common = Arc::new(VhostDeviceSession::from_data(device));
         let idle = create_event();
         let completed = Arc::new(AtomicBool::new(false));
         common
@@ -49,7 +49,7 @@ impl Drop for EchoDevice {
 }
 
 struct EchoWork {
-    common: Arc<VhostDevice<1>>,
+    common: Arc<VhostDeviceSession<1>>,
     idle: Arc<KernelEventFile>,
     completed: Arc<AtomicBool>,
 }
@@ -120,12 +120,13 @@ fn vhost_echo_worker_preserves_queues_across_pause_and_reconfiguration() {
     run_with_owner_memory(|memory| {
         // The kernel-thread fixture configures the device directly; real
         // SET_OWNER and fd lookup are covered by the userspace device tests.
-        let (device, call) = create_device(memory.clone());
+        let (mut device, call) = create_device(memory.clone());
         let mut kick = device.kick_event(0).unwrap().clone();
-        let err = device.queues[0].err.as_ref().unwrap().clone();
+        let err = create_event();
+        device.queues[0].set_err(Some(err.clone()));
         let echo = EchoDevice::new(device);
-        echo.common.lock().activate().unwrap();
-        echo.common.lock().activate().unwrap();
+        echo.common.lock().enable_queues().unwrap();
+        echo.common.lock().enable_queues().unwrap();
         wait_event(&echo.idle);
         for (index, payload) in [*b"echo", *b"next"].into_iter().enumerate() {
             memory
@@ -152,7 +153,7 @@ fn vhost_echo_worker_preserves_queues_across_pause_and_reconfiguration() {
             if index == 1 {
                 assert!(!echo.common.lock_data().is_running());
                 assert_eq!(echo.common.lock_data().queue_base(0).unwrap(), 1);
-                echo.common.lock().activate().unwrap();
+                echo.common.lock().enable_queues().unwrap();
             }
             wait_event(&call);
             let mut response = [0; 4];
@@ -167,12 +168,12 @@ fn vhost_echo_worker_preserves_queues_across_pause_and_reconfiguration() {
             assert!(echo.common.lock_data().is_running());
             wait_event(&echo.idle);
             if index == 0 {
-                echo.common.lock().deactivate();
-                echo.common.lock().deactivate();
+                echo.common.lock().disable_queues();
+                echo.common.lock().disable_queues();
                 assert!(!echo.completed.load(Ordering::Acquire));
                 assert_eq!(echo.common.lock_data().queue_base(0).unwrap(), 1);
                 kick = create_event();
-                echo.common.lock_data().queues[0].kick = Some(kick.clone());
+                echo.common.lock_data().queues[0].set_kick(Some(kick.clone()));
             }
         }
         echo.common.lock().stop_worker();
@@ -192,8 +193,8 @@ fn vhost_worker_requires_owner_and_restarts_after_stop() {
     crate::util::random::init();
 
     run_with_owner_memory(|memory| {
-        let common = Arc::new(VhostDevice::<1>::new(VhostDeviceConfig {
-            device_features: VIRTIO_F_VERSION_1,
+        let common = Arc::new(VhostDeviceSession::<1>::new(VhostDeviceConfig {
+            device_features: Feature::VERSION_1.bits(),
             backend_features: 0,
             max_queue_size: QUEUE_SIZE as u32,
         }));
@@ -286,8 +287,8 @@ fn vhost_device_drop_joins_idle_worker() {
 
     run_with_owner_memory(|memory| {
         let (mut data, _) = create_device(memory);
-        data.deactivate();
-        let device = VhostDevice::from_data(data);
+        data.disable_queues();
+        let device = VhostDeviceSession::from_data(data);
         let idle = create_event();
         let completed = Arc::new(AtomicBool::new(false));
         device

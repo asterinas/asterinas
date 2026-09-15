@@ -2,13 +2,15 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use aster_virtio::virtio_ring::{self, AvailFlags, DescFlags, Descriptor, UsedElem};
+use aster_virtio::virtio_ring::{
+    AvailFlags, AvailRing, DescFlags, Descriptor, UsedElem, UsedFlags, UsedRing,
+};
 use ostd::{cpu::CpuId, prelude::ktest};
 
 use super::{
     super::{
         memory::{self, VhostMemoryRegion},
-        virtqueue,
+        virtqueue::{self, VHOST_MAX_VRING_NUM},
     },
     *,
 };
@@ -80,10 +82,11 @@ fn create_device(memory: VhostMemorySpace) -> (VhostDeviceData<1>, Arc<KernelEve
     memory
         .write_owner_val(USED_ADDR, &UsedRing::default())
         .unwrap();
-    let queue = create_virtqueue();
-    let call = queue.call.as_ref().unwrap().clone();
+    let mut queue = create_virtqueue();
+    let call = create_event();
+    queue.set_call(Some(call.clone()));
     (
-        create_configured_device(memory, queue, VIRTIO_RING_F_INDIRECT_DESC),
+        create_configured_device(memory, queue, Feature::RING_INDIRECT_DESC.bits()),
         call,
     )
 }
@@ -95,7 +98,7 @@ fn create_configured_device(
 ) -> VhostDeviceData<1> {
     let mut device = VhostDeviceData {
         config: VhostDeviceConfig {
-            device_features: VIRTIO_F_VERSION_1 | VIRTIO_RING_F_INDIRECT_DESC,
+            device_features: (Feature::VERSION_1 | Feature::RING_INDIRECT_DESC).bits(),
             backend_features: 0,
             max_queue_size: VHOST_MAX_VRING_NUM,
         },
@@ -104,19 +107,20 @@ fn create_configured_device(
         memory: Some(memory),
         queues: [queue],
     };
-    device.activate().unwrap();
+    device.enable_queues().unwrap();
     device
 }
 
 fn create_virtqueue() -> VhostVirtQueue {
-    VhostVirtQueue {
-        num: QUEUE_SIZE,
-        addr: create_vring_addr(),
-        kick: Some(create_event()),
-        call: Some(create_event()),
-        err: Some(create_event()),
-        ..VhostVirtQueue::default()
-    }
+    let mut queue = VhostVirtQueue::default();
+    queue
+        .set_num(QUEUE_SIZE as u32, VHOST_MAX_VRING_NUM)
+        .unwrap();
+    queue.set_addr(create_vring_addr()).unwrap();
+    queue.set_kick(Some(create_event()));
+    queue.set_call(Some(create_event()));
+    queue.set_err(Some(create_event()));
+    queue
 }
 
 fn map_owner() -> VmarHandle {
@@ -213,7 +217,7 @@ fn vhost_bound_worker_copies_chain_after_context_switch() {
         let chain = queue.try_pop().unwrap().unwrap();
         let mut writer = chain.writer();
         writer.write_all(&vec![0xa5; len]).unwrap();
-        let written = writer.bytes_written() as u32;
+        let written = (chain.writable_len() - writer.remaining()) as u32;
         chain.complete(written).unwrap();
         queue.notify().unwrap();
 
@@ -479,13 +483,13 @@ fn vhost_overlapping_guest_regions_are_rejected() {
 fn vhost_vring_addr_can_precede_size_but_is_revalidated() {
     let mut addr = create_vring_addr();
     addr.log_guest_addr = GUEST_ADDR;
-    assert!(validate_vring_addr(&addr).is_ok());
+    assert!(VhostVirtQueue::default().set_addr(addr).is_ok());
 
     addr.avail_user_addr += 1;
-    assert!(validate_vring_addr(&addr).is_err());
+    assert!(VhostVirtQueue::default().set_addr(addr).is_err());
     addr.avail_user_addr -= 1;
     addr.used_user_addr += 2;
-    assert!(validate_vring_addr(&addr).is_err());
+    assert!(VhostVirtQueue::default().set_addr(addr).is_err());
 }
 
 #[ktest]
@@ -508,7 +512,7 @@ fn vhost_owner_reset_clears_queues_and_memory() {
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory);
         assert!(device.is_running());
-        device.deactivate();
+        device.disable_queues();
         device.reset_owner();
         assert!(!device.is_owned());
         assert!(!device.is_running());
@@ -590,8 +594,8 @@ fn vhost_writable_chain_writes_across_descriptors() {
         assert_eq!(chain.writable_len(), 8);
         let mut writer = chain.writer();
         writer.write_all(b"abcdefgh").unwrap();
-        assert_eq!(writer.bytes_written(), 8);
-        let written = writer.bytes_written() as u32;
+        assert_eq!(chain.writable_len() - writer.remaining(), 8);
+        let written = (chain.writable_len() - writer.remaining()) as u32;
         chain.complete(written).unwrap();
 
         let mut bytes = [0u8; 8];
@@ -692,8 +696,8 @@ fn vhost_indirect_writable_chain_writes_across_descriptors() {
         writer.write_all(&[0x12; 20]).unwrap();
         writer.write_all(&[0x34; 24]).unwrap();
         assert_eq!(writer.remaining(), 0);
-        assert_eq!(writer.bytes_written(), 44);
-        let written = writer.bytes_written() as u32;
+        assert_eq!(chain.writable_len() - writer.remaining(), 44);
+        let written = (chain.writable_len() - writer.remaining()) as u32;
         chain.complete(written).unwrap();
 
         assert_eq!(
@@ -731,16 +735,18 @@ fn vhost_invalid_chain_does_not_advance_available_base() {
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
         let mut queue = device.queue_mut(0).unwrap();
-        memory
-            .write_owner_val(
-                DESC_ADDR,
-                &create_descriptor(GUEST_ADDR, 4, DescFlags::NEXT, 0),
-            )
-            .unwrap();
-        make_available(&memory, 0, AvailFlags::empty());
+        for len in [0, 4] {
+            memory
+                .write_owner_val(
+                    DESC_ADDR,
+                    &create_descriptor(GUEST_ADDR, len, DescFlags::NEXT, 0),
+                )
+                .unwrap();
+            make_available(&memory, 0, AvailFlags::empty());
 
-        assert!(queue.try_pop().is_err());
-        assert_eq!(queue.current_avail(), 0);
+            assert!(queue.try_pop().is_err());
+            assert_eq!(queue.current_avail(), 0);
+        }
     });
 }
 
@@ -753,22 +759,24 @@ fn vhost_readable_descriptor_after_writable_is_rejected() {
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
         let mut queue = device.queue_mut(0).unwrap();
-        memory
-            .write_owner_val(
-                DESC_ADDR,
-                &create_descriptor(GUEST_ADDR, 4, DescFlags::WRITE | DescFlags::NEXT, 1),
-            )
-            .unwrap();
-        memory
-            .write_owner_val(
-                DESC_ADDR + size_of::<Descriptor>(),
-                &create_descriptor(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
-            )
-            .unwrap();
-        make_available(&memory, 0, AvailFlags::empty());
+        for len in [0, 4] {
+            memory
+                .write_owner_val(
+                    DESC_ADDR,
+                    &create_descriptor(GUEST_ADDR, len, DescFlags::WRITE | DescFlags::NEXT, 1),
+                )
+                .unwrap();
+            memory
+                .write_owner_val(
+                    DESC_ADDR + size_of::<Descriptor>(),
+                    &create_descriptor(GUEST_ADDR + 4, 4, DescFlags::empty(), 0),
+                )
+                .unwrap();
+            make_available(&memory, 0, AvailFlags::empty());
 
-        assert!(queue.try_pop().is_err());
-        assert_eq!(queue.current_avail(), 0);
+            assert!(queue.try_pop().is_err());
+            assert_eq!(queue.current_avail(), 0);
+        }
     });
 }
 
@@ -797,7 +805,7 @@ fn vhost_kick_notifications_recheck_available_ring() {
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
         // Suppression is a ring protocol operation, independent of eventfd binding.
-        device.queues[0].kick = None;
+        device.queues[0].set_kick(None);
         let mut queue = device.queue_mut(0).unwrap();
 
         queue.disable_kick_notifications().unwrap();
@@ -806,7 +814,7 @@ fn vhost_kick_notifications_recheck_available_ring() {
                 .read_owner_val::<UsedRing>(USED_ADDR)
                 .unwrap()
                 .flags(),
-            virtio_ring::USED_F_NO_NOTIFY
+            UsedFlags::NO_NOTIFY
         );
 
         make_available(&memory, 0, AvailFlags::empty());
@@ -816,7 +824,7 @@ fn vhost_kick_notifications_recheck_available_ring() {
                 .read_owner_val::<UsedRing>(USED_ADDR)
                 .unwrap()
                 .flags(),
-            0
+            UsedFlags::empty()
         );
     });
 }
@@ -829,11 +837,11 @@ fn vhost_unbound_events_allow_queue_completion() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        device.deactivate();
-        device.queues[0].kick = None;
-        device.queues[0].call = None;
-        device.queues[0].err = None;
-        device.activate().unwrap();
+        device.disable_queues();
+        device.queues[0].set_kick(None);
+        device.queues[0].set_call(None);
+        device.queues[0].set_err(None);
+        device.enable_queues().unwrap();
         memory
             .write_owner_val(
                 DESC_ADDR,
@@ -873,21 +881,20 @@ fn vhost_descriptor_segments_are_bounded() {
         memory
             .write_owner_val(LARGE_USED_ADDR, &UsedRing::default())
             .unwrap();
-        let state = VhostVirtQueue {
-            num: LARGE_QUEUE_SIZE,
-            addr: VhostVringAddr {
+        let mut state = VhostVirtQueue::default();
+        state
+            .set_num(LARGE_QUEUE_SIZE as u32, VHOST_MAX_VRING_NUM)
+            .unwrap();
+        state
+            .set_addr(VhostVringAddr {
                 index: 0,
                 flags: 0,
                 desc_user_addr: DESC_ADDR as u64,
                 used_user_addr: LARGE_USED_ADDR as u64,
                 avail_user_addr: LARGE_AVAIL_ADDR as u64,
                 log_guest_addr: 0,
-            },
-            kick: None,
-            call: None,
-            err: None,
-            ..VhostVirtQueue::default()
-        };
+            })
+            .unwrap();
         let mut device = create_configured_device(memory.clone(), state, 0);
         let mut queue = device.queue_mut(0).unwrap();
 
@@ -1014,6 +1021,7 @@ fn vhost_invalid_indirect_tables_are_rejected() {
                 table_len,
             ),
             (DescFlags::INDIRECT, DescFlags::INDIRECT, table_len),
+            (DescFlags::INDIRECT, DescFlags::NEXT, table_len),
             (DescFlags::INDIRECT, DescFlags::empty(), 0),
             (DescFlags::INDIRECT, DescFlags::empty(), table_len + 1),
         ] {
@@ -1026,13 +1034,65 @@ fn vhost_invalid_indirect_tables_are_rejected() {
             memory
                 .write_owner_val(
                     GUEST_UVA + 0x800,
-                    &create_descriptor(GUEST_ADDR, 4, inner_flags, 0),
+                    &create_descriptor(GUEST_ADDR, 0, inner_flags, 0),
                 )
                 .unwrap();
 
             assert_eq!(queue.try_pop().err().unwrap().error(), Errno::EINVAL);
             assert_eq!(queue.current_avail(), 0);
         }
+    });
+}
+
+#[ktest]
+fn vhost_indirect_table_reads_only_linked_descriptors() {
+    crate::thread::init();
+    crate::time::clocks::init_for_ktest();
+    crate::util::random::init();
+
+    run_with_owner_memory(|memory| {
+        let (mut device, _) = create_device(memory.clone());
+        let mut queue = device.queue_mut(0).unwrap();
+        // The table GPA is valid, but the second entry has no owner mapping.
+        let offset = 0x1000 - size_of::<Descriptor>();
+        memory
+            .vmar()
+            .remove_mapping(GUEST_UVA + 0x1000..GUEST_UVA + 0x2000);
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(
+                    GUEST_ADDR + offset as u64,
+                    (2 * size_of::<Descriptor>()) as u32,
+                    DescFlags::INDIRECT,
+                    0,
+                ),
+            )
+            .unwrap();
+        make_available(&memory, 0, AvailFlags::empty());
+        memory
+            .write_owner_val(
+                GUEST_UVA + offset,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::NEXT, 1),
+            )
+            .unwrap();
+        assert_eq!(queue.try_pop().err().unwrap().error(), Errno::EFAULT);
+        assert_eq!(queue.current_avail(), 0);
+
+        // An unvisited entry must not be read, even when it is unmapped.
+        memory
+            .write_owner_val(
+                GUEST_UVA + offset,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::empty(), 0),
+            )
+            .unwrap();
+        memory.write_owner_bytes(GUEST_UVA, b"lazy").unwrap();
+        let chain = queue.try_pop().unwrap().unwrap();
+        let mut bytes = [0; 4];
+        chain.reader().read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"lazy");
+        chain.complete(0).unwrap();
+        assert_eq!(queue.current_avail(), 1);
     });
 }
 
@@ -1127,16 +1187,18 @@ fn vhost_ring_indices_wrap_with_two_byte_avail_alignment() {
         for base in [0x00ffu16, u16::MAX] {
             let next = base.wrapping_add(1);
             let mut state = create_virtqueue();
-            state.addr.avail_user_addr = avail_addr as u64;
-            state.last_avail = base;
+            let mut addr = create_vring_addr();
+            addr.avail_user_addr = avail_addr as u64;
+            state.set_addr(addr).unwrap();
+            state.set_base(u32::from(base)).unwrap();
             memory
-                .write_owner_val(USED_ADDR, &UsedRing::new(0, base))
+                .write_owner_val(USED_ADDR, &UsedRing::new(UsedFlags::empty(), base))
                 .unwrap();
             memory
                 .write_owner_val(avail_addr, &AvailRing::new(AvailFlags::empty(), next))
                 .unwrap();
             let mut device =
-                create_configured_device(memory.clone(), state, VIRTIO_RING_F_INDIRECT_DESC);
+                create_configured_device(memory.clone(), state, Feature::RING_INDIRECT_DESC.bits());
             let mut queue = device.queue_mut(0).unwrap();
 
             let chain = queue.try_pop().unwrap().unwrap();
@@ -1148,11 +1210,11 @@ fn vhost_ring_indices_wrap_with_two_byte_avail_alignment() {
             );
             queue.disable_kick_notifications().unwrap();
             let used = memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap();
-            assert_eq!(used.flags(), virtio_ring::USED_F_NO_NOTIFY);
+            assert_eq!(used.flags(), UsedFlags::NO_NOTIFY);
             assert_eq!(used.idx(), next);
             assert!(!queue.enable_kick_notifications().unwrap());
             let used = memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap();
-            assert_eq!(used.flags(), 0);
+            assert_eq!(used.flags(), UsedFlags::empty());
             assert_eq!(used.idx(), next);
         }
     });
@@ -1204,17 +1266,19 @@ fn vhost_activation_requires_each_backend_queue() {
     crate::util::random::init();
     run_with_owner_memory(|memory| {
         let mut device = VhostDeviceData::<2>::new(VhostDeviceConfig {
-            device_features: VIRTIO_F_VERSION_1,
+            device_features: Feature::VERSION_1.bits(),
             backend_features: 0,
             max_queue_size: QUEUE_SIZE as u32,
         });
         device.memory = Some(memory);
         device.queues[0] = create_virtqueue();
-        assert_eq!(device.activate().unwrap_err().error(), Errno::EFAULT);
-        assert!(device.queues.iter().all(|queue| !queue.is_enabled));
+        assert_eq!(device.enable_queues().unwrap_err().error(), Errno::EFAULT);
+        assert!(device.queues.iter().all(|queue| !queue.is_enabled()));
         device.queues[1] = create_virtqueue();
-        device.queues[1].addr.index = 1;
-        device.activate().unwrap();
+        let mut addr = create_vring_addr();
+        addr.index = 1;
+        device.queues[1].set_addr(addr).unwrap();
+        device.enable_queues().unwrap();
         assert!(device.is_running());
         assert_eq!(device.queue_mut(2).err().unwrap().error(), Errno::ENOBUFS);
         assert_eq!(device.queue_base(2).unwrap_err().error(), Errno::ENOBUFS);
@@ -1229,21 +1293,26 @@ fn vhost_running_queue_rejects_size_and_base_changes() {
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory);
         assert_eq!(
-            device.set_queue_num(0, 16).unwrap_err().error(),
+            device.queues[0]
+                .set_num(16, device.config.max_queue_size)
+                .unwrap_err()
+                .error(),
             Errno::EBUSY
         );
         assert_eq!(
-            device.set_queue_base(0, 7).unwrap_err().error(),
+            device.queues[0].set_base(7).unwrap_err().error(),
             Errno::EBUSY
         );
-        assert_eq!(device.queues[0].num, QUEUE_SIZE);
+        assert_eq!(device.queues[0].size(), QUEUE_SIZE);
         assert_eq!(device.queue_base(0).unwrap(), 0);
         assert!(device.is_running());
-        device.deactivate();
-        device.set_queue_num(0, 16).unwrap();
-        device.set_queue_base(0, 7).unwrap();
-        device.activate().unwrap();
-        device.activate().unwrap();
+        device.disable_queues();
+        device.queues[0]
+            .set_num(16, device.config.max_queue_size)
+            .unwrap();
+        device.queues[0].set_base(7).unwrap();
+        device.enable_queues().unwrap();
+        device.enable_queues().unwrap();
         assert_eq!(device.queue_base(0).unwrap(), 7);
     });
 }
@@ -1255,17 +1324,22 @@ fn vhost_live_reconfiguration_preserves_progress_and_failed_updates() {
     crate::util::random::init();
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
-        device.queues[0].last_avail = 5;
+        device.disable_queues();
+        device.queues[0].set_base(5).unwrap();
+        device.enable_queues().unwrap();
         let mut addr = create_vring_addr();
         addr.log_guest_addr = GUEST_ADDR;
-        device.set_queue_addr(0, addr).unwrap();
+        device.queues[0].set_addr(addr).unwrap();
         assert_eq!(device.queue_base(0).unwrap(), 5);
         addr.used_user_addr += 2;
         assert_eq!(
-            device.set_queue_addr(0, addr).unwrap_err().error(),
+            device.queues[0].set_addr(addr).unwrap_err().error(),
             Errno::EINVAL
         );
-        assert_eq!(device.queues[0].addr.used_user_addr, USED_ADDR as u64);
+        assert_eq!(
+            device.queues[0].addr().unwrap().used_user_addr,
+            USED_ADDR as u64
+        );
         let invalid = VhostMemoryRegion::default();
         assert!(
             device

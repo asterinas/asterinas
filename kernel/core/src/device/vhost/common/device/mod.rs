@@ -6,7 +6,7 @@
 
 use core::array;
 
-use aster_virtio::virtio_ring::{AvailRing, Descriptor, UsedRing};
+use aster_virtio::Feature;
 use ostd::{mm::VmIo, task::Task};
 
 use super::{
@@ -25,14 +25,9 @@ use crate::{
 #[cfg(ktest)]
 mod tests;
 
-const VHOST_MAX_VRING_NUM: u32 = 32768;
-
-pub(in vhost) const VIRTIO_F_VERSION_1: u64 = 1 << 32;
-pub(in vhost) const VIRTIO_RING_F_INDIRECT_DESC: u64 = 1 << 28;
-
 /// `struct vhost_vring_state` in Linux, a queue index and its size or base.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L19>.
+/// Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost_types.h#L19>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(in vhost) struct VhostVringState {
@@ -42,7 +37,7 @@ pub(in vhost) struct VhostVringState {
 
 /// `struct vhost_vring_file` in Linux, a queue index and its eventfd descriptor.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L24>.
+/// Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost_types.h#L24>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(in vhost) struct VhostVringFile {
@@ -52,7 +47,7 @@ pub(in vhost) struct VhostVringFile {
 
 /// `struct vhost_vring_addr` in Linux, the owner virtual addresses of a queue.
 ///
-/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost_types.h#L30>.
+/// Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost_types.h#L30>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(in vhost) struct VhostVringAddr {
@@ -68,7 +63,7 @@ pub(in vhost) mod ioctl_defs {
     use super::{VhostMemory, VhostVringAddr, VhostVringFile, VhostVringState};
     use crate::util::ioctl::{InData, InOutData, NoData, OutData, ioc};
 
-    // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/vhost.h>.
+    // Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost.h>.
     pub(in vhost) type GetFeatures        = ioc!(VHOST_GET_FEATURES,         0xaf, 0x00, OutData<u64>);
     pub(in vhost) type SetFeatures        = ioc!(VHOST_SET_FEATURES,         0xaf, 0x00, InData<u64>);
     pub(in vhost) type SetOwner           = ioc!(VHOST_SET_OWNER,            0xaf, 0x01, NoData);
@@ -99,13 +94,13 @@ pub(in vhost) struct VhostDeviceConfig {
 /// acquire `data`, so the caller can join the thread after releasing the data lock.
 /// Session close must explicitly stop work even if callbacks retain the backend.
 /// `NUM_QUEUES` excludes queues handled only by the frontend.
-pub(in vhost) struct VhostDevice<const NUM_QUEUES: usize> {
+pub(in vhost) struct VhostDeviceSession<const NUM_QUEUES: usize> {
     worker: Mutex<VhostWorker>,
     data: Arc<Mutex<VhostDeviceData<NUM_QUEUES>>>,
     wake: Arc<KernelEventFile>,
 }
 
-impl<const NUM_QUEUES: usize> VhostDevice<NUM_QUEUES> {
+impl<const NUM_QUEUES: usize> VhostDeviceSession<NUM_QUEUES> {
     pub(in vhost) fn new(config: VhostDeviceConfig) -> Self {
         Self::from_data(VhostDeviceData::new(config))
     }
@@ -121,8 +116,8 @@ impl<const NUM_QUEUES: usize> VhostDevice<NUM_QUEUES> {
     }
 
     /// Serializes a complete ioctl or lifecycle operation, including backend work.
-    pub(in vhost) fn lock(&self) -> VhostDeviceGuard<'_, NUM_QUEUES> {
-        VhostDeviceGuard {
+    pub(in vhost) fn lock(&self) -> VhostDeviceSessionGuard<'_, NUM_QUEUES> {
+        VhostDeviceSessionGuard {
             device: self,
             worker: self.worker.lock(),
         }
@@ -139,21 +134,21 @@ impl<const NUM_QUEUES: usize> VhostDevice<NUM_QUEUES> {
     }
 }
 
-impl<const NUM_QUEUES: usize> Drop for VhostDevice<NUM_QUEUES> {
+impl<const NUM_QUEUES: usize> Drop for VhostDeviceSession<NUM_QUEUES> {
     fn drop(&mut self) {
-        self.data.lock().deactivate();
+        self.data.lock().disable_queues();
         self.worker.get_mut().stop(&self.wake);
     }
 }
 
 /// A held worker mutex, serializing device control and worker lifecycle.
 /// Worker callbacks must never acquire this lock.
-pub(in vhost) struct VhostDeviceGuard<'a, const NUM_QUEUES: usize> {
-    device: &'a VhostDevice<NUM_QUEUES>,
+pub(in vhost) struct VhostDeviceSessionGuard<'a, const NUM_QUEUES: usize> {
+    device: &'a VhostDeviceSession<NUM_QUEUES>,
     worker: MutexGuard<'a, VhostWorker>,
 }
 
-impl<const NUM_QUEUES: usize> VhostDeviceGuard<'_, NUM_QUEUES> {
+impl<const NUM_QUEUES: usize> VhostDeviceSessionGuard<'_, NUM_QUEUES> {
     /// Handles common ioctls, creates the owner worker, and wakes it after updates.
     pub(in vhost) fn handle_ioctl(
         &mut self,
@@ -205,20 +200,20 @@ impl<const NUM_QUEUES: usize> VhostDeviceGuard<'_, NUM_QUEUES> {
         Ok(())
     }
 
-    pub(in vhost) fn activate(&self) -> Result<()> {
-        let result = self.device.lock_data().activate();
+    pub(in vhost) fn enable_queues(&self) -> Result<()> {
+        let result = self.device.lock_data().enable_queues();
         self.device.wake.signal();
         result
     }
 
-    pub(in vhost) fn deactivate(&self) {
-        self.device.lock_data().deactivate();
+    pub(in vhost) fn disable_queues(&self) {
+        self.device.lock_data().disable_queues();
         self.device.wake.signal();
     }
 
     /// Disables queues and joins the worker without holding the data mutex.
     pub(in vhost) fn stop_worker(&mut self) {
-        self.device.lock_data().deactivate();
+        self.device.lock_data().disable_queues();
         self.worker.stop(&self.device.wake);
     }
 }
@@ -256,7 +251,7 @@ impl<const NUM_QUEUES: usize> VhostDeviceData<NUM_QUEUES> {
     }
 
     pub(in vhost) fn is_running(&self) -> bool {
-        self.queues.iter().all(|queue| queue.is_enabled)
+        self.queues.iter().all(|queue| queue.is_enabled())
     }
 
     pub(in vhost) fn negotiated_features(&self) -> u64 {
@@ -265,11 +260,11 @@ impl<const NUM_QUEUES: usize> VhostDeviceData<NUM_QUEUES> {
 
     pub(in vhost) fn queue_base(&self, index: u32) -> Result<u32> {
         let index = self.check_queue_index(index)?;
-        Ok(u32::from(self.queues[index].last_avail))
+        Ok(u32::from(self.queues[index].base()))
     }
 
     pub(in vhost) fn kick_event(&self, index: usize) -> Option<&Arc<KernelEventFile>> {
-        self.queues.get(index).and_then(|queue| queue.kick.as_ref())
+        self.queues.get(index).and_then(|queue| queue.kick_event())
     }
 
     pub(in vhost) fn queue_mut(&mut self, index: usize) -> Result<VhostQueue<'_>> {
@@ -280,19 +275,19 @@ impl<const NUM_QUEUES: usize> VhostDeviceData<NUM_QUEUES> {
             .memory
             .as_ref()
             .ok_or_else(|| Error::with_message(Errno::EPERM, "vhost owner is not set"))?;
-        Ok(VhostQueue {
+        Ok(VhostQueue::new(
             queue,
             memory,
-            allow_indirect: self.negotiated_features & VIRTIO_RING_F_INDIRECT_DESC != 0,
-        })
+            Feature::from_bits_truncate(self.negotiated_features),
+        ))
     }
 
     /// Enables all queues, or leaves all queues disabled if activation fails.
     /// Repeated activation checks access without resetting active cursors.
-    pub(in vhost) fn activate(&mut self) -> Result<()> {
+    pub(in vhost) fn enable_queues(&mut self) -> Result<()> {
         for index in 0..NUM_QUEUES {
             if let Err(error) = self.queue_mut(index).and_then(|mut queue| queue.enable()) {
-                self.deactivate();
+                self.disable_queues();
                 return Err(error);
             }
         }
@@ -300,9 +295,9 @@ impl<const NUM_QUEUES: usize> VhostDeviceData<NUM_QUEUES> {
     }
 
     /// Disables queue processing while preserving configuration and progress.
-    pub(in vhost) fn deactivate(&mut self) {
+    pub(in vhost) fn disable_queues(&mut self) {
         for queue in &mut self.queues {
-            queue.is_enabled = false;
+            queue.disable();
         }
     }
 
@@ -343,43 +338,52 @@ impl<const NUM_QUEUES: usize> VhostDeviceData<NUM_QUEUES> {
                 Ok(0)
             }
             cmd @ SetVringNum => {
+                self.check_owner()?;
                 let index = self.read_queue_index(raw_ioctl)?;
-                self.check_queue_stopped(index)?;
-                self.set_queue_num(index, cmd.read()?.num)?;
+                // Linux rejects a running queue before reading the remaining input.
+                self.queues[index].check_stopped()?;
+                self.queues[index].set_num(cmd.read()?.num, self.config.max_queue_size)?;
                 Ok(0)
             }
             cmd @ SetVringAddr => {
+                self.check_owner()?;
                 let index = self.read_queue_index(raw_ioctl)?;
-                self.set_queue_addr(index, cmd.read()?)?;
+                self.queues[index].set_addr(cmd.read()?)?;
                 Ok(0)
             }
             cmd @ SetVringBase => {
+                self.check_owner()?;
                 let index = self.read_queue_index(raw_ioctl)?;
-                self.check_queue_stopped(index)?;
-                self.set_queue_base(index, cmd.read()?.num)?;
+                // Linux rejects a running queue before reading the remaining input.
+                self.queues[index].check_stopped()?;
+                self.queues[index].set_base(cmd.read()?.num)?;
                 Ok(0)
             }
             cmd @ GetVringBase => {
+                self.check_owner()?;
                 let index = self.read_queue_index(raw_ioctl)?;
                 cmd.write(&VhostVringState {
                     index: index as u32,
-                    num: u32::from(self.queues[index].last_avail),
+                    num: u32::from(self.queues[index].base()),
                 })?;
                 Ok(0)
             }
             cmd @ SetVringKick => {
+                self.check_owner()?;
                 let index = self.read_queue_index(raw_ioctl)?;
-                self.queues[index].kick = get_event_file(cmd.read()?.fd)?;
+                self.queues[index].set_kick(get_event_file(cmd.read()?.fd)?);
                 Ok(0)
             }
             cmd @ SetVringCall => {
+                self.check_owner()?;
                 let index = self.read_queue_index(raw_ioctl)?;
-                self.queues[index].call = get_event_file(cmd.read()?.fd)?;
+                self.queues[index].set_call(get_event_file(cmd.read()?.fd)?);
                 Ok(0)
             }
             cmd @ SetVringErr => {
+                self.check_owner()?;
                 let index = self.read_queue_index(raw_ioctl)?;
-                self.queues[index].err = get_event_file(cmd.read()?.fd)?;
+                self.queues[index].set_err(get_event_file(cmd.read()?.fd)?);
                 Ok(0)
             }
             cmd @ SetBackendFeatures => {
@@ -396,6 +400,7 @@ impl<const NUM_QUEUES: usize> VhostDeviceData<NUM_QUEUES> {
             _ => {
                 // Linux vsock falls back to vring dispatch, which reads the
                 // queue index even for unsupported commands such as RESET_OWNER.
+                self.check_owner()?;
                 self.read_queue_index(raw_ioctl)?;
                 return_errno_with_message!(Errno::ENOTTY, "the vhost ioctl command is unknown");
             }
@@ -421,7 +426,6 @@ impl<const NUM_QUEUES: usize> VhostDeviceData<NUM_QUEUES> {
     }
 
     fn read_queue_index(&self, raw: RawIoctl) -> Result<usize> {
-        self.check_owner()?;
         let task = Task::current().unwrap();
         let userspace = CurrentUserSpace::new(task.as_thread_local().unwrap());
         self.check_queue_index(userspace.read_val(raw.arg())?)
@@ -432,36 +436,6 @@ impl<const NUM_QUEUES: usize> VhostDeviceData<NUM_QUEUES> {
             return_errno_with_message!(Errno::ENOBUFS, "vhost queue index is out of range");
         }
         Ok(index as usize)
-    }
-
-    fn check_queue_stopped(&self, index: usize) -> Result<()> {
-        if self.queues[index].is_enabled {
-            return_errno_with_message!(Errno::EBUSY, "vhost queue is running");
-        }
-        Ok(())
-    }
-
-    fn set_queue_num(&mut self, index: usize, num: u32) -> Result<()> {
-        self.check_queue_stopped(index)?;
-        validate_vring_num(num, self.config.max_queue_size)?;
-        self.queues[index].num = num as usize;
-        Ok(())
-    }
-
-    fn set_queue_base(&mut self, index: usize, base: u32) -> Result<()> {
-        self.check_queue_stopped(index)?;
-        validate_vring_base(base)?;
-        self.queues[index].last_avail = base as u16;
-        Ok(())
-    }
-
-    fn set_queue_addr(&mut self, index: usize, addr: VhostVringAddr) -> Result<()> {
-        validate_vring_addr(&addr)?;
-        if self.queues[index].is_enabled {
-            validate_vring_access(&addr, self.queues[index].num as u32)?;
-        }
-        self.queues[index].addr = addr;
-        Ok(())
     }
 }
 
@@ -482,51 +456,4 @@ fn get_event_file(fd: RawFileDesc) -> Result<Option<Arc<KernelEventFile>>> {
     let mut file_table = thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd).into_owned();
     KernelEventFile::from_file(file.as_ref()).map(Some)
-}
-
-fn validate_vring_num(num: u32, max: u32) -> Result<()> {
-    if num == 0 || num > max || num > VHOST_MAX_VRING_NUM || !num.is_power_of_two() {
-        return_errno_with_message!(Errno::EINVAL, "vhost vring size is invalid");
-    }
-    Ok(())
-}
-
-fn validate_vring_base(base: u32) -> Result<()> {
-    if base > u32::from(u16::MAX) {
-        return_errno_with_message!(Errno::EINVAL, "vhost vring base is too large");
-    }
-    Ok(())
-}
-
-fn validate_vring_addr(addr: &VhostVringAddr) -> Result<()> {
-    if addr.flags != 0 {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "vhost vring logging is unsupported");
-    }
-    if !addr
-        .avail_user_addr
-        .is_multiple_of(align_of::<AvailRing>() as u64)
-        || !addr
-            .used_user_addr
-            .is_multiple_of(align_of::<UsedRing>() as u64)
-        || !addr
-            .log_guest_addr
-            .is_multiple_of(align_of::<UsedRing>() as u64)
-    {
-        return_errno_with_message!(Errno::EINVAL, "vhost vring address is misaligned");
-    }
-    Ok(())
-}
-
-pub(super) fn validate_vring_access(addr: &VhostVringAddr, num: u32) -> Result<()> {
-    let num = num as usize;
-    memory::validate_owner_range(addr.desc_user_addr as usize, num * size_of::<Descriptor>())?;
-    memory::validate_owner_range(
-        addr.avail_user_addr as usize,
-        AvailRing::entry_offset(num).unwrap(),
-    )?;
-    memory::validate_owner_range(
-        addr.used_user_addr as usize,
-        UsedRing::entry_offset(num).unwrap(),
-    )?;
-    Ok(())
 }
