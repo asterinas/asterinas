@@ -62,19 +62,22 @@ pub(in vhost) mod ioctl_defs {
     use super::{VhostMemory, VhostVringAddr, VhostVringFile, VhostVringState};
     use crate::util::ioctl::{InData, InOutData, NoData, OutData, ioc};
 
-    // Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost.h>.
+    // Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost.h#L26-L38>.
     pub(in vhost) type GetFeatures        = ioc!(VHOST_GET_FEATURES,         0xaf, 0x00, OutData<u64>);
     pub(in vhost) type SetFeatures        = ioc!(VHOST_SET_FEATURES,         0xaf, 0x00, InData<u64>);
     pub(in vhost) type SetOwner           = ioc!(VHOST_SET_OWNER,            0xaf, 0x01, NoData);
     pub(in vhost) type ResetOwner         = ioc!(VHOST_RESET_OWNER,          0xaf, 0x02, NoData);
     pub(in vhost) type SetMemTable        = ioc!(VHOST_SET_MEM_TABLE,        0xaf, 0x03, InData<VhostMemory>);
+    // Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost.h#L71-L77>.
     pub(in vhost) type SetVringNum        = ioc!(VHOST_SET_VRING_NUM,        0xaf, 0x10, InData<VhostVringState>);
     pub(in vhost) type SetVringAddr       = ioc!(VHOST_SET_VRING_ADDR,       0xaf, 0x11, InData<VhostVringAddr>);
     pub(in vhost) type SetVringBase       = ioc!(VHOST_SET_VRING_BASE,       0xaf, 0x12, InData<VhostVringState>);
     pub(in vhost) type GetVringBase       = ioc!(VHOST_GET_VRING_BASE,       0xaf, 0x12, InOutData<VhostVringState>);
+    // Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost.h#L109-L113>.
     pub(in vhost) type SetVringKick       = ioc!(VHOST_SET_VRING_KICK,       0xaf, 0x20, InData<VhostVringFile>);
     pub(in vhost) type SetVringCall       = ioc!(VHOST_SET_VRING_CALL,       0xaf, 0x21, InData<VhostVringFile>);
     pub(in vhost) type SetVringErr        = ioc!(VHOST_SET_VRING_ERR,        0xaf, 0x22, InData<VhostVringFile>);
+    // Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost.h#L123-L124>.
     pub(in vhost) type SetBackendFeatures = ioc!(VHOST_SET_BACKEND_FEATURES, 0xaf, 0x25, InData<u64>);
     pub(in vhost) type GetBackendFeatures = ioc!(VHOST_GET_BACKEND_FEATURES, 0xaf, 0x26, OutData<u64>);
 }
@@ -219,7 +222,7 @@ impl<const NUM_QUEUES: usize> VhostDeviceSessionGuard<'_, NUM_QUEUES> {
 
 /// The device's single copy of configuration and queue progress under `data`.
 ///
-/// Queue views and descriptor chains borrow this data, so reconfiguration waits
+/// Queue operations and descriptor chains borrow this data, so reconfiguration waits
 /// until guest-memory accesses and completion notifications have finished.
 pub(in vhost) struct VhostDeviceData<const NUM_QUEUES: usize> {
     config: VhostDeviceConfig,

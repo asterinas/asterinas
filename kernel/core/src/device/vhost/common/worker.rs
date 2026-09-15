@@ -2,9 +2,10 @@
 
 //! A pausable, owner-VMAR-bound worker shared by vhost device backends.
 //!
-//! Provides the execution and event-waiting roles of Linux's `vhost_worker`
-//! and `vhost_poll`, using Asterinas threads and pollers.
-//! Reference: <https://github.com/torvalds/linux/blob/v6.18/drivers/vhost/vhost.h>.
+//! Provides the execution and event-waiting roles of Linux's
+//! [`vhost_worker`](https://github.com/torvalds/linux/blob/v6.18/drivers/vhost/vhost.h#L39-L51)
+//! and [`vhost_poll`](https://github.com/torvalds/linux/blob/v6.18/drivers/vhost/vhost.h#L55-L63),
+//! using Asterinas threads and pollers.
 
 #![short_vis_path::add(vhost)]
 

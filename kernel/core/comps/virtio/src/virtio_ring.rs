@@ -149,7 +149,7 @@ impl AvailRing {
 bitflags! {
     /// The `VRING_USED_F_*` notification flags in Linux.
     ///
-    /// Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/virtio_ring.h#L51-L57>.
+    /// Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/virtio_ring.h#L57>.
     #[repr(C)]
     #[derive(Default, Pod)]
     pub struct UsedFlags: u16 {
