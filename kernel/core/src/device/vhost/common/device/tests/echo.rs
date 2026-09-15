@@ -1,23 +1,24 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! A four-byte echo backend with persistent queues and a pausable worker.
+//! A four-byte echo backend using the common vhost worker.
 
-use core::{sync::atomic, time::Duration};
+use core::{
+    sync::atomic::{self, AtomicBool},
+    time::Duration,
+};
 
 use super::*;
 use crate::{
+    device::vhost::common::worker::{VhostWork, VhostWorkStatus, VhostWorker},
     events::IoEvents,
     process::signal::{Pollable, Poller},
-    thread::Thread,
 };
 
 struct EchoDevice {
     common: Arc<Mutex<VhostDevice<1>>>,
-    worker: Option<Arc<Thread>>,
-    stop: Arc<KernelEventFile>,
-    wake: Arc<KernelEventFile>,
+    worker: VhostWorker<1>,
     idle: Arc<KernelEventFile>,
-    completed: Arc<AtomicU64>,
+    completed: Arc<AtomicBool>,
 }
 
 impl EchoDevice {
@@ -25,94 +26,63 @@ impl EchoDevice {
         device.deactivate();
         let vmar = device.owner_vmar().unwrap().clone();
         let common = Arc::new(Mutex::new(device));
-        let stop = create_event();
-        let wake = create_event();
+        let mut worker = VhostWorker::new(common.clone());
         let idle = create_event();
-        let completed = Arc::new(AtomicU64::new(0));
-        let worker = {
-            let common = common.clone();
-            let stop = stop.clone();
-            let wake = wake.clone();
-            let idle = idle.clone();
-            let completed = completed.clone();
-            ThreadOptions::new(move || {
-                let result = Self::run(&common, &stop, &wake, &idle);
-                if result.is_err() {
-                    common.lock().queue_mut(0).unwrap().signal_error();
-                }
-                completed.store(u64::from(result.is_ok()), Ordering::Release);
-            })
-            .vmar(vmar)
-            .spawn()
-        };
+        let completed = Arc::new(AtomicBool::new(false));
+        worker.start(
+            vmar,
+            EchoWork {
+                common: common.clone(),
+                idle: idle.clone(),
+                completed: completed.clone(),
+            },
+        );
         Self {
             common,
-            worker: Some(worker),
-            stop,
-            wake,
+            worker,
             idle,
             completed,
         }
     }
+}
 
-    fn set_running(&self, running: bool) -> Result<()> {
-        let result = {
-            let mut device = self.common.lock();
-            if running {
-                device.activate()
-            } else {
-                device.deactivate();
-                Ok(())
-            }
-        };
-        self.wake.signal();
-        result
-    }
+struct EchoWork {
+    common: Arc<Mutex<VhostDevice<1>>>,
+    idle: Arc<KernelEventFile>,
+    completed: Arc<AtomicBool>,
+}
 
-    fn run(
-        common: &Mutex<VhostDevice<1>>,
-        stop: &KernelEventFile,
-        wake: &KernelEventFile,
-        idle: &KernelEventFile,
-    ) -> Result<()> {
-        loop {
-            let mut poller = Poller::new(None);
-            wake.poll(IoEvents::IN, Some(poller.as_handle_mut()));
-            if !stop
-                .poll(IoEvents::IN, Some(poller.as_handle_mut()))
-                .is_empty()
-            {
-                return Ok(());
-            }
-            wake.consume();
-            let mut device = common.lock();
-            if !device.is_running() {
-                drop(device);
-                idle.signal();
-                poller.wait()?;
-                continue;
-            }
-            if let Some(kick) = device.kick_event(0) {
-                kick.poll(IoEvents::IN, Some(poller.as_handle_mut()));
-            }
-            let mut queue = device.queue_mut(0)?;
-            queue.consume_kick();
-            queue.disable_kick_notifications()?;
-            if Self::copy_next(&mut queue)? {
-                queue.notify()?;
-                drop(device);
-                Thread::yield_now();
-                continue;
-            }
-            let retry = queue.enable_kick_notifications()?;
-            drop(device);
-            if !retry {
-                idle.signal();
-                poller.wait()?;
-            }
+impl VhostWork<1> for EchoWork {
+    fn process(&mut self, device: &mut VhostDevice<1>) -> Result<VhostWorkStatus> {
+        let mut queue = device.queue_mut(0)?;
+        queue.disable_kick_notifications()?;
+        if Self::copy_next(&mut queue)? {
+            queue.notify()?;
+            return Ok(VhostWorkStatus::Pending);
         }
+        Ok(if queue.enable_kick_notifications()? {
+            VhostWorkStatus::Pending
+        } else {
+            VhostWorkStatus::Idle
+        })
     }
 
+    fn after_process(&mut self, status: VhostWorkStatus) -> Result<()> {
+        if status == VhostWorkStatus::Idle {
+            self.idle.signal();
+        }
+        Ok(())
+    }
+
+    fn on_exit(self, result: Result<()>) {
+        if result.is_err() {
+            self.common.lock().queue_mut(0).unwrap().signal_error();
+        }
+        self.completed.store(result.is_ok(), Ordering::Release);
+    }
+}
+
+impl EchoWork {
     fn copy_next(queue: &mut VhostQueue<'_>) -> Result<bool> {
         let Some(chain) = queue.try_pop()? else {
             return Ok(false);
@@ -125,19 +95,6 @@ impl EchoDevice {
         chain.writer().write_all(&data)?;
         chain.complete(4)?;
         Ok(true)
-    }
-
-    fn stop_worker(&mut self) {
-        if let Some(worker) = self.worker.take() {
-            self.stop.signal();
-            worker.join();
-        }
-    }
-}
-
-impl Drop for EchoDevice {
-    fn drop(&mut self) {
-        self.stop_worker();
     }
 }
 
@@ -165,9 +122,8 @@ fn vhost_echo_worker_preserves_queues_across_pause_and_reconfiguration() {
         let mut kick = device.kick_event(0).unwrap().clone();
         let err = device.queues[0].err.as_ref().unwrap().clone();
         let mut echo = EchoDevice::new(device);
-        let worker = echo.worker.as_ref().unwrap().clone();
-        echo.set_running(true).unwrap();
-        echo.set_running(true).unwrap();
+        echo.worker.activate().unwrap();
+        echo.worker.activate().unwrap();
         wait_event(&echo.idle);
         for (index, payload) in [*b"echo", *b"next"].into_iter().enumerate() {
             memory
@@ -194,7 +150,7 @@ fn vhost_echo_worker_preserves_queues_across_pause_and_reconfiguration() {
             if index == 1 {
                 assert!(!echo.common.lock().is_running());
                 assert_eq!(echo.common.lock().queue_base(0).unwrap(), 1);
-                echo.set_running(true).unwrap();
+                echo.worker.activate().unwrap();
             }
             wait_event(&call);
             let mut response = [0; 4];
@@ -209,16 +165,16 @@ fn vhost_echo_worker_preserves_queues_across_pause_and_reconfiguration() {
             assert!(echo.common.lock().is_running());
             wait_event(&echo.idle);
             if index == 0 {
-                echo.set_running(false).unwrap();
-                echo.set_running(false).unwrap();
-                assert!(Arc::ptr_eq(echo.worker.as_ref().unwrap(), &worker));
+                echo.worker.deactivate();
+                echo.worker.deactivate();
+                assert!(!echo.completed.load(Ordering::Acquire));
                 assert_eq!(echo.common.lock().queue_base(0).unwrap(), 1);
                 kick = create_event();
                 echo.common.lock().queues[0].kick = Some(kick.clone());
             }
         }
-        echo.stop_worker();
-        assert_eq!(echo.completed.load(Ordering::Acquire), 1);
+        echo.worker.stop();
+        assert!(echo.completed.load(Ordering::Acquire));
         assert_eq!(err.consume(), None);
         let mut common = echo.common.lock();
         common.reset_owner();

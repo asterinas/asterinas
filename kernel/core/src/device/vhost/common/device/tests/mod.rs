@@ -796,6 +796,8 @@ fn vhost_kick_notifications_recheck_available_ring() {
 
     run_with_owner_memory(|memory| {
         let (mut device, _) = create_device(memory.clone());
+        // Suppression is a ring protocol operation, independent of eventfd binding.
+        device.queues[0].kick = None;
         let mut queue = device.queue_mut(0).unwrap();
 
         queue.disable_kick_notifications().unwrap();
@@ -815,6 +817,44 @@ fn vhost_kick_notifications_recheck_available_ring() {
                 .unwrap()
                 .flags(),
             0
+        );
+    });
+}
+
+#[ktest]
+fn vhost_unbound_events_allow_queue_completion() {
+    crate::thread::init();
+    crate::time::clocks::init_for_ktest();
+    crate::util::random::init();
+
+    run_with_owner_memory(|memory| {
+        let (mut device, _) = create_device(memory.clone());
+        device.deactivate();
+        device.queues[0].kick = None;
+        device.queues[0].call = None;
+        device.queues[0].err = None;
+        device.activate().unwrap();
+        memory
+            .write_owner_val(
+                DESC_ADDR,
+                &create_descriptor(GUEST_ADDR, 4, DescFlags::empty(), 0),
+            )
+            .unwrap();
+        memory.write_owner_bytes(GUEST_UVA, b"none").unwrap();
+        make_available(&memory, 0, AvailFlags::empty());
+
+        let mut queue = device.queue_mut(0).unwrap();
+        assert_eq!(queue.consume_kick(), None);
+        let chain = queue.try_pop().unwrap().unwrap();
+        let mut payload = [0; 4];
+        chain.reader().read_exact(&mut payload).unwrap();
+        assert_eq!(&payload, b"none");
+        chain.complete(0).unwrap();
+        queue.notify().unwrap();
+        queue.signal_error();
+        assert_eq!(
+            memory.read_owner_val::<UsedRing>(USED_ADDR).unwrap().idx(),
+            1
         );
     });
 }
