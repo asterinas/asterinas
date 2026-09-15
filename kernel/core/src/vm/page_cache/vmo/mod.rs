@@ -113,7 +113,7 @@ pub(crate) use options::VmoOptions;
 /// later by the BIO completion callback after the writeback state has been
 /// handed off. Anonymous VMOs stay `UpToDate` in steady state once a page is
 /// committed.
-pub(crate) struct Vmo {
+pub struct Vmo {
     /// The backend that provides disk I/O operations, if any.
     //
     // TODO: Using `Weak` here is to avoid circular references in exfat file systems.

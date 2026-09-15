@@ -10,6 +10,7 @@ use bitflags::bitflags;
 use hashbrown::HashMap;
 
 use crate::{
+    dispatch_ioctl,
     events::IoEvents,
     fs::{
         file::{
@@ -26,7 +27,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    util::ioctl::{RawIoctl, dispatch_ioctl},
+    util::ioctl::RawIoctl,
 };
 
 #[derive(Clone)]

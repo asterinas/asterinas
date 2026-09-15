@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub(crate) mod lsm;
+pub mod lsm;
 
 cfg_select! {
     all(target_arch = "x86_64", feature = "cvm_guest") => {

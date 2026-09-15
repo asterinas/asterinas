@@ -43,11 +43,11 @@ pub(crate) use builder::PosixThreadBuilder;
 pub(super) use exit::sigkill_other_threads;
 pub(crate) use exit::{do_exit, do_exit_group};
 pub(crate) use personality::Personality;
-pub(crate) use posix_thread_ext::AsPosixThread;
+pub use posix_thread_ext::AsPosixThread;
 pub(crate) use robust_list::RobustListHead;
 pub(crate) use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 
-pub(crate) struct PosixThread {
+pub struct PosixThread {
     // Immutable part
     process: Weak<Process>,
     task: Weak<Task>,

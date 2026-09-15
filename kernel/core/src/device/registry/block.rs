@@ -11,6 +11,7 @@ use ostd::mm::VmIo;
 use crate::{
     context::current_userspace,
     device::{Device, DeviceType},
+    dispatch_ioctl,
     events::IoEvents,
     fs::{
         devtmpfs::{self, DevtmpfsNode, DevtmpfsNodeMeta},
@@ -20,7 +21,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     thread::kernel_thread::ThreadOptions,
-    util::ioctl::{RawIoctl, dispatch_ioctl},
+    util::ioctl::RawIoctl,
 };
 
 pub(super) fn init_in_first_kthread() {
@@ -72,7 +73,10 @@ pub(super) fn init_in_first_process() -> Result<()> {
 }
 
 mod ioctl_defs {
-    use crate::util::ioctl::{NoData, OutData, ioc};
+    use crate::{
+        ioc,
+        util::ioctl::{NoData, OutData},
+    };
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fs.h>
 

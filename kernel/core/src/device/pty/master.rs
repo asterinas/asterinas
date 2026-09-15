@@ -5,6 +5,7 @@ use ostd::task::Task;
 use super::{PtySlave, driver::PtyDriver};
 use crate::{
     device::tty::TtyFlags,
+    dispatch_ioctl,
     events::IoEvents,
     fs::{
         devpts::Ptmx,
@@ -19,7 +20,7 @@ use crate::{
         Terminal,
         signal::{PollHandle, Pollable},
     },
-    util::ioctl::{RawIoctl, dispatch_ioctl},
+    util::ioctl::RawIoctl,
 };
 
 const IO_CAPACITY: usize = 4096;

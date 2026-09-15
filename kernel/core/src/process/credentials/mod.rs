@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub(crate) mod c_types;
-pub(crate) mod capabilities;
+pub mod capabilities;
 mod credentials_;
 mod file_capabilities;
 mod group;

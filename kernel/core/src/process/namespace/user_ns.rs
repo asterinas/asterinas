@@ -9,13 +9,13 @@ use crate::{
 };
 
 /// The user namespace.
-pub(crate) struct UserNamespace {
+pub struct UserNamespace {
     stashed_dentry: StashedDentry,
 }
 
 impl UserNamespace {
     /// Returns a reference to the singleton initial user namespace.
-    pub(crate) fn get_init_singleton() -> &'static Arc<UserNamespace> {
+    pub fn get_init_singleton() -> &'static Arc<UserNamespace> {
         static INIT: Once<Arc<UserNamespace>> = Once::new();
 
         INIT.call_once(|| {

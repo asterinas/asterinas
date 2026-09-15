@@ -15,7 +15,7 @@ use crate::{
 static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn Device>>> = Mutex::new(BTreeMap::new());
 
 /// Registers a new char device.
-pub(crate) fn register(device: Arc<dyn Device>) -> Result<()> {
+pub fn register(device: Arc<dyn Device>) -> Result<()> {
     let mut registry = DEVICE_REGISTRY.lock();
     let id = device.id().to_raw();
     if registry.contains_key(&id) {
@@ -34,7 +34,7 @@ pub(crate) fn register(device: Arc<dyn Device>) -> Result<()> {
 }
 
 /// Unregisters an existing char device, returning the device if found.
-pub(crate) fn unregister(id: DeviceId) -> Result<Arc<dyn Device>> {
+pub fn unregister(id: DeviceId) -> Result<Arc<dyn Device>> {
     let mut registry = DEVICE_REGISTRY.lock();
     let device = registry
         .remove(&id.to_raw())

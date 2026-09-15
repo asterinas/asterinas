@@ -7,20 +7,18 @@ use aster_bigtcp::{
 use ostd::task::Task;
 
 use crate::{
+    dispatch_ioctl,
     net::{
         iface::{DEFAULT_TX_QUEUE_LEN, Iface, iter_all_ifaces},
         socket::Socket,
     },
     prelude::*,
-    util::{
-        ioctl::{RawIoctl, dispatch_ioctl},
-        net::CSocketAddrFamily,
-    },
+    util::{ioctl::RawIoctl, net::CSocketAddrFamily},
 };
 
 mod ioctl_defs {
     use super::{CIfConf, CIfReq};
-    use crate::util::ioctl::{InOutData, ioc};
+    use crate::{ioc, util::ioctl::InOutData};
 
     // Reference: <https://elixir.bootlin.com/linux/v7.1/source/include/uapi/linux/sockios.h#L56>.
     pub(super) type GetIfName       = ioc!(SIOCGIFNAME,     0x8910, InOutData<CIfReq>);

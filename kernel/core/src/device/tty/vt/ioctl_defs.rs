@@ -5,7 +5,8 @@ use crate::{
         CFontOp,
         vt::c_types::{CVtMode, CVtState},
     },
-    util::ioctl::{InData, OutData, PassByVal, ioc},
+    ioc,
+    util::ioctl::{InData, OutData, PassByVal},
 };
 
 // Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/kd.h>

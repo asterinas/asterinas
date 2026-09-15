@@ -14,6 +14,7 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
 use super::EvdevDevice;
 use crate::{
+    dispatch_ioctl,
     events::IoEvents,
     fs::{
         file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
@@ -23,7 +24,7 @@ use crate::{
     process::signal::{PollHandle, Pollable, Pollee},
     syscall::ClockId,
     util::{
-        ioctl::{RawIoctl, dispatch_ioctl},
+        ioctl::RawIoctl,
         ring_buffer::{RbConsumer, RbProducer, RingBuffer},
     },
 };
@@ -33,7 +34,10 @@ pub(super) const EVDEV_BUFFER_SIZE: usize = 64;
 mod ioctl_defs {
     use aster_input::input_dev::InputId;
 
-    use crate::util::ioctl::{InData, IoctlEnum, OutData, ioc};
+    use crate::{
+        ioc,
+        util::ioctl::{InData, IoctlEnum, OutData},
+    };
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/input.h>
 
