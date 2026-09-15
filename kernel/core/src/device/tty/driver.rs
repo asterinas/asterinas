@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    device::tty::{Tty, termio::CTermios},
+    device::tty::{EchoUnit, Tty, termio::CTermios},
     fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
     prelude::*,
     util::ioctl::RawIoctl,
@@ -35,11 +35,14 @@ pub(crate) trait TtyDriver: Send + Sync + 'static {
     /// pushed.
     fn push_output(&self, chs: &[u8]) -> Result<usize>;
 
-    /// Returns a callback function that echoes input characters to the output buffer.
+    /// Pushes echoed characters into the output buffer.
     ///
-    /// Note that the implementation may choose to hold a lock during the life of the callback.
-    /// During this time, calls to other methods such as [`Self::push_output`] may cause deadlocks.
-    fn echo_callback(&self) -> impl FnMut(&[u8]) + '_;
+    /// Unlike [`Self::push_output`], this method does not fail when the output buffer is full. It
+    /// takes whole units and returns the number of units accepted; the line discipline keeps the
+    /// rest and commits them later.
+    ///
+    /// This method will be called with a spin lock held, so it cannot break atomic mode.
+    fn push_echo(&self, units: &[EchoUnit]) -> usize;
 
     /// Returns whether new characters can be pushed into the output buffer.
     ///
