@@ -1,77 +1,32 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! The owner-VMAR-bound worker for both persistent vsock queues.
-
-use core::sync::atomic::Ordering;
+//! Vsock packet processing executed by the common vhost worker.
 
 use super::{
     Backend, NUM_QUEUES, RX_QUEUE, TX_QUEUE,
     packet::{self, HEADER_LEN, MAX_PAYLOAD_LEN},
 };
 use crate::{
-    device::vhost::common::virtqueue::VhostQueue,
-    events::IoEvents,
+    device::vhost::common::{
+        device::VhostDevice,
+        virtqueue::VhostQueue,
+        worker::{VhostWork, VhostWorkStatus},
+    },
     net::socket::vsock::{self, VMADDR_CID_HOST},
     prelude::*,
-    process::signal::{Pollable, Poller},
-    thread::Thread,
 };
 
 const WORK_BUDGET: usize = 64;
 
-pub(super) fn run(backend: Arc<Backend>) {
-    if run_queues(&backend).is_ok() {
-        return;
-    }
-    let cid = {
-        let mut common = backend.common.lock();
-        common.deactivate();
-        for index in 0..NUM_QUEUES {
-            if let Ok(queue) = common.queue_mut(index) {
-                queue.signal_error();
-            }
-        }
-        let mut pending = backend.pending.lock();
-        pending.is_active = false;
-        pending.failed = true;
-        pending.generation = pending.generation.wrapping_add(1);
-        pending.discard();
-        backend.cid()
-    };
-    if cid != 0 {
-        vsock::reset_vhost_orphaned_connections();
-    }
-}
-
-fn run_queues(backend: &Backend) -> Result<()> {
-    loop {
-        let mut poller = Poller::new(None);
-        backend
-            .wake
-            .poll(IoEvents::IN, Some(poller.as_handle_mut()));
-        let has_wakeup = backend.wake.consume().is_some();
-        let mut common = backend.common.lock();
-        if backend.exiting.load(Ordering::Acquire) {
-            return Ok(());
-        }
-        if backend.pending.lock().failed {
+impl VhostWork<NUM_QUEUES> for Arc<Backend> {
+    fn process(&mut self, common: &mut VhostDevice<NUM_QUEUES>) -> Result<VhostWorkStatus> {
+        if self.pending.lock().failed {
             return_errno_with_message!(Errno::ENOBUFS, "the vsock endpoint failed");
         }
-        let cid = backend.cid();
-        if !common.is_running() {
-            drop(common);
-            poller.wait()?;
-            continue;
-        }
-        for index in 0..NUM_QUEUES {
-            if let Some(kick) = common.kick_event(index) {
-                kick.poll(IoEvents::IN, Some(poller.as_handle_mut()));
-            }
-        }
+        let cid = self.cid();
         let mut failed = false;
         for index in 0..NUM_QUEUES {
             let mut queue = common.queue_mut(index)?;
-            queue.consume_kick();
             if queue.disable_kick_notifications().is_err() {
                 queue.signal_error();
                 failed = true;
@@ -81,7 +36,7 @@ fn run_queues(backend: &Backend) -> Result<()> {
         let mut transmitted_any = false;
         if !failed {
             for _ in 0..WORK_BUDGET {
-                let received = match receive_packet(&mut common.queue_mut(RX_QUEUE)?, backend) {
+                let received = match receive_packet(&mut common.queue_mut(RX_QUEUE)?, self) {
                     Ok(received) => received,
                     Err(_) => {
                         common.queue_mut(RX_QUEUE)?.signal_error();
@@ -93,7 +48,7 @@ fn run_queues(backend: &Backend) -> Result<()> {
                 if failed {
                     break;
                 }
-                let transmitted = if backend.pending.lock().has_control_room() {
+                let transmitted = if self.pending.lock().has_control_room() {
                     match transmit_packet(&mut common.queue_mut(TX_QUEUE)?, cid) {
                         Ok(transmitted) => transmitted,
                         Err(_) => {
@@ -126,7 +81,7 @@ fn run_queues(backend: &Backend) -> Result<()> {
             let mut queue = common.queue_mut(index)?;
             match queue.enable_kick_notifications() {
                 Ok(ready) => {
-                    let pending = backend.pending.lock();
+                    let pending = self.pending.lock();
                     retry |= ready
                         && if index == RX_QUEUE {
                             pending.front().is_some()
@@ -140,18 +95,45 @@ fn run_queues(backend: &Backend) -> Result<()> {
                 }
             }
         }
-        // Guest accesses, protocol dispatch, and completion notifications all
-        // finish before control can replace memory or deactivate the queues.
-        drop(common);
-        if (did_work || has_wakeup) && cid != 0 {
+        Ok(if !failed && (did_work || retry) {
+            VhostWorkStatus::Pending
+        } else {
+            VhostWorkStatus::Idle
+        })
+    }
+
+    fn after_process(&mut self, _status: VhostWorkStatus) -> Result<()> {
+        if self.pending.lock().failed {
+            return_errno_with_message!(Errno::ENOBUFS, "the vsock endpoint failed");
+        }
+        let cid = self.cid();
+        if cid != 0 {
             vsock::notify_vhost_writable(cid);
         }
-        if !failed && (did_work || retry) {
-            Thread::yield_now();
-        } else {
-            // Queue faults are reported through err; keep the worker and
-            // configuration so a subsequent kick or reconfiguration can retry.
-            poller.wait()?;
+        Ok(())
+    }
+
+    fn on_exit(self, result: Result<()>) {
+        if result.is_ok() {
+            return;
+        }
+        let cid = {
+            let mut common = self.common.lock();
+            common.deactivate();
+            for index in 0..NUM_QUEUES {
+                if let Ok(queue) = common.queue_mut(index) {
+                    queue.signal_error();
+                }
+            }
+            let mut pending = self.pending.lock();
+            pending.is_active = false;
+            pending.failed = true;
+            pending.generation = pending.generation.wrapping_add(1);
+            pending.discard();
+            self.cid()
+        };
+        if cid != 0 {
+            vsock::reset_vhost_orphaned_connections();
         }
     }
 }

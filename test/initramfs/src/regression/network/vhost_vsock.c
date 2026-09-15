@@ -66,7 +66,7 @@ static uint64_t guest_address(struct backend *backend, const void *ptr)
 }
 
 static void configure_backend(struct backend *backend, int assign_cid,
-			      int attach_kick)
+			      int attach_events)
 {
 	long page_size = CHECK(sysconf(_SC_PAGESIZE));
 	backend->memory_size = (sizeof(struct guest_memory) + page_size - 1) /
@@ -114,14 +114,16 @@ static void configure_backend(struct backend *backend, int assign_cid,
 			CHECK(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
 		struct vhost_vring_file file = { .index = i,
 						 .fd = backend->kick[i] };
-		if (attach_kick)
+		if (attach_events)
 			CHECK(ioctl(backend->fd, VHOST_SET_VRING_KICK, &file));
 		file.fd = backend->call[i];
-		CHECK(ioctl(backend->fd, VHOST_SET_VRING_CALL, &file));
+		if (attach_events)
+			CHECK(ioctl(backend->fd, VHOST_SET_VRING_CALL, &file));
 		backend->error[i] =
 			CHECK(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
 		file.fd = backend->error[i];
-		CHECK(ioctl(backend->fd, VHOST_SET_VRING_ERR, &file));
+		if (attach_events)
+			CHECK(ioctl(backend->fd, VHOST_SET_VRING_ERR, &file));
 	}
 	uint64_t cid = GUEST_CID;
 	if (assign_cid)
@@ -222,8 +224,8 @@ static struct virtio_vsock_hdr receive_packet(struct backend *backend,
 	return header;
 }
 
-static void send_packet(struct backend *backend, uint32_t host_port,
-			uint16_t op, const void *payload, size_t length)
+static void submit_packet(struct backend *backend, uint32_t host_port,
+			  uint16_t op, const void *payload, size_t length)
 {
 	struct guest_memory *memory = backend->memory;
 	memory->tx_header = (struct virtio_vsock_hdr){
@@ -252,8 +254,31 @@ static void send_packet(struct backend *backend, uint32_t host_port,
 		};
 	}
 	publish(&memory->tx, backend->kick[1]);
+}
+
+static void send_packet(struct backend *backend, uint32_t host_port,
+			uint16_t op, const void *payload, size_t length)
+{
+	submit_packet(backend, host_port, op, payload, length);
 	// TX descriptors are read-only, so completion never reports bytes written.
-	wait_used(&memory->tx, backend->call[1], 0);
+	wait_used(&backend->memory->tx, backend->call[1], 0);
+}
+
+// Check completion independently of call notification for suppression/detach.
+static void wait_used_without_call(struct test_ring *ring)
+{
+	struct timespec deadline;
+	CHECK(clock_gettime(CLOCK_MONOTONIC, &deadline));
+	deadline.tv_sec += 5;
+	while (le16toh(__atomic_load_n(&ring->used.idx, __ATOMIC_ACQUIRE)) !=
+	       le16toh(ring->avail.idx)) {
+		struct timespec now;
+		CHECK(clock_gettime(CLOCK_MONOTONIC, &now));
+		assert(now.tv_sec < deadline.tv_sec ||
+		       (now.tv_sec == deadline.tv_sec &&
+			now.tv_nsec < deadline.tv_nsec));
+		CHECK(usleep(1000));
+	}
 }
 
 static int connect_guest(void)
@@ -475,7 +500,7 @@ FN_TEST(running_reconfiguration)
 }
 END_TEST()
 
-FN_TEST(start_without_cid_or_kick)
+FN_TEST(start_without_cid_or_events)
 {
 	struct backend backend;
 	configure_backend(&backend, 0, 0);
@@ -517,5 +542,76 @@ FN_TEST(cid_change_and_close_reset_orphans)
 	TEST_RES(getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &error_len),
 		 _ret == 0 && error == ECONNRESET);
 	CHECK(close(fd));
+}
+END_TEST()
+
+FN_TEST(optional_eventfd_bindings)
+{
+	struct backend backend;
+	configure_backend(&backend, 1, 0);
+	int non_event = CHECK(open("/dev/null", O_RDONLY));
+	const unsigned long commands[] = {
+		VHOST_SET_VRING_KICK,
+		VHOST_SET_VRING_CALL,
+		VHOST_SET_VRING_ERR,
+	};
+	for (unsigned i = 0; i < sizeof(commands) / sizeof(commands[0]); ++i) {
+		struct vhost_vring_file file = { .index = 1, .fd = -1 };
+		TEST_SUCC(ioctl(backend.fd, commands[i], &file));
+		file.fd = -2;
+		TEST_ERRNO(ioctl(backend.fd, commands[i], &file), EBADF);
+		file.fd = non_event;
+		TEST_ERRNO(ioctl(backend.fd, commands[i], &file), EINVAL);
+		file.fd = backend.kick[1];
+		TEST_SUCC(ioctl(backend.fd, commands[i], &file));
+		file.fd = -1;
+		TEST_SUCC(ioctl(backend.fd, commands[i], &file));
+	}
+	CHECK(close(non_event));
+	destroy_backend(&backend);
+}
+END_TEST()
+
+FN_TEST(call_notification_suppression_and_rebinding)
+{
+	struct backend backend;
+	setup_backend(&backend);
+	struct test_ring *ring = &backend.memory->tx;
+	uint64_t count;
+
+	ring->avail.flags = htole16(VRING_AVAIL_F_NO_INTERRUPT);
+	submit_packet(&backend, 6000, VIRTIO_VSOCK_OP_RST, NULL, 0);
+	wait_used_without_call(ring);
+	// Wait for the batch's notification decision before changing avail.flags.
+	struct vhost_vring_state state = { .index = 1 };
+	CHECK(ioctl(backend.fd, VHOST_GET_VRING_BASE, &state));
+	TEST_ERRNO(read(backend.call[1], &count, sizeof(count)), EAGAIN);
+
+	ring->avail.flags = 0;
+	submit_packet(&backend, 6000, VIRTIO_VSOCK_OP_RST, NULL, 0);
+	struct pollfd pfd = { .fd = backend.call[1], .events = POLLIN };
+	TEST_RES(poll(&pfd, 1, 5000), _ret == 1 && (pfd.revents & POLLIN));
+	TEST_RES(read(pfd.fd, &count, sizeof(count)),
+		 _ret == sizeof(count) && count > 0);
+	wait_used_without_call(ring);
+
+	struct vhost_vring_file file = { .index = 1, .fd = -1 };
+	TEST_SUCC(ioctl(backend.fd, VHOST_SET_VRING_CALL, &file));
+	submit_packet(&backend, 6000, VIRTIO_VSOCK_OP_RST, NULL, 0);
+	wait_used_without_call(ring);
+	TEST_ERRNO(read(backend.call[1], &count, sizeof(count)), EAGAIN);
+
+	int replacement = CHECK(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
+	file.fd = replacement;
+	TEST_SUCC(ioctl(backend.fd, VHOST_SET_VRING_CALL, &file));
+	submit_packet(&backend, 6000, VIRTIO_VSOCK_OP_RST, NULL, 0);
+	pfd.fd = replacement;
+	TEST_RES(poll(&pfd, 1, 5000), _ret == 1 && (pfd.revents & POLLIN));
+	TEST_RES(read(pfd.fd, &count, sizeof(count)),
+		 _ret == sizeof(count) && count > 0);
+	wait_used_without_call(ring);
+	TEST_ERRNO(read(backend.call[1], &count, sizeof(count)), EAGAIN);
+	CHECK(close(replacement));
+	destroy_backend(&backend);
 }
 END_TEST()

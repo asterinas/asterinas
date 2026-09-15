@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::AtomicBool;
+
 use aster_virtio::device::socket::header::VirtioVsockOp;
 use ostd::prelude::ktest;
 
 use super::*;
+use crate::{
+    device::vhost::common::worker::{VhostWork, VhostWorkStatus},
+    fs::pseudofs::SockFs,
+    process::ProcessVm,
+    vm::vmar::VmarHandle,
+};
 
 fn create_header(len: usize) -> VirtioVsockHdr {
     VirtioVsockHdr::new(
@@ -127,7 +135,7 @@ fn vhost_vsock_pause_preserves_accepted_packets_and_reservations() {
     let mut packet_header = create_header(3);
     packet_header.dst_cid = cid;
 
-    file.backend.stop();
+    file.backend.worker.lock().deactivate();
     assert!(can_connect_remote_cid(cid as u32));
     assert!(reservation.send(&packet_header, &[1, 2, 3]).unwrap());
     let (packet, offset) = file.backend.pending.lock().front().unwrap();
@@ -176,18 +184,15 @@ fn vhost_vsock_close_joins_worker_with_outstanding_reservation() {
     let reservation = reserve_data_packet(cid as u32, 3).unwrap().unwrap();
     let weak_backend = Arc::downgrade(&file.backend);
     let completed = Arc::new(AtomicBool::new(false));
-    let worker = {
-        let backend = file.backend.clone();
-        let completed = completed.clone();
-        // An idle worker needs no guest mappings. Real SET_OWNER and memory
-        // configuration are covered by the userspace ioctl regression.
-        ThreadOptions::new(move || {
-            worker::run(backend);
-            completed.store(true, Ordering::Release);
-        })
-        .spawn()
-    };
-    *file.backend.worker.lock() = Some(worker);
+    let owner = VmarHandle::new(ProcessVm::new(SockFs::new_path()));
+    // The paused common worker needs an address space but no guest mappings.
+    file.backend.worker.lock().start(
+        owner.clone_arc(),
+        CloseWork {
+            backend: file.backend.clone(),
+            completed: completed.clone(),
+        },
+    );
 
     drop(file);
     assert!(completed.load(Ordering::Acquire));
@@ -196,4 +201,25 @@ fn vhost_vsock_close_joins_worker_with_outstanding_reservation() {
     assert!(weak_backend.upgrade().is_some());
     assert!(!reservation.send(&create_header(3), &[1, 2, 3]).unwrap());
     assert!(weak_backend.upgrade().is_none());
+}
+
+struct CloseWork {
+    backend: Arc<Backend>,
+    completed: Arc<AtomicBool>,
+}
+
+impl VhostWork<NUM_QUEUES> for CloseWork {
+    fn process(&mut self, device: &mut VhostDevice<NUM_QUEUES>) -> Result<VhostWorkStatus> {
+        self.backend.process(device)
+    }
+
+    fn after_process(&mut self, status: VhostWorkStatus) -> Result<()> {
+        self.backend.after_process(status)
+    }
+
+    fn on_exit(self, result: Result<()>) {
+        let succeeded = result.is_ok();
+        self.backend.on_exit(result);
+        self.completed.store(succeeded, Ordering::Release);
+    }
 }

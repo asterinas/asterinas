@@ -3,7 +3,7 @@
 //! A vhost-vsock device backed by the common vhost split queues.
 //!
 //! Each open file owns a persistent device and endpoint. SET_OWNER creates a
-//! worker bound to the owner's VMAR; SET_RUNNING pauses or resumes its queues.
+//! common worker bound to the owner's VMAR; SET_RUNNING pauses or resumes its queues.
 //! A sleeping mutex serializes guest accesses with configuration changes, and
 //! borrowed descriptor chains cannot outlive that lock. Close wakes and joins
 //! the worker without holding the queue, socket or pending locks.
@@ -19,15 +19,18 @@
 //! Event-index, packed rings, logging, IOTLB and seqpacket are not implemented.
 //! This backend requires the host transport, without an active virtio frontend.
 
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_virtio::device::socket::header::VirtioVsockHdr;
 use device_id::{DeviceId, MinorId};
 
-use super::common::device::{self as vhost, VhostDevice, VhostDeviceConfig};
+use super::common::{
+    device::{self as vhost, VhostDevice, VhostDeviceConfig},
+    worker::VhostWorker,
+};
 use crate::{
     device::{Device, DeviceType, registry::char},
-    events::{EventFile, EventFileFlags, IoEvents, KernelEventFile},
+    events::{IoEvents, KernelEventFile},
     fs::{
         devtmpfs::DevtmpfsNodeMeta,
         file::{PerOpenFileOps, StatusFlags},
@@ -36,12 +39,11 @@ use crate::{
     net::socket::vsock::{self, VMADDR_CID_HOST},
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    thread::{Thread, kernel_thread::ThreadOptions},
     util::ioctl::{RawIoctl, dispatch_ioctl},
 };
 
 mod packet;
-mod worker;
+mod work;
 
 #[cfg(ktest)]
 mod tests;
@@ -147,10 +149,9 @@ impl Drop for VhostVsockFile {
 // takes the worker mutex; socket callbacks take neither sleeping mutex.
 // No guest copy holds a pending spinlock.
 struct Backend {
-    // Serializes ioctl and shutdown as well as access to the thread handle.
-    worker: Mutex<Option<Arc<Thread>>>,
-    common: Mutex<VhostDevice<NUM_QUEUES>>,
-    exiting: AtomicBool,
+    // Serializes ioctl and shutdown; the common worker owns the thread handle.
+    worker: Mutex<VhostWorker<NUM_QUEUES>>,
+    common: Arc<Mutex<VhostDevice<NUM_QUEUES>>>,
     // Zero means that SET_GUEST_CID has not assigned a route yet.
     cid: AtomicU32,
     pending: SpinLock<PendingPackets>,
@@ -159,23 +160,24 @@ struct Backend {
 
 impl Backend {
     fn new() -> Arc<Self> {
+        let common = Arc::new(Mutex::new(VhostDevice::new(VhostDeviceConfig {
+            device_features: vhost::VIRTIO_F_VERSION_1 | vhost::VIRTIO_RING_F_INDIRECT_DESC,
+            backend_features: 0,
+            max_queue_size: 32768,
+        })));
+        let worker = VhostWorker::new(common.clone());
+        let wake = worker.wake_event().clone();
         Arc::new(Self {
-            worker: Mutex::new(None),
-            common: Mutex::new(VhostDevice::new(VhostDeviceConfig {
-                device_features: vhost::VIRTIO_F_VERSION_1 | vhost::VIRTIO_RING_F_INDIRECT_DESC,
-                backend_features: 0,
-                max_queue_size: 32768,
-            })),
-            exiting: AtomicBool::new(false),
+            worker: Mutex::new(worker),
+            common,
             cid: AtomicU32::new(0),
             pending: SpinLock::new(PendingPackets::new()),
-            wake: KernelEventFile::from_file(&EventFile::new(0, EventFileFlags::empty())).unwrap(),
+            wake,
         })
     }
 
     fn ioctl(self: &Arc<Self>, raw: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
-        use vhost::ioctl_defs::*;
 
         let mut worker = self.worker.lock();
         dispatch_ioctl!(match raw {
@@ -190,31 +192,11 @@ impl Backend {
                 if running != 0 {
                     self.start(&mut worker)?;
                 } else {
-                    self.stop();
+                    worker.deactivate();
                 }
                 Ok(0)
             }
-            SetOwner => {
-                let vmar = {
-                    let mut common = self.common.lock();
-                    common.handle_ioctl(raw)?;
-                    common.owner_vmar().unwrap().clone()
-                };
-                let backend = self.clone();
-                *worker = Some(
-                    ThreadOptions::new(move || worker::run(backend))
-                        .vmar(vmar)
-                        .spawn(),
-                );
-                Ok(0)
-            }
-            _ => {
-                let result = self.common.lock().handle_ioctl(raw);
-                // A sleeping worker must replace old kick registrations and
-                // inspect the committed configuration, including after errors.
-                self.wake.signal();
-                result
-            }
+            _ => worker.handle_ioctl(raw, self.clone()),
         })
     }
 
@@ -241,50 +223,31 @@ impl Backend {
         Ok(())
     }
 
-    fn start(self: &Arc<Self>, worker: &mut Option<Arc<Thread>>) -> Result<()> {
+    fn start(self: &Arc<Self>, worker: &mut VhostWorker<NUM_QUEUES>) -> Result<()> {
         vsock::ensure_vhost_backend()?;
         let worker_failed = self.pending.lock().failed;
         if worker_failed {
-            self.wake.signal();
-            if let Some(worker) = worker.take() {
-                worker.join();
-            }
+            worker.stop();
             {
                 let mut pending = self.pending.lock();
                 pending.failed = false;
                 pending.is_active = true;
             }
             let vmar = self.common.lock().owner_vmar().unwrap().clone();
-            let backend = self.clone();
-            *worker = Some(
-                ThreadOptions::new(move || worker::run(backend))
-                    .vmar(vmar)
-                    .spawn(),
-            );
+            worker.start(vmar, self.clone());
         }
-        let result = self.common.lock().activate();
-        self.wake.signal();
-        result
-    }
-
-    fn stop(&self) {
-        self.common.lock().deactivate();
-        self.wake.signal();
+        worker.activate()
     }
 
     fn shutdown(&self) {
         let mut worker = self.worker.lock();
-        self.stop();
-        self.exiting.store(true, Ordering::Release);
+        worker.deactivate();
         {
             let mut pending = self.pending.lock();
             pending.is_active = false;
             pending.generation = pending.generation.wrapping_add(1);
         }
-        self.wake.signal();
-        if let Some(worker) = worker.take() {
-            worker.join();
-        }
+        worker.stop();
         let cid = self.cid();
         if cid != 0 {
             // Keep the CID reserved until old sockets are reset, so a new
