@@ -28,8 +28,12 @@ use crate::{
     },
     error::Errno,
     error_msg,
+    program_supervisor::{self, DaemonSupervisor},
+    signal::{self, SignalGuard},
     util::{DirGuard, new_command_checked_exists},
 };
+
+const MONITOR_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// The osdk bundle artifact that stores as `bundle` directory.
 ///
@@ -262,6 +266,11 @@ impl Bundle {
             ActionChoice::Test => &config.test,
         };
 
+        let Ok(signal_guard) = SignalGuard::install() else {
+            process::exit(Errno::ExecuteCommand as _);
+        };
+        let signal = signal_guard.signal();
+
         let mut qemu_cmd = new_command_checked_exists(&action.qemu.path);
         qemu_cmd.current_dir(&config.work_dir);
 
@@ -310,8 +319,8 @@ impl Bundle {
         };
 
         match shlex::split(&action.qemu.args) {
-            Some(v) => {
-                for arg in v {
+            Some(args) => {
+                for arg in args {
                     qemu_cmd.arg(arg);
                 }
             }
@@ -320,6 +329,12 @@ impl Bundle {
                 process::exit(Errno::ParseMetadata as _);
             }
         }
+
+        let Ok(mut daemon_supervisor) =
+            DaemonSupervisor::start(&action.qemu.daemons, &config.work_dir, signal)
+        else {
+            process::exit(Errno::ExecuteCommand as _);
+        };
 
         let exit_status = if action.qemu.with_monitor
             && let Some(qemu_log_file) = &action.qemu.log_file
@@ -332,19 +347,41 @@ impl Bundle {
             ));
 
             info!("Running QEMU: {qemu_cmd:#?}");
-            let mut qemu_child = qemu_cmd.spawn().unwrap();
+            let Ok(mut qemu_child) = qemu_cmd.spawn() else {
+                process::exit(Errno::ExecuteCommand as _);
+            };
             std::thread::sleep(Duration::from_secs(1)); // Wait for QEMU to start
-            let mut qemu_monitor_stream = UnixStream::connect(&qemu_monitor_socket_path).unwrap();
-            wait_until_guest_kernel_shutdown(config, &qemu_log_path, &mut qemu_monitor_stream);
+            let Ok(mut qemu_monitor_stream) = UnixStream::connect(&qemu_monitor_socket_path) else {
+                program_supervisor::stop_qemu(&mut qemu_child);
+                process::exit(Errno::ExecuteCommand as _);
+            };
+            wait_until_guest_kernel_shutdown(
+                config,
+                &qemu_log_path,
+                &mut qemu_monitor_stream,
+                &mut qemu_child,
+                signal,
+                &mut daemon_supervisor,
+            );
             info!("VM is paused (shutdown)");
 
             self.post_run_action(config, action, Some(&mut qemu_monitor_stream));
 
             let _ = qemu_monitor_stream.write_all(b"quit\n");
-            qemu_child.wait().unwrap()
+            let Ok(exit_status) = daemon_supervisor.wait_for_qemu(&mut qemu_child) else {
+                program_supervisor::stop_qemu(&mut qemu_child);
+                process::exit(Errno::ExecuteCommand as _);
+            };
+            exit_status
         } else {
             info!("Running QEMU: {qemu_cmd:#?}");
-            let exit_status = qemu_cmd.status().unwrap();
+            let Ok(mut qemu_child) = qemu_cmd.spawn() else {
+                process::exit(Errno::ExecuteCommand as _);
+            };
+            let Ok(exit_status) = daemon_supervisor.wait_for_qemu(&mut qemu_child) else {
+                program_supervisor::stop_qemu(&mut qemu_child);
+                process::exit(Errno::ExecuteCommand as _);
+            };
             self.post_run_action(config, action, None);
             exit_status
         };
@@ -353,13 +390,52 @@ impl Bundle {
             config: &Config,
             qemu_log_path: &Path,
             qemu_monitor_stream: &mut UnixStream,
+            qemu_child: &mut process::Child,
+            signal: &std::sync::atomic::AtomicI32,
+            daemon_supervisor: &mut DaemonSupervisor<'_>,
         ) {
+            qemu_monitor_stream
+                .set_read_timeout(Some(MONITOR_POLL_INTERVAL))
+                .unwrap_or_else(|err| {
+                    error_msg!("Failed to set read timeout: {:?}", err);
+                    program_supervisor::stop_qemu(qemu_child);
+                    process::exit(Errno::ExecuteCommand as _);
+                });
+            let mut monitor_reader = BufReader::new(&mut *qemu_monitor_stream);
+            let mut line = String::new();
+
             // Check VM status every 0.1 seconds and break the loop if the VM is stopped or hanging.
-            while qemu_monitor_stream.write_all(b"info status\n").is_ok() {
-                let status = BufReader::new(&mut *qemu_monitor_stream)
-                    .lines()
-                    .find(|line| line.as_ref().is_ok_and(|s| s.starts_with("VM status:")));
-                if status.is_some_and(|msg| msg.unwrap() == "VM status: paused (shutdown)") {
+            while monitor_reader.get_mut().write_all(b"info status\n").is_ok() {
+                if signal::signal_value(signal).is_some() {
+                    program_supervisor::stop_qemu(qemu_child);
+                    process::exit(Errno::Interrupted as _);
+                }
+                if let Err(errno) = daemon_supervisor.check_children() {
+                    program_supervisor::stop_qemu(qemu_child);
+                    process::exit(errno as _);
+                }
+                let Ok(qemu_status) = qemu_child.try_wait() else {
+                    program_supervisor::stop_qemu(qemu_child);
+                    process::exit(Errno::ExecuteCommand as _);
+                };
+                if qemu_status.is_some() {
+                    break;
+                }
+
+                let guest_shutdown = loop {
+                    line.clear();
+                    let Ok(bytes_read) = monitor_reader.read_line(&mut line) else {
+                        break false;
+                    };
+                    if bytes_read == 0 {
+                        break false;
+                    }
+                    if line.starts_with("VM status:") {
+                        break line.trim_end() == "VM status: paused (shutdown)";
+                    }
+                };
+
+                if guest_shutdown {
                     break;
                 }
 
@@ -375,9 +451,11 @@ impl Bundle {
                         break;
                     }
                 }
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(MONITOR_POLL_INTERVAL);
             }
         }
+
+        daemon_supervisor.stop_all();
         exit_status
     }
 

@@ -31,6 +31,7 @@ args = """\
     -smp $SMP \
     -m $MEM \
 """
+daemons = ["test-service"]
 
 [scheme."iommu"]
 supported_archs = ["x86_64"]
@@ -38,6 +39,7 @@ qemu.args = """\
     -device intel-iommu,intremap=on,device-iotlb=on \
     -device ioh3420,id=pcie.0,chassis=1\
 """
+qemu.daemons = []
 
 [scheme."tdx"]
 supported_archs = ["x86_64"]
@@ -46,3 +48,4 @@ boot.method = "grub-qcow2"
 grub.mkrescue_path = "/tmp/osdk_test_file"
 grub.protocol = "linux"
 qemu.path = "/tmp/osdk_test_file"
+qemu.daemons = []
