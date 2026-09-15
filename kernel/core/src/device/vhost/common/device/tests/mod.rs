@@ -76,7 +76,7 @@ fn create_memory_space(vmar: Arc<Vmar>) -> VhostMemorySpace {
     )
 }
 
-fn create_device(memory: VhostMemorySpace) -> (VhostDevice<1>, Arc<KernelEventFile>) {
+fn create_device(memory: VhostMemorySpace) -> (VhostDeviceData<1>, Arc<KernelEventFile>) {
     memory
         .write_owner_val(USED_ADDR, &UsedRing::default())
         .unwrap();
@@ -92,8 +92,8 @@ fn create_configured_device(
     memory: VhostMemorySpace,
     queue: VhostVirtQueue,
     features: u64,
-) -> VhostDevice<1> {
-    let mut device = VhostDevice {
+) -> VhostDeviceData<1> {
+    let mut device = VhostDeviceData {
         config: VhostDeviceConfig {
             device_features: VIRTIO_F_VERSION_1 | VIRTIO_RING_F_INDIRECT_DESC,
             backend_features: 0,
@@ -490,7 +490,7 @@ fn vhost_vring_addr_can_precede_size_but_is_revalidated() {
 
 #[ktest]
 fn vhost_unknown_ioctl_checks_owner_before_arguments() {
-    let mut device = VhostDevice::<1>::new(VhostDeviceConfig {
+    let mut device = VhostDeviceData::<1>::new(VhostDeviceConfig {
         device_features: 0,
         backend_features: 0,
         max_queue_size: QUEUE_SIZE as u32,
@@ -1203,7 +1203,7 @@ fn vhost_activation_requires_each_backend_queue() {
     crate::time::clocks::init_for_ktest();
     crate::util::random::init();
     run_with_owner_memory(|memory| {
-        let mut device = VhostDevice::<2>::new(VhostDeviceConfig {
+        let mut device = VhostDeviceData::<2>::new(VhostDeviceConfig {
             device_features: VIRTIO_F_VERSION_1,
             backend_features: 0,
             max_queue_size: QUEUE_SIZE as u32,

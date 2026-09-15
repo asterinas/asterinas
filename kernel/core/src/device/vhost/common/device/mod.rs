@@ -12,9 +12,10 @@ use ostd::{mm::VmIo, task::Task};
 use super::{
     memory::{self, VhostMemory, VhostMemorySpace},
     virtqueue::{VhostQueue, VhostVirtQueue},
+    worker::{VhostWork, VhostWorker},
 };
 use crate::{
-    events::KernelEventFile,
+    events::{EventFile, EventFileFlags, KernelEventFile},
     fs::file::file_table::{FileDesc, RawFileDesc, get_file_fast},
     prelude::*,
     util::ioctl::{RawIoctl, dispatch_ioctl},
@@ -92,14 +93,141 @@ pub(in vhost) struct VhostDeviceConfig {
     pub max_queue_size: u32,
 }
 
-/// Persistent configuration and queues of one vhost backend session.
+/// Owns one session's worker and persistent configuration and queues.
 ///
-/// Backends serialize control and data access with a sleeping mutex. Queue
-/// handles and descriptor chains borrow this device, so reconfiguration waits
-/// until guest-memory accesses and completion notifications have finished.
-/// Workers must run in the owner's VMAR and exit before ownership is reset.
+/// Control operations acquire `worker` before `data`. Worker callbacks only
+/// acquire `data`, so the caller can join the thread after releasing the data lock.
+/// Session close must explicitly stop work even if callbacks retain the backend.
 /// `NUM_QUEUES` excludes queues handled only by the frontend.
 pub(in vhost) struct VhostDevice<const NUM_QUEUES: usize> {
+    worker: Mutex<VhostWorker>,
+    data: Arc<Mutex<VhostDeviceData<NUM_QUEUES>>>,
+    wake: Arc<KernelEventFile>,
+}
+
+impl<const NUM_QUEUES: usize> VhostDevice<NUM_QUEUES> {
+    pub(in vhost) fn new(config: VhostDeviceConfig) -> Self {
+        Self::from_data(VhostDeviceData::new(config))
+    }
+
+    fn from_data(data: VhostDeviceData<NUM_QUEUES>) -> Self {
+        let data = Arc::new(Mutex::new(data));
+        let wake = KernelEventFile::from_file(&EventFile::new(0, EventFileFlags::empty())).unwrap();
+        Self {
+            worker: Mutex::new(VhostWorker::default()),
+            data,
+            wake,
+        }
+    }
+
+    /// Serializes a complete ioctl or lifecycle operation, including backend work.
+    pub(in vhost) fn lock(&self) -> VhostDeviceGuard<'_, NUM_QUEUES> {
+        VhostDeviceGuard {
+            device: self,
+            worker: self.worker.lock(),
+        }
+    }
+
+    /// Excludes configuration changes and queue access during a worker batch.
+    pub(in vhost) fn lock_data(&self) -> MutexGuard<'_, VhostDeviceData<NUM_QUEUES>> {
+        self.data.lock()
+    }
+
+    /// Returns the internal event used to wake the worker without locking.
+    pub(in vhost) fn wake_event(&self) -> &KernelEventFile {
+        &self.wake
+    }
+}
+
+impl<const NUM_QUEUES: usize> Drop for VhostDevice<NUM_QUEUES> {
+    fn drop(&mut self) {
+        self.data.lock().deactivate();
+        self.worker.get_mut().stop(&self.wake);
+    }
+}
+
+/// A held worker mutex, serializing device control and worker lifecycle.
+/// Worker callbacks must never acquire this lock.
+pub(in vhost) struct VhostDeviceGuard<'a, const NUM_QUEUES: usize> {
+    device: &'a VhostDevice<NUM_QUEUES>,
+    worker: MutexGuard<'a, VhostWorker>,
+}
+
+impl<const NUM_QUEUES: usize> VhostDeviceGuard<'_, NUM_QUEUES> {
+    /// Handles common ioctls, creates the owner worker, and wakes it after updates.
+    pub(in vhost) fn handle_ioctl(
+        &mut self,
+        raw: RawIoctl,
+        work: impl VhostWork<NUM_QUEUES>,
+    ) -> Result<i32> {
+        use ioctl_defs::SetOwner;
+
+        let result = dispatch_ioctl!(match raw {
+            SetOwner => {
+                self.set_owner(capture_owner(), work).map(|()| 0)
+            }
+            _ => self.device.lock_data().handle_ioctl(raw),
+        });
+        self.device.wake.signal();
+        result
+    }
+
+    /// Assigns the owner and creates its worker, rejecting an existing owner.
+    pub(in vhost) fn set_owner(
+        &mut self,
+        vmar: Arc<Vmar>,
+        work: impl VhostWork<NUM_QUEUES>,
+    ) -> Result<()> {
+        {
+            let mut data = self.device.lock_data();
+            if data.is_owned() {
+                return_errno_with_message!(Errno::EBUSY, "vhost owner is already set");
+            }
+            data.memory = Some(VhostMemorySpace::new(vmar, Vec::new()));
+        }
+        self.start_worker(work)
+    }
+
+    /// Starts a worker using the device's owner; any previous worker must be stopped.
+    pub(in vhost) fn start_worker(&mut self, work: impl VhostWork<NUM_QUEUES>) -> Result<()> {
+        let vmar = self
+            .device
+            .lock_data()
+            .owner_vmar()
+            .ok_or_else(|| Error::with_message(Errno::EPERM, "vhost owner is not set"))?
+            .clone();
+        self.worker.start(
+            vmar,
+            self.device.data.clone(),
+            self.device.wake.clone(),
+            work,
+        );
+        Ok(())
+    }
+
+    pub(in vhost) fn activate(&self) -> Result<()> {
+        let result = self.device.lock_data().activate();
+        self.device.wake.signal();
+        result
+    }
+
+    pub(in vhost) fn deactivate(&self) {
+        self.device.lock_data().deactivate();
+        self.device.wake.signal();
+    }
+
+    /// Disables queues and joins the worker without holding the data mutex.
+    pub(in vhost) fn stop_worker(&mut self) {
+        self.device.lock_data().deactivate();
+        self.worker.stop(&self.device.wake);
+    }
+}
+
+/// The device's single copy of configuration and queue progress under `data`.
+///
+/// Queue views and descriptor chains borrow this data, so reconfiguration waits
+/// until guest-memory accesses and completion notifications have finished.
+pub(in vhost) struct VhostDeviceData<const NUM_QUEUES: usize> {
     config: VhostDeviceConfig,
     negotiated_features: u64,
     backend_features: u64,
@@ -107,8 +235,8 @@ pub(in vhost) struct VhostDevice<const NUM_QUEUES: usize> {
     queues: [VhostVirtQueue; NUM_QUEUES],
 }
 
-impl<const NUM_QUEUES: usize> VhostDevice<NUM_QUEUES> {
-    pub(in vhost) fn new(config: VhostDeviceConfig) -> Self {
+impl<const NUM_QUEUES: usize> VhostDeviceData<NUM_QUEUES> {
+    fn new(config: VhostDeviceConfig) -> Self {
         assert!(NUM_QUEUES > 0);
         Self {
             config,
@@ -178,7 +306,7 @@ impl<const NUM_QUEUES: usize> VhostDevice<NUM_QUEUES> {
         }
     }
 
-    pub(in vhost) fn handle_ioctl(&mut self, raw_ioctl: RawIoctl) -> Result<i32> {
+    fn handle_ioctl(&mut self, raw_ioctl: RawIoctl) -> Result<i32> {
         use ioctl_defs::*;
 
         dispatch_ioctl!(match raw_ioctl {
@@ -199,13 +327,6 @@ impl<const NUM_QUEUES: usize> VhostDevice<NUM_QUEUES> {
                     );
                 }
                 self.negotiated_features = features;
-                Ok(0)
-            }
-            SetOwner => {
-                if self.is_owned() {
-                    return_errno_with_message!(Errno::EBUSY, "vhost owner is already set");
-                }
-                self.memory = Some(VhostMemorySpace::new(capture_owner(), Vec::new()));
                 Ok(0)
             }
             cmd @ SetMemTable => {

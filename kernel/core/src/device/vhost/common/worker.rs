@@ -10,13 +10,12 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use super::device::{VhostDevice, ioctl_defs::SetOwner};
+use super::device::VhostDeviceData;
 use crate::{
-    events::{EventFile, EventFileFlags, IoEvents, KernelEventFile},
+    events::{IoEvents, KernelEventFile},
     prelude::*,
     process::signal::{Pollable, Poller},
     thread::{Thread, kernel_thread::ThreadOptions},
-    util::ioctl::RawIoctl,
     vm::vmar::Vmar,
 };
 
@@ -29,71 +28,43 @@ pub(in vhost) enum VhostWorkStatus {
 
 /// Device-specific work executed by a common worker.
 pub(in vhost) trait VhostWork<const NUM_QUEUES: usize>: Send + 'static {
-    /// Processes enabled queues while the device mutex is held.
+    /// Processes enabled queues while the device data mutex is held.
     ///
     /// The worker registers and consumes kicks before calling this method.
     /// The backend chooses its batch budget and notification suppression policy.
     /// Before returning `Idle`, it must re-enable kicks and check for requests
     /// that raced with re-enabling; `Pending` continues without waiting.
-    fn process(&mut self, device: &mut VhostDevice<NUM_QUEUES>) -> Result<VhostWorkStatus>;
+    fn process(&mut self, device: &mut VhostDeviceData<NUM_QUEUES>) -> Result<VhostWorkStatus>;
 
     /// Runs after unlocking the device, including when its queues are paused.
     fn after_process(&mut self, _status: VhostWorkStatus) -> Result<()> {
         Ok(())
     }
 
-    /// Handles the terminal result after releasing the device mutex.
+    /// Handles the terminal result after releasing the data mutex.
     fn on_exit(self, result: Result<()>);
 }
 
-/// Owns a worker's control path; the backend serializes access to this object.
+/// Thread and exit state owned under the common device's worker mutex.
 ///
-/// The device mutex protects configuration and each processing batch. The worker
-/// never acquires the backend's control lock, so stopping can join it safely.
-/// Session close must stop the worker even if its work retains backend references.
-pub(in vhost) struct VhostWorker<const NUM_QUEUES: usize> {
-    device: Arc<Mutex<VhostDevice<NUM_QUEUES>>>,
+/// The running thread captures device data and never acquires the worker mutex.
+#[derive(Default)]
+pub(super) struct VhostWorker {
     thread: Option<Arc<Thread>>,
-    wake: Arc<KernelEventFile>,
     exiting: Arc<AtomicBool>,
 }
 
-impl<const NUM_QUEUES: usize> VhostWorker<NUM_QUEUES> {
-    pub(in vhost) fn new(device: Arc<Mutex<VhostDevice<NUM_QUEUES>>>) -> Self {
-        Self {
-            device,
-            thread: None,
-            wake: KernelEventFile::from_file(&EventFile::new(0, EventFileFlags::empty())).unwrap(),
-            exiting: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    /// An internal notification for configuration changes and backend work.
-    pub(in vhost) fn wake_event(&self) -> &Arc<KernelEventFile> {
-        &self.wake
-    }
-
-    /// Handles common ioctls, creates the owner worker, and wakes it after updates.
-    pub(in vhost) fn handle_ioctl(
-        &mut self,
-        raw: RawIoctl,
-        work: impl VhostWork<NUM_QUEUES>,
-    ) -> Result<i32> {
-        let result = self.device.lock().handle_ioctl(raw);
-        if result.is_ok() && SetOwner::try_from_raw(raw).is_some() {
-            let vmar = self.device.lock().owner_vmar().unwrap().clone();
-            self.start(vmar, work);
-        }
-        self.wake.signal();
-        result
-    }
-
+impl VhostWorker {
     /// Starts work in the owner's address space, including after worker failure.
-    pub(in vhost) fn start(&mut self, vmar: Arc<Vmar>, mut work: impl VhostWork<NUM_QUEUES>) {
+    pub(super) fn start<const NUM_QUEUES: usize>(
+        &mut self,
+        vmar: Arc<Vmar>,
+        device: Arc<Mutex<VhostDeviceData<NUM_QUEUES>>>,
+        wake: Arc<KernelEventFile>,
+        mut work: impl VhostWork<NUM_QUEUES>,
+    ) {
         assert!(self.thread.is_none());
         self.exiting.store(false, Ordering::Release);
-        let device = self.device.clone();
-        let wake = self.wake.clone();
         let exiting = self.exiting.clone();
         self.thread = Some(
             ThreadOptions::new(move || {
@@ -105,29 +76,17 @@ impl<const NUM_QUEUES: usize> VhostWorker<NUM_QUEUES> {
         );
     }
 
-    pub(in vhost) fn activate(&self) -> Result<()> {
-        let result = self.device.lock().activate();
-        self.wake.signal();
-        result
-    }
-
-    pub(in vhost) fn deactivate(&self) {
-        self.device.lock().deactivate();
-        self.wake.signal();
-    }
-
-    /// Disables queues and joins the worker without holding the device mutex.
-    pub(in vhost) fn stop(&mut self) {
-        self.device.lock().deactivate();
+    /// Wakes and joins the worker after the device has disabled its queues.
+    pub(super) fn stop(&mut self, wake: &KernelEventFile) {
         self.exiting.store(true, Ordering::Release);
-        self.wake.signal();
+        wake.signal();
         if let Some(thread) = self.thread.take() {
             thread.join();
         }
     }
 
-    fn run(
-        device: &Mutex<VhostDevice<NUM_QUEUES>>,
+    fn run<const NUM_QUEUES: usize>(
+        device: &Mutex<VhostDeviceData<NUM_QUEUES>>,
         wake: &KernelEventFile,
         exiting: &AtomicBool,
         work: &mut impl VhostWork<NUM_QUEUES>,
@@ -161,11 +120,5 @@ impl<const NUM_QUEUES: usize> VhostWorker<NUM_QUEUES> {
                 poller.wait()?;
             }
         }
-    }
-}
-
-impl<const NUM_QUEUES: usize> Drop for VhostWorker<NUM_QUEUES> {
-    fn drop(&mut self) {
-        self.stop();
     }
 }

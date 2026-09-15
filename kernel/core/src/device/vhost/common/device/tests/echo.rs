@@ -9,51 +9,53 @@ use core::{
 
 use super::*;
 use crate::{
-    device::vhost::common::worker::{VhostWork, VhostWorkStatus, VhostWorker},
+    device::vhost::common::worker::{VhostWork, VhostWorkStatus},
     events::IoEvents,
     process::signal::{Pollable, Poller},
 };
 
 struct EchoDevice {
-    common: Arc<Mutex<VhostDevice<1>>>,
-    worker: VhostWorker<1>,
+    common: Arc<VhostDevice<1>>,
     idle: Arc<KernelEventFile>,
     completed: Arc<AtomicBool>,
 }
 
 impl EchoDevice {
-    fn new(mut device: VhostDevice<1>) -> Self {
+    fn new(mut device: VhostDeviceData<1>) -> Self {
         device.deactivate();
-        let vmar = device.owner_vmar().unwrap().clone();
-        let common = Arc::new(Mutex::new(device));
-        let mut worker = VhostWorker::new(common.clone());
+        let common = Arc::new(VhostDevice::from_data(device));
         let idle = create_event();
         let completed = Arc::new(AtomicBool::new(false));
-        worker.start(
-            vmar,
-            EchoWork {
+        common
+            .lock()
+            .start_worker(EchoWork {
                 common: common.clone(),
                 idle: idle.clone(),
                 completed: completed.clone(),
-            },
-        );
+            })
+            .unwrap();
         Self {
             common,
-            worker,
             idle,
             completed,
         }
     }
 }
 
+impl Drop for EchoDevice {
+    fn drop(&mut self) {
+        self.common.lock().stop_worker();
+    }
+}
+
 struct EchoWork {
-    common: Arc<Mutex<VhostDevice<1>>>,
+    common: Arc<VhostDevice<1>>,
     idle: Arc<KernelEventFile>,
     completed: Arc<AtomicBool>,
 }
 
 impl VhostWork<1> for EchoWork {
-    fn process(&mut self, device: &mut VhostDevice<1>) -> Result<VhostWorkStatus> {
+    fn process(&mut self, device: &mut VhostDeviceData<1>) -> Result<VhostWorkStatus> {
         let mut queue = device.queue_mut(0)?;
         queue.disable_kick_notifications()?;
         if Self::copy_next(&mut queue)? {
@@ -76,7 +78,7 @@ impl VhostWork<1> for EchoWork {
 
     fn on_exit(self, result: Result<()>) {
         if result.is_err() {
-            self.common.lock().queue_mut(0).unwrap().signal_error();
+            self.common.lock_data().queue_mut(0).unwrap().signal_error();
         }
         self.completed.store(result.is_ok(), Ordering::Release);
     }
@@ -121,9 +123,9 @@ fn vhost_echo_worker_preserves_queues_across_pause_and_reconfiguration() {
         let (device, call) = create_device(memory.clone());
         let mut kick = device.kick_event(0).unwrap().clone();
         let err = device.queues[0].err.as_ref().unwrap().clone();
-        let mut echo = EchoDevice::new(device);
-        echo.worker.activate().unwrap();
-        echo.worker.activate().unwrap();
+        let echo = EchoDevice::new(device);
+        echo.common.lock().activate().unwrap();
+        echo.common.lock().activate().unwrap();
         wait_event(&echo.idle);
         for (index, payload) in [*b"echo", *b"next"].into_iter().enumerate() {
             memory
@@ -148,9 +150,9 @@ fn vhost_echo_worker_preserves_queues_across_pause_and_reconfiguration() {
                 .unwrap();
             kick.signal();
             if index == 1 {
-                assert!(!echo.common.lock().is_running());
-                assert_eq!(echo.common.lock().queue_base(0).unwrap(), 1);
-                echo.worker.activate().unwrap();
+                assert!(!echo.common.lock_data().is_running());
+                assert_eq!(echo.common.lock_data().queue_base(0).unwrap(), 1);
+                echo.common.lock().activate().unwrap();
             }
             wait_event(&call);
             let mut response = [0; 4];
@@ -159,26 +161,145 @@ fn vhost_echo_worker_preserves_queues_across_pause_and_reconfiguration() {
                 .unwrap();
             assert_eq!(response, payload);
             assert_eq!(
-                echo.common.lock().queue_base(0).unwrap(),
+                echo.common.lock_data().queue_base(0).unwrap(),
                 (index + 1) as u32
             );
-            assert!(echo.common.lock().is_running());
+            assert!(echo.common.lock_data().is_running());
             wait_event(&echo.idle);
             if index == 0 {
-                echo.worker.deactivate();
-                echo.worker.deactivate();
+                echo.common.lock().deactivate();
+                echo.common.lock().deactivate();
                 assert!(!echo.completed.load(Ordering::Acquire));
-                assert_eq!(echo.common.lock().queue_base(0).unwrap(), 1);
+                assert_eq!(echo.common.lock_data().queue_base(0).unwrap(), 1);
                 kick = create_event();
-                echo.common.lock().queues[0].kick = Some(kick.clone());
+                echo.common.lock_data().queues[0].kick = Some(kick.clone());
             }
         }
-        echo.worker.stop();
+        echo.common.lock().stop_worker();
         assert!(echo.completed.load(Ordering::Acquire));
         assert_eq!(err.consume(), None);
-        let mut common = echo.common.lock();
+        let mut common = echo.common.lock_data();
         common.reset_owner();
         assert!(!common.is_owned());
         assert!(!common.is_running());
+    });
+}
+
+#[ktest]
+fn vhost_worker_requires_owner_and_restarts_after_stop() {
+    crate::thread::init();
+    crate::time::clocks::init_for_ktest();
+    crate::util::random::init();
+
+    run_with_owner_memory(|memory| {
+        let common = Arc::new(VhostDevice::<1>::new(VhostDeviceConfig {
+            device_features: VIRTIO_F_VERSION_1,
+            backend_features: 0,
+            max_queue_size: QUEUE_SIZE as u32,
+        }));
+        let idle = create_event();
+        let completed = Arc::new(AtomicBool::new(false));
+        let create_work_fn = || EchoWork {
+            common: common.clone(),
+            idle: idle.clone(),
+            completed: completed.clone(),
+        };
+        let mut device = common.lock();
+        assert_eq!(
+            device.start_worker(create_work_fn()).unwrap_err().error(),
+            Errno::EPERM
+        );
+        device
+            .set_owner(memory.vmar().clone(), create_work_fn())
+            .unwrap();
+        wait_event(&idle);
+
+        let other_owner = map_owner();
+        assert_eq!(
+            device
+                .set_owner(other_owner.clone_arc(), create_work_fn())
+                .unwrap_err()
+                .error(),
+            Errno::EBUSY
+        );
+        assert!(Arc::ptr_eq(
+            common.lock_data().owner_vmar().unwrap(),
+            memory.vmar()
+        ));
+        assert!(!completed.load(Ordering::Acquire));
+        device.stop_worker();
+        assert!(completed.load(Ordering::Acquire));
+
+        completed.store(false, Ordering::Release);
+        device.start_worker(create_work_fn()).unwrap();
+        wait_event(&idle);
+        device.stop_worker();
+        assert!(completed.load(Ordering::Acquire));
+    });
+}
+
+#[ktest]
+fn vhost_echo_drop_joins_idle_worker_and_releases_device() {
+    crate::thread::init();
+    crate::time::clocks::init_for_ktest();
+    crate::util::random::init();
+
+    run_with_owner_memory(|memory| {
+        let (device, _) = create_device(memory);
+        let echo = EchoDevice::new(device);
+        let weak_device = Arc::downgrade(&echo.common);
+        let completed = echo.completed.clone();
+        wait_event(&echo.idle);
+        assert!(!completed.load(Ordering::Acquire));
+        drop(echo);
+        assert!(completed.load(Ordering::Acquire));
+        assert!(weak_device.upgrade().is_none());
+    });
+}
+
+#[ktest]
+fn vhost_device_drop_joins_idle_worker() {
+    struct IdleWork {
+        idle: Arc<KernelEventFile>,
+        completed: Arc<AtomicBool>,
+    }
+
+    impl VhostWork<1> for IdleWork {
+        fn process(&mut self, _device: &mut VhostDeviceData<1>) -> Result<VhostWorkStatus> {
+            unreachable!("the queues are paused");
+        }
+
+        fn after_process(&mut self, _status: VhostWorkStatus) -> Result<()> {
+            self.idle.signal();
+            Ok(())
+        }
+
+        fn on_exit(self, result: Result<()>) {
+            result.unwrap();
+            self.completed.store(true, Ordering::Release);
+        }
+    }
+
+    crate::thread::init();
+    crate::time::clocks::init_for_ktest();
+    crate::util::random::init();
+
+    run_with_owner_memory(|memory| {
+        let (mut data, _) = create_device(memory);
+        data.deactivate();
+        let device = VhostDevice::from_data(data);
+        let idle = create_event();
+        let completed = Arc::new(AtomicBool::new(false));
+        device
+            .lock()
+            .start_worker(IdleWork {
+                idle: idle.clone(),
+                completed: completed.clone(),
+            })
+            .unwrap();
+        wait_event(&idle);
+        assert!(!completed.load(Ordering::Acquire));
+        drop(device);
+        assert!(completed.load(Ordering::Acquire));
     });
 }

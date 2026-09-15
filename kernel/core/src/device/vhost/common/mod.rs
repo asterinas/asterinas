@@ -2,10 +2,10 @@
 
 //! Common configuration, split virtqueues, and workers for vhost backends.
 //!
-//! [`VhostWorker`](worker::VhostWorker) manages owner-bound execution and event
-//! registration. Device callbacks borrow a locked [`VhostDevice`](device::VhostDevice)
+//! [`VhostDevice`](device::VhostDevice) owns the worker and serializes control and
+//! data access. Callbacks borrow its locked [`VhostDeviceData`](device::VhostDeviceData)
 //! to process requests; configuration changes and pause wait for that batch.
-//! Backends retain protocol policy and stop the common worker on session close.
+//! Backends retain protocol policy and stop the device's worker on session close.
 
 pub(super) mod device;
 pub(super) mod memory;
