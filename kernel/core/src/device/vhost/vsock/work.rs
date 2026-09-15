@@ -119,7 +119,7 @@ impl VhostWork<NUM_QUEUES> for Arc<Backend> {
         }
         let cid = {
             let mut common = self.common.lock_data();
-            common.deactivate();
+            common.disable_queues();
             for index in 0..NUM_QUEUES {
                 if let Ok(queue) = common.queue_mut(index) {
                     queue.signal_error();
@@ -187,7 +187,7 @@ fn receive_packet(queue: &mut VhostQueue<'_>, backend: &Backend) -> Result<bool>
     let mut writer = chain.writer();
     writer.write_all(wire_header.as_bytes())?;
     writer.write_all(&packet.payload[offset..offset + len])?;
-    let written = writer.bytes_written() as u32;
+    let written = (wire_header.as_bytes().len() + len) as u32;
     chain.complete(written)?;
     backend.pending.lock().complete_fragment(len);
     Ok(true)

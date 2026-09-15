@@ -21,10 +21,10 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use aster_virtio::device::socket::header::VirtioVsockHdr;
+use aster_virtio::{Feature, device::socket::header::VirtioVsockHdr};
 use device_id::{DeviceId, MinorId};
 
-use super::common::device::{self as vhost, VhostDevice, VhostDeviceConfig, VhostDeviceGuard};
+use super::common::device::{VhostDeviceConfig, VhostDeviceSession, VhostDeviceSessionGuard};
 use crate::{
     device::{Device, DeviceType, registry::char},
     events::IoEvents,
@@ -146,7 +146,7 @@ impl Drop for VhostVsockFile {
 // never takes the worker mutex; socket callbacks take neither sleeping mutex.
 // No guest copy holds a pending spinlock.
 struct Backend {
-    common: VhostDevice<NUM_QUEUES>,
+    common: VhostDeviceSession<NUM_QUEUES>,
     // Zero means that SET_GUEST_CID has not assigned a route yet.
     cid: AtomicU32,
     pending: SpinLock<PendingPackets>,
@@ -154,8 +154,8 @@ struct Backend {
 
 impl Backend {
     fn new() -> Arc<Self> {
-        let common = VhostDevice::new(VhostDeviceConfig {
-            device_features: vhost::VIRTIO_F_VERSION_1 | vhost::VIRTIO_RING_F_INDIRECT_DESC,
+        let common = VhostDeviceSession::new(VhostDeviceConfig {
+            device_features: (Feature::VERSION_1 | Feature::RING_INDIRECT_DESC).bits(),
             backend_features: 0,
             max_queue_size: 32768,
         });
@@ -182,7 +182,7 @@ impl Backend {
                 if running != 0 {
                     self.start(&mut device)?;
                 } else {
-                    device.deactivate();
+                    device.disable_queues();
                 }
                 Ok(0)
             }
@@ -213,7 +213,7 @@ impl Backend {
         Ok(())
     }
 
-    fn start(self: &Arc<Self>, device: &mut VhostDeviceGuard<'_, NUM_QUEUES>) -> Result<()> {
+    fn start(self: &Arc<Self>, device: &mut VhostDeviceSessionGuard<'_, NUM_QUEUES>) -> Result<()> {
         vsock::ensure_vhost_backend()?;
         let worker_failed = self.pending.lock().failed;
         if worker_failed {
@@ -225,12 +225,12 @@ impl Backend {
             }
             device.start_worker(self.clone())?;
         }
-        device.activate()
+        device.enable_queues()
     }
 
     fn shutdown(&self) {
         let mut device = self.common.lock();
-        device.deactivate();
+        device.disable_queues();
         {
             let mut pending = self.pending.lock();
             pending.is_active = false;

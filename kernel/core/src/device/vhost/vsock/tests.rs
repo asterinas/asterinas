@@ -138,7 +138,7 @@ fn vhost_vsock_pause_preserves_accepted_packets_and_reservations() {
     let mut packet_header = create_header(3);
     packet_header.dst_cid = cid;
 
-    file.backend.common.lock().deactivate();
+    file.backend.common.lock().disable_queues();
     assert!(can_connect_remote_cid(cid as u32));
     assert!(reservation.send(&packet_header, &[1, 2, 3]).unwrap());
     let (packet, offset) = file.backend.pending.lock().front().unwrap();
