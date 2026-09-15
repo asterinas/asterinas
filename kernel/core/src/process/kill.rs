@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_rights::ReadOp;
+
 use super::{
     Pgid, Pid, Process, pid_table,
     posix_thread::AsPosixThread,
@@ -7,7 +9,7 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::{credentials::capabilities::CapSet, posix_thread::PosixThread},
+    process::{Credentials, Uid, credentials::capabilities::CapSet, posix_thread::PosixThread},
     security::lsm::hooks as lsm_hooks,
     thread::Tid,
 };
@@ -159,6 +161,54 @@ fn kill_process(process: &Process, signal: Option<Box<dyn Signal>>, ctx: &Contex
     }
 
     Ok(())
+}
+
+/// The credentials of the process that set a file owner, recorded at `fcntl(F_SETOWN)` time.
+///
+/// Linux checks these saved values rather than the credentials of whoever happens to be
+/// running when the I/O event fires, and it has to: at `SIGIO` delivery time there is no
+/// meaningful "current process" to check.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/fcntl.c#L144>.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FileOwnerCreds {
+    ruid: Uid,
+    euid: Uid,
+}
+
+impl FileOwnerCreds {
+    /// Records the credentials of the process performing `fcntl(F_SETOWN)`.
+    pub(crate) fn new_from(credentials: &Credentials<ReadOp>) -> Self {
+        Self {
+            ruid: credentials.ruid(),
+            euid: credentials.euid(),
+        }
+    }
+}
+
+/// Returns whether an asynchronous I/O signal may be delivered to `target`.
+///
+/// This is deliberately **not** [`check_signal_perm`]. Linux gives asynchronous I/O signals
+/// their own, more permissive rule: it compares the UIDs saved at `fcntl(F_SETOWN)` time
+/// against the target's real and saved UIDs, and does not consult `CAP_KILL`, the session,
+/// or the signal number. Reusing the `kill` rules here would reject deliveries that Linux
+/// allows.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/fs/fcntl.c#L839>.
+pub(crate) fn check_sigio_perm(target: &Process, owner: &FileOwnerCreds) -> bool {
+    // The owner's saved credentials are compared against the *target's* credentials, so the
+    // target's main thread is the one to ask.
+    let target_main_thread = target.main_thread();
+    let Some(target_thread) = target_main_thread.as_posix_thread() else {
+        return false;
+    };
+    let target_cred = target_thread.credentials();
+
+    owner.euid.is_root()
+        || owner.euid == target_cred.suid()
+        || owner.euid == target_cred.ruid()
+        || owner.ruid == target_cred.suid()
+        || owner.ruid == target_cred.ruid()
 }
 
 // Reference: <https://elixir.bootlin.com/linux/v6.17/source/kernel/signal.c#L799>.
