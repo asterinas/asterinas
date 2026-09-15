@@ -2,6 +2,8 @@
 
 //! Vsock packet processing executed by the common vhost worker.
 
+use aster_virtio::Feature;
+
 use super::{
     Backend, NUM_QUEUES, RX_QUEUE, TX_QUEUE,
     packet::{self, HEADER_LEN, MAX_PAYLOAD_LEN},
@@ -9,7 +11,8 @@ use super::{
 use crate::{
     device::vhost::common::{
         device::VhostDeviceData,
-        virtqueue::VhostQueue,
+        memory::VhostMemorySpace,
+        virtqueue::VhostVirtQueue,
         worker::{VhostWork, VhostWorkStatus},
     },
     net::socket::vsock::{self, VMADDR_CID_HOST},
@@ -24,10 +27,11 @@ impl VhostWork<NUM_QUEUES> for Arc<Backend> {
             return_errno_with_message!(Errno::ENOBUFS, "the vsock endpoint failed");
         }
         let cid = self.cid();
+        let features = Feature::from_bits_truncate(common.negotiated_features());
+        let (memory, queues) = common.memory_and_queues_mut()?;
         let mut failed = false;
-        for index in 0..NUM_QUEUES {
-            let mut queue = common.queue_mut(index)?;
-            if queue.disable_kick_notifications().is_err() {
+        for queue in queues.iter_mut() {
+            if queue.disable_kick_notifications(memory).is_err() {
                 queue.signal_error();
                 failed = true;
             }
@@ -36,10 +40,10 @@ impl VhostWork<NUM_QUEUES> for Arc<Backend> {
         let mut transmitted_any = false;
         if !failed {
             for _ in 0..WORK_BUDGET {
-                let received = match receive_packet(&mut common.queue_mut(RX_QUEUE)?, self) {
+                let received = match receive_packet(&mut queues[RX_QUEUE], memory, features, self) {
                     Ok(received) => received,
                     Err(_) => {
-                        common.queue_mut(RX_QUEUE)?.signal_error();
+                        queues[RX_QUEUE].signal_error();
                         failed = true;
                         false
                     }
@@ -49,10 +53,10 @@ impl VhostWork<NUM_QUEUES> for Arc<Backend> {
                     break;
                 }
                 let transmitted = if self.pending.lock().has_control_room() {
-                    match transmit_packet(&mut common.queue_mut(TX_QUEUE)?, cid) {
+                    match transmit_packet(&mut queues[TX_QUEUE], memory, features, cid) {
                         Ok(transmitted) => transmitted,
                         Err(_) => {
-                            common.queue_mut(TX_QUEUE)?.signal_error();
+                            queues[TX_QUEUE].signal_error();
                             failed = true;
                             false
                         }
@@ -68,8 +72,8 @@ impl VhostWork<NUM_QUEUES> for Arc<Backend> {
         }
         for (index, completed) in [(RX_QUEUE, received_any), (TX_QUEUE, transmitted_any)] {
             if completed {
-                let queue = common.queue_mut(index)?;
-                if queue.notify().is_err() {
+                let queue = &queues[index];
+                if queue.notify(memory).is_err() {
                     queue.signal_error();
                     failed = true;
                 }
@@ -77,9 +81,8 @@ impl VhostWork<NUM_QUEUES> for Arc<Backend> {
         }
         let did_work = received_any || transmitted_any;
         let mut retry = false;
-        for index in 0..NUM_QUEUES {
-            let mut queue = common.queue_mut(index)?;
-            match queue.enable_kick_notifications() {
+        for (index, queue) in queues.iter_mut().enumerate() {
+            match queue.enable_kick_notifications(memory) {
                 Ok(ready) => {
                     let pending = self.pending.lock();
                     retry |= ready
@@ -120,8 +123,8 @@ impl VhostWork<NUM_QUEUES> for Arc<Backend> {
         let cid = {
             let mut common = self.common.lock_data();
             common.disable_queues();
-            for index in 0..NUM_QUEUES {
-                if let Ok(queue) = common.queue_mut(index) {
+            if let Ok((_, queues)) = common.memory_and_queues_mut() {
+                for queue in queues {
                     queue.signal_error();
                 }
             }
@@ -138,8 +141,13 @@ impl VhostWork<NUM_QUEUES> for Arc<Backend> {
     }
 }
 
-fn transmit_packet(queue: &mut VhostQueue<'_>, cid: u32) -> Result<bool> {
-    let Some(chain) = queue.try_pop()? else {
+fn transmit_packet(
+    queue: &mut VhostVirtQueue,
+    memory: &VhostMemorySpace,
+    features: Feature,
+    cid: u32,
+) -> Result<bool> {
+    let Some(chain) = queue.try_pop(memory, features)? else {
         return Ok(false);
     };
     if chain.writable_len() != 0 || chain.readable_len() < HEADER_LEN {
@@ -168,11 +176,16 @@ fn transmit_packet(queue: &mut VhostQueue<'_>, cid: u32) -> Result<bool> {
     Ok(true)
 }
 
-fn receive_packet(queue: &mut VhostQueue<'_>, backend: &Backend) -> Result<bool> {
+fn receive_packet(
+    queue: &mut VhostVirtQueue,
+    memory: &VhostMemorySpace,
+    features: Feature,
+    backend: &Backend,
+) -> Result<bool> {
     let Some((packet, offset)) = backend.pending.lock().front() else {
         return Ok(false);
     };
-    let Some(chain) = queue.try_pop()? else {
+    let Some(chain) = queue.try_pop(memory, features)? else {
         return Ok(false);
     };
     if chain.readable_len() != 0 {
