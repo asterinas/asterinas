@@ -95,4 +95,4 @@ check:
 .PHONY: format
 format:
 	@cargo fmt
-	@nixfmt .
+	@find . -type f -name '*.nix' -print0 | xargs -0 -r -n 1 nixfmt
