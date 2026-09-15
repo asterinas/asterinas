@@ -1144,8 +1144,6 @@
       - kernel/src/fs/ramfs/fs.rs
       - kernel/src/fs/path/mod.rs
       - kernel/src/fs/pipe.rs
-      - kernel/src/fs/pipe.rs
-      - kernel/src/fs/inode_handle/mod.rs
       - kernel/src/fs/inode_handle/mod.rs
   defects:
     - target:
