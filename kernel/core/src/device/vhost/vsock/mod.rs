@@ -60,7 +60,7 @@ static BACKENDS: SpinLock<BTreeMap<u32, Weak<Backend>>> = SpinLock::new(BTreeMap
 mod ioctl_defs {
     use crate::util::ioctl::{InData, ioc};
 
-    // Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost.h>.
+    // Reference: <https://github.com/torvalds/linux/blob/v6.18/include/uapi/linux/vhost.h#L146-L147>.
     pub(super) type SetGuestCid = ioc!(VHOST_VSOCK_SET_GUEST_CID, 0xaf, 0x60, InData<u64>);
     pub(super) type SetRunning = ioc!(VHOST_VSOCK_SET_RUNNING, 0xaf, 0x61, InData<i32>);
 }
