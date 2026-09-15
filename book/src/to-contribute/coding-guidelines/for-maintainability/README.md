@@ -44,6 +44,7 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 
 **[Rust-Specific](rust-specific/)**
 - [Naming](rust-specific/naming.md)
+    - [`kebab-case-crate-names`](rust-specific/naming.md#kebab-case-crate-names): Use kebab-case for crate names (`short-vis-path`, not `short_vis_path`).
     - [`camel-case-acronyms`](rust-specific/naming.md#camel-case-acronyms): Use Rust CamelCase with title-cased acronyms (`Nvme`, not `NVME`).
     - [`closure-fn-suffix`](rust-specific/naming.md#closure-fn-suffix): End a variable holding a closure or fn pointer with `_fn`.
 - [Crates & Modules](rust-specific/crates-and-modules.md)
@@ -52,6 +53,7 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
     - [`module-docs`](rust-specific/crates-and-modules.md#module-docs): Open a major module with a `//!` doc: purpose, key types, relation to neighbors.
     - [`narrow-visibility`](rust-specific/crates-and-modules.md#narrow-visibility): Start private; widen visibility only when an actual consumer requires it.
     - [`encode-intent-in-vis`](rust-specific/crates-and-modules.md#encode-intent-in-vis): A visibility modifier declares an item's maximum intended exposure, regardless of what its ancestors allow.
+    - [`short-vis-path`](rust-specific/crates-and-modules.md#short-vis-path): Give a frequently used, deeply nested subsystem visibility path a short name with `short_vis_path`.
     - [`qualified-fn-imports`](rust-specific/crates-and-modules.md#qualified-fn-imports): Import the parent module and call free functions/statics through it, not by bare name.
 - [Types & Traits](rust-specific/types-and-traits.md)
     - [`rust-type-invariants`](rust-specific/types-and-traits.md#rust-type-invariants): Use the type system (newtypes, enums, generics) to make illegal states unrepresentable.
