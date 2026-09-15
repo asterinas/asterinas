@@ -33,6 +33,20 @@ CMDLINE ?=
 CONSOLE ?= hvc0
 # End of global build options.
 
+# Virtio-fs settings.
+VIRTIOFS ?= off
+VIRTIOFS_SCRATCH ?= off
+VIRTIOFSD ?= /usr/libexec/virtiofsd
+VIRTIOFS_RUNTIME_DIR ?= /tmp/asterinas-virtiofs
+VIRTIOFS_SOCKET ?= $(VIRTIOFS_RUNTIME_DIR)/vfs.sock
+VIRTIOFS_SHARED_DIR ?= $(VIRTIOFS_RUNTIME_DIR)/shared
+VIRTIOFS_LOG_FILE ?= $(VIRTIOFS_RUNTIME_DIR)/virtiofsd.log
+VIRTIOFS_CACHE ?= auto
+VIRTIOFS_SCRATCH_SOCKET ?= $(VIRTIOFS_RUNTIME_DIR)/vfs-scratch.sock
+VIRTIOFS_SCRATCH_SHARED_DIR ?= $(VIRTIOFS_RUNTIME_DIR)/shared-scratch
+VIRTIOFS_SCRATCH_LOG_FILE ?= $(VIRTIOFS_RUNTIME_DIR)/virtiofsd-scratch.log
+# End of Virtio-fs settings.
+
 # GDB debugging and profiling options.
 GDB_TCP_PORT ?= 1234
 GDB_PROFILE_FORMAT ?= flame-graph
