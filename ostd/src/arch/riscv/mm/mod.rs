@@ -261,6 +261,13 @@ impl PageTableEntry {
             | parse_flags!(prop.priv_flags.bits(), PrivFlags::AVAIL1, PteFlags::RSV1)
             | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PteFlags::RSV2);
 
+        if has_extensions(IsaExtensions::SVADE) {
+            // TODO: With Svade, these bits must be managed by software, but
+            // that is not yet supported. For now, set them to 1 to avoid
+            // page fault exceptions.
+            flags |= (PteFlags::ACCESSED | PteFlags::DIRTY).bits();
+        }
+
         match prop.cache {
             CachePolicy::Writeback => (),
             CachePolicy::Uncacheable => {
