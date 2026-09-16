@@ -470,9 +470,9 @@ impl OverlayInode {
         }
 
         // Delete all the whiteout files if necessary
-        if visitor.contains_whiteout() {
-            let target_upper = target.upper().unwrap();
-
+        if visitor.contains_whiteout()
+            && let Some(target_upper) = target.upper()
+        {
             let mut target_visitor = Vec::<String>::new();
             target_upper.readdir_at(0, &mut target_visitor)?;
 
