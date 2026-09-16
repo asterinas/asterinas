@@ -53,11 +53,9 @@ where
     let copied = match value {
         UnixSocketAddr::Unnamed => 0,
         UnixSocketAddr::Path(path) => {
-            let bytes = path.as_bytes();
-            let len = bytes.len();
-            sun_path[..len].copy_from_slice(bytes);
-            sun_path[len] = 0;
-            len + 1
+            let bytes = path.to_bytes_with_nul();
+            sun_path[..bytes.len()].copy_from_slice(bytes);
+            bytes.len()
         }
         UnixSocketAddr::Abstract(name) => {
             let len = name.len();
@@ -80,7 +78,7 @@ pub(super) fn from_c_bytes(bytes: &[u8]) -> Result<UnixSocketAddr> {
     }
 
     if bytes.len() > CSocketAddrUnix::MAX_LEN {
-        return_errno_with_message!(Errno::EINVAL, "the socket address length is too small");
+        return_errno_with_message!(Errno::EINVAL, "the socket address length is too large");
     }
 
     let sun_path = &bytes[CSocketAddrUnix::PATH_OFFSET..];
@@ -96,10 +94,10 @@ pub(super) fn from_c_bytes(bytes: &[u8]) -> Result<UnixSocketAddr> {
     // Again, Linux always appends a null terminator to the pathname if none is supplied. So we
     // need to deal with the case where `CStr::from_bytes_until_nul` fails.
     if let Ok(c_str) = CStr::from_bytes_until_nul(sun_path) {
-        Ok(UnixSocketAddr::Path(Arc::from(c_str.to_string_lossy())))
+        Ok(UnixSocketAddr::Path(Arc::from(c_str)))
     } else {
-        Ok(UnixSocketAddr::Path(Arc::from(String::from_utf8_lossy(
-            sun_path,
-        ))))
+        Ok(UnixSocketAddr::Path(Arc::from(
+            CString::new(sun_path).unwrap(),
+        )))
     }
 }

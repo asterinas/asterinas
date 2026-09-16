@@ -83,6 +83,9 @@ FN_TEST(socket_addresses)
 	MAKE_TEST(LONG_PATH "a", 108, 108, 108, 109, LONG_PATH "a");
 	TEST_SUCC(unlink(LONG_PATH "a"));
 
+	MAKE_TEST(LONG_PATH "\xff", 108, 108, 108, 109, LONG_PATH "\xff");
+	TEST_SUCC(unlink(LONG_PATH "\xff"));
+
 #undef LONG_PATH
 #undef MAKE_TEST
 
