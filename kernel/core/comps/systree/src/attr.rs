@@ -93,6 +93,11 @@ impl SysAttrSet {
 pub struct SysAttrSetBuilder {
     attrs: BTreeMap<SysStr, SysAttr>,
     next_id: u8,
+    /// The first error from [`Self::add`], returned by [`Self::build`].
+    ///
+    /// Storing the error keeps `add` chainable without silently building a
+    /// partial attribute set after an addition fails.
+    error: Option<Error>,
 }
 
 impl SysAttrSetBuilder {
@@ -104,7 +109,15 @@ impl SysAttrSetBuilder {
     /// Adds an attribute definition to the builder.
     ///
     /// If an attribute with the same name already exists, this is a no-op.
+    /// Invalid names are reported by [`Self::build`].
     pub fn add(&mut self, name: SysStr, perms: SysPerms) -> &mut Self {
+        if self.error.is_some() {
+            return self;
+        }
+        if !crate::is_valid_name(&name) {
+            self.error = Some(Error::InvalidName);
+            return self;
+        }
         if self.attrs.contains_key(&name) {
             return self;
         }
@@ -119,8 +132,12 @@ impl SysAttrSetBuilder {
     /// Consumes the builder and returns the constructed `SysAttrSet`.
     ///
     /// # Errors
-    /// Returns `Err` if the capacity limit is reached.
+    /// Returns [`Error::InvalidName`] if an added attribute has an invalid name,
+    /// or `Err` if the capacity limit is reached.
     pub fn build(self) -> Result<SysAttrSet> {
+        if let Some(error) = self.error {
+            return Err(error);
+        }
         if self.attrs.len() > SysAttrSet::CAPACITY {
             return Err(Error::PermissionDenied);
         }

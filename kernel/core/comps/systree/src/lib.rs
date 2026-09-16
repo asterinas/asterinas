@@ -46,7 +46,7 @@ pub use self::{
     utils::{
         _InheritSysBranchNode, _InheritSysLeafNode, _InheritSysSymlinkNode,
         AttrLessBranchNodeFields, BranchNodeFields, EmptyNode, NormalNodeFields, ObjFields,
-        SymlinkNodeFields,
+        SymlinkNodeFields, is_valid_name,
     },
 };
 use crate::tree::RootNode;
@@ -86,6 +86,8 @@ pub enum Error {
     NotFound,
     /// Invalid operation occurred
     InvalidOperation,
+    /// The name is empty, `.` or `..`, or contains `/` or `NUL`.
+    InvalidName,
     /// Resource is unavailable
     ResourceUnavailable,
     /// Attribute operation failed
@@ -107,16 +109,17 @@ pub enum Error {
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         match self {
-            Error::NotFound => write!(f, "Attempted to access a non-existent systree item"),
-            Error::InvalidOperation => write!(f, "Invalid operation occurred"),
-            Error::ResourceUnavailable => write!(f, "Resource is unavailable"),
-            Error::AttributeError => write!(f, "Attribute error"),
-            Error::PermissionDenied => write!(f, "Permission denied for operation"),
-            Error::InternalError(msg) => write!(f, "Internal error: {}", msg),
-            Error::AlreadyExists => write!(f, "The systree item already exists"),
-            Error::Overflow => write!(f, "Numerical overflow occurred"),
-            Error::PageFault => write!(f, "Page fault occurred during memory access"),
-            Error::IsDead => write!(f, "The current systree item is dead"),
+            Error::NotFound => write!(f, "attempted to access a non-existent systree item"),
+            Error::InvalidOperation => write!(f, "invalid operation occurred"),
+            Error::InvalidName => write!(f, "invalid name"),
+            Error::ResourceUnavailable => write!(f, "resource is unavailable"),
+            Error::AttributeError => write!(f, "attribute error"),
+            Error::PermissionDenied => write!(f, "permission denied for operation"),
+            Error::InternalError(msg) => write!(f, "internal error: {}", msg),
+            Error::AlreadyExists => write!(f, "the systree item already exists"),
+            Error::Overflow => write!(f, "numerical overflow occurred"),
+            Error::PageFault => write!(f, "page fault occurred during memory access"),
+            Error::IsDead => write!(f, "the current systree item is dead"),
         }
     }
 }
