@@ -35,6 +35,8 @@ sleep 0.2
 ./unix_datagram_err
 ./unix_seqpacket_err
 ./unix_stream_err
+./vhost_vsock
+./vhost_vsock_cid
 
 ./netlink_route
 ./rtnl_err
