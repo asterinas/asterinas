@@ -268,10 +268,69 @@ fn node_name_rejects_dot_dot_at_construction() {
 
 #[ktest]
 fn invalid_attribute_names_reject_the_new_set() {
+    let mut builder = SysAttrSetBuilder::new();
+    builder.add("valid".into(), SysPerms::DEFAULT_RO_ATTR_PERMS);
+    let original = builder.build().unwrap();
     for name in ["", ".", "..", "bad/name", "bad\0name"] {
-        let mut builder = SysAttrSetBuilder::new();
-        builder.add("valid".into(), SysPerms::DEFAULT_RO_ATTR_PERMS);
+        let mut builder = SysAttrSetBuilder::from_set(&original);
         builder.add(name.into(), SysPerms::DEFAULT_RO_ATTR_PERMS);
+        builder.remove(name);
         assert!(matches!(builder.build(), Err(Error::InvalidName)));
     }
+    assert_eq!(original.len(), 1);
+    assert!(original.contains("valid"));
+}
+
+#[ktest]
+fn attribute_capacity_returns_error_without_wrapping_ids() {
+    let mut builder = SysAttrSetBuilder::new();
+    for index in 0..crate::SysAttrSet::CAPACITY {
+        builder.add(
+            alloc::format!("attr{index}").into(),
+            SysPerms::DEFAULT_RO_ATTR_PERMS,
+        );
+    }
+    let attrs = builder.build().unwrap();
+    assert_eq!(attrs.len(), crate::SysAttrSet::CAPACITY);
+    assert_eq!(attrs.get("attr0").unwrap().id(), 0);
+    let last_index = crate::SysAttrSet::CAPACITY - 1;
+    let last_attr = attrs.get(&alloc::format!("attr{last_index}")).unwrap();
+    assert_eq!(last_attr.id() as usize, last_index);
+
+    let mut builder = SysAttrSetBuilder::new();
+    for index in 0..=crate::SysAttrSet::CAPACITY {
+        builder.add(
+            alloc::format!("attr{index}").into(),
+            SysPerms::DEFAULT_RO_ATTR_PERMS,
+        );
+    }
+    assert!(matches!(builder.build(), Err(Error::ResourceUnavailable)));
+}
+
+#[ktest]
+fn rebuilding_attributes_preserves_survivors_and_reuses_free_ids() {
+    let mut builder = SysAttrSetBuilder::new();
+    for name in ["first", "second", "third"] {
+        builder.add(name.into(), SysPerms::DEFAULT_RO_ATTR_PERMS);
+    }
+    let old = builder.build().unwrap();
+    let mut builder = SysAttrSetBuilder::from_set(&old);
+    builder.remove("second");
+    builder.add("fourth".into(), SysPerms::DEFAULT_RW_ATTR_PERMS);
+    let new = builder.build().unwrap();
+    assert_eq!(
+        new.get("first").unwrap().id(),
+        old.get("first").unwrap().id()
+    );
+    assert_eq!(
+        new.get("third").unwrap().id(),
+        old.get("third").unwrap().id()
+    );
+    assert_eq!(
+        new.get("fourth").unwrap().id(),
+        old.get("second").unwrap().id()
+    );
+    assert!(old.contains("second"));
+    assert!(!old.contains("fourth"));
+    assert!(!new.contains("second"));
 }

@@ -204,7 +204,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             if sysnode.is_attr_absent(name) {
                 return_errno_with_message!(Errno::ENOENT, "attribute is not present");
             }
-            let Some(attr) = sysnode.node_attrs().get(name) else {
+            let Some(attr) = sysnode.node_attrs().get(name).cloned() else {
                 return_errno_with_message!(Errno::ENOENT, "child node or attribute not found");
             };
 
@@ -219,12 +219,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                 }
             };
 
-            let inode = Self::new_attr(
-                attr.clone(),
-                parent_node_arc,
-                Arc::downgrade(&self.this()),
-                &sb,
-            );
+            let inode = Self::new_attr(attr, parent_node_arc, Arc::downgrade(&self.this()), &sb);
             Ok(inode)
         }
     }
@@ -237,7 +232,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         if sysnode.is_attr_absent(name) {
             return_errno_with_message!(Errno::ENOENT, "attribute is not present");
         }
-        let Some(attr) = sysnode.node_attrs().get(name) else {
+        let Some(attr) = sysnode.node_attrs().get(name).cloned() else {
             return_errno_with_message!(Errno::ENOENT, "child node or attribute not found");
         };
 
@@ -250,16 +245,11 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         };
 
         let sb = self.fs().sb();
-        let inode = Self::new_attr(
-            attr.clone(),
-            leaf_node_arc,
-            Arc::downgrade(&self.this()),
-            &sb,
-        );
+        let inode = Self::new_attr(attr, leaf_node_arc, Arc::downgrade(&self.this()), &sb);
         Ok(inode)
     }
 
-    fn new_dentry_iter(&self, min_ino: Ino) -> impl Iterator<Item = Dentry> + '_
+    fn collect_dentries(&self, min_ino: Ino) -> Vec<Dentry>
     where
         Self: Sized + 'static,
     {
@@ -274,7 +264,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                 let child_objs = branch_node.children();
                 let node_iter = NodeDentryIter::new(child_objs, min_ino);
                 let special_iter = ThisAndParentDentryIter::new(self, min_ino);
-                attr_iter.chain(node_iter).chain(special_iter)
+                attr_iter.chain(node_iter).chain(special_iter).collect()
             }
             SysTreeNodeKind::Leaf(leaf_node) => {
                 let attrs = leaf_node.node_attrs();
@@ -285,13 +275,10 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                 );
                 let node_iter = NodeDentryIter::new(Vec::new(), min_ino);
                 let special_iter = ThisAndParentDentryIter::new(self, min_ino);
-                attr_iter.chain(node_iter).chain(special_iter)
+                attr_iter.chain(node_iter).chain(special_iter).collect()
             }
             SysTreeNodeKind::Attr(_, _) | SysTreeNodeKind::Symlink(_) => {
-                let attr_iter = AttrDentryIter::new(None, self.metadata().ino, min_ino);
-                let node_iter = NodeDentryIter::new(Vec::new(), min_ino);
-                let special_iter = ThisAndParentDentryIter::new(self, min_ino);
-                attr_iter.chain(node_iter).chain(special_iter)
+                ThisAndParentDentryIter::new(self, min_ino).collect()
             }
         }
     }
@@ -378,14 +365,14 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
         // as an _inode number_.
         // By inode numbers, directory entries will have a _stable_ order
         // across different calls to `readdir_at`.
-        // The `new_dentry_iter` is responsible for filtering out entries
+        // The `collect_dentries` is responsible for filtering out entries
         // with inode numbers less than `start_ino`.
         let start_ino = offset as Ino;
         let mut count = 0;
         let mut last_ino = start_ino;
 
         let dentries = {
-            let mut dentries: Vec<_> = self.new_dentry_iter(start_ino).collect();
+            let mut dentries = self.collect_dentries(start_ino);
             dentries.sort_by_key(|d| d.ino);
             dentries
         };

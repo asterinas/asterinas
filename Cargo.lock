@@ -380,6 +380,7 @@ dependencies = [
  "aster-util",
  "bitflags 2.13.0",
  "component",
+ "id-alloc",
  "inherit-methods-macro",
  "ostd",
  "spin",

@@ -94,7 +94,7 @@ impl<T: SysObj> ObjFields<T> {
 #[derive(Debug)]
 pub struct NormalNodeFields<T: SysNode> {
     base: ObjFields<T>,
-    attr_set: SysAttrSet,
+    attr_set: Arc<SysAttrSet>,
 }
 
 #[inherit_methods(from = "self.base")]
@@ -102,7 +102,7 @@ impl<T: SysNode> NormalNodeFields<T> {
     pub fn new(name: SysStr, attr_set: SysAttrSet, weak_self: Weak<T>) -> Self {
         Self {
             base: ObjFields::new(name, weak_self),
-            attr_set,
+            attr_set: Arc::new(attr_set),
         }
     }
 
@@ -118,7 +118,7 @@ impl<T: SysNode> NormalNodeFields<T> {
 
     pub fn weak_self(&self) -> &Weak<T>;
 
-    pub fn attr_set(&self) -> &SysAttrSet {
+    pub fn attr_set(&self) -> &Arc<SysAttrSet> {
         &self.attr_set
     }
 }
@@ -204,9 +204,8 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> AttrLessBranchNodeFields<C, T> {
         &self.children
     }
 
-    pub fn attr_set(&self) -> &SysAttrSet {
-        static EMPTY: SysAttrSet = SysAttrSet::new_empty();
-        &EMPTY
+    pub fn attr_set(&self) -> &Arc<SysAttrSet> {
+        SysAttrSet::empty()
     }
 
     /// Creates attribute-less branch fields with an empty name for a root node.
@@ -222,7 +221,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> AttrLessBranchNodeFields<C, T> {
 #[derive(Debug)]
 pub struct BranchNodeFields<C: SysObj + ?Sized, T: SysBranchNode> {
     base: AttrLessBranchNodeFields<C, T>,
-    attr_set: SysAttrSet,
+    attr_set: Arc<SysAttrSet>,
 }
 
 #[inherit_methods(from = "self.base")]
@@ -230,7 +229,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> BranchNodeFields<C, T> {
     pub fn new(name: SysStr, attr_set: SysAttrSet, weak_self: Weak<T>) -> Self {
         Self {
             base: AttrLessBranchNodeFields::new(name, weak_self),
-            attr_set,
+            attr_set: Arc::new(attr_set),
         }
     }
 
@@ -260,7 +259,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> BranchNodeFields<C, T> {
 
     pub fn children_ref(&self) -> &RwMutex<BTreeMap<SysStr, Arc<C>>>;
 
-    pub fn attr_set(&self) -> &SysAttrSet {
+    pub fn attr_set(&self) -> &Arc<SysAttrSet> {
         &self.attr_set
     }
 
@@ -268,7 +267,7 @@ impl<C: SysObj + ?Sized, T: SysBranchNode> BranchNodeFields<C, T> {
     pub(crate) fn new_root(attr_set: SysAttrSet, weak_self: Weak<T>) -> Self {
         Self {
             base: AttrLessBranchNodeFields::new_root(weak_self),
-            attr_set,
+            attr_set: Arc::new(attr_set),
         }
     }
 }
@@ -311,8 +310,8 @@ impl<T: SysSymlink> SymlinkNodeFields<T> {
 macro_rules! _inner_impl_sys_node {
     ($struct_name:ident, $field:ident, $helper_trait:ty) => {
         impl $crate::SysNode for $struct_name {
-            fn node_attrs(&self) -> &$crate::SysAttrSet {
-                self.$field.attr_set()
+            fn node_attrs(&self) -> alloc::sync::Arc<$crate::SysAttrSet> {
+                self.$field.attr_set().clone()
             }
 
             fn is_attr_absent(&self, name: &str) -> bool {
