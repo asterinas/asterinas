@@ -1345,60 +1345,6 @@
         A reviewer should flag that the errno is wrong for corrupted ELF
         interpreter data and ask for `ENOEXEC` instead of `ENAMETOOLONG`.
 
-- problem_id: 0413-ktests-and-non-osdk-clippy
-  commit: 4f62f2db8e355b67da71e6ac164e41fc727fc1ec
-  remote: https://github.com/asterinas/asterinas
-  source: >
-    PR-derived from https://github.com/asterinas/asterinas/pull/2843. The PR
-    body identifies two fixes in the base commit: the OSDK clippy flag should
-    be `--ktests` instead of `--ktest`, and non-OSDK crates should be checked
-    with clippy both with and without `cfg(test)` so warnings in test-only code
-    are not missed. Files mode uses the PR base commit
-    `4f62f2db8e355b67da71e6ac164e41fc727fc1ec`, before commits `dcdfb897c`
-    and `d33535f43`, so the targets are leak-free.
-  review_mode:
-    files:
-      - osdk/src/cli.rs
-      - Makefile
-  defects:
-    - target:
-        kind: file
-        path: osdk/src/cli.rs
-        lines: "63-67,109-112"
-      persona: development
-      grounding: preserve the OSDK clippy flag name
-      severity: major
-      desc: >
-        The OSDK check/clippy forwarding still reads `args.ktest`, and the
-        parser field is still named `ktest`. That keeps the option singular,
-        while the intended OSDK flag is `--ktests`. The command-line interface
-        and the forwarded flag name therefore stay out of sync.
-      fix: >
-        Rename the field to `ktests` and forward `args.ktests` from both
-        `check` and `clippy`, so the OSDK option matches the intended
-        `--ktests` name.
-      expectation: >
-        A reviewer should flag that the OSDK clippy/check option is still using
-        the wrong singular name and should be renamed consistently to
-        `ktests`.
-    - target:
-        kind: file
-        path: Makefile
-        lines: "453-457"
-      persona: development
-      grounding: run clippy for cfg(test) code too
-      severity: major
-      desc: >
-        The `check` target only runs `cargo clippy --no-deps` once for each
-        non-OSDK crate. That misses warnings that only appear when test code is
-        compiled, so `cfg(test)`-only issues can slip through CI.
-      fix: >
-        Add a second `cargo clippy --tests --no-deps -- -D warnings` pass for
-        each non-OSDK crate.
-      expectation: >
-        A reviewer should flag that non-OSDK crates are not checked under
-        `cfg(test)` and should require a second clippy pass.
-
 - problem_id: 0414-vmar-heap-mapping-issues
   commit: 6d2ff13a639b9fff72842869cfd78f78ff21bbf2
   remote: https://github.com/asterinas/asterinas
@@ -1680,7 +1626,7 @@
       expectation: >
         A reviewer should identify the missing readable-input and writable-output
         checks as an independent defect and require EBADF for invalid descriptor
-        modes. The overflow, directory, and O_APPEND checks are separate targets.
+        modes. 
 
     - target:
         kind: file
@@ -1693,16 +1639,14 @@
         The implementation does not reject a directory used as in_file before
         the transfer. It sends the directory through the generic read path,
         which can return the wrong result or error, including on edge cases
-        where the read loop is not entered. Linux-compatible behavior requires
-        EINVAL for a directory input.
+        where the read loop is not entered. 
       fix: >
         Detect an in_file whose inode type is Dir before the transfer and return
         EINVAL, independently of whether the requested count causes a read.
       expectation: >
         A reviewer should flag directory input handling as an independent
         compatibility defect and require an explicit EINVAL check before the
-        generic read path. The access-mode and O_APPEND checks are separate
-        defects.
+        generic read path. 
 
     - target:
         kind: file
@@ -1719,11 +1663,9 @@
       fix: >
         Inspect the output status flags before the transfer and return EINVAL
         for O_APPEND unless the output is a pipe handled by splice semantics.
-        Do not rely on write_bytes to enforce this sendfile restriction.
       expectation: >
         A reviewer should flag missing O_APPEND validation as an independent
-        defect and require EINVAL for non-pipe O_APPEND output. It should not be
-        merged with the generic writable-output access check.
+        defect and require EINVAL for non-pipe O_APPEND output.
 
     - target:
         kind: file
@@ -1746,67 +1688,6 @@
         A reviewer should flag that the comment encodes a false sendfile
         restriction and should ask for it to be removed or rewritten to match
         the Linux manual.
-
-- problem_id: 0418-filelike-access-mode-defects
-  commit: acb00a241dfaacce88b1a3e8f755c59e043382eb
-  remote: https://github.com/asterinas/asterinas
-  source: >
-    PR-derived from https://github.com/asterinas/asterinas/pull/3231. The PR
-    contains two behavior fixes in the base implementation: `FileLike` uses one
-    `O_RDWR` default for every file type instead of requiring each type to report
-    its Linux-defined access mode, and the default `read`/`write` methods always
-    return `EBADF` instead of distinguishing access-mode errors from unsupported
-    operations. The reviewed snapshot is the PR base
-    `acb00a241dfaacce88b1a3e8f755c59e043382eb`, before fixing commits
-    `bf9dd9b82e35cdf1f0f644b00c7e49217e66b31b` and
-    `a7cd0b4ffa0ac0172e78652af4a08beb5595a7fd`, so the targets are leak-free.
-  review_mode:
-    files:
-      - kernel/src/fs/file/file_handle.rs
-  defects:
-    - target:
-        kind: file
-        path: kernel/src/fs/file/file_handle.rs
-        lines: "82-84"
-      persona: development
-      grounding: per-file-type access mode
-      severity: major
-      desc: >
-        `FileLike::access_mode` has a universal `O_RDWR` default. That default
-        misreports the access mode of special file types whose Linux contract is
-        read-only or otherwise different, such as inotify files. Access-mode
-        metadata is used by permission checks and fdinfo reporting, so one
-        blanket default can expose incorrect read/write capabilities and Linux
-        incompatibilities.
-      fix: >
-        Make `access_mode` a required trait method and implement it for every
-        `FileLike` type according to the corresponding Linux behavior, while
-        keeping inode-backed files derived from their open rights.
-      expectation: >
-        A reviewer should flag the universal `O_RDWR` fallback and require
-        each file type to declare its own Linux-compatible access mode.
-    - target:
-        kind: file
-        path: kernel/src/fs/file/file_handle.rs
-        lines: "23-29"
-      persona: development
-      grounding: distinguish access errors from unsupported operations
-      severity: major
-      desc: >
-        The default `FileLike::read` and `FileLike::write` implementations
-        always return `EBADF`. This conflates a descriptor opened without the
-        requested access mode with a file type that is opened with that mode
-        but does not implement the operation. Linux distinguishes these cases:
-        the former returns `EBADF`, while the latter returns `EINVAL`.
-      fix: >
-        Check `access_mode()` in each default method. Return `EBADF` when the
-        descriptor is not readable or writable; otherwise return `EINVAL` for
-        the unsupported default operation. Keep concrete implementations that
-        actually support reads or writes responsible for their normal behavior.
-      expectation: >
-        A reviewer should identify the errno conflation, require the
-        default methods to check access mode, and return `EINVAL` for a
-        mode-permitted but unsupported operation.
 
 - problem_id: 0419-osdk-hard-link-self-copy-truncation
   commit: 7f3a096428b9607793c312e065c8c778b73c9748
