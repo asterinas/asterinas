@@ -60,7 +60,14 @@ use crate::{
     sync::RcuDrop,
 };
 
+// These bounds are set once during frame metadata initialization, before APs start.
+static MIN_PADDR: AtomicUsize = AtomicUsize::new(0);
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
+
+/// Returns the minimum physical address that is tracked by frame metadata.
+pub(in crate::mm) fn min_paddr() -> Paddr {
+    MIN_PADDR.load(Ordering::Relaxed)
+}
 
 /// Returns the maximum physical address that is tracked by frame metadata.
 pub(in crate::mm) fn max_paddr() -> Paddr {
