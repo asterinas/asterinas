@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Testing configfs by adding to it a top-level directory called `demo_set`,
-//! whose structure is illustrated as follows:
+//! Tests for the singleton SysTree-to-VFS adapter.
 //!
 //! ```
-//! configfs/
+//! test_systree/
 //!     demo_set/
 //!         demo_foo/
 //!              attr_a
@@ -13,19 +12,19 @@
 //!              attr_a
 //!              attr_b
 //! ```
-//!
-//! The `demo_set` is initially empty. One can create directories to trigger creating an in-kernel object
-//! that represents a new demo. Each demo has two attributes called `attr_a` and `attr_b`.
 
-use alloc::{string::ToString, sync::Arc};
+use alloc::{
+    string::ToString,
+    sync::{Arc, Weak},
+};
 use core::{
     fmt::Debug,
     sync::atomic::{AtomicU32, Ordering},
 };
 
 use aster_systree::{
-    BranchNodeFields, Error, NormalNodeFields, Result, SysAttrSet, SysAttrSetBuilder, SysObj,
-    SysPerms, SysStr, inherit_sys_branch_node, inherit_sys_leaf_node,
+    BranchNodeFields, Error, NormalNodeFields, Result, SysAttrSet, SysAttrSetBuilder,
+    SysBranchNode, SysObj, SysPerms, SysStr, inherit_sys_branch_node, inherit_sys_leaf_node,
 };
 use inherit_methods_macro::inherit_methods;
 use ostd::{
@@ -38,16 +37,71 @@ use spin::Once;
 use crate::{
     fs::{
         file::{InodeType, mkmod},
+        systree::SingletonSysTreeFs,
         vfs::file_system::FileSystem,
     },
     time::clocks::init_for_ktest as time_init_for_ktest,
 };
 
-/// A demo subsystem for testing configfs functionality.
+/// A demo branch for testing the SysTree-backed VFS adapter.
 #[derive(Debug)]
 struct DemoSet {
     fields: BranchNodeFields<DemoObject, Self>,
 }
+const TEST_FS_MAGIC: u64 = 0x7379_7374;
+const TEST_FS_BLOCK_SIZE: usize = 4096;
+const TEST_FS_NAME_MAX: usize = 255;
+
+fn test_root() -> Arc<dyn SysBranchNode> {
+    TestRoot::singleton().clone()
+}
+
+static TEST_FS_TYPE: SingletonSysTreeFs = SingletonSysTreeFs::new(
+    "systree-test",
+    TEST_FS_MAGIC,
+    TEST_FS_BLOCK_SIZE,
+    TEST_FS_NAME_MAX,
+    test_root,
+);
+
+#[derive(Debug)]
+struct TestRoot {
+    fields: BranchNodeFields<dyn SysObj, Self>,
+}
+
+#[inherit_methods(from = "self.fields")]
+impl TestRoot {
+    fn singleton() -> &'static Arc<Self> {
+        static SINGLETON: Once<Arc<TestRoot>> = Once::new();
+
+        SINGLETON.call_once(Self::new)
+    }
+
+    fn new() -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| {
+            let fields = BranchNodeFields::new(
+                SysStr::from("test_systree"),
+                SysAttrSet::new_empty(),
+                weak_self.clone(),
+            );
+            Self { fields }
+        })
+    }
+
+    fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
+}
+
+inherit_sys_branch_node!(TestRoot, fields, {
+    fn is_root(&self) -> bool {
+        true
+    }
+
+    fn init_parent(&self, _parent: Weak<dyn SysBranchNode>) {}
+
+    fn perms(&self) -> SysPerms {
+        SysPerms::DEFAULT_RW_PERMS
+    }
+});
 
 #[inherit_methods(from = "self.fields")]
 impl DemoSet {
@@ -76,7 +130,8 @@ inherit_sys_branch_node!(DemoSet, fields, {
     }
 });
 
-/// A demo object that can be created dynamically in the configfs.
+/// A demo object that can be created dynamically through the SysTree-backed VFS
+/// adapter.
 ///
 /// Each demo object has two configurable attributes: `attr_a` and `attr_b`.
 #[derive(Debug)]
@@ -151,36 +206,39 @@ static DEMO_SET_SUBSYSTEM: Once<Arc<DemoSet>> = Once::new();
 fn init_demo_subsystem() {
     DEMO_SET_SUBSYSTEM.call_once(|| {
         time_init_for_ktest();
-        super::init_for_ktest();
+        crate::fs::vfs::init_for_ktest();
+        TEST_FS_TYPE.register().unwrap();
 
         let demo_set = DemoSet::new();
-        super::register_subsystem(demo_set.clone()).unwrap();
+        TestRoot::singleton().add_child(demo_set.clone()).unwrap();
 
         demo_set
     });
 }
 
 #[ktest]
-fn config_fs() {
+fn singleton_systree_fs() {
     init_demo_subsystem();
-    let config_fs = super::fs::ConfigFs::singleton();
+    let test_fs: Arc<dyn FileSystem> = TEST_FS_TYPE.0.singleton().clone();
 
-    // Access the root of configfs: /sys/kernel/config
-    let root_inode = config_fs.root_inode();
+    let root_inode = test_fs.root_inode();
+    assert!(Arc::ptr_eq(&root_inode.fs(), &test_fs));
 
     // --- Navigate to demo_set directory ---
-    // path: /sys/kernel/config/demo_set
+    // path: /demo_set
     let demo_set_inode = root_inode
         .lookup("demo_set")
         .expect("lookup demo_set failed");
+    assert!(Arc::ptr_eq(&demo_set_inode.fs(), &test_fs));
 
     // --- Create demo objects ---
-    // path: /sys/kernel/config/demo_set/demo_foo
+    // path: /demo_set/demo_foo
     let demo_foo = demo_set_inode
         .create("demo_foo", InodeType::Dir, mkmod!(a+rx, u+w))
         .expect("creating demo 'demo_foo' fails");
+    assert!(Arc::ptr_eq(&demo_foo.fs(), &test_fs));
 
-    // path: /sys/kernel/config/demo_set/demo_bar
+    // path: /demo_set/demo_bar
     let demo_bar = demo_set_inode
         .create("demo_bar", InodeType::Dir, mkmod!(a+rx, u+w))
         .expect("creating demo 'demo_bar' fails");
@@ -188,6 +246,7 @@ fn config_fs() {
     // --- Test attribute access for demo_foo ---
     let attr_a_foo = demo_foo.lookup("attr_a").expect("lookup attr_a failed");
     let attr_b_foo = demo_foo.lookup("attr_b").expect("lookup attr_b failed");
+    assert!(Arc::ptr_eq(&attr_a_foo.fs(), &test_fs));
 
     let mut read_buffer: u32 = 0;
 

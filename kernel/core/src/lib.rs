@@ -43,11 +43,11 @@ mod arch;
 
 mod context;
 mod cpu;
-mod device;
+pub mod device;
 mod driver;
 mod error;
 mod events;
-mod fs;
+pub mod fs;
 mod init;
 mod ipc;
 mod net;
@@ -57,7 +57,7 @@ mod sched;
 mod security;
 mod syscall;
 mod thread;
-mod time;
+pub mod time;
 mod util;
 // TODO: Add vDSO support for other architectures.
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]

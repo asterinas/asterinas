@@ -108,7 +108,7 @@ mod sealed;
 
 /// An ioctl command and its argument in raw form.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct RawIoctl {
+pub struct RawIoctl {
     cmd: u32,
     arg: usize,
 }

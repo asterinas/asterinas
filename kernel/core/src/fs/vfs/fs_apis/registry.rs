@@ -9,12 +9,9 @@ use aster_systree::{
 use spin::Once;
 
 use crate::{
-    fs::{
-        fs_impls::sysfs,
-        vfs::{
-            file_system::{FileSystem, FsFlags},
-            path::{AT_FDCWD, Dentry, EmptyPathStr, FsPath},
-        },
+    fs::vfs::{
+        file_system::{FileSystem, FsFlags},
+        path::{AT_FDCWD, Dentry, EmptyPathStr, FsPath},
     },
     prelude::*,
 };
@@ -253,7 +250,7 @@ pub(crate) fn init() {
     // This object will appear at the `/sys/fs` path
     FS_REGISTRY.call_once(|| {
         let singleton = FsRegistry::new();
-        sysfs::systree_singleton()
+        aster_systree::primary_tree()
             .root()
             .add_child(singleton.clone())
             .unwrap();

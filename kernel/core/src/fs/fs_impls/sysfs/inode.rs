@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::fs::SysFs;
 use crate::{
     fs::{
         file::{InodeMode, InodeType},
@@ -31,6 +30,7 @@ pub(super) struct SysFsInode {
     mode: RwLock<InodeMode>,
     /// Weak reference to the parent inode.
     parent: Weak<SysFsInode>,
+    fs: Weak<dyn FileSystem>,
     /// Weak self-reference for cyclic data structures.
     this: Weak<SysFsInode>,
 }
@@ -41,6 +41,7 @@ impl SysTreeInodeTy for SysFsInode {
         metadata: Metadata,
         mode: InodeMode,
         parent: Weak<Self>,
+        fs: Weak<dyn FileSystem>,
     ) -> Arc<Self>
     where
         Self: Sized,
@@ -51,6 +52,7 @@ impl SysTreeInodeTy for SysFsInode {
             extension: Extension::new(),
             mode: RwLock::new(mode),
             parent,
+            fs,
             this: this.clone(),
         })
     }
@@ -85,13 +87,13 @@ impl SysTreeInodeTy for SysFsInode {
     fn extension(&self) -> &Extension {
         &self.extension
     }
+
+    fn fs_weak(&self) -> &Weak<dyn FileSystem> {
+        &self.fs
+    }
 }
 
 impl Inode for SysFsInode {
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        SysFs::singleton().clone()
-    }
-
     fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
         Err(Error::with_message(
             Errno::EPERM,

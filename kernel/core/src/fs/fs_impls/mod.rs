@@ -5,7 +5,6 @@
 //! This module contains all the specific file system implementations supported by the kernel.
 
 pub(crate) mod cgroupfs;
-pub(crate) mod configfs;
 pub(crate) mod devpts;
 pub(crate) mod devtmpfs;
 pub(crate) mod exfat;
@@ -20,9 +19,9 @@ pub(crate) mod virtiofs;
 
 pub(super) fn init() {
     sysfs::init();
+    super::systree::init();
     procfs::init();
     cgroupfs::init();
-    configfs::init();
     ramfs::init();
     tmpfs::init();
     devtmpfs::init();

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Device abstractions and component-facing registration interfaces.
 mod evdev;
 mod fb;
 mod mem;
-pub(crate) mod misc;
+pub mod misc;
 mod pty;
 mod registry;
 pub(crate) mod tty;
