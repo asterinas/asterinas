@@ -9,6 +9,7 @@ edition.workspace = true
 aster-util.workspace = true
 bitflags = "2.5"
 component.workspace = true
+id-alloc.workspace = true
 inherit-methods-macro.workspace = true
 ostd.workspace = true
 spin.workspace = true

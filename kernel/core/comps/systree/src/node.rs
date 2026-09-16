@@ -131,11 +131,16 @@ pub trait SysBranchNode: SysNode {
 pub trait SysNode: SysObj {
     /// Returns the attribute set of a `SysNode`.
     ///
+    /// The set is a snapshot: it is immutable, and a node whose attributes come
+    /// and go publishes a new set rather than editing this one, so a caller may
+    /// hold on to what it gets. What it holds may then be out of date, which is
+    /// what dentry revalidation is for.
+    ///
     /// The attribute set returned by this method contains all possible attributes
     /// that this node may have. For nodes with dynamically changing attributes, it is
     /// necessary to additionally use the [`SysNode::is_attr_absent`] method to confirm
     /// whether an attribute is currently present.
-    fn node_attrs(&self) -> &SysAttrSet;
+    fn node_attrs(&self) -> Arc<SysAttrSet>;
 
     /// Returns whether an attribute with the given name is absent.
     ///
