@@ -35,7 +35,7 @@ impl Vmar {
                 let base = vm_mapping.map_to_addr();
                 let range = base..vm_mapping.map_end();
 
-                let mut rmap = vm_mapping.lock_rmap();
+                let mut rmap = vm_mapping.vmo_for_rmap().map(|vmo| vmo.rmap().lock());
 
                 // Clone the `VmMapping` to the new VMAR.
                 let new_mapping = vm_mapping.new_fork();
