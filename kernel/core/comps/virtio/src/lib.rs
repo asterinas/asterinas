@@ -37,6 +37,7 @@ mod dma_buf;
 mod id_alloc;
 mod queue;
 mod transport;
+pub mod virtio_ring;
 
 static VIRTIO_BLOCK_MAJOR_ID: Once<MajorIdOwner> = Once::new();
 
@@ -155,10 +156,10 @@ fn negotiate_features(transport: &mut Box<dyn VirtioTransport>) {
 }
 
 bitflags! {
-    /// all device features, bits 0~23 and 50~63 are specified by device.
-    /// if using this struct to translate u64, use from_bits_truncate function instead of from_bits
+    /// Device-independent virtio feature bits shared by frontends and backends.
     ///
-    struct Feature: u64 {
+    /// Device-specific bits must be handled separately.
+    pub struct Feature: u64 {
 
         // device independent
         const NOTIFY_ON_EMPTY       = 1 << 24; // legacy
