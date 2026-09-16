@@ -7,7 +7,7 @@ use alloc::sync::{Arc, Weak};
 use inherit_methods_macro::inherit_methods;
 
 use super::{
-    Result, SysStr,
+    Result,
     attr::SysAttrSet,
     node::{SysBranchNode, SysObj},
 };
@@ -22,11 +22,10 @@ pub struct SysTree<Root: SysBranchNode> {
 impl SysTree<RootNode> {
     /// Creates a new `SysTree` instance with a default root node.
     pub(crate) fn new() -> Self {
-        let name = ""; // Only the root has an empty name
         let attr_set = SysAttrSet::new_empty(); // The root has no attributes
 
         let root_node = Arc::new_cyclic(|weak_self| {
-            let fields = BranchNodeFields::new(SysStr::from(name), attr_set, weak_self.clone());
+            let fields = BranchNodeFields::new_root(attr_set, weak_self.clone());
             RootNode { fields }
         });
 

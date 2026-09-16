@@ -120,6 +120,7 @@ fn systree_singleton() {
     // Check if root node exists
     assert!(root.is_root());
     assert_eq!(root.name(), "");
+    assert_eq!(root.path(), "/");
     assert_eq!(root.type_(), SysNodeType::Branch);
 }
 
@@ -227,4 +228,50 @@ fn error_handling() {
     // Attempt to access non-existent child node
     let child = device.child("nonexistent");
     assert!(child.is_none());
+}
+
+#[ktest]
+#[should_panic]
+fn node_name_rejects_empty_at_construction() {
+    DeviceNode::new("".into());
+}
+
+#[ktest]
+#[should_panic]
+fn symlink_name_rejects_empty_at_construction() {
+    SymlinkNode::new("".into(), "target");
+}
+
+#[ktest]
+#[should_panic]
+fn node_name_rejects_slash_at_construction() {
+    DeviceNode::new("bad/name".into());
+}
+
+#[ktest]
+#[should_panic]
+fn symlink_name_rejects_nul_at_construction() {
+    SymlinkNode::new("bad\0name".into(), "target");
+}
+
+#[ktest]
+#[should_panic]
+fn node_name_rejects_dot_at_construction() {
+    DeviceNode::new(".".into());
+}
+
+#[ktest]
+#[should_panic]
+fn node_name_rejects_dot_dot_at_construction() {
+    DeviceNode::new("..".into());
+}
+
+#[ktest]
+fn invalid_attribute_names_reject_the_new_set() {
+    for name in ["", ".", "..", "bad/name", "bad\0name"] {
+        let mut builder = SysAttrSetBuilder::new();
+        builder.add("valid".into(), SysPerms::DEFAULT_RO_ATTR_PERMS);
+        builder.add(name.into(), SysPerms::DEFAULT_RO_ATTR_PERMS);
+        assert!(matches!(builder.build(), Err(Error::InvalidName)));
+    }
 }
