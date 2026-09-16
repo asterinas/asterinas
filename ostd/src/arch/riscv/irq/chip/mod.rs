@@ -13,7 +13,7 @@ use core::{
 use spin::Once;
 
 use crate::{
-    Result,
+    Error, Result,
     arch::{
         boot::DEVICE_TREE,
         irq::{HwIrqLine, InterruptSource, chip::plic::Plic},
@@ -88,19 +88,19 @@ impl IrqChip {
             .iter_mut()
             .enumerate()
             .find(|(_, plic)| plic.phandle() == interrupt_source_in_fdt.interrupt_parent)
-            .unwrap();
+            .ok_or(Error::InvalidArgs)?;
 
-        plic.map_interrupt_source_to(interrupt_source_in_fdt.interrupt, &irq_line)?;
-        plic.set_priority(interrupt_source_in_fdt.interrupt, 1);
+        plic.map_interrupt_source_to(interrupt_source_in_fdt.arguments[0], &irq_line)?;
+        plic.set_priority(interrupt_source_in_fdt.arguments[0], 1);
         plic.managed_harts().for_each(|hart| {
-            plic.set_interrupt_enabled(hart, interrupt_source_in_fdt.interrupt, true)
+            plic.set_interrupt_enabled(hart, interrupt_source_in_fdt.arguments[0], true)
         });
 
         Ok(MappedIrqLine {
             irq_line,
             interrupt_source_on_chip: InterruptSourceOnChip {
                 index,
-                interrupt: interrupt_source_in_fdt.interrupt,
+                interrupt: interrupt_source_in_fdt.arguments[0],
             },
         })
     }
@@ -194,8 +194,8 @@ impl Drop for MappedIrqLine {
 pub struct InterruptSourceInFdt {
     /// Phandle of the interrupt controller it connects to.
     pub interrupt_parent: u32,
-    /// Interrupt source number on the interrupt controller.
-    pub interrupt: u32,
+    /// Arguments (e.g., some index and flags) that describe the interrupt.
+    pub arguments: [u32; 1],
 }
 
 /// Interrupt source identifier on the `IRQ_CHIP`.
