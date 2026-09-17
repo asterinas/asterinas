@@ -14,21 +14,7 @@ FcntlTest.SetSigDefaultsToZero
 FcntlTest.SetSigToDefault
 FcntlTest.SetSigInvalid
 FcntlTest.SetSigInvalidDoesNotResetPreviousChoice
-# SetOwnPgrp is verified with F_GETOWN_EX, which is not supported now.
-FcntlTest.SetOwnPgrp
 FcntlTest.SetFlSetOwnDoNotRace
-FcntlTest.GetOwnExNone
-FcntlTest.GetOwnExTid
-FcntlTest.GetOwnExPid
-FcntlTest.GetOwnExPgrp
-FcntlTest.SetOwnExInvalidType
-FcntlTest.SetOwnExInvalidTid
-FcntlTest.SetOwnExInvalidPid
-FcntlTest.SetOwnExInvalidPgrp
-FcntlTest.SetOwnExTid
-FcntlTest.SetOwnExPid
-FcntlTest.SetOwnExPgrp
-FcntlTest.SetOwnExUnset
 
 FcntlLockTest.GetLockRespectsPIDNamespace
 FcntlLockTest.SetLockSymlink

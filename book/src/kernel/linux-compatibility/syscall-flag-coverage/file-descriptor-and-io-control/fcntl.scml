@@ -5,8 +5,12 @@ can_change_flags = O_APPEND | O_ASYNC | O_DIRECT | O_NOATIME | O_NONBLOCK;
 fcntl(fd, cmd = F_DUPFD | F_DUPFD_CLOEXEC, arg);
 
 // Retrieve file descriptor flags (F_GETFD), file status flags (F_GETFL)
-// or SIGIO/SIGURG owner process (F_GETOWN)
+// or SIGIO/SIGURG owner process or process group (F_GETOWN)
 fcntl(fd, cmd = F_GETFD | F_GETFL | F_GETOWN);
+
+// Retrieve the SIGIO/SIGURG owner together with its type, which distinguishes
+// a thread, a process and a process group
+fcntl(fd, cmd = F_GETOWN_EX, arg);
 
 // Set file descriptor flags
 fcntl(fd, cmd = F_SETFD, arg = FD_CLOEXEC);
@@ -17,8 +21,14 @@ fcntl(fd, cmd = F_SETFL, arg = <ignore_flags> | <can_change_flags>);
 // Manage record locks: test (F_GETLK), non-blocking set (F_SETLK), blocking set (F_SETLKW)
 fcntl(fd, cmd = F_GETLK | F_SETLK | F_SETLKW, arg);
 
-// Assign SIGIO/SIGURG owner process
+// Assign the SIGIO/SIGURG owner: a process if arg is positive,
+// a process group if arg is negative. The caller's credentials are recorded
+// and checked when the signal is later delivered
 fcntl(fd, cmd = F_SETOWN, arg);
+
+// Assign the SIGIO/SIGURG owner by type (F_OWNER_TID, F_OWNER_PID or
+// F_OWNER_PGRP) and a positive ID
+fcntl(fd, cmd = F_SETOWN_EX, arg);
 
 // Add seals to the inode referred to
 fcntl(fd, cmd = F_ADD_SEALS, arg = F_SEAL_SEAL | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE | F_SEAL_FUTURE_WRITE);

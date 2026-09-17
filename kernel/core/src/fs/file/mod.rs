@@ -17,7 +17,7 @@ pub(crate) use file_attr::{
     open_args::OpenArgs,
     status_flags::{AtomicStatusFlags, SettableStatusFlags, StatusFlags},
 };
-pub(crate) use file_common::FileCommon;
+pub(crate) use file_common::{FileCommon, FileOwnerKind, FileOwnerTarget};
 pub(crate) use file_handle::{FileLike, Mappable, StatusFlagsUpdate, SyncMode};
 pub(crate) use fs_config_file::{DetachedMountFile, FsConfigFile};
 pub(crate) use inode_attr::{
