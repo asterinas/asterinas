@@ -88,6 +88,8 @@ pub(crate) struct CachePageMeta {
     /// cleared without the page lock only from the BIO completion callback after
     /// the VMO writeback path has handed off the writeback state.
     is_writing_back: AtomicBool,
+    /// A failed completed writeback that a later flush must report.
+    writeback_error: AtomicBool,
     // TODO: Add a reverse mapping from the page to VMO for eviction.
 }
 
@@ -97,6 +99,7 @@ impl Default for CachePageMeta {
             state: AtomicPageState::new(PageState::Uninit),
             lock: AtomicBool::new(false),
             is_writing_back: AtomicBool::new(false),
+            writeback_error: AtomicBool::new(false),
         }
     }
 }
@@ -149,6 +152,22 @@ pub(crate) trait CachePageExt: Sized {
             .is_writing_back
             .store(false, Ordering::Release);
         self.wait_queue().wake_all();
+    }
+
+    fn set_writeback_error(&self) {
+        self.metadata()
+            .writeback_error
+            .store(true, Ordering::Release);
+    }
+
+    fn clear_writeback_error(&self) {
+        self.metadata()
+            .writeback_error
+            .store(false, Ordering::Release);
+    }
+
+    fn has_writeback_error(&self) -> bool {
+        self.metadata().writeback_error.load(Ordering::Acquire)
     }
 
     /// Allocates a new cache page which content and state are uninitialized.

@@ -20,6 +20,8 @@
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
 #  - VNC_PORT: VNC port, default is "42";
+#  - ATTACH_EXT4_REGRESSION_IMAGES: "true" or "false", whether to attach
+#    the positive ext4 image and unsupported-feature images.
 #  - XFSTESTS_NEEDS_BLOCK_DEVICES: "true" or "false", whether to attach
 #    xfstests images (xfstests_test.img and xfstests_scratch.img) to the VM.
 
@@ -29,7 +31,14 @@ VSOCK=${VSOCK:-"off"}
 VIRTIOFS=${VIRTIOFS:-"off"}
 NETDEV=${NETDEV:-"user"}
 CONSOLE=${CONSOLE:-"hvc0"}
+ATTACH_EXT4_REGRESSION_IMAGES=${ATTACH_EXT4_REGRESSION_IMAGES:-false}
 XFSTESTS_NEEDS_BLOCK_DEVICES=${XFSTESTS_NEEDS_BLOCK_DEVICES:-false}
+
+if [ "$ATTACH_EXT4_REGRESSION_IMAGES" != "true" ] && \
+   [ "$ATTACH_EXT4_REGRESSION_IMAGES" != "false" ]; then
+    echo "Invalid ATTACH_EXT4_REGRESSION_IMAGES=${ATTACH_EXT4_REGRESSION_IMAGES}" 1>&2
+    exit 1
+fi
 
 if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" != "true" ] && \
    [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" != "false" ]; then
@@ -200,6 +209,17 @@ COMMON_QEMU_ARGS="\
     $ROOTFS_DRIVE_ARGS \
 "
 
+if [ "$ATTACH_EXT4_REGRESSION_IMAGES" = "true" ]; then
+    COMMON_QEMU_ARGS="$COMMON_QEMU_ARGS \
+    -drive if=none,format=raw,id=ext4,file=./test/initramfs/build/ext4.img \
+    -drive if=none,format=raw,id=ext4_journal,file=./test/initramfs/build/ext4-regression/journal.img \
+    -drive if=none,format=raw,id=ext4_recover,file=./test/initramfs/build/ext4-regression/recover.img \
+    -drive if=none,format=raw,id=ext4_64bit,file=./test/initramfs/build/ext4-regression/64bit.img \
+    -drive if=none,format=raw,id=ext4_metadata_csum,file=./test/initramfs/build/ext4-regression/metadata_csum.img \
+    -drive if=none,format=raw,id=ext4_unknown,file=./test/initramfs/build/ext4-regression/unknown_incompat.img \
+    "
+fi
+
 # Add xfstests drives when the selected file system needs block devices.
 if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" = "true" ]; then
     COMMON_QEMU_ARGS="$COMMON_QEMU_ARGS \
@@ -258,6 +278,28 @@ else
         $CONSOLE_ARGS \
         $IOMMU_EXTRA_ARGS \
     "
+fi
+
+if [ "$ATTACH_EXT4_REGRESSION_IMAGES" = "true" ]; then
+    if [ "$1" = "microvm" ]; then
+        QEMU_ARGS="$QEMU_ARGS \
+        -device virtio-blk-device,drive=ext4,serial=vext4 \
+        -device virtio-blk-device,drive=ext4_journal,serial=vext4journal \
+        -device virtio-blk-device,drive=ext4_recover,serial=vext4recover \
+        -device virtio-blk-device,drive=ext4_64bit,serial=vext464bit \
+        -device virtio-blk-device,drive=ext4_metadata_csum,serial=vext4metadata \
+        -device virtio-blk-device,drive=ext4_unknown,serial=vext4unknown \
+        "
+    else
+        QEMU_ARGS="$QEMU_ARGS \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xb,drive=ext4,serial=vext4,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xc,drive=ext4_journal,serial=vext4journal,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xd,drive=ext4_recover,serial=vext4recover,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xe,drive=ext4_64bit,serial=vext464bit,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xf,drive=ext4_metadata_csum,serial=vext4metadata,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-blk-pci,bus=pcie.0,addr=0x10,drive=ext4_unknown,serial=vext4unknown,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        "
+    fi
 fi
 
 # Add xfstests devices when the selected file system needs block devices.

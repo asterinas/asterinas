@@ -16,6 +16,8 @@ xfstests/
 |       |-- block.list       # Tests excluded from every run
 |       |-- short.list       # Default quick run list
 |       `-- full.list        # Broader manual or scheduled run list
+|-- ext4/                    # No-journal extent configuration
+|   `-- ...
 |-- tmpfs/
 |   `-- ...
 `-- template/                # Starting point for a new filesystem
@@ -34,6 +36,10 @@ make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests
 # Run the tmpfs short list
 make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests \
     XFSTESTS_FS_TYPE=tmpfs
+
+# Run the no-journal extent ext4 short list
+make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests \
+    XFSTESTS_FS_TYPE=ext4
 
 # Run the ext2 full list
 make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=xfstests \
