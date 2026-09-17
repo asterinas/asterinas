@@ -45,7 +45,9 @@ macro_rules! __log_prefix {
 pub mod device;
 mod file;
 mod ioctl;
+pub mod kms;
 mod minor;
+pub mod utils;
 
 pub fn register_device(device: Arc<dyn DrmDevice>) -> Result<()> {
     let registered_device = Arc::new(RegisteredDrmDevice::new(device)?);
