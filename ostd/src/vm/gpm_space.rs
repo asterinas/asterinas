@@ -87,10 +87,9 @@ impl GuestPhysMemSpace {
 
     /// Returns the EPT pointer value for this guest memory space.
     ///
-    /// Future guest execution must keep this address space borrowed while its
-    /// EPTP is in use. Accessed/dirty tracking and supervisor shadow stacks
-    /// are disabled in this EPTP.
-    #[expect(dead_code)]
+    /// Guest execution must keep this address space borrowed while its EPTP
+    /// is in use. Accessed/dirty tracking and supervisor shadow stacks are
+    /// disabled in this EPTP.
     pub(crate) fn eptp(&self) -> u64 {
         const EPT_MEM_TYPE_WB: u64 = 6;
         const EPT_PAGE_WALK_LENGTH_4_LEVELS: u64 = 3 << 3;

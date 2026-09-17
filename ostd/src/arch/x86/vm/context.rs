@@ -1,30 +1,40 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use x86_64::registers::control::Cr0Flags;
+use x86::msr::{IA32_CSTAR, IA32_FMASK, IA32_KERNEL_GSBASE, IA32_LSTAR, IA32_STAR, rdmsr, wrmsr};
+use x86_64::{
+    VirtAddr,
+    registers::control::{Cr0Flags, Cr2},
+};
 
-use super::{VcpuDtable, VcpuRegs, VcpuSegment, VcpuSregs, X86GprIndex, types::VcpuMsrs};
-use crate::{Error, prelude::*};
+use super::{
+    VcpuDtable, VcpuRegs, VcpuSegment, VcpuSregs, X86GprIndex, types::VcpuMsrs, vmx::vmcs::Vmcs,
+    x86::write_cr2_raw,
+};
+use crate::{Error, arch::cpu::context::FpuContext, irq::DisabledLocalIrqGuard, prelude::*};
 
 /// The guest-visible architectural state of an x86 vCPU.
 pub struct GuestContext {
     /// Whether this vCPU is the bootstrap processor.
     is_bsp: bool,
     /// The guest architectural state.
-    arch: VcpuArchState,
+    pub(super) arch: VcpuArchState,
     /// The vCPU run state.
     run: VcpuRunState,
+    pub(super) vmcs: Arc<Vmcs>,
 }
 
 pub(crate) struct VcpuArchState {
-    regs: VcpuRegs,
-    sregs: VcpuSregs,
-    msrs: VcpuMsrs,
+    pub(super) regs: VcpuRegs,
+    pub(super) sregs: VcpuSregs,
+    pub(super) msrs: VcpuMsrs,
+    pub(super) fpu: FpuContext,
+    pub(super) interruptibility: usize,
 }
 
 impl GuestContext {
     /// Creates a guest vCPU context.
-    pub fn new(vcpu_id: u32) -> Self {
-        Self {
+    pub fn new(vcpu_id: u32) -> Result<Self> {
+        Ok(Self {
             is_bsp: vcpu_id == 0,
             arch: VcpuArchState::new(vcpu_id),
             run: if vcpu_id == 0 {
@@ -32,7 +42,8 @@ impl GuestContext {
             } else {
                 VcpuRunState::Uninitialized
             },
-        }
+            vmcs: Arc::new(Vmcs::new()?),
+        })
     }
 
     /// Moves an AP vCPU from wait-for-SIPI state to runnable state.
@@ -165,7 +176,51 @@ impl VcpuArchState {
             },
             sregs: VcpuSregs::reset(apic_base),
             msrs: VcpuMsrs::default(),
+            fpu: FpuContext::new(),
+            interruptibility: 0,
         }
+    }
+
+    /// Loads guest state not handled by VMX.
+    ///
+    /// # Safety
+    ///
+    /// The host must be saved on this CPU and restored before enabling IRQs or
+    /// scheduling, including if guest entry fails.
+    pub(super) unsafe fn load_run_state(&self, _irq_guard: &DisabledLocalIrqGuard) -> Result<()> {
+        // These values are loaded by WRMSR in host mode, outside VM-entry's
+        // guest-state checks. Reject values that would cause a host #GP.
+        for value in [self.msrs.kernel_gs_base, self.msrs.lstar, self.msrs.cstar] {
+            if VirtAddr::try_new(value).is_err() {
+                return Err(Error::InvalidArgs);
+            }
+        }
+        if self.msrs.syscall_mask > u32::MAX as u64 {
+            return Err(Error::InvalidArgs);
+        }
+
+        write_cr2_raw(self.sregs.cr2);
+        self.fpu.load();
+        // SAFETY: These MSRs are architectural on x86-64. The checks above
+        // ensure canonical addresses and no reserved FMASK bits; STAR has no
+        // reserved bits. The caller arranges restoration of the host state.
+        unsafe {
+            wrmsr(IA32_STAR, self.msrs.star);
+            wrmsr(IA32_LSTAR, self.msrs.lstar);
+            wrmsr(IA32_CSTAR, self.msrs.cstar);
+            wrmsr(IA32_FMASK, self.msrs.syscall_mask);
+            wrmsr(IA32_KERNEL_GSBASE, self.msrs.kernel_gs_base);
+        }
+        Ok(())
+    }
+
+    /// Saves guest state not handled by VMX.
+    pub(super) fn save_run_state(&mut self, _irq_guard: &DisabledLocalIrqGuard) {
+        self.fpu.save();
+        self.sregs.cr2 = Cr2::read_raw();
+        // SWAPGS can change KERNEL_GSBASE without an MSR-access exit.
+        // SAFETY: IA32_KERNEL_GSBASE is present on x86-64 and reading it has no side effects.
+        self.msrs.kernel_gs_base = unsafe { rdmsr(IA32_KERNEL_GSBASE) };
     }
 
     fn reset_after_init(&mut self, processor_signature: u32) {
@@ -182,6 +237,7 @@ impl VcpuArchState {
             ..VcpuRegs::default()
         };
         self.set_sregs(sregs);
+        self.interruptibility = 0;
     }
 
     fn gpr(&self, reg: X86GprIndex) -> u64 {
@@ -302,9 +358,12 @@ impl VcpuArchState {
     }
 }
 
-impl Default for GuestContext {
-    fn default() -> Self {
-        Self::new(0)
+impl Drop for GuestContext {
+    fn drop(&mut self) {
+        if let Err(err) = self.vmcs.deactivate() {
+            // The active set retains the VMCS until a later clear succeeds.
+            error!("failed to clear VMCS during context destruction: {:?}", err);
+        }
     }
 }
 
@@ -401,7 +460,7 @@ mod tests {
 
     #[ktest]
     fn bsp_and_ap_start_in_expected_states() {
-        let bsp = GuestContext::new(0);
+        let bsp = GuestContext::new(0).unwrap();
         assert_eq!(bsp.run_state(), VcpuRunState::Runnable);
         assert_eq!(bsp.regs().rflags, 0x2);
         assert_eq!(bsp.regs().rdx, 0x600);
@@ -415,7 +474,7 @@ mod tests {
         );
         assert_eq!(bsp.sregs().apic_base, 0xfee0_0900);
 
-        let ap = GuestContext::new(1);
+        let ap = GuestContext::new(1).unwrap();
         assert_eq!(ap.run_state(), VcpuRunState::Uninitialized);
         assert_eq!(ap.regs().rflags, 0x2);
         assert_eq!(ap.rip(), 0xfff0);
@@ -430,7 +489,7 @@ mod tests {
         const TEST_PAT: u64 = 0x0001_0203_0405_0607;
         const TEST_SYSENTER_EIP: u64 = 0x1234_5678;
 
-        let mut ap = GuestContext::new(1);
+        let mut ap = GuestContext::new(1).unwrap();
         ap.receive_sipi(0x07);
         assert_eq!(ap.run_state(), VcpuRunState::Uninitialized);
         assert_eq!(ap.rip(), 0xfff0);
@@ -483,7 +542,7 @@ mod tests {
         assert_eq!(ap.sregs().cs.selector, 0x0800);
         assert_eq!(ap.sregs().cs.base, 0x8000);
 
-        let mut bsp = GuestContext::new(0);
+        let mut bsp = GuestContext::new(0).unwrap();
         bsp.receive_init(PROCESSOR_SIGNATURE);
         assert_eq!(bsp.run_state(), VcpuRunState::Runnable);
         assert_eq!(bsp.rip(), 0xfff0);

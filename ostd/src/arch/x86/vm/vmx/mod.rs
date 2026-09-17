@@ -2,6 +2,7 @@
 
 //! Intel VMX platform lifecycle management.
 
+pub(super) mod context_switch;
 mod instructions;
 pub(crate) mod invept;
 pub(crate) mod vmcs;
