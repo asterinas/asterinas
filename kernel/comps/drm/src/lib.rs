@@ -46,7 +46,9 @@ pub mod device;
 mod file;
 pub mod gem;
 mod ioctl;
+pub mod kms;
 mod minor;
+pub mod utils;
 
 pub fn register_device(device: Arc<dyn DrmDevice>) -> Result<()> {
     let registered_device = Arc::new(RegisteredDrmDevice::new(device)?);

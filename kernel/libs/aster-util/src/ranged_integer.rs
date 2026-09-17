@@ -55,3 +55,5 @@ define_ranged_integer!(pub, RangedI16, i16);
 define_ranged_integer!(pub, RangedU16, u16);
 define_ranged_integer!(pub, RangedI32, i32);
 define_ranged_integer!(pub, RangedU32, u32);
+
+define_ranged_integer!(pub, RangedUsize, usize);
