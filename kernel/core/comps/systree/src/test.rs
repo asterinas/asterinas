@@ -16,6 +16,26 @@ use super::{
     inherit_sys_symlink_node,
 };
 
+#[ktest]
+fn relative_symlink_targets_preserve_the_target_name() {
+    for (from_dir, to, expected) in [
+        (
+            "/class/mem",
+            "/devices/virtual/mem/null",
+            "../../devices/virtual/mem/null",
+        ),
+        ("/devices/a", "/devices/b", "../b"),
+        ("/devices/a", "/devices/a/b", "b"),
+        ("/devices/a/b/c", "/devices/a", "../../../a"),
+        ("/devices/a", "/devices/a", "../a"),
+        ("/", "/devices/a", "devices/a"),
+        ("/devices/a", "/", "/"),
+        ("/", "/", "/"),
+    ] {
+        assert_eq!(crate::relative_path(from_dir, to), expected);
+    }
+}
+
 #[derive(Debug)]
 struct DeviceNode {
     fields: BranchNodeFields<dyn SysObj, Self>,
