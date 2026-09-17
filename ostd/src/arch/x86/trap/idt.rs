@@ -12,6 +12,8 @@ use x86_64::{
     structures::{DescriptorTablePointer, idt::Entry},
 };
 
+use crate::mm::Vaddr;
+
 global_asm!(include_str!("trap.S"));
 
 const NUM_INTERRUPTS: usize = 256;
@@ -22,6 +24,11 @@ unsafe extern "C" {
 }
 
 static GLOBAL_IDT: Once<&'static [Entry<()>]> = Once::new();
+
+/// Returns the IDT base address.
+pub(in crate::arch) fn idt_base() -> Vaddr {
+    GLOBAL_IDT.get().unwrap().as_ptr() as Vaddr
+}
 
 /// Initializes and loads the IDT.
 ///

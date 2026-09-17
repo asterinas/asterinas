@@ -116,25 +116,28 @@ pub enum ReturnReason {
     KernelEvent,
 }
 
-/// Hooks that will be called during [`UserMode::execute`].
+/// Hooks called during user or guest execution.
 pub trait UserModeHooks {
     /// Checks whether a kernel event is pending.
     ///
-    /// This method will be called after user space is interrupted
+    /// This method will be called after user or guest space is interrupted
     /// by external interrupts. If the result is `true`,
     /// [`UserMode::execute`] will return with [`ReturnReason::KernelEvent`].
+    /// [`GuestMode::execute`](crate::arch::vm::GuestMode::execute) will return with
+    /// [`GuestReturnReason::KernelEvent`](crate::arch::vm::GuestReturnReason::KernelEvent).
     fn has_kernel_event(&self) -> bool {
         false
     }
 
-    /// Prepares user space execution.
+    /// Prepares CPU state for user or guest execution.
     ///
-    /// This method will be called just before entering user space.
-    /// Local IRQs are disabled and will only be enabled after entering user space.
+    /// This method will be called just before entering user or guest space.
+    /// Local IRQs are disabled and will only be enabled after entering
+    /// user or guest space.
     fn pre_user_run(&self, _guard: &DisabledLocalIrqGuard) {}
 }
 
-/// A struct that provides dummy (no-op) user mode hooks.
+/// A set of no-op hooks for user or guest execution.
 pub struct DummyUserHooks;
 
 impl UserModeHooks for DummyUserHooks {}

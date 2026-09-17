@@ -17,8 +17,8 @@
 //! Handles trap.
 
 pub(super) mod gdt;
-mod idt;
-mod syscall;
+pub(super) mod idt;
+pub(super) mod syscall;
 
 use super::cpu::context::GeneralRegs;
 use crate::{

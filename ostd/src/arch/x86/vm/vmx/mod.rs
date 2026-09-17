@@ -2,16 +2,27 @@
 
 //! Intel VMX platform lifecycle management.
 
+pub(super) mod context_switch;
 mod instructions;
 pub(crate) mod invept;
 pub(crate) mod vmcs;
 
-use x86::msr::{
-    IA32_FEATURE_CONTROL, IA32_VMX_BASIC, IA32_VMX_CR0_FIXED0, IA32_VMX_CR0_FIXED1,
-    IA32_VMX_CR4_FIXED0, IA32_VMX_CR4_FIXED1, rdmsr, wrmsr,
+use x86::{
+    msr::{
+        IA32_FEATURE_CONTROL, IA32_VMX_BASIC, IA32_VMX_CR0_FIXED0, IA32_VMX_CR0_FIXED1,
+        IA32_VMX_CR4_FIXED0, IA32_VMX_CR4_FIXED1, IA32_VMX_ENTRY_CTLS, IA32_VMX_EXIT_CTLS,
+        IA32_VMX_PINBASED_CTLS, IA32_VMX_PROCBASED_CTLS, IA32_VMX_PROCBASED_CTLS2,
+        IA32_VMX_TRUE_ENTRY_CTLS, IA32_VMX_TRUE_EXIT_CTLS, IA32_VMX_TRUE_PINBASED_CTLS,
+        IA32_VMX_TRUE_PROCBASED_CTLS, rdmsr, wrmsr,
+    },
+    vmx::vmcs::control::{EntryControls, PrimaryControls},
 };
 use x86_64::registers::control::{Cr0, Cr4, Cr4Flags};
 
+use super::vmcs::{
+    REQUIRED_ENTRY_CONTROLS, REQUIRED_EXIT_CONTROLS, REQUIRED_PINBASED_CONTROLS,
+    REQUIRED_PRIMARY_CONTROLS, REQUIRED_SECONDARY_CONTROLS,
+};
 use crate::{
     Error,
     arch::cpu::extension::{IsaExtensions, has_extensions},
@@ -357,6 +368,56 @@ fn read_and_validate_capability(vmx_cr4: u64, _irq_guard: &DisabledLocalIrqGuard
     if (vmx_basic >> 50) & 0xf != VMCS_MEMORY_TYPE_WB {
         return Err(Error::NotEnoughResources);
     }
+
+    let has_true_controls = vmx_basic & (1 << 55) != 0;
+    // SAFETY: VMX is supported, and `vmx_basic` enumerates the true-control MSRs.
+    let (pinbased_cap, primary_cap, exit_cap, entry_cap) = unsafe {
+        if has_true_controls {
+            (
+                rdmsr(IA32_VMX_TRUE_PINBASED_CTLS),
+                rdmsr(IA32_VMX_TRUE_PROCBASED_CTLS),
+                rdmsr(IA32_VMX_TRUE_EXIT_CTLS),
+                rdmsr(IA32_VMX_TRUE_ENTRY_CTLS),
+            )
+        } else {
+            (
+                rdmsr(IA32_VMX_PINBASED_CTLS),
+                rdmsr(IA32_VMX_PROCBASED_CTLS),
+                rdmsr(IA32_VMX_EXIT_CTLS),
+                rdmsr(IA32_VMX_ENTRY_CTLS),
+            )
+        }
+    };
+    let check_control = |capability: u64, required: u32, forbidden: u32| {
+        // Intel SDM, Vol. 3D, Appendix A: low bits require 1, high bits allow 1.
+        if (capability >> 32) as u32 & required != required || capability as u32 & forbidden != 0 {
+            return Err(Error::NotEnoughResources);
+        }
+        Ok(())
+    };
+    check_control(pinbased_cap, REQUIRED_PINBASED_CONTROLS, 0)?;
+    check_control(
+        primary_cap,
+        REQUIRED_PRIMARY_CONTROLS,
+        (PrimaryControls::CR3_LOAD_EXITING | PrimaryControls::CR3_STORE_EXITING).bits(),
+    )?;
+    // SAFETY: The primary-control check established secondary-control support.
+    check_control(
+        unsafe { rdmsr(IA32_VMX_PROCBASED_CTLS2) },
+        REQUIRED_SECONDARY_CONTROLS,
+        0,
+    )?;
+    check_control(exit_cap, REQUIRED_EXIT_CONTROLS, 0)?;
+    check_control(
+        entry_cap,
+        REQUIRED_ENTRY_CONTROLS,
+        EntryControls::IA32E_MODE_GUEST.bits(),
+    )?;
+    check_control(
+        entry_cap,
+        REQUIRED_ENTRY_CONTROLS | EntryControls::IA32E_MODE_GUEST.bits(),
+        0,
+    )?;
 
     Ok(vmx_basic as u32 & 0x7fff_ffff)
 }
