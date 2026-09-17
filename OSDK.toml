@@ -11,6 +11,10 @@ boot_protocol = "multiboot2"
 [qemu]
 args = "$(./tools/qemu_args.sh normal)"
 log_file = "qemu-serial.log"
+daemons = [
+    "./tools/virtiofsd.sh",
+    "./tools/virtiofsd_scratch.sh",
+]
 
 # Special options for running
 [run.boot]
@@ -26,6 +30,7 @@ init_args = ["sh", "-l"]
 # Special options for testing
 [test.qemu]
 args = "$(./tools/qemu_args.sh test)"
+daemons = []
 
 # Other Schemes
 
@@ -33,10 +38,12 @@ args = "$(./tools/qemu_args.sh test)"
 boot.method = "qemu-direct"
 build.strip_elf = true
 qemu.args = "$(./tools/qemu_args.sh microvm)"
+qemu.daemons = []
 
 [scheme."iommu"]
 supported_archs = ["x86_64"]
 qemu.args = "$(./tools/qemu_args.sh iommu)"
+qemu.daemons = []
 
 [scheme."tdx"]
 supported_archs = ["x86_64"]
@@ -44,12 +51,14 @@ build.features = ["cvm_guest"]
 boot.method = "grub-qcow2"
 grub.boot_protocol = "linux"
 qemu.args = "$(./tools/qemu_args.sh tdx)"
+qemu.daemons = []
 
 [scheme."riscv"]
 supported_archs = ["riscv64"]
 boot.method = "qemu-direct"
 build.strip_elf = false
 qemu.args = "$(./tools/qemu_args.sh riscv)"
+qemu.daemons = []
 
 [scheme."sifive_u"]
 supported_archs = ["riscv64"]
@@ -69,6 +78,7 @@ qemu.args = """\
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log
 """
+qemu.daemons = []
 
 [scheme."loongarch"]
 boot.method = "qemu-direct"
@@ -89,9 +99,11 @@ qemu.args = """\
     -device virtconsole,chardev=mux \
     -rtc base=utc
 """
+qemu.daemons = []
 
 [scheme."aarch64"]
 supported_archs = ["aarch64"]
 boot.method = "qemu-direct"
 build.strip_elf = false
 qemu.args = "$(./tools/qemu_args.sh aarch64)"
+qemu.daemons = []

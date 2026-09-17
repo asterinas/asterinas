@@ -19,3 +19,4 @@ args = """\
     -drive if=pflash,format=raw,unit=0,readonly=on,file=/root/ovmf/release/OVMF.fd \
     -drive if=pflash,format=raw,unit=1,file=/root/ovmf/release/OVMF_VARS.fd \
 """
+daemons = []
