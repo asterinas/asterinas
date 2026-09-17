@@ -588,7 +588,7 @@ getxattr01
 #ioctl02 ioctl02 -d /dev/tty0
 
 # Introducing ioctl tests for all /dev/tty* devices
-# ioctl01
+ioctl01
 # ioctl02
 # ioctl03
 # ioctl04

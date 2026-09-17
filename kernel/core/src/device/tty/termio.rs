@@ -441,6 +441,63 @@ impl Deref for CTermios2 {
     }
 }
 
+/// The legacy terminal attributes; `struct termio` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/termios.h#L23>.
+#[padding_struct]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(crate) struct CTermio {
+    c_iflags: u16,
+    c_oflags: u16,
+    c_cflags: u16,
+    c_lflags: u16,
+    c_line: CCtrlChar,
+    c_cc: [CCtrlChar; CTermio::NUM_CTRL_CHARS],
+}
+
+impl From<&CTermios> for CTermio {
+    fn from(termios: &CTermios) -> Self {
+        let mut termio = CTermio::new_zeroed();
+        termio.c_iflags = termios.c_iflags.bits() as u16;
+        termio.c_oflags = termios.c_oflags.bits() as u16;
+        termio.c_cflags = termios.c_cflags.0 as u16;
+        termio.c_lflags = termios.c_lflags.bits() as u16;
+        termio.c_line = termios.c_line;
+        termio
+            .c_cc
+            .copy_from_slice(&termios.c_cc[..Self::NUM_CTRL_CHARS]);
+        termio
+    }
+}
+
+impl CTermio {
+    /// The number of control characters; `NCC` in Linux.
+    const NUM_CTRL_CHARS: usize = 8;
+
+    /// Applies the legacy attributes, preserving the upper flag bits and remaining control characters.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/tty/tty_ioctl.c#L360>.
+    pub(super) fn apply_to(&self, termios: &CTermios) -> CTermios {
+        fn merge_low_bits<T: Pod>(old: &T, low_bits: u16) -> T {
+            const { assert!(size_of::<T>() == size_of::<u32>()) };
+
+            let old_bits = u32::from_bytes(old.as_bytes());
+            let bits = (old_bits & !(u16::MAX as u32)) | u32::from(low_bits);
+            T::from_bytes(bits.as_bytes())
+        }
+
+        let mut termios = *termios;
+        termios.c_iflags = merge_low_bits(&termios.c_iflags, self.c_iflags);
+        termios.c_oflags = merge_low_bits(&termios.c_oflags, self.c_oflags);
+        termios.c_cflags = merge_low_bits(&termios.c_cflags, self.c_cflags);
+        termios.c_lflags = merge_low_bits(&termios.c_lflags, self.c_lflags);
+        termios.c_line = self.c_line;
+        termios.c_cc[..Self::NUM_CTRL_CHARS].copy_from_slice(&self.c_cc);
+        termios
+    }
+}
+
 /// A window size; `struct winsize` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termios.h#L15>.
