@@ -25,3 +25,6 @@ jobs:
 
         - name: Run kernel tests
           run: make ktest ENABLE_KVM=1 NETDEV=tap
+
+        - name: Run OSDK tests
+          run: make test_osdk

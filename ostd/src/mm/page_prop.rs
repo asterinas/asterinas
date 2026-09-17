@@ -25,6 +25,13 @@ impl PageProperty {
             priv_flags: PrivilegedPageFlags::USER,
         }
     }
+
+    /// Creates a new `PageProperty` with the given flags and cache policy for the guest.
+    pub fn new_guest(flags: PageFlags, cache: CachePolicy) -> Self {
+        // Use `new_user` to prevent OSTD users from obtaining a kernel page
+        // property. EPT preserves the USER flag as software metadata.
+        Self::new_user(flags, cache)
+    }
 }
 
 // TODO: Make it more abstract when supporting other architectures.

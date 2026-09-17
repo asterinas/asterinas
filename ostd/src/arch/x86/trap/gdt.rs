@@ -11,10 +11,7 @@ use core::{
 use x86_64::{
     PrivilegeLevel, VirtAddr,
     instructions::tables::{lgdt, load_tss},
-    registers::{
-        model_specific::Star,
-        segmentation::{CS, Segment},
-    },
+    registers::segmentation::{CS, Segment},
     structures::{
         DescriptorTablePointer,
         gdt::{Descriptor, SegmentSelector},
@@ -29,6 +26,8 @@ use crate::{
         local::{CpuLocal, StaticCpuLocal},
     },
     cpu_local,
+    irq::DisabledLocalIrqGuard,
+    mm::Vaddr,
 };
 
 /// Initializes and loads the GDT and TSS.
@@ -79,11 +78,21 @@ pub(super) unsafe fn init_on_cpu() {
     //
     // SAFETY: The selector points to the TSS descriptors in the GDT.
     unsafe { load_tss(TSS_SEL) };
+}
 
-    // Set up the selectors for the `syscall` and `sysret` instructions.
-    //
-    // SAFETY: The selector points to correct kernel/user code/data descriptors in the GDT.
-    unsafe { Star::write_raw(SYSRET_SEL.0, SYSCALL_SEL.0) };
+/// Returns the current CPU's GDT base address.
+pub(in crate::arch) fn gdt_base(_guard: &DisabledLocalIrqGuard) -> Vaddr {
+    GDT.as_ptr() as Vaddr
+}
+
+/// Returns the GDT limit.
+pub(in crate::arch) fn gdt_limit() -> u16 {
+    (size_of::<Gdt>() - 1) as u16
+}
+
+/// Returns the current CPU's TSS base address.
+pub(in crate::arch) fn tss_base(_guard: &DisabledLocalIrqGuard) -> Vaddr {
+    UnsafeCell::raw_get(LOCAL_TSS.as_ptr()) as Vaddr
 }
 
 // The linker script makes sure that the `.cpu_local_tss` section is at the beginning of the area
@@ -158,7 +167,8 @@ const UDATA: u64 = 0x00CF_F300_0000_FFFF;
 
 // ========== Selectors ==========
 
-const KERNEL_CS: SegmentSelector = SegmentSelector::new(1, PrivilegeLevel::Ring0);
+pub(in crate::arch) const KERNEL_CS: SegmentSelector =
+    SegmentSelector::new(1, PrivilegeLevel::Ring0);
 const KERNEL_SS: SegmentSelector = SegmentSelector::new(2, PrivilegeLevel::Ring0);
 const_assert!(KERNEL_CS.0 & OFFSET_MASK == offset_of!(Gdt, kcode64) as u16);
 const_assert!(KERNEL_SS.0 & OFFSET_MASK == offset_of!(Gdt, kdata) as u16);
@@ -168,12 +178,14 @@ pub(super) const USER_SS: SegmentSelector = SegmentSelector::new(5, PrivilegeLev
 const_assert!(USER_CS.0 & OFFSET_MASK == offset_of!(Gdt, ucode64) as u16);
 const_assert!(USER_SS.0 & OFFSET_MASK == offset_of!(Gdt, udata) as u16);
 
-const TSS_SEL: SegmentSelector = SegmentSelector::new(7, PrivilegeLevel::Ring0);
+pub(in crate::arch) const TSS_SEL: SegmentSelector = SegmentSelector::new(7, PrivilegeLevel::Ring0);
 const_assert!(TSS_SEL.0 & OFFSET_MASK == offset_of!(Gdt, tss0) as u16);
 const_assert!(TSS_SEL.0 & OFFSET_MASK == (offset_of!(Gdt, tss1) - size_of::<u64>()) as u16);
 
-const SYSRET_SEL: SegmentSelector = SegmentSelector::new(4, PrivilegeLevel::Ring3);
-const SYSCALL_SEL: SegmentSelector = SegmentSelector::new(1, PrivilegeLevel::Ring0);
+pub(in crate::arch) const SYSRET_SEL: SegmentSelector =
+    SegmentSelector::new(4, PrivilegeLevel::Ring3);
+pub(in crate::arch) const SYSCALL_SEL: SegmentSelector =
+    SegmentSelector::new(1, PrivilegeLevel::Ring0);
 const_assert!(SYSRET_SEL.0 & OFFSET_MASK == (offset_of!(Gdt, udata) - size_of::<u64>()) as u16);
 const_assert!(
     SYSRET_SEL.0 & OFFSET_MASK == (offset_of!(Gdt, ucode64) - size_of::<u64>() * 2) as u16

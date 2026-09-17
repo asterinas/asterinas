@@ -143,10 +143,9 @@ pub struct CpuLocalDerefGuard<'a, T: 'static, S: AnyStorage<T>> {
     guard: &'a DisabledLocalIrqGuard,
 }
 
-impl<'a, T: 'static, S: AnyStorage<T>> Deref for CpuLocalDerefGuard<'a, T, S> {
-    type Target = T;
-
-    fn deref(&self) -> &'a Self::Target {
+impl<'a, T: 'static, S: AnyStorage<T>> CpuLocalDerefGuard<'a, T, S> {
+    /// Dereferences `self` to get a reference to `T` with the lifetime `'a`.
+    pub fn deref_target(&self) -> &'a T {
         is_used::debug_set_true();
 
         let ptr = self.cpu_local.storage.get_ptr_on_current(self.guard);
@@ -155,6 +154,14 @@ impl<'a, T: 'static, S: AnyStorage<T>> Deref for CpuLocalDerefGuard<'a, T, S> {
         // (due to `self.guard`), and no one will mutably borrow it, so
         // creating an immutable borrow here is valid.
         unsafe { &*ptr }
+    }
+}
+
+impl<'a, T: 'static, S: AnyStorage<T>> Deref for CpuLocalDerefGuard<'a, T, S> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.deref_target()
     }
 }
 
