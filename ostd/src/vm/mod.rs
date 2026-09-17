@@ -1,10 +1,45 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Guest execution and physical memory management.
+//!
+//! OSTD provides safe interfaces for running virtual machines.
+//! A kernel supplies guest memory and CPU state, handles VM exits,
+//! and implements device emulation and scheduling policy.
+//!
+//! # Guest memory
+//!
+//! A [`GuestPhysMemSpace`] maps guest physical addresses ([`Gpaddr`]s)
+//! to host memory backed by untyped frames ([`UFrame`]s).
+//! A kernel can load guest code and data into these frames.
+//! It can query the guest memory mappings through [`gpm_space::Cursor`]
+//! and modify them through [`gpm_space::CursorMut`].
+//!
+//! # Guest execution
+//!
+//! A [`GuestContext`] holds a virtual CPU's (vCPU's) register state.
+//! [`GuestMode::execute`] starts or resumes guest execution in a [`GuestPhysMemSpace`]
+//! from the register state in the supplied context.
+//!
+//! On success, execution returns a [`GuestReturnReason`]:
+//!
+//! - [`GuestReturnReason::VmExit`] carries exit information for the kernel to handle,
+//!   such as an I/O access or a guest memory fault.
+//! - [`GuestReturnReason::KernelEvent`] indicates a pending kernel event
+//!   reported by [`GuestModeHooks::has_kernel_event`].
+//!
+//! The kernel handles the return reason, updates the guest context as needed,
+//! and calls [`GuestMode::execute`] again to resume the guest.
+//!
+//! [`UFrame`]: crate::mm::UFrame
+//! [`GuestContext`]: crate::arch::vm::GuestContext
 
 pub mod gpm_space;
+mod guest_mode;
 
-pub use gpm_space::GuestPhysMemSpace;
+pub use self::{
+    gpm_space::GuestPhysMemSpace,
+    guest_mode::{DummyGuestHooks, GuestMode, GuestModeHooks, GuestReturnReason},
+};
 
 /// A guest physical address.
 pub type Gpaddr = usize;

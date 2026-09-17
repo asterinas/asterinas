@@ -95,7 +95,6 @@ impl GuestPhysMemSpace {
     /// Returns the EPT pointer value for this guest memory space.
     ///
     /// The caller must keep this address space borrowed while its EPTP is in use.
-    #[expect(dead_code)]
     pub(crate) fn eptp(&self) -> u64 {
         const EPT_MEM_TYPE_WB: u64 = 6;
         const EPT_PAGE_WALK_LENGTH_4_LEVELS: u64 = 3 << 3;
@@ -358,7 +357,7 @@ mod test {
         let second = FrameAllocOptions::new().alloc_frame().unwrap();
         let first_paddr = first.paddr();
         let second_paddr = second.paddr();
-        let prop = PageProperty::new_user(PageFlags::RWX, CachePolicy::Writeback);
+        let prop = PageProperty::new_guest(PageFlags::RWX, CachePolicy::Writeback);
         let range = PAGE_SIZE..4 * PAGE_SIZE;
 
         let guard = disable_preempt();

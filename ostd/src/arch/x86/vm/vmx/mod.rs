@@ -2,6 +2,7 @@
 
 //! Intel VMX platform lifecycle management.
 
+pub(super) mod context_switch;
 mod instructions;
 pub(crate) mod invept;
 pub(crate) mod vmcs;
@@ -12,6 +13,7 @@ use x86::msr::{
 };
 use x86_64::registers::control::{Cr0, Cr4, Cr4Flags};
 
+use super::vmcs::VMCS_CONTROLS;
 use crate::{
     Error,
     arch::cpu::extension::{IsaExtensions, has_extensions},
@@ -356,6 +358,19 @@ fn read_and_validate_capability(vmx_cr4: u64, _irq_guard: &DisabledLocalIrqGuard
     const VMCS_MEMORY_TYPE_WB: u64 = 6;
     if (vmx_basic >> 50) & 0xf != VMCS_MEMORY_TYPE_WB {
         return Err(Error::NotEnoughResources);
+    }
+
+    for control in &VMCS_CONTROLS {
+        // SAFETY: VMX is supported, and `vmx_basic` selects supported true-control MSRs.
+        // Primary controls precede secondary controls in `VMCS_CONTROLS`, so secondary-control
+        // support is checked before reading its MSR.
+        let capability = unsafe { rdmsr(control.capability_msr(vmx_basic)) };
+        let can_set = control.required_bits | control.runtime_bits;
+        let can_clear = control.forbidden_bits | control.runtime_bits;
+        // Intel SDM, Vol. 3D, Appendix A: low bits require 1, high bits allow 1.
+        if (capability >> 32) as u32 & can_set != can_set || capability as u32 & can_clear != 0 {
+            return Err(Error::NotEnoughResources);
+        }
     }
 
     Ok(vmx_basic as u32 & 0x7fff_ffff)

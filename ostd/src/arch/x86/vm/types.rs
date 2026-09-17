@@ -4,7 +4,7 @@
 
 /// Guest general-purpose registers, instruction pointer, and flags.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct VcpuRegs {
     /// The `RAX` register.
     pub rax: usize,
@@ -42,6 +42,40 @@ pub struct VcpuRegs {
     pub rip: usize,
     /// The flags register.
     pub rflags: usize,
+}
+
+impl VcpuRegs {
+    /// Creates zeroed registers with the fixed bit of `RFLAGS` set.
+    pub const fn new() -> Self {
+        const RFLAGS_FIXED_BIT: usize = 1 << 1;
+
+        Self {
+            rax: 0,
+            rbx: 0,
+            rcx: 0,
+            rdx: 0,
+            rsi: 0,
+            rdi: 0,
+            rbp: 0,
+            rsp: 0,
+            r8: 0,
+            r9: 0,
+            r10: 0,
+            r11: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+            r15: 0,
+            rip: 0,
+            rflags: RFLAGS_FIXED_BIT,
+        }
+    }
+}
+
+impl Default for VcpuRegs {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Guest special-register state.
@@ -82,6 +116,47 @@ pub struct VcpuSregs {
     pub apic_base: u64,
     /// The pending interrupt vectors, with one bit per vector.
     pub interrupt_bitmap: [u64; 4],
+}
+
+impl VcpuSregs {
+    /// Creates real-mode state with zero-based 64-KiB segments and paging disabled.
+    pub fn new_real_mode() -> Self {
+        const CR0_EXTENSION_TYPE: u64 = 1 << 4;
+        const DATA_READ_WRITE_ACCESSED: u8 = 0x3;
+        const CODE_EXEC_READ_ACCESSED: u8 = 0xb;
+        const BUSY_TSS: u8 = 0xb;
+
+        let data = VcpuSegment {
+            limit: 0xffff,
+            type_: DATA_READ_WRITE_ACCESSED,
+            present: 1,
+            s: 1,
+            ..VcpuSegment::default()
+        };
+
+        Self {
+            cs: VcpuSegment {
+                type_: CODE_EXEC_READ_ACCESSED,
+                ..data
+            },
+            ds: data,
+            es: data,
+            fs: data,
+            gs: data,
+            ss: data,
+            tr: VcpuSegment {
+                type_: BUSY_TSS,
+                s: 0,
+                ..data
+            },
+            ldt: VcpuSegment {
+                unusable: 1,
+                ..VcpuSegment::default()
+            },
+            cr0: CR0_EXTENSION_TYPE,
+            ..Self::default()
+        }
+    }
 }
 
 /// Guest segment-register state.
@@ -141,8 +216,6 @@ pub struct VcpuMsrs {
     pub star: u64,
     /// The 64-bit `SYSCALL` entry point.
     pub lstar: u64,
-    /// The compatibility-mode `SYSCALL` entry point.
-    pub cstar: u64,
     /// The flags cleared on `SYSCALL` entry.
     pub syscall_mask: u64,
     /// The accumulated TSC adjustment.
@@ -157,4 +230,18 @@ pub struct VcpuMsrs {
     pub sysenter_eip: u64,
     /// The miscellaneous processor feature controls.
     pub misc_enable: u64,
+}
+
+/// A guest external interrupt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GuestInterrupt {
+    /// The interrupt vector, in the range 32 through 255.
+    pub vector: u8,
+}
+
+/// An instant on the guest's TSC timeline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GuestTimerInstant {
+    /// The timestamp-counter value.
+    pub tsc: u64,
 }
