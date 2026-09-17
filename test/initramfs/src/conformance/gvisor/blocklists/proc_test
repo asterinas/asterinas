@@ -35,8 +35,6 @@ ProcSelfStat.PopulateWriteRSS
 ProcSysKernelKeysMax.Exists
 ProcSysKernelKeysMax.InvalidMaxKeysValue
 ProcSysKernelKeysMax.SetMaxKeys
-ProcSysKernelRandomUuid.Exists
-ProcSysKernelRandomUuid.DifferentEveryTime
 ProcSysVmMaxmapCount.HasNumericValue
 ProcSysVmOvercommitMemory.HasNumericValue
 ProcTask.ChildTaskDir
