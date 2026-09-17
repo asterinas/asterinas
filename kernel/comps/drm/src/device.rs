@@ -14,7 +14,10 @@ use aster_core::{fs::file::MappedObject, prelude::*};
 use ostd::sync::Mutex;
 use sparse_id_alloc::SparseIdAlloc;
 
-use crate::gem::{DrmGemOps, mmap_offset::DrmGemMmapOffsetSpace, object::DrmGemObject};
+use crate::{
+    gem::{DrmGemOps, mmap_offset::DrmGemMmapOffsetSpace, object::DrmGemObject},
+    kms::DrmKmsOps,
+};
 
 static DRM_DEVICE_INDEX_ALLOCATOR: Mutex<SparseIdAlloc> = Mutex::new(SparseIdAlloc::new(0, 63));
 
@@ -34,6 +37,9 @@ pub trait DrmDevice: Debug + Send + Sync {
 
     /// Returns the GEM operations implemented by this device, if any.
     fn as_gem_ops(&self) -> Option<&dyn DrmGemOps>;
+
+    /// Returns the KMS operations implemented by this device, if any.
+    fn as_kms_ops(&self) -> Option<&dyn DrmKmsOps>;
 }
 
 bitflags::bitflags! {
@@ -50,11 +56,6 @@ bitflags::bitflags! {
         const SYNCOBJ_TIMELINE = 1 << 2;
         /// Requires userspace-aware cursor hotspot handling.
         const CURSOR_HOTSPOT   = 1 << 3;
-        /// Supports kernel mode-setting (KMS) operations.
-        ///
-        /// TODO: Replace this temporary gate with `DrmDevice::as_modeset_ops`
-        /// once the KMS operations interface is introduced.
-        const MODESET          = 1 << 4;
     }
 }
 

@@ -141,10 +141,6 @@ impl DrmFile {
             CursorPlaneHotspot = 0x6,
         }
 
-        if !self.has_features(DrmFeatures::MODESET) {
-            return_errno_with_message!(Errno::EOPNOTSUPP, "the DRM device lacks modesetting");
-        }
-
         let args: DrmSetClientCap = cmd.read()?;
         let device = self.device();
 

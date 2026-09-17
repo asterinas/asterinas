@@ -30,7 +30,7 @@ use ostd::{
 use sparse_id_alloc::SparseIdAlloc;
 
 use crate::{
-    device::{DrmDevice, DrmFeatures, DrmMaster},
+    device::{DrmDevice, DrmMaster},
     gem::object::DrmGemObject,
     has_current_sys_admin,
     minor::{DrmMinor, DrmMinorType},
@@ -60,10 +60,6 @@ impl DrmFile {
 
     pub(super) fn minor_type(&self) -> DrmMinorType {
         self.minor.type_()
-    }
-
-    pub(super) fn has_features(&self, feature: DrmFeatures) -> bool {
-        self.device().has_features(feature)
     }
 
     pub(super) fn has_client_caps(&self, cap: DrmClientCaps) -> bool {
