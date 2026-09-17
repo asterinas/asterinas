@@ -299,3 +299,96 @@ pub(super) fn activate_vmar<'a>(
 
     (vmar_guard, old_vmar)
 }
+
+#[cfg(ktest)]
+mod tests {
+    use core::{
+        num::NonZeroUsize,
+        sync::atomic::{AtomicBool, Ordering},
+    };
+
+    use ostd::{cpu::CpuId, mm::vm_space::VmQueriedItem, prelude::ktest, task::disable_preempt};
+
+    use super::ProcessVm;
+    use crate::{
+        fs::pseudofs::SockFs,
+        prelude::*,
+        thread::{Thread, kernel_thread::ThreadOptions},
+        vm::{
+            page_cache::VmoOptions,
+            perms::VmPerms,
+            vmar::{OffsetType, Vmar, VmarHandle},
+        },
+    };
+
+    #[ktest]
+    fn fork_retries_before_copying_contended_reverse_mappings() {
+        crate::thread::init();
+        crate::time::clocks::init_for_ktest();
+        crate::util::random::init();
+        let vmar = VmarHandle::new(ProcessVm::new(SockFs::new_path())).unwrap();
+        vmar.process_vm()
+            .map_and_init_heap(&vmar, 0, 0x100_0000)
+            .unwrap();
+        let vmo = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
+        const ADDR: usize = 0x200_0000;
+        vmar.new_map(NonZeroUsize::new(PAGE_SIZE).unwrap(), VmPerms::READ)
+            .offset(ADDR, OffsetType::FixedNoReplace)
+            .vmo(vmo.clone())
+            .is_shared(true)
+            .populate()
+            .build()
+            .unwrap();
+        let cpu = CpuId::current_racy();
+        ThreadOptions::new(move || {
+            let busy = vmo.rmap().lock();
+            let entered = Arc::new(AtomicBool::new(false));
+            let child = Arc::new(Mutex::new(None));
+            let worker_entered = entered.clone();
+            let worker_child = child.clone();
+            let parent = vmar.clone_arc();
+            let worker = ThreadOptions::new(move || {
+                worker_entered.store(true, Ordering::Release);
+                *worker_child.lock() = Some(Vmar::fork_from(&parent).unwrap());
+            })
+            .cpu_affinity(cpu.into())
+            .spawn();
+            while !entered.load(Ordering::Acquire) {
+                Thread::yield_now();
+            }
+            Thread::yield_now();
+            {
+                let guard = disable_preempt();
+                assert!(
+                    vmar.vm_space()
+                        .try_cursor_mut(&guard, &(ADDR..ADDR + PAGE_SIZE))
+                        .unwrap()
+                        .is_some()
+                );
+            }
+            drop(busy);
+            worker.join();
+            let child = child.lock().take().unwrap();
+            {
+                let guard = disable_preempt();
+                let mut cursor = child
+                    .vm_space()
+                    .cursor(&guard, &(ADDR..ADDR + PAGE_SIZE))
+                    .unwrap();
+                assert!(matches!(cursor.query(), VmQueriedItem::MappedRam { .. }));
+            }
+            vmo.rmap().lock().unmap(0..PAGE_SIZE);
+            {
+                let guard = disable_preempt();
+                let mut cursor = child
+                    .vm_space()
+                    .cursor(&guard, &(ADDR..ADDR + PAGE_SIZE))
+                    .unwrap();
+                assert!(cursor.query().is_none());
+            }
+        })
+        .cpu_affinity(cpu.into())
+        .spawn()
+        .join();
+    }
+}

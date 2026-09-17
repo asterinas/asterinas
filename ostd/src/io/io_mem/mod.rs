@@ -169,6 +169,18 @@ impl<SecuritySensitivity> IoMem<SecuritySensitivity> {
     }
 }
 
+impl<SecuritySensitivity> PartialEq for IoMem<SecuritySensitivity> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.kvirt_area, &other.kvirt_area)
+            && self.pa == other.pa
+            && self.limit == other.limit
+            && self.offset == other.offset
+            && self.cache_policy == other.cache_policy
+    }
+}
+
+impl<SecuritySensitivity> Eq for IoMem<SecuritySensitivity> {}
+
 #[cfg_attr(
     any(target_arch = "loongarch64", target_arch = "aarch64"),
     expect(unused)
