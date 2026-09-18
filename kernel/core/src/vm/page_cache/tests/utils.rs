@@ -242,13 +242,13 @@ impl MockPageCacheBackend {
                 let segment = &bio.segments()[0];
                 match kind {
                     IoKind::Read => segment
-                        .inner_dma()
+                        .dma_slice()
                         .write_bytes(0, &state.persisted_pages[page_idx])
                         .unwrap(),
                     IoKind::Write => {
                         let mut persisted_page = vec![0; PAGE_SIZE];
                         segment
-                            .inner_dma()
+                            .dma_slice()
                             .read_bytes(0, &mut persisted_page)
                             .unwrap();
                         state.persisted_pages[page_idx] = persisted_page;

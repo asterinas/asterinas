@@ -268,7 +268,7 @@ impl VirtQueue {
     /// result.
     ///
     /// Ref: linux virtio_ring.c virtqueue_add
-    pub fn add_dma_bufs<I: DmaBuf, O: DmaBuf>(
+    pub fn add_dma_bufs<I: DmaBuf + ?Sized, O: DmaBuf + ?Sized>(
         &mut self,
         inputs: &[&I],
         outputs: &[&O],
@@ -550,7 +550,7 @@ pub struct Descriptor {
 
 type DescriptorPtr<'a> = SafePtr<Descriptor, &'a Arc<DmaCoherent>, TRightSet<TRights![Dup, Write]>>;
 
-fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) -> u32 {
+fn set_dma_buf<T: DmaBuf + ?Sized>(desc_ptr: &DescriptorPtr, buf: &T) -> u32 {
     let daddr = buf.daddr();
     let len = buf.len();
 
