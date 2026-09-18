@@ -63,9 +63,10 @@ pub(super) fn sys_prctl(
             credentials.set_keep_capabilities(keep_cap != 0)?;
         }
         PrctlCmd::PR_SET_NAME(read_addr) => {
-            let mut name_bytes = [0u8; ThreadName::MAX_BYTES];
-            ctx.user_space().read_bytes(read_addr, &mut name_bytes)?;
-            *ctx.posix_thread.thread_name().lock() = ThreadName::from_bytes_until_nul(&name_bytes);
+            let user_space = ctx.user_space();
+            let mut reader = user_space.reader(read_addr, ThreadName::MAX_BYTES)?;
+            let (name, _) = reader.read_cstring_until_end(ThreadName::MAX_BYTES)?;
+            *ctx.posix_thread.thread_name().lock() = ThreadName::from_cstr_truncated(&name);
         }
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
             let thread_name = ctx.posix_thread.thread_name().lock();
