@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    arch::device::io_port::WriteOnlyAccess,
+    arch::device::io_port::{ReadWriteAccess, WriteOnlyAccess},
     info,
     io::{IoPort, sensitive_io_port},
 };
@@ -9,7 +9,7 @@ use crate::{
 sensitive_io_port! {
     unsafe {
         static MASTER_CMD: IoPort<u8, WriteOnlyAccess> = IoPort::new(0x20);
-        static MASTER_DATA: IoPort<u8, WriteOnlyAccess> = IoPort::new(0x21);
+        static MASTER_DATA: IoPort<u8, ReadWriteAccess> = IoPort::new(0x21);
         static SLAVE_CMD: IoPort<u8, WriteOnlyAccess> = IoPort::new(0xA0);
         static SLAVE_DATA: IoPort<u8, WriteOnlyAccess> = IoPort::new(0xA1);
     }
@@ -22,6 +22,24 @@ pub fn init_and_disable() {
     info!("Initializing PIC as disabled");
 
     set_mask(0xff, 0xff);
+}
+
+/// Detects whether a legacy 8259A PIC is present via I/O port probing.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/i8259.c#L306>
+pub(super) fn is_legacy_present() -> bool {
+    // Mask all except cascade (IRQ 2) on master IMR.
+    const PROBE_VAL: u8 = 0xFB;
+
+    // Mask slave PIC first to avoid interrupts during probe.
+    SLAVE_DATA.write(0xFF);
+
+    // Mask master PIC except cascade (IRQ 2).
+    MASTER_DATA.write(PROBE_VAL);
+
+    // Read back from master PIC. If the port exists, it returns what we wrote.
+    // If it's a memory hole (no PIC), it usually returns 0xFF or 0x00.
+    MASTER_DATA.read() == PROBE_VAL
 }
 
 fn set_mask(master_mask: u8, slave_mask: u8) {
