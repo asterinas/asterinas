@@ -49,7 +49,7 @@ impl Bio {
     /// Constructs a new `Bio`.
     ///
     /// The `type_` describes the type of the I/O.
-    /// The `start_sid` is the starting sector id on the device.
+    /// The `start_sid` is the starting sector ID on the device.
     /// The `segments` describes the memory segments.
     /// The `complete_fn` is the optional callback function that will be invoked
     /// when the I/O is completed, receiving the final `BioStatus`.
@@ -197,7 +197,7 @@ impl From<BioEnqueueError> for Error {
 
 /// A submitted `Bio` object.
 ///
-/// The request queue of block device only accepts a `SubmittedBio` into the queue.
+/// The request queue of a block device only accepts `SubmittedBio`s into the queue.
 pub struct SubmittedBio {
     metadata: Arc<BioMetadata>,
     sid_offset: u64,
@@ -216,12 +216,12 @@ impl SubmittedBio {
         self.metadata.sid_range()
     }
 
-    /// Returns the offset of the first sector id.
+    /// Returns the offset of the first sector ID.
     pub fn sid_offset(&self) -> u64 {
         self.sid_offset
     }
 
-    /// Sets the offset of the first sector id.
+    /// Sets the offset of the first sector ID.
     pub fn set_sid_offset(&mut self, offset: u64) {
         self.sid_offset = offset;
     }
@@ -284,7 +284,7 @@ impl Debug for SubmittedBio {
 struct BioMetadata {
     /// The type of the I/O
     type_: BioType,
-    /// The logical range of target sectors on device
+    /// The logical range of target sectors on the device
     sid_range: Range<Sid>,
     /// The I/O status
     status: AtomicU32,

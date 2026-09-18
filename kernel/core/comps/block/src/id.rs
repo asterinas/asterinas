@@ -27,8 +27,9 @@ const_assert!(BLOCK_SIZE / SECTOR_SIZE >= 1);
 /// The `BlockId<const N: u16>` is a generic type that is parameterized by a constant `N`, which
 /// represents the size of each block in bytes. The `BlockId<_>` provides a type-safe way of handling
 /// block indices.
-/// An Instance of `BlockId<_>` is guaranteed to represent valid block index, derived from byte offset
-/// and the specified block size `N`.
+///
+/// An instance of `BlockId<_>` is guaranteed to represent a valid block index, derived from a byte
+/// offset and the specified block size `N`.
 ///
 /// # Examples
 ///
@@ -49,12 +50,12 @@ const_assert!(BLOCK_SIZE / SECTOR_SIZE >= 1);
 pub struct BlockId<const N: u16>(u64);
 
 impl<const N: u16> BlockId<N> {
-    /// Constructs an id from a raw id.
+    /// Constructs an ID from a raw ID.
     pub const fn new(raw_id: u64) -> Self {
         Self(raw_id)
     }
 
-    /// Constructs an id from a byte offset.
+    /// Constructs an ID from a byte offset.
     pub const fn from_offset(offset: usize) -> Self {
         Self((offset / (N as usize)) as _)
     }
@@ -64,7 +65,7 @@ impl<const N: u16> BlockId<N> {
         (self.0 as usize) * (N as usize)
     }
 
-    /// Converts to raw id.
+    /// Converts to a raw ID.
     pub fn to_raw(self) -> u64 {
         self.0
     }
