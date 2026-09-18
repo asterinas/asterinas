@@ -20,7 +20,7 @@ use ostd::{
 };
 
 use super::{
-    PageFaultInfo, Rmap, RssType, Vmar, interval_set::Interval, util::is_intersected,
+    MmapMode, PageFaultInfo, Rmap, RssType, Vmar, interval_set::Interval, util::is_intersected,
     vmar_impls::RssDelta,
 };
 use crate::{
@@ -75,11 +75,11 @@ pub(crate) struct VmMapping {
     /// If the mapping is VMO-backed, the `mapped_mem` field should be the page
     /// cache of the inode referenced by the file's path.
     file: Option<Arc<dyn FileLike>>,
-    /// Whether the mapping is shared.
+    /// The sharing mode of the mapping.
     ///
     /// The updates to a shared mapping are visible among processes, or carried
     /// through to the underlying file for file-backed shared mappings.
-    is_shared: bool,
+    map_mode: MmapMode,
     /// Whether the mapping needs to handle surrounding pages when handling
     /// page fault.
     handle_page_faults_around: bool,
@@ -96,7 +96,7 @@ impl Debug for VmMapping {
             .field("map_to_addr", &self.map_to_addr)
             .field("mapped_mem", &self.mapped_mem)
             .field("file", &self.file.as_ref().map(|file| file.path()))
-            .field("is_shared", &self.is_shared)
+            .field("map_mode", &self.map_mode)
             .field("handle_page_faults_around", &self.handle_page_faults_around)
             .field("perms", &self.perms)
             .finish()
@@ -117,7 +117,7 @@ impl VmMapping {
         map_to_addr: Vaddr,
         mapped_mem: MappedMemory,
         file: Option<Arc<dyn FileLike>>,
-        is_shared: bool,
+        map_mode: MmapMode,
         handle_page_faults_around: bool,
         perms: VmPerms,
     ) -> Self {
@@ -126,7 +126,7 @@ impl VmMapping {
             map_to_addr,
             mapped_mem,
             file,
-            is_shared,
+            map_mode,
             handle_page_faults_around,
             perms,
         }
@@ -202,7 +202,7 @@ impl VmMapping {
     // file content changes later on.
     pub(super) fn vmo_for_rmap(&self) -> Option<&Arc<Vmo>> {
         match &self.mapped_mem {
-            MappedMemory::Vmo(vmo) if self.is_shared => Some(vmo.vmo()),
+            MappedMemory::Vmo(vmo) if self.map_mode.is_shared() => Some(vmo.vmo()),
             _ => None,
         }
     }
@@ -222,7 +222,7 @@ impl VmMapping {
 
     /// Returns the shared futex backing identity for the address if available.
     pub(crate) fn futex_backing(&self, addr: Vaddr) -> Result<Option<(Weak<Vmo>, usize)>> {
-        if !self.is_shared {
+        if !self.map_mode.is_shared() {
             return Ok(None);
         }
 
@@ -297,7 +297,7 @@ impl VmMapping {
         } else {
             '-'
         };
-        let shared_char = if self.is_shared { 's' } else { 'p' };
+        let shared_char = if self.map_mode.is_shared() { 's' } else { 'p' };
         let offset = self.vmo().map(|vmo| vmo.offset).unwrap_or(0);
         let (dev_major, dev_minor) = self
             .inode()
@@ -359,7 +359,7 @@ impl VmMapping {
             }
 
             // Reference: <https://github.com/google/gvisor/blob/38123b53da96ff6983fcc103dfe2a9cc4e0d80c8/test/syscalls/linux/proc.cc#L1158-L1172>
-            if matches!(&self.mapped_mem, MappedMemory::Vmo(_)) && self.is_shared {
+            if matches!(&self.mapped_mem, MappedMemory::Vmo(_)) && self.map_mode.is_shared() {
                 return Some(Cow::Borrowed("/dev/zero (deleted)"));
             }
 
@@ -382,7 +382,7 @@ impl VmMapping {
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/linux/mm.h#L1470-L1473>
     fn is_cow(&self) -> bool {
-        !self.is_shared && self.perms.contains(VmPerms::MAY_WRITE)
+        !self.map_mode.is_shared() && self.perms.contains(VmPerms::MAY_WRITE)
     }
 }
 
@@ -493,7 +493,7 @@ impl VmMapping {
                     assert!(is_write);
 
                     // For shared mappings, ensure that the VMO allows the page to be written.
-                    if self.is_shared
+                    if self.map_mode.is_shared()
                         && let MappedMemory::Vmo(vmo) = &self.mapped_mem
                         && let Err(err) = vmo.get_committed_frame(
                             page_aligned_addr - self.map_to_addr,
@@ -514,7 +514,7 @@ impl VmMapping {
 
                     let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
 
-                    if self.is_shared || only_reference {
+                    if self.map_mode.is_shared() || only_reference {
                         cursor.protect_next(PAGE_SIZE, |flags, _cache| {
                             *flags |= new_flags;
                         });
@@ -607,14 +607,14 @@ impl VmMapping {
         };
 
         let page_offset = page_aligned_addr - self.map_to_addr;
-        if !self.is_shared && page_offset >= vmo.valid_size() {
+        if !self.map_mode.is_shared() && page_offset >= vmo.valid_size() {
             // The page index is outside the VMO. This is only allowed in private mapping.
             return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
         }
 
         let (page, mode) =
             vmo.get_committed_frame(page_offset, self.vmo_map_mode_from_is_write(is_write))?;
-        if !self.is_shared && is_write {
+        if !self.map_mode.is_shared() && is_write {
             // Write access to private VMO-backed mapping. Performs COW directly.
             Ok((duplicate_frame(&page.into())?.into(), is_readonly))
         } else {
@@ -622,13 +622,13 @@ impl VmMapping {
             // If read access to private VMO-backed mapping triggers a page fault,
             // the map should be readonly. If user next tries to write to the frame,
             // another page fault will be triggered which will performs a COW (Copy-On-Write).
-            is_readonly = !self.is_shared || mode != VmoMapMode::SharedWrite;
+            is_readonly = !self.map_mode.is_shared() || mode != VmoMapMode::SharedWrite;
             Ok((page.into(), is_readonly))
         }
     }
 
     fn vmo_map_mode_from_is_write(&self, is_write: bool) -> VmoMapMode {
-        if !self.is_shared {
+        if !self.map_mode.is_shared() {
             VmoMapMode::Private
         } else if !is_write {
             VmoMapMode::SharedRead
@@ -669,7 +669,7 @@ impl VmMapping {
         }
 
         let vm_perms = self.perms - VmPerms::WRITE;
-        let mode = if !self.is_shared {
+        let mode = if !self.map_mode.is_shared() {
             VmoMapMode::Private
         } else {
             VmoMapMode::SharedRead
@@ -1056,7 +1056,7 @@ impl Drop for MappedVmo {
 /// [`Vmar`]: crate::vm::vmar::Vmar
 fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
     let is_adjacent = left.map_end() == right.map_to_addr();
-    let is_type_equal = left.is_shared == right.is_shared
+    let is_type_equal = left.map_mode == right.map_mode
         && left.handle_page_faults_around == right.handle_page_faults_around
         && left.perms == right.perms
         && match (&left.file, &right.file) {
