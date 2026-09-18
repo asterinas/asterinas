@@ -5,7 +5,7 @@ use crate::{
     device::{
         pty::packet::{PacketCtrl, PacketStatus},
         tty::{
-            Tty, TtyDriver, TtyFlags,
+            EchoUnit, Tty, TtyDriver, TtyFlags,
             termio::{CCtrlCharId, CInputFlags, CLocalFlags, CTermios},
         },
     },
@@ -146,20 +146,21 @@ impl TtyDriver for PtyDriver {
         Ok(len)
     }
 
-    fn echo_callback(&self) -> impl FnMut(&[u8]) + '_ {
+    fn push_echo(&self, units: &[EchoUnit]) -> usize {
         let mut output = self.output.lock();
-        let mut has_notified = false;
 
-        move |chs| {
-            for ch in chs {
-                let _ = output.push(*ch);
+        let mut len = 0;
+        for unit in units {
+            if output.push_slice(unit.as_bytes()).is_none() {
+                break;
             }
-
-            if !has_notified {
-                self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
-                has_notified = true;
-            }
+            len += 1;
         }
+
+        if len > 0 {
+            self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
+        }
+        len
     }
 
     fn can_push(&self) -> bool {
