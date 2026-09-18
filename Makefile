@@ -33,6 +33,14 @@ CMDLINE ?=
 CONSOLE ?= hvc0
 # End of global build options.
 
+# Virtio-fs settings.
+VIRTIOFS ?= off
+VIRTIOFS_SCRATCH ?= off
+VIRTIOFSD ?= /usr/libexec/virtiofsd
+VIRTIOFS_RUNTIME_DIR ?= /tmp/asterinas-virtiofs
+VIRTIOFS_CACHE ?= auto
+# End of Virtio-fs settings.
+
 # GDB debugging and profiling options.
 GDB_TCP_PORT ?= 1234
 GDB_PROFILE_FORMAT ?= flame-graph
@@ -249,6 +257,12 @@ endif
 
 ifeq ($(INITRAMFS),on)
 CARGO_OSDK_COMMON_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
+endif
+ifeq ($(VIRTIOFS), on)
+CARGO_OSDK_COMMON_ARGS += --qemu-daemons="./tools/run_virtiofsd.sh --path $(VIRTIOFSD) --runtime-dir $(VIRTIOFS_RUNTIME_DIR) --cache $(VIRTIOFS_CACHE)"
+endif
+ifeq ($(VIRTIOFS_SCRATCH), on)
+CARGO_OSDK_COMMON_ARGS += --qemu-daemons="./tools/run_virtiofsd.sh --path $(VIRTIOFSD) --runtime-dir $(VIRTIOFS_RUNTIME_DIR)/scratch --cache $(VIRTIOFS_CACHE)"
 endif
 
 CARGO_OSDK_BUILD_ARGS += $(CARGO_OSDK_COMMON_ARGS)
