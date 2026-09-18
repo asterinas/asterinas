@@ -22,7 +22,7 @@ RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/8e6e8ad3
 WORKDIR /root
 RUN git clone https://github.com/asterinas/linux_vdso.git && \
     cd linux_vdso && \
-    git checkout 7489835
+    git checkout 8af5717
 
 ENV VDSO_LIBRARY_DIR="/root/linux_vdso"
 
