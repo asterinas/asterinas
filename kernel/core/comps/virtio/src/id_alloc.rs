@@ -15,14 +15,14 @@ use ostd::sync::{SpinLock, WaitQueue};
 /// The `alloc` method should only be called in the task context,
 /// whereas the `dealloc` method should only be used in the IRQ handler of a device driver.
 /// Failing to conform with the above requirement may result in deadlock.
-pub struct SyncIdAlloc {
+pub(crate) struct SyncIdAlloc {
     wait_queue: WaitQueue,
     id_allocator: SpinLock<IdAlloc>,
 }
 
 impl SyncIdAlloc {
     /// Creates an allocator that may return IDs in the range of `0..capacity`.
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
             wait_queue: WaitQueue::new(),
             id_allocator: SpinLock::new(IdAlloc::with_capacity(capacity)),
@@ -33,7 +33,7 @@ impl SyncIdAlloc {
     ///
     /// This method must only be called in the task context.
     /// It will block until an ID is free to allocate.
-    pub fn alloc(&self) -> usize {
+    pub(crate) fn alloc(&self) -> usize {
         self.wait_queue
             .wait_until(|| self.id_allocator.disable_irq().lock().alloc())
     }
@@ -45,7 +45,7 @@ impl SyncIdAlloc {
     /// # Panics
     ///
     /// This method would panic if `id` is greater than or equal to the capacity of this ID allocator.
-    pub fn dealloc(&self, id: usize) {
+    pub(crate) fn dealloc(&self, id: usize) {
         self.id_allocator.disable_irq().lock().free(id);
         self.wait_queue.wake_all();
     }

@@ -15,7 +15,7 @@ use ostd::{
 /// Multiplexing Irqs. The two interrupt types (configuration space change and queue interrupt)
 /// of the virtio-mmio device share the same IRQ, so `MultiplexIrq` are used to distinguish them.
 /// Besides, virtio-mmio requires ack_interrupt after interrupt is handled.
-pub struct MultiplexIrq {
+pub(super) struct MultiplexIrq {
     irq: IrqLine,
     queue_callbacks: Vec<Box<IrqCallbackFunction>>,
     cfg_callbacks: Vec<Box<IrqCallbackFunction>>,
@@ -24,7 +24,7 @@ pub struct MultiplexIrq {
 }
 
 impl MultiplexIrq {
-    pub fn new(
+    pub(super) fn new(
         irq: IrqLine,
         interrupt_ack: SafePtr<u32, IoMem, TRightSet<WriteOp>>,
         interrupt_status: SafePtr<u32, IoMem, TRightSet<ReadOp>>,
@@ -73,11 +73,11 @@ impl MultiplexIrq {
         irq
     }
 
-    pub fn register_queue_callback(&mut self, func: Box<IrqCallbackFunction>) {
+    pub(super) fn register_queue_callback(&mut self, func: Box<IrqCallbackFunction>) {
         self.queue_callbacks.push(func);
     }
 
-    pub fn register_cfg_callback(&mut self, func: Box<IrqCallbackFunction>) {
+    pub(super) fn register_cfg_callback(&mut self, func: Box<IrqCallbackFunction>) {
         self.cfg_callbacks.push(func);
     }
 }

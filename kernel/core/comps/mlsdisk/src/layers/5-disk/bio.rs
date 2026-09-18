@@ -19,14 +19,14 @@ use crate::{
 /// A queue for managing block I/O requests (`BioReq`).
 /// It provides a concurrency-safe way to store and manage
 /// block I/O requests that need to be processed by a block device.
-pub struct BioReqQueue {
+pub(super) struct BioReqQueue {
     queue: Mutex<VecDeque<BioReq>>,
     num_reqs: AtomicUsize,
 }
 
 impl BioReqQueue {
     /// Create a new `BioReqQueue` instance.
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             queue: Mutex::new(VecDeque::new()),
             num_reqs: AtomicUsize::new(0),
@@ -34,7 +34,7 @@ impl BioReqQueue {
     }
 
     /// Enqueue a block I/O request.
-    pub fn enqueue(&self, req: BioReq) -> Result<()> {
+    pub(super) fn enqueue(&self, req: BioReq) -> Result<()> {
         req.submit();
         self.queue.lock().push_back(req);
         self.num_reqs.fetch_add(1, Ordering::Release);
@@ -42,7 +42,7 @@ impl BioReqQueue {
     }
 
     /// Dequeue a block I/O request.
-    pub fn dequeue(&self) -> Option<BioReq> {
+    pub(super) fn dequeue(&self) -> Option<BioReq> {
         if let Some(req) = self.queue.lock().pop_front() {
             self.num_reqs.fetch_sub(1, Ordering::Release);
             Some(req)
@@ -53,12 +53,12 @@ impl BioReqQueue {
     }
 
     /// Returns the number of pending requests in this queue.
-    pub fn num_reqs(&self) -> usize {
+    pub(super) fn num_reqs(&self) -> usize {
         self.num_reqs.load(Ordering::Acquire)
     }
 
     /// Returns whether there are no pending requests in this queue.
-    pub fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.num_reqs() == 0
     }
 }
@@ -86,11 +86,11 @@ pub enum BioType {
 }
 
 /// A response from a block device.
-pub type BioResp = Result<()>;
+pub(super) type BioResp = Result<()>;
 
 /// The type of the callback function invoked upon the completion of
 /// a block I/O request.
-pub type BioReqOnCompleteFn = fn(/* req = */ &BioReq, /* resp = */ &BioResp);
+pub(super) type BioReqOnCompleteFn = fn(/* req = */ &BioReq, /* resp = */ &BioResp);
 
 /// The status describing a block I/O request.
 #[derive(Clone, Debug)]
@@ -199,7 +199,7 @@ impl BioReq {
 }
 
 /// A builder for `BioReq`.
-pub struct BioReqBuilder {
+pub(super) struct BioReqBuilder {
     type_: BioType,
     addr: Option<BlockId>,
     bufs: Option<Vec<Buf>>,
@@ -209,7 +209,7 @@ pub struct BioReqBuilder {
 
 impl BioReqBuilder {
     /// Creates a builder of a block request of the given type.
-    pub fn new(type_: BioType) -> Self {
+    pub(super) fn new(type_: BioType) -> Self {
         Self {
             type_,
             addr: None,
@@ -220,25 +220,25 @@ impl BioReqBuilder {
     }
 
     /// Specify the block address of the request.
-    pub fn addr(mut self, addr: BlockId) -> Self {
+    pub(super) fn addr(mut self, addr: BlockId) -> Self {
         self.addr = Some(addr);
         self
     }
 
     /// Give the buffers of the request.
-    pub fn bufs(mut self, bufs: Vec<Buf>) -> Self {
+    pub(super) fn bufs(mut self, bufs: Vec<Buf>) -> Self {
         self.bufs = Some(bufs);
         self
     }
 
     /// Specify a callback invoked when the request is complete.
-    pub fn on_complete(mut self, on_complete: BioReqOnCompleteFn) -> Self {
+    pub(super) fn on_complete(mut self, on_complete: BioReqOnCompleteFn) -> Self {
         self.on_complete = Some(on_complete);
         self
     }
 
     /// Add an extension object to the request.
-    pub fn ext<T: Any + Send + Sync + Sized>(mut self, obj: T) -> Self {
+    pub(super) fn ext<T: Any + Send + Sync + Sized>(mut self, obj: T) -> Self {
         if self.ext.is_none() {
             self.ext = Some(HashMap::new());
         }
@@ -251,7 +251,7 @@ impl BioReqBuilder {
     }
 
     /// Build the request.
-    pub fn build(mut self) -> BioReq {
+    pub(super) fn build(mut self) -> BioReq {
         let type_ = self.type_;
         if type_ == BioType::Sync {
             debug_assert!(

@@ -21,7 +21,7 @@ fn push_zerocopy_derive(
     }
 }
 
-pub fn expand_derive(attrs: TokenStream, input: TokenStream) -> TokenStream {
+pub(super) fn expand_derive(attrs: TokenStream, input: TokenStream) -> TokenStream {
     use proc_macro2::TokenTree;
 
     // Process the derive attributes

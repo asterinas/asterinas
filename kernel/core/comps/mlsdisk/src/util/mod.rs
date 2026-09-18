@@ -5,11 +5,8 @@ mod bitmap;
 mod crypto;
 mod lazy_delete;
 
-pub use self::{
-    bitmap::BitMap,
-    crypto::{Aead, RandomInit, Rng, Skcipher},
-    lazy_delete::LazyDelete,
-};
+pub use self::crypto::{Aead, RandomInit, Rng};
+pub(crate) use self::{bitmap::BitMap, crypto::Skcipher, lazy_delete::LazyDelete};
 
 /// Aligns `x` up to the next multiple of `align`.
 pub(crate) const fn align_up(x: usize, align: usize) -> usize {
