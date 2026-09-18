@@ -18,7 +18,11 @@ use hashbrown::HashMap;
 use sparse_id_alloc::SparseIdAlloc;
 
 use crate::kms::objects::{
-    connector::DrmConnector, crtc::DrmCrtc, encoder::DrmEncoder, plane::DrmPlane,
+    connector::DrmConnector,
+    crtc::DrmCrtc,
+    encoder::DrmEncoder,
+    plane::DrmPlane,
+    property::{DrmProperty, DrmStandardProperty, blob::DrmPropertyBlob},
 };
 
 pub mod builder;
@@ -26,6 +30,7 @@ pub mod connector;
 pub mod crtc;
 pub mod encoder;
 pub mod plane;
+pub mod property;
 
 pub type KmsObjectId = u32;
 pub type KmsObjectIndex = usize;
@@ -43,6 +48,7 @@ pub struct DrmKmsObjectStore {
     connector_ids: Vec<KmsObjectId>,
     object_by_id: HashMap<KmsObjectId, DrmKmsObject>,
     id_allocator: SparseIdAlloc,
+    id_by_property: HashMap<DrmStandardProperty, KmsObjectId>,
 }
 
 impl Default for DrmKmsObjectStore {
@@ -54,12 +60,13 @@ impl Default for DrmKmsObjectStore {
             connector_ids: Vec::new(),
             object_by_id: HashMap::new(),
             id_allocator: SparseIdAlloc::new(1, u32::MAX),
+            id_by_property: HashMap::new(),
         }
     }
 }
 
 impl DrmKmsObjectStore {
-    pub fn alloc_object_id(&mut self) -> Result<KmsObjectId> {
+    fn alloc_object_id(&mut self) -> Result<KmsObjectId> {
         let id = self
             .id_allocator
             .alloc()
@@ -87,6 +94,7 @@ impl DrmKmsObjectStore {
             DrmKmsObject::Crtc(_) => self.crtc_ids.push(id),
             DrmKmsObject::Encoder(_) => self.encoder_ids.push(id),
             DrmKmsObject::Connector(_) => self.connector_ids.push(id),
+            _ => {}
         }
 
         self.object_by_id.insert(id, object);
@@ -132,6 +140,16 @@ impl DrmKmsObjectStore {
         object_ids.iter().position(|object_id| *object_id == id)
     }
 
+    pub fn get_standard_property_id(&self, property: DrmStandardProperty) -> Option<KmsObjectId> {
+        self.id_by_property.get(&property).copied()
+    }
+
+    fn register_standard_property(&mut self, property: DrmStandardProperty) -> Result<()> {
+        let property_id = self.add_object(DrmKmsObject::Property(property.create()))?;
+        self.id_by_property.insert(property, property_id);
+        Ok(())
+    }
+
     pub fn lookup_object(&self, id: KmsObjectId) -> Option<&DrmKmsObject> {
         self.object_by_id.get(&id)
     }
@@ -163,6 +181,20 @@ impl DrmKmsObjectStore {
             _ => None,
         }
     }
+
+    pub fn lookup_property(&self, id: KmsObjectId) -> Option<&DrmProperty> {
+        match self.lookup_object(id)? {
+            DrmKmsObject::Property(property) => Some(property),
+            _ => None,
+        }
+    }
+
+    pub fn lookup_property_blob(&self, id: KmsObjectId) -> Option<&DrmPropertyBlob> {
+        match self.lookup_object(id)? {
+            DrmKmsObject::Blob(property_blob) => Some(property_blob),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -171,6 +203,8 @@ pub enum DrmKmsObject {
     Crtc(DrmCrtc),
     Encoder(DrmEncoder),
     Connector(DrmConnector),
+    Property(DrmProperty),
+    Blob(DrmPropertyBlob),
 }
 
 #[repr(u32)]

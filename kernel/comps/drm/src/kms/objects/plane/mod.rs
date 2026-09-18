@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use ostd::sync::Mutex;
 
 use crate::{
-    kms::objects::{KmsObjectId, KmsObjectIndex},
+    kms::objects::{KmsObjectId, KmsObjectIndex, property::DrmPropertyAttachments},
     utils::{DrmDisplayFormat, DrmRect},
 };
 
@@ -15,6 +15,7 @@ pub struct DrmPlane {
     state: Mutex<DrmPlaneState>,
     possible_crtcs: Vec<KmsObjectIndex>,
     format_types: Vec<DrmDisplayFormat>,
+    properties: DrmPropertyAttachments,
 }
 
 impl DrmPlane {
@@ -22,12 +23,14 @@ impl DrmPlane {
         type_: DrmPlaneType,
         format_types: Vec<DrmDisplayFormat>,
         possible_crtcs: &[KmsObjectIndex],
+        properties: DrmPropertyAttachments,
     ) -> Self {
         Self {
             type_,
             state: Mutex::new(DrmPlaneState::default()),
             possible_crtcs: possible_crtcs.to_vec(),
             format_types,
+            properties,
         }
     }
 
@@ -51,6 +54,10 @@ impl DrmPlane {
 
     pub fn format_types(&self) -> &[DrmDisplayFormat] {
         &self.format_types
+    }
+
+    pub fn properties(&self) -> &DrmPropertyAttachments {
+        &self.properties
     }
 }
 

@@ -2,7 +2,10 @@
 
 use ostd::sync::Mutex;
 
-use crate::{kms::objects::KmsObjectId, utils::DrmDisplayMode};
+use crate::{
+    kms::objects::{KmsObjectId, property::DrmPropertyAttachments},
+    utils::DrmDisplayMode,
+};
 
 #[derive(Debug)]
 pub struct DrmCrtc {
@@ -10,6 +13,7 @@ pub struct DrmCrtc {
     state: Mutex<DrmCrtcState>,
     primary_plane_id: KmsObjectId,
     cursor_plane_id: Option<KmsObjectId>,
+    properties: DrmPropertyAttachments,
 }
 
 impl DrmCrtc {
@@ -17,12 +21,14 @@ impl DrmCrtc {
         gamma_size: u32,
         primary_plane_id: KmsObjectId,
         cursor_plane_id: Option<KmsObjectId>,
+        properties: DrmPropertyAttachments,
     ) -> Self {
         Self {
             gamma_size,
             state: Mutex::new(DrmCrtcState::default()),
             primary_plane_id,
             cursor_plane_id,
+            properties,
         }
     }
 
@@ -40,6 +46,10 @@ impl DrmCrtc {
 
     pub fn cursor_plane_id(&self) -> Option<KmsObjectId> {
         self.cursor_plane_id
+    }
+
+    pub fn properties(&self) -> &DrmPropertyAttachments {
+        &self.properties
     }
 }
 

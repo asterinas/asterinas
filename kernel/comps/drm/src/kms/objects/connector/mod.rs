@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use ostd::sync::Mutex;
 
 use crate::{
-    kms::objects::{KmsObjectId, KmsObjectIndex},
+    kms::objects::{KmsObjectId, KmsObjectIndex, property::DrmPropertyAttachments},
     utils::{DrmDisplayInfo, DrmDisplayMode},
 };
 
@@ -16,16 +16,23 @@ pub struct DrmConnector {
     state: Mutex<DrmConnectorState>,
     probe_state: Mutex<DrmConnectorProbeState>,
     possible_encoders: Vec<KmsObjectIndex>,
+    properties: DrmPropertyAttachments,
 }
 
 impl DrmConnector {
-    pub fn new(type_: DrmConnType, type_index: u32, possible_encoders: &[KmsObjectIndex]) -> Self {
+    pub fn new(
+        type_: DrmConnType,
+        type_index: u32,
+        possible_encoders: &[KmsObjectIndex],
+        properties: DrmPropertyAttachments,
+    ) -> Self {
         Self {
             type_,
             type_index,
             state: Mutex::new(DrmConnectorState::default()),
             probe_state: Mutex::new(DrmConnectorProbeState::default()),
             possible_encoders: possible_encoders.to_vec(),
+            properties,
         }
     }
 
@@ -47,6 +54,10 @@ impl DrmConnector {
 
     pub fn possible_encoders(&self) -> &[KmsObjectIndex] {
         &self.possible_encoders
+    }
+
+    pub fn properties(&self) -> &DrmPropertyAttachments {
+        &self.properties
     }
 }
 
