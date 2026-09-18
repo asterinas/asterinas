@@ -24,7 +24,7 @@ use ostd::{
     sync::SpinLock,
 };
 
-pub mod arena;
+mod arena;
 mod buffer;
 
 pub use self::{

@@ -12,7 +12,7 @@ use crate::Error;
 /// The maximum value of the major device ID of a block device.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/block/genhd.c#L239>.
-pub const MAX_MAJOR: u16 = 511;
+const MAX_MAJOR: u16 = 511;
 
 /// Block devices that request a dynamic allocation of major ID will
 /// take numbers starting from 254 and downward.
