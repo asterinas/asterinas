@@ -7,7 +7,10 @@ use ostd::sync::Mutex;
 use crate::kms::{
     display_info::DrmDisplayInfo,
     display_mode::DrmDisplayMode,
-    objects::{KmsObjectId, KmsObjectIndex, KmsObjectMask, encoder::DrmEncoder},
+    objects::{
+        KmsObjectId, KmsObjectIndex, KmsObjectMask, encoder::DrmEncoder,
+        property::DrmPropertyAttachments,
+    },
 };
 
 /// A display output endpoint in the DRM KMS topology.
@@ -24,16 +27,23 @@ pub(crate) struct DrmConnector {
     config: DrmConnectorConfig,
     state: Mutex<DrmConnectorState>,
     probe_state: Mutex<DrmConnectorProbeState>,
+    properties: DrmPropertyAttachments,
 }
 
 impl DrmConnector {
-    pub(super) fn new(id: KmsObjectId, index: KmsObjectIndex, config: DrmConnectorConfig) -> Self {
+    pub(super) fn new(
+        id: KmsObjectId,
+        index: KmsObjectIndex,
+        config: DrmConnectorConfig,
+        properties: DrmPropertyAttachments,
+    ) -> Self {
         Self {
             id,
             index,
             config,
             state: Mutex::new(DrmConnectorState::default()),
             probe_state: Mutex::new(DrmConnectorProbeState::default()),
+            properties,
         }
     }
 
@@ -63,6 +73,10 @@ impl DrmConnector {
 
     pub(crate) fn possible_encoders(&self) -> &KmsObjectMask {
         &self.config.possible_encoders
+    }
+
+    pub fn properties(&self) -> &DrmPropertyAttachments {
+        &self.properties
     }
 }
 

@@ -10,11 +10,12 @@ use aster_core::prelude::*;
 use crate::kms::{
     DrmKmsObjectStore,
     objects::{
-        KmsObjectIndex, KmsObjectMask, MAX_OBJECTS_PER_TYPE,
+        DrmStandardProperty, KmsObjectIndex, KmsObjectMask, MAX_OBJECTS_PER_TYPE,
         connector::{DrmConnector, DrmConnectorConfig, DrmConnectorType},
         crtc::{DrmCrtc, DrmCrtcConfig},
         encoder::{DrmEncoder, DrmEncoderConfig, DrmEncoderType},
         plane::{DrmPlane, DrmPlaneConfig, DrmPlaneType},
+        property::{DrmPropertyAttachments, KmsObjectPropValue, in_formats::DrmInFormats},
     },
     pixel_format::DrmPixelFormat,
 };
@@ -83,7 +84,7 @@ impl DrmKmsObjectStoreBuilder {
         let config = DrmPlaneConfig {
             type_,
             possible_crtcs: KmsObjectMask::ZERO,
-            pixel_formats: pixel_formats.into_boxed_slice(),
+            in_formats: DrmInFormats::new(pixel_formats.into_boxed_slice()),
         };
 
         self.planes.push(config);
@@ -214,7 +215,13 @@ impl DrmKmsObjectStoreBuilder {
         let mut planes = Vec::with_capacity(plane_configs.len());
         for (plane_index, config) in plane_configs.into_iter().enumerate() {
             let id = object_store.alloc_object_id()?;
-            let plane = Arc::new(DrmPlane::new(id, next_object_index(plane_index)?, config));
+            let properties = build_plane_properties(&mut object_store, &config)?;
+            let plane = Arc::new(DrmPlane::new(
+                id,
+                next_object_index(plane_index)?,
+                config,
+                properties,
+            ));
             object_store.insert_plane(plane.clone());
             planes.push(plane);
         }
@@ -229,8 +236,15 @@ impl DrmKmsObjectStoreBuilder {
                 primary_plane,
                 cursor_plane,
             };
+
             let id = object_store.alloc_object_id()?;
-            let crtc = Arc::new(DrmCrtc::new(id, next_object_index(crtc_index)?, config));
+            let properties = build_crtc_properties(&mut object_store)?;
+            let crtc = Arc::new(DrmCrtc::new(
+                id,
+                next_object_index(crtc_index)?,
+                config,
+                properties,
+            ));
             object_store.insert_crtc(crtc);
         }
 
@@ -249,10 +263,12 @@ impl DrmKmsObjectStoreBuilder {
 
         for (connector_index, config) in connector_configs.into_iter().enumerate() {
             let id = object_store.alloc_object_id()?;
+            let properties = build_connector_properties(&mut object_store)?;
             let connector = Arc::new(DrmConnector::new(
                 id,
                 next_object_index(connector_index)?,
                 config,
+                properties,
             ));
             object_store.insert_connector(connector);
         }
@@ -333,4 +349,58 @@ impl CrtcSpec {
             cursor_plane,
         }
     }
+}
+
+fn build_plane_properties(
+    store: &mut DrmKmsObjectStore,
+    config: &DrmPlaneConfig,
+) -> Result<DrmPropertyAttachments> {
+    let in_formats = store.create_property_blob(config.in_formats.encode_blob())?;
+
+    build_object_properties(
+        store,
+        &[
+            (DrmStandardProperty::PlaneType, config.type_ as u64),
+            (DrmStandardProperty::InFormats, in_formats.id() as u64),
+            (DrmStandardProperty::SrcX, 0),
+            (DrmStandardProperty::SrcY, 0),
+            (DrmStandardProperty::SrcW, 0),
+            (DrmStandardProperty::SrcH, 0),
+            (DrmStandardProperty::CrtcX, 0),
+            (DrmStandardProperty::CrtcY, 0),
+            (DrmStandardProperty::CrtcW, 0),
+            (DrmStandardProperty::CrtcH, 0),
+            (DrmStandardProperty::FbId, 0),
+            (DrmStandardProperty::CrtcId, 0),
+        ],
+    )
+}
+
+fn build_crtc_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
+    build_object_properties(
+        store,
+        &[
+            (DrmStandardProperty::Active, 0),
+            // A zero `MODE_ID` means that the CRTC has no active mode.
+            (DrmStandardProperty::ModeId, 0),
+        ],
+    )
+}
+
+fn build_connector_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
+    build_object_properties(store, &[(DrmStandardProperty::CrtcId, 0)])
+}
+
+fn build_object_properties(
+    store: &mut DrmKmsObjectStore,
+    property_values: &[(DrmStandardProperty, KmsObjectPropValue)],
+) -> Result<DrmPropertyAttachments> {
+    let mut object_properties = DrmPropertyAttachments::default();
+
+    for &(standard, value) in property_values {
+        let property = store.get_or_create_standard_property(standard)?;
+        object_properties.attach(&property, value)?;
+    }
+
+    Ok(object_properties)
 }

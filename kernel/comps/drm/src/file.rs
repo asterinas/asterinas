@@ -3,6 +3,7 @@
 use alloc::{
     boxed::Box,
     sync::{Arc, Weak},
+    vec::Vec,
 };
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
@@ -33,6 +34,7 @@ use crate::{
     device::{DrmDevice, DrmMaster},
     gem::object::DrmGemObject,
     has_current_sys_admin,
+    kms::objects::framebuffer::DrmFramebuffer,
     minor::{DrmMinor, DrmMinorType},
 };
 
@@ -51,6 +53,8 @@ pub(super) struct DrmFile {
     minor: Arc<DrmMinor>,
 
     gem_handles: Mutex<DrmGemHandleTable>,
+    /// Framebuffers created through this open file.
+    framebuffers: Mutex<Vec<Arc<DrmFramebuffer>>>,
 }
 
 impl DrmFile {
@@ -89,6 +93,7 @@ impl DrmFile {
             minor,
 
             gem_handles: Mutex::new(DrmGemHandleTable::new()),
+            framebuffers: Mutex::new(Vec::new()),
         }
     }
 
@@ -307,6 +312,14 @@ impl Pollable for DrmFile {
 
 impl Drop for DrmFile {
     fn drop(&mut self) {
+        let device = self.minor.device().clone();
+        if let Some(kms_ops) = device.as_kms_ops() {
+            let mut object_store = kms_ops.mode_config().object_store().lock();
+            for framebuffer in self.framebuffers.get_mut().drain(..) {
+                object_store.free_object_id(framebuffer.id());
+            }
+        }
+
         for gem_object in self.gem_handles.get_mut().drain() {
             gem_object.revoke_mmap(self.client_id);
         }
