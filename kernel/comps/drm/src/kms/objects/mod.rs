@@ -11,7 +11,7 @@
 //! [`builder::DrmKmsObjectStoreBuilder`] constructs and validates the static KMS topology
 //! before materializing the objects in the store.
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
 use aster_core::prelude::*;
@@ -22,7 +22,11 @@ use int_to_c_enum::TryFromInt;
 use sparse_id_alloc::SparseIdAlloc;
 
 use crate::kms::objects::{
-    connector::DrmConnector, crtc::DrmCrtc, encoder::DrmEncoder, plane::DrmPlane,
+    connector::DrmConnector,
+    crtc::DrmCrtc,
+    encoder::DrmEncoder,
+    plane::DrmPlane,
+    property::{DrmProperty, DrmPropertyAttachments, DrmStandardProperty, blob::DrmPropertyBlob},
 };
 
 pub mod builder;
@@ -31,6 +35,7 @@ pub(crate) mod crtc;
 pub mod encoder;
 pub(crate) mod framebuffer;
 pub mod plane;
+pub mod property;
 
 pub(crate) type KmsObjectId = u32;
 
@@ -59,6 +64,14 @@ pub struct DrmKmsObjectStore {
     crtcs: HashMap<KmsObjectId, Arc<DrmCrtc>>,
     encoders: HashMap<KmsObjectId, Arc<DrmEncoder>>,
     connectors: HashMap<KmsObjectId, Arc<DrmConnector>>,
+
+    properties: HashMap<KmsObjectId, Arc<DrmProperty>>,
+    /// Provides a semantic index for standard properties;
+    /// driver-specific properties remain accessible through `properties` by object ID.
+    standard_property_ids: HashMap<DrmStandardProperty, KmsObjectId>,
+    // TODO: Support both device-lifetime blobs created by the kernel and
+    // per-file blobs created and owned by userspace clients.
+    property_blobs: HashMap<KmsObjectId, Arc<DrmPropertyBlob>>,
 }
 
 impl DrmKmsObjectStore {
@@ -69,6 +82,9 @@ impl DrmKmsObjectStore {
             crtcs: HashMap::new(),
             encoders: HashMap::new(),
             connectors: HashMap::new(),
+            properties: HashMap::new(),
+            standard_property_ids: HashMap::new(),
+            property_blobs: HashMap::new(),
         }
     }
 
@@ -168,6 +184,76 @@ impl DrmKmsObjectStore {
 
     pub(crate) fn lookup_connector_by_id(&self, id: KmsObjectId) -> Option<&Arc<DrmConnector>> {
         self.connectors.get(&id)
+    }
+
+    pub(crate) fn lookup_property(&self, id: KmsObjectId) -> Option<&Arc<DrmProperty>> {
+        self.properties.get(&id)
+    }
+
+    pub(crate) fn lookup_property_blob(&self, id: KmsObjectId) -> Option<&Arc<DrmPropertyBlob>> {
+        self.property_blobs.get(&id)
+    }
+
+    /// Looks up a KMS mode object's property table without specifying its type.
+    ///
+    /// The object ID may refer to any KMS mode object,
+    /// such as a plane, CRTC, encoder, or connector.
+    /// This is an object ID, not a property ID.
+    ///
+    /// Returns `EINVAL` for an encoder, which has no property table,
+    /// and `None` if no supported object matches the ID.
+    pub(crate) fn lookup_any_object_properties(
+        &self,
+        id: KmsObjectId,
+    ) -> Result<Option<&DrmPropertyAttachments>> {
+        if let Some(plane) = self.lookup_plane_by_id(id) {
+            return Ok(Some(plane.properties()));
+        }
+
+        if let Some(crtc) = self.lookup_crtc_by_id(id) {
+            return Ok(Some(crtc.properties()));
+        }
+
+        if let Some(connector) = self.lookup_connector_by_id(id) {
+            return Ok(Some(connector.properties()));
+        }
+
+        if self.lookup_encoder_by_id(id).is_some() {
+            return_errno_with_message!(Errno::EINVAL, "the DRM encoder has no property table");
+        }
+
+        Ok(None)
+    }
+
+    fn get_or_create_standard_property(
+        &mut self,
+        standard: DrmStandardProperty,
+    ) -> Result<Arc<DrmProperty>> {
+        if let Some(property) = self
+            .standard_property_ids
+            .get(&standard)
+            .and_then(|id| self.properties.get(id))
+        {
+            return Ok(property.clone());
+        }
+
+        let id = self.alloc_object_id()?;
+        let property = Arc::new(standard.create_property(id));
+
+        let previous = self.properties.insert(id, property.clone());
+        debug_assert!(previous.is_none());
+        let previous = self.standard_property_ids.insert(standard, id);
+        debug_assert!(previous.is_none());
+        Ok(property)
+    }
+
+    fn create_property_blob(&mut self, data: Box<[u8]>) -> Result<Arc<DrmPropertyBlob>> {
+        let id = self.alloc_object_id()?;
+        let blob = Arc::new(DrmPropertyBlob::new(id, data));
+
+        let previous = self.property_blobs.insert(id, blob.clone());
+        debug_assert!(previous.is_none());
+        Ok(blob)
     }
 }
 

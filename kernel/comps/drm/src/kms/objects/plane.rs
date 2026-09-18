@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Weak};
+use alloc::sync::Weak;
 
 use ostd::sync::Mutex;
 
 use crate::{
     kms::{
         objects::{
-            KmsObjectId, KmsObjectIndex, KmsObjectMask, crtc::DrmCrtc, framebuffer::DrmFramebuffer,
+            KmsObjectId, KmsObjectIndex, KmsObjectMask,
+            crtc::DrmCrtc,
+            framebuffer::DrmFramebuffer,
+            property::{DrmPropertyAttachments, in_formats::DrmInFormats},
         },
         pixel_format::DrmPixelFormat,
     },
@@ -27,15 +30,22 @@ pub(crate) struct DrmPlane {
     index: KmsObjectIndex,
     config: DrmPlaneConfig,
     state: Mutex<DrmPlaneState>,
+    properties: DrmPropertyAttachments,
 }
 
 impl DrmPlane {
-    pub(super) fn new(id: KmsObjectId, index: KmsObjectIndex, config: DrmPlaneConfig) -> Self {
+    pub(super) fn new(
+        id: KmsObjectId,
+        index: KmsObjectIndex,
+        config: DrmPlaneConfig,
+        properties: DrmPropertyAttachments,
+    ) -> Self {
         Self {
             id,
             index,
             config,
             state: Mutex::new(DrmPlaneState::default()),
+            properties,
         }
     }
 
@@ -60,7 +70,11 @@ impl DrmPlane {
     }
 
     pub(crate) fn pixel_formats(&self) -> &[DrmPixelFormat] {
-        &self.config.pixel_formats
+        self.config.in_formats.formats()
+    }
+
+    pub(crate) fn properties(&self) -> &DrmPropertyAttachments {
+        &self.properties
     }
 }
 
@@ -70,7 +84,7 @@ pub(super) struct DrmPlaneConfig {
     pub type_: DrmPlaneType,
     /// Each bit represents a CRTC's per-type registration index.
     pub possible_crtcs: KmsObjectMask,
-    pub pixel_formats: Box<[DrmPixelFormat]>,
+    pub in_formats: DrmInFormats,
 }
 
 #[derive(Clone, Debug, Default)]
