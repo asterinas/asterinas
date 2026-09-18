@@ -50,16 +50,17 @@ display_grub_menu = false                   # <16>
 path = "path/to/it"                         # <18>
 args = "-machine q35 -m 2G"                 # <19>
 log_file = "qemu.log"                       # <20>
+daemons = [{ path = "path/to/daemon", args = [] }]  # <21>
 
 # Special options for run subcommand
-[run]                                       # <21>
+[run]                                       # <22>
 [run.build]                                 # <3>
 [run.boot]                                  # <8>
 [run.grub]                                  # <13>
 [run.qemu]                                  # <17>
 
 # Special options for test subcommand
-[test]                                      # <22>
+[test]                                      # <23>
 [test.build]                                # <3>
 [test.boot]                                 # <8>
 [test.grub]                                 # <13>
@@ -67,10 +68,10 @@ log_file = "qemu.log"                       # <20>
 # ----------------------- end of the default scheme settings ----------------------------
 
 # A customized scheme settings
-[scheme."custom"]                           # <23>
+[scheme."custom"]                           # <24>
 [scheme."custom".build]                     # <3>
-[scheme."custom".run]                       # <21>
-[scheme."custom".test]                      # <22>
+[scheme."custom".run]                       # <22>
+[scheme."custom".test]                      # <23>
 ```
 
 Here are some additional notes for the fields:
@@ -212,17 +213,32 @@ can include any POSIX shell compliant separators.
     If the path is relative,
     it is relative to the manifest's enclosing directory.
 
-21. Special settings for running. Only take effect when running `cargo osdk run`.
+21. The managed host daemons to run for the duration of QEMU.
+
+    Optional. If this field is absent or is an empty array (`[]`),
+    OSDK does not spawn any daemons.
+
+    Each daemon has a `path` and an optional list of `args` passed to it.
+
+    OSDK stops each daemon after QEMU exits
+    if it has not already terminated.
+    These daemons are intended for processes tied to QEMU's lifecycle.
+    For one-shot processes, manage them in your own scripts instead.
+
+    If the path is relative,
+    it is relative to the manifest's enclosing directory.
+
+22. Special settings for running. Only take effect when running `cargo osdk run`.
 
     By default, it inherits common options.
 
     Values set here are used to override common options.
 
-22. Special settings for testing.
+23. Special settings for testing.
 
-    Similar to `21`, but only take effect when running `cargo osdk test`.
+    Similar to `22`, but only take effect when running `cargo osdk test`.
 
-23. The definition of customized scheme.
+24. The definition of customized scheme.
 
     A customized scheme has the same fields as the default scheme.
     By default, a customized scheme will inherit all options from the default scheme,

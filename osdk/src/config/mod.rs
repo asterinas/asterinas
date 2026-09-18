@@ -27,6 +27,7 @@ use crate::{
     arch::{Arch, get_default_arch},
     cli::CommonArgs,
     config::unix_args::apply_kv_array,
+    daemon::Daemon,
     error::Errno,
     error_msg,
     util::new_command_checked_exists,
@@ -98,6 +99,28 @@ fn apply_args_before_finalize(
         }
         if let Some(bootdev_options) = &args.bootdev_append_options {
             qemu.bootdev_append_options = Some(bootdev_options.clone());
+        }
+        if !args.qemu_daemons.is_empty() {
+            qemu.daemons = Some(
+                args.qemu_daemons
+                    .iter()
+                    .map(|command| {
+                        let mut parts = shlex::split(command).unwrap_or_else(|| {
+                            error_msg!("failed to parse QEMU daemon command `{command}`");
+                            process::exit(Errno::ParseMetadata as _);
+                        });
+                        if parts.is_empty() {
+                            error_msg!("QEMU daemon command cannot be empty");
+                            process::exit(Errno::ParseMetadata as _);
+                        }
+                        let path = parts.remove(0);
+                        Daemon {
+                            path: PathBuf::from(path),
+                            args: parts,
+                        }
+                    })
+                    .collect(),
+            );
         }
     }
 

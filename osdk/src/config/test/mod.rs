@@ -39,6 +39,11 @@ fn conditional_manifest() {
         Some(Path::new("qemu-serial.log"))
     );
 
+    // Managed daemon scheme
+    let process = &scheme.qemu.as_ref().unwrap().daemons.as_ref().unwrap()[0];
+    assert_eq!(process.path, Path::new("test-service"));
+    assert_eq!(process.args, ["--test"]);
+
     // Iommu
     let mut scheme = toml_manifest.get_scheme(Some("iommu".to_owned())).clone();
     scheme.inherit(&toml_manifest.default_scheme);
@@ -56,6 +61,9 @@ fn conditional_manifest() {
         scheme.qemu.as_ref().unwrap().log_file.as_deref(),
         Some(Path::new("qemu-serial.log"))
     );
+    let process = &scheme.qemu.as_ref().unwrap().daemons.as_ref().unwrap()[0];
+    assert_eq!(process.path, Path::new("test-service"));
+    assert_eq!(process.args, ["--test"]);
 
     // Tdx
     let scheme = toml_manifest.get_scheme(Some("tdx".to_owned()));
