@@ -467,7 +467,7 @@ fn readdir_leaf() {
     let mut offset = 0;
     loop {
         // Pass offset as usize
-        let result = leaf1_inode.readdir_at(offset, &mut visitor);
+        let result = leaf1_inode.readdir_at(offset, &mut visitor, StatusFlags::empty());
         match result {
             Ok(next_offset) => {
                 if next_offset == offset || next_offset == 0 {
