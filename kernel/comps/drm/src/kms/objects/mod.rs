@@ -26,6 +26,7 @@ use crate::kms::objects::{
     crtc::{DrmCrtc, DrmCrtcConfig},
     encoder::{DrmEncoder, DrmEncoderConfig},
     plane::{DrmPlane, DrmPlaneConfig},
+    property::{DrmProperty, DrmPropertyAttachments, DrmStandardProperty, blob::DrmPropertyBlob},
 };
 
 pub mod builder;
@@ -34,6 +35,7 @@ pub(crate) mod crtc;
 pub mod encoder;
 pub(crate) mod framebuffer;
 pub mod plane;
+pub mod property;
 
 pub type KmsObjectId = u32;
 
@@ -60,6 +62,14 @@ pub struct DrmKmsObjectStore {
     crtcs: HashMap<KmsObjectId, Arc<DrmCrtc>>,
     encoders: HashMap<KmsObjectId, Arc<DrmEncoder>>,
     connectors: HashMap<KmsObjectId, Arc<DrmConnector>>,
+
+    properties: HashMap<KmsObjectId, Arc<DrmProperty>>,
+    /// Provides a semantic index for standard properties; driver-specific
+    /// properties remain accessible through `properties` by object ID.
+    standard_property_ids: HashMap<DrmStandardProperty, KmsObjectId>,
+    // TODO: Support both device-lifetime blobs created by the kernel and
+    // per-file blobs created and owned by userspace clients.
+    property_blobs: HashMap<KmsObjectId, Arc<DrmPropertyBlob>>,
 }
 
 impl Default for DrmKmsObjectStore {
@@ -70,6 +80,9 @@ impl Default for DrmKmsObjectStore {
             crtcs: HashMap::new(),
             encoders: HashMap::new(),
             connectors: HashMap::new(),
+            properties: HashMap::new(),
+            standard_property_ids: HashMap::new(),
+            property_blobs: HashMap::new(),
         }
     }
 }
@@ -92,9 +105,10 @@ impl DrmKmsObjectStore {
         &mut self,
         index: KmsObjectIndex,
         config: DrmPlaneConfig,
+        properties: DrmPropertyAttachments,
     ) -> Result<Arc<DrmPlane>> {
         let id = self.alloc_object_id()?;
-        let plane = Arc::new(DrmPlane::new(id, index, config));
+        let plane = Arc::new(DrmPlane::new(id, index, config, properties));
 
         self.planes.insert(id, plane.clone());
         Ok(plane)
@@ -104,9 +118,10 @@ impl DrmKmsObjectStore {
         &mut self,
         index: KmsObjectIndex,
         config: DrmCrtcConfig,
+        properties: DrmPropertyAttachments,
     ) -> Result<Arc<DrmCrtc>> {
         let id = self.alloc_object_id()?;
-        let crtc = Arc::new(DrmCrtc::new(id, index, config));
+        let crtc = Arc::new(DrmCrtc::new(id, index, config, properties));
 
         self.crtcs.insert(id, crtc.clone());
         Ok(crtc)
@@ -128,9 +143,10 @@ impl DrmKmsObjectStore {
         &mut self,
         index: KmsObjectIndex,
         config: DrmConnectorConfig,
+        properties: DrmPropertyAttachments,
     ) -> Result<Arc<DrmConnector>> {
         let id = self.alloc_object_id()?;
-        let connector = Arc::new(DrmConnector::new(id, index, config));
+        let connector = Arc::new(DrmConnector::new(id, index, config, properties));
 
         self.connectors.insert(id, connector.clone());
         Ok(connector)
@@ -237,6 +253,46 @@ impl DrmKmsObjectStore {
 
     pub(crate) fn lookup_connector(&self, id: KmsObjectId) -> Option<&Arc<DrmConnector>> {
         self.connectors.get(&id)
+    }
+
+    fn get_or_create_standard_property(
+        &mut self,
+        standard: DrmStandardProperty,
+    ) -> Result<Arc<DrmProperty>> {
+        if let Some(property) = self.get_standard_property(standard) {
+            return Ok(property.clone());
+        }
+
+        let id = self.alloc_object_id()?;
+        let property = Arc::new(standard.into_property(id));
+
+        let previous = self.properties.insert(id, property.clone());
+        debug_assert!(previous.is_none());
+        let previous = self.standard_property_ids.insert(standard, id);
+        debug_assert!(previous.is_none());
+        Ok(property)
+    }
+
+    fn get_standard_property(&self, standard: DrmStandardProperty) -> Option<&Arc<DrmProperty>> {
+        let id = self.standard_property_ids.get(&standard)?;
+        self.properties.get(id)
+    }
+
+    fn create_property_blob(&mut self, data: Vec<u8>) -> Result<Arc<DrmPropertyBlob>> {
+        let id = self.alloc_object_id()?;
+        let blob = Arc::new(DrmPropertyBlob::new(id, data));
+
+        let previous = self.property_blobs.insert(id, blob.clone());
+        debug_assert!(previous.is_none());
+        Ok(blob)
+    }
+
+    fn lookup_property(&self, id: KmsObjectId) -> Option<&Arc<DrmProperty>> {
+        self.properties.get(&id)
+    }
+
+    fn lookup_property_blob(&self, id: KmsObjectId) -> Option<&Arc<DrmPropertyBlob>> {
+        self.property_blobs.get(&id)
     }
 }
 

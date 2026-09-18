@@ -15,6 +15,10 @@ use crate::kms::{
         crtc::DrmCrtcConfig,
         encoder::{DrmEncoderConfig, DrmEncoderType},
         plane::{DrmPlaneConfig, DrmPlaneType},
+        property::{
+            DrmPropertyAttachments, DrmStandardProperty, KmsObjectPropValue,
+            blob::encode_in_formats_blob_data,
+        },
     },
     pixel_format::DrmPixelFormat,
 };
@@ -208,7 +212,9 @@ impl DrmKmsObjectStoreBuilder {
 
         let mut planes = Vec::with_capacity(plane_configs.len());
         for (plane_index, config) in plane_configs.into_iter().enumerate() {
-            let plane = object_store.create_plane(next_object_index(plane_index)?, config)?;
+            let properties = build_plane_properties(&mut object_store, &config)?;
+            let plane =
+                object_store.create_plane(next_object_index(plane_index)?, config, properties)?;
             planes.push(plane);
         }
 
@@ -217,12 +223,13 @@ impl DrmKmsObjectStoreBuilder {
             let cursor_plane = spec.cursor_plane.map_or_else(Weak::new, |index| {
                 Arc::downgrade(&planes[index.get() as usize])
             });
+            let properties = build_crtc_properties(&mut object_store)?;
             let config = DrmCrtcConfig {
                 gamma_size: spec.gamma_lut_size,
                 primary_plane,
                 cursor_plane,
             };
-            object_store.create_crtc(next_object_index(crtc_index)?, config)?;
+            object_store.create_crtc(next_object_index(crtc_index)?, config, properties)?;
         }
 
         for (encoder_index, mut config) in encoder_configs.into_iter().enumerate() {
@@ -233,7 +240,12 @@ impl DrmKmsObjectStoreBuilder {
         }
 
         for (connector_index, config) in connector_configs.into_iter().enumerate() {
-            object_store.create_connector(next_object_index(connector_index)?, config)?;
+            let properties = build_connector_properties(&mut object_store)?;
+            object_store.create_connector(
+                next_object_index(connector_index)?,
+                config,
+                properties,
+            )?;
         }
 
         Ok(object_store)
@@ -315,4 +327,59 @@ impl CrtcSpec {
             cursor_plane,
         }
     }
+}
+
+fn build_plane_properties(
+    store: &mut DrmKmsObjectStore,
+    config: &DrmPlaneConfig,
+) -> Result<DrmPropertyAttachments> {
+    let in_formats =
+        store.create_property_blob(encode_in_formats_blob_data(&config.pixel_formats))?;
+
+    build_object_properties(
+        store,
+        &[
+            (DrmStandardProperty::PlaneType, config.type_ as u64),
+            (DrmStandardProperty::InFormats, in_formats.id() as u64),
+            (DrmStandardProperty::SrcX, 0),
+            (DrmStandardProperty::SrcY, 0),
+            (DrmStandardProperty::SrcW, 0),
+            (DrmStandardProperty::SrcH, 0),
+            (DrmStandardProperty::CrtcX, 0),
+            (DrmStandardProperty::CrtcY, 0),
+            (DrmStandardProperty::CrtcW, 0),
+            (DrmStandardProperty::CrtcH, 0),
+            (DrmStandardProperty::FbId, 0),
+            (DrmStandardProperty::CrtcId, 0),
+        ],
+    )
+}
+
+fn build_crtc_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
+    build_object_properties(
+        store,
+        &[
+            (DrmStandardProperty::Active, 0),
+            // A zero `MODE_ID` means that the CRTC has no active mode.
+            (DrmStandardProperty::ModeId, 0),
+        ],
+    )
+}
+
+fn build_connector_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
+    build_object_properties(store, &[(DrmStandardProperty::CrtcId, 0)])
+}
+
+fn build_object_properties(
+    store: &mut DrmKmsObjectStore,
+    property_values: &[(DrmStandardProperty, KmsObjectPropValue)],
+) -> Result<DrmPropertyAttachments> {
+    let mut object_properties = DrmPropertyAttachments::default();
+
+    for &(standard, value) in property_values {
+        let property = store.get_or_create_standard_property(standard)?;
+        object_properties.attach(&property, value)?;
+    }
+
+    Ok(object_properties)
 }

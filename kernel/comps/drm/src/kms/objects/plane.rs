@@ -8,6 +8,7 @@ use crate::{
     kms::{
         objects::{
             KmsObjectId, KmsObjectIndex, KmsObjectMask, crtc::DrmCrtc, framebuffer::DrmFramebuffer,
+            property::DrmPropertyAttachments,
         },
         pixel_format::DrmPixelFormat,
     },
@@ -28,15 +29,22 @@ pub(crate) struct DrmPlane {
     index: KmsObjectIndex,
     config: DrmPlaneConfig,
     state: Mutex<DrmPlaneState>,
+    properties: DrmPropertyAttachments,
 }
 
 impl DrmPlane {
-    pub(super) fn new(id: KmsObjectId, index: KmsObjectIndex, config: DrmPlaneConfig) -> Self {
+    pub(super) fn new(
+        id: KmsObjectId,
+        index: KmsObjectIndex,
+        config: DrmPlaneConfig,
+        properties: DrmPropertyAttachments,
+    ) -> Self {
         Self {
             id,
             index,
             config,
             state: Mutex::new(DrmPlaneState::default()),
+            properties,
         }
     }
 
@@ -63,6 +71,10 @@ impl DrmPlane {
     pub(crate) fn pixel_formats(&self) -> &[DrmPixelFormat] {
         &self.config.pixel_formats
     }
+
+    pub(crate) fn properties(&self) -> &DrmPropertyAttachments {
+        &self.properties
+    }
 }
 
 /// Immutable configuration of a DRM plane.
@@ -77,6 +89,7 @@ pub(super) struct DrmPlaneConfig {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DrmPlaneState {
     source_rect: DrmRect,
+    #[expect(unused)]
     crtc_rect: DrmRect,
 
     framebuffer: Weak<DrmFramebuffer>,
@@ -88,6 +101,7 @@ impl DrmPlaneState {
         self.source_rect
     }
 
+    #[expect(unused)]
     pub(crate) fn crtc_rect(&self) -> DrmRect {
         self.crtc_rect
     }

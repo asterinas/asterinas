@@ -6,7 +6,7 @@ use ostd::sync::Mutex;
 
 use crate::kms::{
     display_mode::DrmDisplayMode,
-    objects::{KmsObjectId, KmsObjectIndex, plane::DrmPlane},
+    objects::{KmsObjectId, KmsObjectIndex, plane::DrmPlane, property::DrmPropertyAttachments},
 };
 
 /// A display pipeline that scans out planes using a display mode.
@@ -21,15 +21,22 @@ pub(crate) struct DrmCrtc {
     index: KmsObjectIndex,
     config: DrmCrtcConfig,
     state: Mutex<DrmCrtcState>,
+    properties: DrmPropertyAttachments,
 }
 
 impl DrmCrtc {
-    pub(super) fn new(id: KmsObjectId, index: KmsObjectIndex, config: DrmCrtcConfig) -> Self {
+    pub(super) fn new(
+        id: KmsObjectId,
+        index: KmsObjectIndex,
+        config: DrmCrtcConfig,
+        properties: DrmPropertyAttachments,
+    ) -> Self {
         Self {
             id,
             index,
             config,
             state: Mutex::new(DrmCrtcState::default()),
+            properties,
         }
     }
 
@@ -53,8 +60,13 @@ impl DrmCrtc {
         &self.config.primary_plane
     }
 
+    #[expect(unused)]
     pub(crate) fn cursor_plane(&self) -> &Weak<DrmPlane> {
         &self.config.cursor_plane
+    }
+
+    pub(crate) fn properties(&self) -> &DrmPropertyAttachments {
+        &self.properties
     }
 }
 
@@ -63,6 +75,7 @@ impl DrmCrtc {
 pub(super) struct DrmCrtcConfig {
     pub gamma_size: u32,
     pub primary_plane: Weak<DrmPlane>,
+    #[expect(unused)]
     pub cursor_plane: Weak<DrmPlane>,
 }
 
@@ -82,6 +95,7 @@ impl DrmCrtcState {
         self.is_enabled
     }
 
+    #[expect(unused)]
     pub(crate) fn is_active(&self) -> bool {
         self.is_active
     }
