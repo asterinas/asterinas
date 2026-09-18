@@ -99,6 +99,9 @@ impl Scheme {
                 if qemu.log_file.is_none() {
                     qemu.log_file.clone_from(&from_qemu.log_file);
                 }
+                if qemu.daemons.is_none() {
+                    qemu.daemons.clone_from(&from_qemu.daemons);
+                }
             }
         } else {
             self.qemu.clone_from(&from.qemu);

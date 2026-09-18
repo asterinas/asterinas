@@ -491,6 +491,14 @@ pub struct CommonArgs {
     )]
     pub qemu_args: Vec<String>,
     #[arg(
+        long = "qemu-daemons",
+        require_equals = true,
+        help = "Daemon command (path followed by optional arguments)",
+        value_name = "COMMAND",
+        global = true
+    )]
+    pub qemu_daemons: Vec<String>,
+    #[arg(
         long = "encoding",
         help = "Denote the encoding format for kernel self-decompression",
         value_name = "FORMAT",
