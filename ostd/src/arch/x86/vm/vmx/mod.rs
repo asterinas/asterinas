@@ -3,6 +3,7 @@
 //! Intel VMX platform lifecycle management.
 
 mod instructions;
+pub(crate) mod vmcs;
 
 use x86::msr::{
     IA32_FEATURE_CONTROL, IA32_VMX_BASIC, IA32_VMX_CR0_FIXED0, IA32_VMX_CR0_FIXED1,
@@ -81,7 +82,6 @@ impl VmxGuardState {
 static VMX_GUARD_STATE: Mutex<VmxGuardState> = Mutex::new(VmxGuardState::new());
 
 /// A guard that keeps VMX operation enabled.
-#[cfg_attr(not(ktest), expect(dead_code))]
 #[must_use]
 pub(crate) struct VmxGuard {
     _private: (),
@@ -143,7 +143,6 @@ impl VmxGuardState {
         Ok(())
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     fn drop_vmx(&mut self) {
         self.active_guards -= 1;
         if self.active_guards != 0 {
@@ -236,9 +235,14 @@ impl VmxCpuState {
             return;
         }
 
+        if let Err(err) = vmcs::LocalVmcsState::deactivate_all(&irq_guard) {
+            cpu_state.last_error = Some(err);
+            return;
+        }
+
         // SAFETY:
         // 1. `cpu_state.is_enabled` means this CPU is in VMX operation.
-        // 2. This module never loads a VMCS, so there are no active VMCSs to clear.
+        // 2. `deactivate_all` cleared every active VMCS above.
         if let Err(err) = unsafe { instructions::vmxoff(&irq_guard) } {
             cpu_state.last_error = Some(err);
             return;
