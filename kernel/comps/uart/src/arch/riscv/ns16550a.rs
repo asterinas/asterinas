@@ -39,6 +39,7 @@ pub(super) fn init(fdt_node: FdtNode) {
     else {
         return;
     };
+
     let Some([mut irq_line]) = fdt_node.acquire_irq_lines() else {
         return;
     };
@@ -48,14 +49,18 @@ pub(super) fn init(fdt_node: FdtNode) {
 
     let uart_console = UartConsole::new(SpinLock::new(uart));
 
+    let cloned_uart_console = uart_console.clone();
+    irq_line.on_active(move |_| cloned_uart_console.trigger_input_callbacks());
+
+    // Retain the mapped IRQ line before enabling UART receive interrupts.
+    IRQ_LINE.call_once(move || irq_line);
+
     aster_console::register_device(
         aster_console::UART_CONSOLE_NAME.to_string(),
         uart_console.clone(),
     );
 
-    let cloned_uart_console = uart_console.clone();
-    irq_line.on_active(move |_| cloned_uart_console.trigger_input_callbacks());
-    IRQ_LINE.call_once(move || irq_line);
+    uart_console.uart().lock().enable_receive_interrupt();
     uart_console.uart().flush();
 
     ostd::info!("Registered NS16550A as a console");

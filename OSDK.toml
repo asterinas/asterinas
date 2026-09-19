@@ -69,6 +69,16 @@ qemu.args = """\
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log
 """
+[scheme."milkv_duo256m"]
+supported_archs = ["riscv64"]
+build.features = [
+    "riscv_sv39_mode",
+    "riscv_thead_mae",
+    "riscv_legacy_sbi_console",
+]
+build.strip_elf = false
+boot.method = "vmm-direct"
+qemu.args = "$(./tools/qemu_args.sh milkv_duo256m)"
 
 [scheme."loongarch"]
 boot.method = "vmm-direct"

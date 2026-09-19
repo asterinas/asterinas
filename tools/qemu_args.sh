@@ -79,7 +79,15 @@ if [ "$INITRAMFS" = "off" ]; then
     ROOTFS_DRIVE_ARGS="-drive if=none,format=raw,id=rootfs,file=./test/initramfs/build/rootfs.img"
 fi
 
-if [ "$1" = "riscv" ]; then
+if [ "$1" = "riscv" ] || [ "$1" = "milkv_duo256m" ]; then
+    # QEMU's `virt` machine does not model SG2002 peripherals. The C906 CPU
+    # model is used here to exercise T-Head page-table attributes; UART and
+    # PLIC integration still require testing on real hardware.
+    if [ "$1" = "milkv_duo256m" ]; then
+        RISCV_CPU="thead-c906"
+    else
+        RISCV_CPU="rv64,svpbmt=true,zkr=true"
+    fi
     # NOTE: The initramfs assumes that ext2.img, exfat.img, and ltp_dev.img appear as
     # `/dev/vda`, `/dev/vdb`, and `/dev/vdc`, respectively. RISC-V virtio-mmio
     # block devices are discovered in reverse command-line order, so list them
@@ -92,7 +100,7 @@ if [ "$1" = "riscv" ]; then
     fi
 
     QEMU_ARGS="\
-        -cpu rv64,svpbmt=true,zkr=true \
+        -cpu ${RISCV_CPU} \
         -machine virt \
         -m ${MEM:-8G} \
         -smp ${SMP:-1} \

@@ -18,10 +18,21 @@ use crate::{
     mm::paddr_to_vaddr,
 };
 
-global_asm!(include_str!("bsp_boot.S"));
+#[cfg(feature = "riscv_thead_mae")]
+const BOOT_RAM_PTE_ATTR: usize = 0x7000_0000_0000_0000;
+
+#[cfg(not(feature = "riscv_thead_mae"))]
+const BOOT_RAM_PTE_ATTR: usize = 0;
+
+global_asm!(
+    include_str!("bsp_boot.S"),
+    BOOT_RAM_PTE_ATTR = const BOOT_RAM_PTE_ATTR,
+);
 
 /// The Flattened Device Tree of the platform.
 pub static DEVICE_TREE: Once<Fdt> = Once::new();
+/// The physical address of the flattened device tree.
+static DEVICE_TREE_PADDR: Once<usize> = Once::new();
 
 fn parse_bootloader_name() -> &'static str {
     "Unknown"
@@ -66,6 +77,32 @@ fn parse_memory_regions() -> MemoryRegionArray {
                 ))
                 .unwrap();
         }
+    }
+    // `DEVICE_TREE` continues borrowing the original DTB after the frame
+    // allocator is initialized, so the DTB frames must not be reused.
+    let device_tree = DEVICE_TREE.get().unwrap();
+
+    regions
+        .push(MemoryRegion::new(
+            *DEVICE_TREE_PADDR.get().unwrap(),
+            device_tree.total_size(),
+            MemoryRegionType::Reserved,
+        ))
+        .unwrap();
+
+    for reservation in device_tree.memory_reservations() {
+        let size = reservation.size();
+        if size == 0 {
+            continue;
+        }
+
+        regions
+            .push(MemoryRegion::new(
+                reservation.address() as usize,
+                size,
+                MemoryRegionType::Reserved,
+            ))
+            .unwrap();
     }
 
     if let Some(node) = DEVICE_TREE.get().unwrap().find_node("/reserved-memory") {
@@ -131,6 +168,7 @@ unsafe extern "C" fn riscv_boot(hart_id: usize, device_tree_paddr: usize) -> ! {
     let device_tree_ptr = paddr_to_vaddr(device_tree_paddr) as *const u8;
     // SAFETY: The caller ensures the correctness of `device_tree_ptr`.
     let fdt = unsafe { Fdt::from_ptr(device_tree_ptr).unwrap() };
+    DEVICE_TREE_PADDR.call_once(|| device_tree_paddr);
     DEVICE_TREE.call_once(|| fdt);
 
     use crate::boot::{EARLY_INFO, EarlyBootInfo, start_kernel};
