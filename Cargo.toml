@@ -27,6 +27,7 @@ members = [
     "ostd/libs/ostd-test",
     "ostd/libs/padding-struct",
     "kernel",
+    "kernel/comps/nvme",
     "kernel/comps/uart",
     "kernel/core",
     "kernel/core/comps/block",
@@ -38,7 +39,6 @@ members = [
     "kernel/core/comps/logger",
     "kernel/core/comps/mlsdisk",
     "kernel/core/comps/network",
-    "kernel/core/comps/nvme",
     "kernel/core/comps/pci",
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
@@ -79,6 +79,7 @@ default-members = [
     "osdk/deps/test-kernel",
     "ostd",
     "kernel",
+    "kernel/comps/nvme",
     "kernel/comps/uart",
     "kernel/core",
     "kernel/core/comps/block",
@@ -90,7 +91,6 @@ default-members = [
     "kernel/core/comps/logger",
     "kernel/core/comps/mlsdisk",
     "kernel/core/comps/network",
-    "kernel/core/comps/nvme",
     "kernel/core/comps/pci",
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
@@ -173,7 +173,7 @@ aster-input = { path = "kernel/core/comps/input" }
 aster-logger = { path = "kernel/core/comps/logger" }
 aster-mlsdisk = { path = "kernel/core/comps/mlsdisk" }
 aster-network = { path = "kernel/core/comps/network" }
-aster-nvme = { path = "kernel/core/comps/nvme" }
+aster-nvme = { path = "kernel/comps/nvme" }
 aster-pci = { path = "kernel/core/comps/pci" }
 aster-softirq = { path = "kernel/core/comps/softirq" }
 aster-systree = { path = "kernel/core/comps/systree" }
