@@ -82,3 +82,143 @@ pub(super) unsafe fn vmptrst(_irq_guard: &DisabledLocalIrqGuard) -> u64 {
 
     current_vmcs
 }
+
+/// Invalidates translations derived from all EPT contexts on the current CPU.
+///
+/// # Safety
+///
+/// 1. The current CPU must be in VMX root operation.
+/// 2. The current CPU must support all-context INVEPT.
+pub(super) unsafe fn invept_all_contexts(_irq_guard: &DisabledLocalIrqGuard) -> Result<()> {
+    #[repr(C, align(16))]
+    struct Descriptor {
+        eptp: u64,
+        reserved: u64,
+    }
+
+    let descriptor = Descriptor {
+        eptp: 0,
+        reserved: 0,
+    };
+    let failed: u8;
+    // SAFETY: The caller ensures safety.
+    unsafe {
+        core::arch::asm!(
+            "invept {typ}, [{descriptor}]",
+            "setna {failed}",
+            typ = in(reg) 2_u64,
+            descriptor = in(reg) &descriptor,
+            failed = out(reg_byte) failed,
+            options(nostack)
+        );
+    }
+    if failed != 0 {
+        return Err(Error::InvalidArgs);
+    }
+    Ok(())
+}
+/// Clears a VMCS, making it inactive and flushing its state to the region.
+///
+/// # Safety
+///
+/// 1. The current CPU must be in VMX root operation.
+/// 2. `vmcs_region` must identify a valid, page-aligned, initialized VMCS region.
+pub(super) unsafe fn vmclear(vmcs_region: Paddr, _irq_guard: &DisabledLocalIrqGuard) -> Result<()> {
+    let failed: u8;
+    // SAFETY: The caller ensures safety.
+    unsafe {
+        core::arch::asm!(
+            "vmclear [{region}]",
+            "setna {failed}",
+            region = in(reg) &vmcs_region,
+            failed = out(reg_byte) failed,
+            options(nostack)
+        );
+    }
+    if failed != 0 {
+        return Err(Error::InvalidArgs);
+    }
+    Ok(())
+}
+
+/// Makes a VMCS active and current on this CPU.
+///
+/// # Safety
+///
+/// 1. The current CPU must be in VMX root operation.
+/// 2. `vmcs_region` must identify a valid, page-aligned, initialized VMCS region
+///    which is inactive on every other CPU.
+pub(super) unsafe fn vmptrld(vmcs_region: Paddr, _irq_guard: &DisabledLocalIrqGuard) -> Result<()> {
+    let failed: u8;
+    // SAFETY: The caller ensures safety.
+    unsafe {
+        core::arch::asm!(
+            "vmptrld [{region}]",
+            "setna {failed}",
+            region = in(reg) &vmcs_region,
+            failed = out(reg_byte) failed,
+            options(nostack)
+        );
+    }
+    if failed != 0 {
+        return Err(Error::InvalidArgs);
+    }
+    Ok(())
+}
+
+/// Reads a field from the current VMCS.
+///
+/// # Safety
+///
+/// The current CPU must be in VMX root operation with a valid current VMCS
+/// that cannot be accessed concurrently.
+pub(super) unsafe fn vmread(field: u32, _irq_guard: &DisabledLocalIrqGuard) -> Result<usize> {
+    let value: usize;
+    let failed: u8;
+    // SAFETY: The caller ensures safety.
+    unsafe {
+        core::arch::asm!(
+            "vmread {value}, {field}",
+            "setna {failed}",
+            value = out(reg) value,
+            field = in(reg) field as usize,
+            failed = out(reg_byte) failed,
+            options(nostack)
+        );
+    }
+    if failed != 0 {
+        return Err(Error::InvalidArgs);
+    }
+    Ok(value)
+}
+
+/// Writes a field in the current VMCS.
+///
+/// # Safety
+///
+/// 1. The current CPU must be in VMX root operation with a valid, exclusively
+///    accessible current VMCS.
+/// 2. The field and value must preserve the invariants of its owner, including
+///    the lifetime and validity of any host resources referenced by the VMCS.
+pub(super) unsafe fn vmwrite(
+    field: u32,
+    value: usize,
+    _irq_guard: &DisabledLocalIrqGuard,
+) -> Result<()> {
+    let failed: u8;
+    // SAFETY: The caller ensures safety.
+    unsafe {
+        core::arch::asm!(
+            "vmwrite {field}, {value}",
+            "setna {failed}",
+            field = in(reg) field as usize,
+            value = in(reg) value,
+            failed = out(reg_byte) failed,
+            options(nostack)
+        );
+    }
+    if failed != 0 {
+        return Err(Error::InvalidArgs);
+    }
+    Ok(())
+}
