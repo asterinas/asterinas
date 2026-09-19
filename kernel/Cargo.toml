@@ -12,6 +12,9 @@ ostd.workspace = true
 # Keep this list in sync with the `extern crate` declarations in `src/lib.rs`.
 aster-uart.workspace = true
 
+[target.x86_64-unknown-none.dependencies]
+aster-i8042.workspace = true
+
 [features]
 default = ["cvm_guest"]
 coverage = ["aster-core/coverage"]

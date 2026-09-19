@@ -7,8 +7,9 @@
 
 extern crate alloc;
 
+use aster_core::{power::Priority, register_restart_handler};
 use component::{ComponentInitError, init_component};
-use ostd::power;
+use ostd::power::ExitCode;
 
 use self::controller::I8042_CONTROLLER;
 
@@ -33,9 +34,10 @@ fn init() -> Result<(), ComponentInitError> {
 }
 
 /// Attempts to reset the CPU via the i8042 PS/2 controller.
-pub fn try_cpu_reset(_code: power::ExitCode) {
+fn try_cpu_reset(_code: ExitCode) {
     // If possible, keep this method panic-free because it may be called by the panic handler.
     if let Some(controller) = I8042_CONTROLLER.get() {
         controller.lock().reset_cpu();
     }
 }
+register_restart_handler!(try_cpu_reset, Priority::Fallback);
