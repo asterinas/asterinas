@@ -211,16 +211,11 @@ impl ExfatInodeInner {
 
     /// Get physical sector id from logical sector id for this Inode.
     fn get_sector_id(&self, sector_id: usize) -> Result<usize> {
-        let chain_offset = self
-            .start_chain
-            .walk_to_cluster_at_offset(sector_id * self.fs().sector_size())?;
-
         let sect_per_cluster = self.fs().super_block().sect_per_cluster as usize;
-        let cluster_id = sector_id / sect_per_cluster;
         let cluster = self.get_physical_cluster((sector_id / sect_per_cluster) as ClusterID)?;
 
         let sec_offset = sector_id % (self.fs().super_block().sect_per_cluster as usize);
-        Ok(self.fs().cluster_to_off(cluster) / self.fs().sector_size() + sec_offset)
+        Ok(self.fs().cluster_to_off(cluster)? / self.fs().sector_size() + sec_offset)
     }
 
     /// Get the physical cluster id from the logical cluster id in the inode.
@@ -976,8 +971,15 @@ impl ExfatInode {
         }
 
         let chain_flag = FatChainFlags::from_bits_truncate(stream.flags);
-        let start_cluster = stream.start_cluster;
         let num_clusters = size_allocated.align_up(fs.cluster_size()) / fs.cluster_size();
+
+        let start_cluster = if num_clusters == 0 {
+            0
+        } else if !fs.is_valid_cluster(stream.start_cluster) {
+            return_errno_with_message!(Errno::EINVAL, "invalid start cluster in stream entry");
+        } else {
+            stream.start_cluster
+        };
 
         let start_chain = ExfatChain::new(
             fs_weak.clone(),
