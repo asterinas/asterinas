@@ -422,7 +422,7 @@ fn map_segment_vmo(
     if segment_size != 0 {
         let vm_map_options = vmar
             .new_map(segment_size, perms)
-            .mappable(elf_file)?
+            .mappable(&elf_file)?
             .vmo_offset(segment_offset)
             .offset(VmarMapOffset::FixedReplace(offset))
             .handle_page_faults_around();

@@ -18,7 +18,8 @@ use crate::{
     cpu_local_cell,
     io::IoMem,
     mm::{
-        Frame, PAGE_SIZE, PageProperty, PrivilegedPageFlags, UFrame, VmReader, VmWriter,
+        Frame, HasPaddrRange, PAGE_SIZE, PageProperty, PrivilegedPageFlags, UFrame, VmReader,
+        VmWriter,
         frame::FrameRef,
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
@@ -411,13 +412,15 @@ impl<'a> CursorMut<'a> {
             };
         }
 
+        fn io_mem_contains(parent: &IoMem, child: &IoMem) -> bool {
+            parent.paddr() <= child.paddr() && child.end_paddr() <= parent.end_paddr()
+        }
+
         // If the `iomems` list in `VmSpace` does not contain the current I/O
         // memory, push it to maintain the correct reference count.
         let mut iomems = self.vmspace.iomems.lock();
-        if !iomems
-            .iter()
-            .any(|iomem| iomem.paddr() == io_mem.paddr() && iomem.size() == io_mem.size())
-        {
+        if !iomems.iter().any(|iomem| io_mem_contains(iomem, &io_mem)) {
+            iomems.retain(|iomem| !io_mem_contains(&io_mem, iomem));
             iomems.push(io_mem);
         }
     }

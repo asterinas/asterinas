@@ -75,7 +75,8 @@ fn do_sys_mmap(
 
     let user_space = ctx.user_space();
     let vmar = user_space.vmar();
-    let vm_map_options = {
+
+    let map_addr = {
         let mut options = vmar.new_map(len, vm_perms);
 
         if option.flags().is_fixed() {
@@ -118,9 +119,11 @@ fn do_sys_mmap(
                 };
                 options = options.vmo(shared_vmo);
             }
+
+            options.build()?
         } else {
             let mut file_table = ctx.thread_local.borrow_file_table_mut();
-            let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+            let file = get_file_fast!(&mut file_table, raw_fd.try_into()?).into_owned();
 
             let access_mode = file.access_mode();
             if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {
@@ -135,15 +138,13 @@ fn do_sys_mmap(
 
             options = options
                 .may_perms(vm_may_perms)
-                .mappable(file.into_owned())?
+                .mappable(&file)?
                 .vmo_offset(offset)
                 .handle_page_faults_around();
+
+            options.build()?
         }
-
-        options
     };
-
-    let map_addr = vm_map_options.build()?;
 
     Ok(map_addr)
 }
