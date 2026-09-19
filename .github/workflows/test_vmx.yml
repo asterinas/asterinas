@@ -10,7 +10,7 @@ jobs:
   ktest-vmx:
       runs-on: self-hosted
       container:
-        image: asterinas/kernel-dev:0.18.1-20260805
+        image: asterinas/kernel-dev:0.18.1-20260918
         options: -v /dev:/dev --privileged
 
       steps:
