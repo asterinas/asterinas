@@ -5,7 +5,7 @@
 use super::block_manager::BlockPtrTree;
 use crate::fs::ext2::prelude::*;
 
-/// Direct-I/O block-range classification for the current logical interval.
+/// Ext2 block-range classification for the current logical interval.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum IoRange {
     /// A contiguous mapped device-block range.
@@ -16,7 +16,7 @@ pub(super) enum IoRange {
 
 /// Iterator over mapped runs and sparse holes in a logical block range.
 ///
-/// Each item preserves the range classification needed by direct I/O:
+/// Each item preserves the range classification needed by block-backed I/O:
 /// contiguous device-block mappings remain grouped,
 /// and sparse logical ranges remain explicit holes.
 pub(super) struct IoRangeIter<'a> {
@@ -36,7 +36,7 @@ impl<'a> IoRangeIter<'a> {
         }
     }
 
-    /// Returns the next logical run for direct I/O planning.
+    /// Returns the next logical run for block-I/O planning.
     ///
     /// `IoRange::Mapped` returns one run whose logical blocks are backed by
     /// contiguous physical device blocks. `IoRange::Hole` returns a known hole
