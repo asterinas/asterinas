@@ -1,0 +1,82 @@
+Subject: [PATCH] Use QEMU TCG without hypervisor device discovery
+
+This package is used only by the experimental x86-64 TCG module.
+Select the emulated CPU model and skip KVM/MSHV device discovery while
+preserving the ordinary and vhost device ACLs. IOMMU and confidential
+guests are outside this profile.
+
+--- a/virtcontainers/qemu_amd64.go
++++ b/virtcontainers/qemu_amd64.go
+@@ -47,9 +47,9 @@
+ 
+ 	defaultQemuMachineType = QemuQ35
+ 
+-	defaultQemuMachineOptions = "accel=kvm"
+-
+-	splitIrqChipMachineOptions = "accel=kvm,kernel_irqchip=split"
++	defaultQemuMachineOptions = "accel=tcg"
++
++	splitIrqChipMachineOptions = "accel=tcg"
+ 
+ 	qmpMigrationWaitTimeout = 5 * time.Second
+ )
+--- a/virtcontainers/qemu_arch_base.go
++++ b/virtcontainers/qemu_arch_base.go
+@@ -201,7 +201,7 @@
+ const (
+ 	defaultCores       uint32 = 1
+ 	defaultThreads     uint32 = 1
+-	defaultCPUModel           = "host"
++	defaultCPUModel           = "max"
+ 	defaultBridgeBus          = "pcie.0"
+ 	defaultPCBridgeBus        = "pci.0"
+ 	maxDevIDSize              = 31
+--- a/pkg/resourcecontrol/cgroups.go
++++ b/pkg/resourcecontrol/cgroups.go
+@@ -8,7 +8,6 @@
+ package resourcecontrol
+ 
+ import (
+-	"errors"
+ 	"fmt"
+ 	"os"
+ 	"path/filepath"
+@@ -64,37 +63,13 @@
+ 		"/dev/console",
+ 	}
+ 
+-	// Processes running in a device-cgroup are constrained, they have acccess
+-	// only to the devices listed in the devices.list file.
+-	// In order to run Virtual Machines and create virtqueues, hypervisors
+-	// need access to certain character devices in the host, like kvm and vhost-net.
+-	hypervisorDevices := []string{
+-		"/dev/kvm",  // To run virtual machines with KVM
+-		"/dev/mshv", // To run virtual machines with Hyper-V
+-	}
++	// QEMU TCG needs no /dev/kvm or /dev/mshv device.
+ 	virtualDevices := []string{
+ 		"/dev/vhost-net",   // To create virtqueues
+ 		"/dev/vfio/vfio",   // To access VFIO devices
+ 		"/dev/vhost-vsock", // To interact with vsock if
+ 	}
+ 
+-	hypervisorDeviceAdded := false
+-	for _, hypervisor := range hypervisorDevices {
+-		hypervisorDevice, err := DeviceToLinuxDevice(hypervisor)
+-		if err != nil {
+-			if !os.IsNotExist(err) {
+-				controllerLogger.WithField("source", "cgroups").Warnf("Failed to add %s to the devices cgroup: %v", hypervisor, err)
+-			}
+-			continue
+-		}
+-		devices = append(devices, hypervisorDevice)
+-		hypervisorDeviceAdded = true
+-		controllerLogger.WithField("source", "cgroups").Infof("Adding %s to the devices cgroup", hypervisor)
+-		break
+-	}
+-	if !hypervisorDeviceAdded {
+-		return []specs.LinuxDeviceCgroup{}, errors.New("failed to add any hypervisor device to devices cgroup")
+-	}
+ 	defaultDevices = append(defaultDevices, virtualDevices...)
+ 
+ 	for _, device := range defaultDevices {
