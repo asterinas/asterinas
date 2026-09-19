@@ -16,14 +16,14 @@ use crate::{
     fs::file::{FileCommon, FileLike},
     net::socket::{
         Socket, new_socket_common,
-        options::{Error as SocketError, SocketOption, macros::sock_option_mut},
+        options::{Error as SocketError, SocketOption, SocketType, macros::sock_option_mut},
         private::SocketPrivate,
         util::{MessageHeader, RecvFlags, RecvOutput, SendFlags, SockShutdownCmd, SocketAddr},
         vsock::addr::{UNSPECIFIED_VSOCK_ADDR, VsockSocketAddr},
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
-    util::{MultiRead, MultiWrite},
+    util::{MultiRead, MultiWrite, net::SockType},
 };
 
 pub(crate) struct VsockStreamSocket {
@@ -336,6 +336,10 @@ impl Socket for VsockStreamSocket {
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
         sock_option_mut!(match option {
+            socket_type @ SocketType => {
+                socket_type.set(SockType::SOCK_STREAM);
+                return Ok(());
+            }
             socket_errors @ SocketError => {
                 socket_errors.set(self.test_and_clear_error());
                 return Ok(());
