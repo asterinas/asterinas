@@ -8,6 +8,7 @@ use core::{
 use ostd::sync::WaitQueue;
 
 use crate::{
+    dispatch_ioctl,
     events::IoEvents,
     fs::{
         file::{AccessMode, PerOpenFileOps, SettableStatusFlags, StatusFlags},
@@ -24,7 +25,7 @@ use crate::{
         },
     },
     util::{
-        ioctl::{RawIoctl, dispatch_ioctl},
+        ioctl::RawIoctl,
         ring_buffer::{ConsumerU8Ext, ProducerU8Ext, RbConsumer, RbProducer, RingBuffer},
     },
 };

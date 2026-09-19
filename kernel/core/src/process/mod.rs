@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod clone;
-pub(crate) mod credentials;
+pub mod credentials;
 mod execve;
 mod exit;
 mod kill;
 mod namespace;
 mod pid_file;
 pub(crate) mod pid_table;
-pub(crate) mod posix_thread;
+pub mod posix_thread;
 #[expect(clippy::module_inception)]
 mod process;
 mod process_filter;
 mod process_vm;
 mod program_loader;
 pub(crate) mod rlimit;
-pub(crate) mod signal;
+pub mod signal;
 mod stats;
 mod status;
 pub(crate) mod sync;
@@ -27,15 +27,16 @@ pub(crate) use clone::{CloneArgs, CloneFlags, clone_child};
 pub(crate) use credentials::{Credentials, Gid, Uid};
 pub(crate) use execve::do_execve;
 pub(crate) use kill::{kill, kill_all, kill_group, tgkill};
+pub use namespace::user_ns::UserNamespace;
 pub(crate) use namespace::{
     nsproxy::{ContextSetNsAdminApi, NsProxy, NsProxyBuilder, check_unsupported_ns_flags},
     unshare::ContextUnshareAdminApi,
-    user_ns::UserNamespace,
 };
 pub(crate) use pid_file::PidFile;
+pub use process::Process;
 pub(crate) use process::{
-    ExitCode, INIT_PROCESS_PID, JobControl, Pgid, Pid, Process, ProcessGroup, ReapedChildrenStats,
-    Session, Sid, Terminal, broadcast_signal_async, enqueue_signal_async, spawn_init_process,
+    ExitCode, INIT_PROCESS_PID, JobControl, Pgid, Pid, ProcessGroup, ReapedChildrenStats, Session,
+    Sid, Terminal, broadcast_signal_async, enqueue_signal_async, spawn_init_process,
 };
 pub(crate) use process_filter::ProcessFilter;
 pub(crate) use process_vm::{INIT_STACK_SIZE, LockedHeap, ProcessVm, VmarSnapshot};

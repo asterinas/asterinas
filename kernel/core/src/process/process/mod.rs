@@ -83,7 +83,7 @@ pub(super) fn init_on_each_cpu() {
 }
 
 /// Process stands for a set of threads that shares the same userspace.
-pub(crate) struct Process {
+pub struct Process {
     // Immutable Part
     pid: Pid,
 
@@ -221,7 +221,7 @@ impl Process {
     /// It returns `None` if:
     ///  - the function is called in the bootstrap context;
     ///  - or if the current task is not associated with a process.
-    pub(crate) fn current() -> Option<Arc<Process>> {
+    pub fn current() -> Option<Arc<Process>> {
         Some(Task::current()?.as_posix_thread()?.process())
     }
 
@@ -287,7 +287,7 @@ impl Process {
 
     // *********** Basic structures ***********
 
-    pub(crate) fn pid(&self) -> Pid {
+    pub fn pid(&self) -> u32 {
         self.pid
     }
 

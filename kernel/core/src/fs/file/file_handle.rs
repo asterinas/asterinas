@@ -343,7 +343,7 @@ impl StatusFlagsUpdate {
 
 /// An object that may be memory mapped into the user address space.
 #[derive(Clone, Debug)]
-pub(crate) enum Mappable {
+pub enum Mappable {
     /// A VMO (i.e., page cache).
     Vmo(Arc<Vmo>),
     /// An MMIO region.
@@ -352,7 +352,7 @@ pub(crate) enum Mappable {
 
 /// Specifies the extent of a file synchronization operation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum SyncMode {
+pub enum SyncMode {
     /// Synchronizes file data and the metadata required to retrieve it.
     Data,
     /// Synchronizes file data and all associated metadata.

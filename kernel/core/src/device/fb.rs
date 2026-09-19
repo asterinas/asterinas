@@ -10,6 +10,7 @@ use ostd::mm::{HasPaddr, HasSize, VmIo};
 use super::{Device, DeviceType, registry::char};
 use crate::{
     context::current_userspace,
+    dispatch_ioctl,
     events::IoEvents,
     fs::{
         devtmpfs::DevtmpfsNodeMeta,
@@ -18,7 +19,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    util::ioctl::{RawIoctl, dispatch_ioctl},
+    util::ioctl::RawIoctl,
 };
 
 #[derive(Debug)]
@@ -203,7 +204,10 @@ struct FbCmapUser {
 
 mod ioctl_defs {
     use super::{FbCmapUser, FbFixScreenInfo, FbVarScreenInfo};
-    use crate::util::ioctl::{InData, InOutData, NoData, OutData, ioc};
+    use crate::{
+        ioc,
+        util::ioctl::{InData, InOutData, NoData, OutData},
+    };
 
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/fb.h#L13-L38>
 

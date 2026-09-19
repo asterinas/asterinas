@@ -5,7 +5,7 @@
 //! This module defines `ioctl` commands that are widely supported across various
 //! file and device types.
 
-use crate::util::ioctl::{OutData, ioc};
+use crate::{ioc, util::ioctl::OutData};
 
 // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h>
 
