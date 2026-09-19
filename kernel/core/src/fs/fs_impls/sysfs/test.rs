@@ -4,19 +4,21 @@ use alloc::{borrow::Cow, format, vec};
 use core::fmt::Debug;
 
 use aster_systree::{
-    BranchNodeFields, Error as SysTreeError, NormalNodeFields, Result as SysTreeResult,
-    SymlinkNodeFields, SysAttrSetBuilder, SysObj, SysPerms, SysStr, inherit_sys_branch_node,
-    inherit_sys_leaf_node, inherit_sys_symlink_node, init_for_ktest,
+    BranchNodeFields, Error as SysTreeError, NormalNodeFields, ObjFields, Result as SysTreeResult,
+    SymlinkNodeFields, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysNode, SysNodeId,
+    SysNodeType, SysObj, SysPerms, SysStr, inherit_sys_branch_node, inherit_sys_leaf_node,
+    inherit_sys_symlink_node, init_for_ktest,
 };
 use aster_util::printer::VmPrinter;
+use inherit_methods_macro::inherit_methods;
 use ostd::prelude::ktest;
 
 use crate::{
     fs::{
         file::{InodeType, StatusFlags, mkmod},
-        sysfs::{self, fs::SysFs},
-        utils::DirentVisitor,
-        vfs::file_system::FileSystem,
+        sysfs::{fs::SysFs, inode::SysFsInode},
+        utils::{DirentVisitor, systree_inode::SysTreeInodeTy},
+        vfs::{file_system::FileSystem, path::Dentry},
     },
     prelude::*,
     time::clocks::init_for_ktest as time_init_for_ktest,
@@ -208,39 +210,111 @@ impl MockSymlinkNode {
 
 inherit_sys_symlink_node!(MockSymlinkNode, fields);
 
+// A leaf node that allows changing its attribute set between lookups.
+#[derive(Debug)]
+struct MockMutableAttrNode {
+    fields: ObjFields<Self>,
+    attrs: RwLock<Arc<SysAttrSet>>,
+}
+
+impl MockMutableAttrNode {
+    fn new() -> Arc<Self> {
+        Arc::new_cyclic(|this| Self {
+            fields: ObjFields::new("device".into(), this.clone()),
+            attrs: RwLock::new(SysAttrSet::empty().clone()),
+        })
+    }
+}
+
+#[inherit_methods(from = "self.fields")]
+impl SysObj for MockMutableAttrNode {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn cast_to_node(&self) -> Option<Arc<dyn SysNode>> {
+        self.fields.weak_self().upgrade().map(|node| node as _)
+    }
+
+    fn type_(&self) -> SysNodeType {
+        SysNodeType::Leaf
+    }
+
+    fn id(&self) -> &SysNodeId;
+    fn name(&self) -> &SysStr;
+    fn init_parent(&self, parent: Weak<dyn SysBranchNode>);
+    fn parent(&self) -> Option<Arc<dyn SysBranchNode>>;
+}
+
+impl SysNode for MockMutableAttrNode {
+    fn node_attrs(&self) -> Arc<SysAttrSet> {
+        self.attrs.read().clone()
+    }
+
+    fn is_attr_absent(&self, _name: &str) -> bool {
+        false
+    }
+
+    fn read_attr(&self, name: &str, writer: &mut VmWriter) -> SysTreeResult<usize> {
+        self.read_attr_at(name, 0, writer)
+    }
+
+    fn read_attr_at(
+        &self,
+        _name: &str,
+        _offset: usize,
+        _writer: &mut VmWriter,
+    ) -> SysTreeResult<usize> {
+        Err(SysTreeError::AttributeError)
+    }
+
+    fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> SysTreeResult<usize> {
+        Err(SysTreeError::AttributeError)
+    }
+
+    fn write_attr_at(
+        &self,
+        name: &str,
+        _offset: usize,
+        reader: &mut VmReader,
+    ) -> SysTreeResult<usize> {
+        self.write_attr(name, reader)
+    }
+
+    fn perms(&self) -> SysPerms {
+        SysPerms::DEFAULT_RW_PERMS
+    }
+}
+
 // --- Test Setup ---
 
-// Create a mock SysTree instance populated with mock nodes.
-fn create_mock_systree_instance() {
+/// Creates a sysfs view of the given node tree and returns its root dentry.
+fn init_sysfs(root_node: Arc<dyn SysBranchNode>) -> Arc<Dentry> {
     time_init_for_ktest();
     init_for_ktest();
-    // Create nodes
-    let root = sysfs::systree_singleton().root();
+    let sysfs = SysFs::new_for_ktest();
+    Dentry::new_root(SysFsInode::new_root(root_node, &sysfs.sb()))
+}
+
+/// Creates a mock node tree with branches, leaves, and a symlink, returning its root node.
+fn create_mock_systree() -> Arc<MockBranchNode> {
+    let root = MockBranchNode::new("root");
     let branch1 = MockBranchNode::new("branch1");
     let leaf1 = MockLeafNode::new("leaf1".into(), &["r_attr1"], &["rw_attr1"]);
     let leaf2 = MockLeafNode::new("leaf2".into(), &["r_attr2"], &[]);
     let symlink1 = MockSymlinkNode::new("link1".into(), "../branch1/leaf1");
 
-    // Build hierarchy - ignore Result since this is test setup
-    branch1.add_child(leaf1.clone() as Arc<dyn SysObj>);
-    let _ = root.add_child(branch1.clone() as Arc<dyn SysObj>);
-    let _ = root.add_child(leaf2.clone() as Arc<dyn SysObj>);
-    let _ = root.add_child(symlink1.clone() as Arc<dyn SysObj>);
-}
-
-// Initialize a sysfs instance using the mock systree.
-fn init_sysfs_with_mock_tree() -> Arc<SysFs> {
-    create_mock_systree_instance();
-    SysFs::new_for_ktest()
+    branch1.add_child(leaf1);
+    root.add_child(branch1);
+    root.add_child(leaf2);
+    root.add_child(symlink1);
+    root
 }
 
 #[ktest]
 fn root_lookup() {
-    // Setup: Create a sysfs instance backed by the mock systree
-    let sysfs = init_sysfs_with_mock_tree();
-    let root_inode = sysfs.root_inode(); // Get the sysfs root inode
-
-    // Verification: Check that the sysfs root inode corresponds to the mock systree root
+    let root_dentry = init_sysfs(create_mock_systree());
+    let root_inode = root_dentry.inode();
 
     assert_eq!(root_inode.type_(), InodeType::Dir);
 
@@ -271,8 +345,8 @@ fn root_lookup() {
 
 #[ktest]
 fn branch_lookup() {
-    let sysfs = init_sysfs_with_mock_tree();
-    let root_inode = sysfs.root_inode();
+    let root_dentry = init_sysfs(create_mock_systree());
+    let root_inode = root_dentry.inode();
     // Action: Lookup a branch node within sysfs
     let branch1_inode = root_inode.lookup("branch1").unwrap();
 
@@ -304,8 +378,8 @@ fn branch_lookup() {
 
 #[ktest]
 fn leaf_lookup() {
-    let sysfs = init_sysfs_with_mock_tree();
-    let root_inode = sysfs.root_inode();
+    let root_dentry = init_sysfs(create_mock_systree());
+    let root_inode = root_dentry.inode();
     // Action: Lookup a leaf node (represented as a directory in sysfs)
     let leaf1_inode = root_inode
         .lookup("branch1")
@@ -341,8 +415,8 @@ fn leaf_lookup() {
 
 #[ktest]
 fn read_attr() {
-    let sysfs = init_sysfs_with_mock_tree();
-    let root_inode = sysfs.root_inode();
+    let root_dentry = init_sysfs(create_mock_systree());
+    let root_inode = root_dentry.inode();
     let leaf1_dir_inode = root_inode
         .lookup("branch1")
         .unwrap()
@@ -372,8 +446,8 @@ fn read_attr() {
 
 #[ktest]
 fn write_attr() {
-    let sysfs = init_sysfs_with_mock_tree();
-    let root_inode = sysfs.root_inode();
+    let root_dentry = init_sysfs(create_mock_systree());
+    let root_inode = root_dentry.inode();
     let leaf1_dir_inode = root_inode
         .lookup("branch1")
         .unwrap()
@@ -419,8 +493,8 @@ fn write_attr() {
 fn read_link() {
     use crate::fs::vfs::inode::SymbolicLink;
 
-    let sysfs = init_sysfs_with_mock_tree();
-    let root_inode = sysfs.root_inode();
+    let root_dentry = init_sysfs(create_mock_systree());
+    let root_inode = root_dentry.inode();
     // Action: Lookup the sysfs symlink corresponding to a systree symlink node
     let link1_inode = root_inode.lookup("link1").unwrap();
 
@@ -453,8 +527,8 @@ impl DirentVisitor for TestDirentVisitor {
 
 #[ktest]
 fn readdir_leaf() {
-    let sysfs = init_sysfs_with_mock_tree();
-    let root_inode = sysfs.root_inode();
+    let root_dentry = init_sysfs(create_mock_systree());
+    let root_inode = root_dentry.inode();
     let leaf1_inode = root_inode
         .lookup("branch1")
         .unwrap()
@@ -501,8 +575,8 @@ fn readdir_leaf() {
 
 #[ktest]
 fn mode_permissions() {
-    let sysfs = init_sysfs_with_mock_tree();
-    let root_inode = sysfs.root_inode();
+    let root_dentry = init_sysfs(create_mock_systree());
+    let root_inode = root_dentry.inode();
     let leaf1_dir_inode = root_inode
         .lookup("branch1")
         .unwrap()
@@ -526,7 +600,7 @@ fn mode_permissions() {
 
     // Test set_mode
     let new_mode = mkmod!(u+rw); // rw-------
-    let rw_attr_dentry = crate::fs::vfs::path::Dentry::new_root(rw_attr_inode.clone());
+    let rw_attr_dentry = Dentry::new_root(rw_attr_inode.clone());
     rw_attr_inode
         .set_mode(&rw_attr_dentry, new_mode)
         .expect("set_mode failed");
@@ -535,4 +609,152 @@ fn mode_permissions() {
     // Directories should have default mode (e.g., 0o555)
     let leaf1_mode = leaf1_dir_inode.mode().unwrap();
     assert!(leaf1_mode.contains(mkmod!(a+rx))); // Read/execute for all users
+}
+
+#[ktest]
+fn cached_child_lookup_observes_tree_changes() {
+    // 1. Create a directory with no child nodes and a VFS dentry for it.
+    let branch = MockBranchNode::new("root");
+    let root_dentry = init_sysfs(branch.clone());
+    let dir = root_dentry.as_dir_dentry_or_err().unwrap();
+
+    // 2. Look up the missing child, caching its absence (a negative dentry).
+    assert_eq!(
+        dir.lookup_child("child").unwrap_err().error(),
+        Errno::ENOENT
+    );
+
+    // 3. Attach a leaf. Lookup must discard the cached absence and find it.
+    // A SysTree leaf appears as a directory containing its attributes in sysfs.
+    branch.add_child(MockLeafNode::new("child".into(), &[], &[]));
+    let leaf = dir.lookup_child("child").unwrap();
+    assert_eq!(leaf.inode().type_(), InodeType::Dir);
+    // Looking up the unchanged child again must reuse the positive dentry.
+    assert!(Arc::ptr_eq(&leaf, &dir.lookup_child("child").unwrap()));
+
+    // 4. Remove the leaf. Lookup must discard the cached child and return ENOENT.
+    branch.fields.remove_child("child").unwrap();
+    assert_eq!(
+        dir.lookup_child("child").unwrap_err().error(),
+        Errno::ENOENT
+    );
+
+    // 5. Attach a branch under the same name. Lookup must find the new inode.
+    branch.add_child(MockBranchNode::new("child"));
+    let child_dir = dir.lookup_child("child").unwrap();
+    assert_ne!(child_dir.inode().ino(), leaf.inode().ino());
+
+    // 6. Replace the branch with a symlink, with no lookup in between.
+    // The name still exists, but the cached directory must be replaced.
+    branch.fields.remove_child("child").unwrap();
+    branch.add_child(MockSymlinkNode::new("child".into(), "target"));
+    let link = dir.lookup_child("child").unwrap();
+    assert_eq!(link.inode().type_(), InodeType::SymLink);
+    assert_ne!(link.inode().ino(), child_dir.inode().ino());
+    assert!(Arc::ptr_eq(&link, &dir.lookup_child("child").unwrap()));
+
+    // 7. Remove the symlink. Its positive dentry must also be invalidated.
+    branch.fields.remove_child("child").unwrap();
+    assert_eq!(
+        dir.lookup_child("child").unwrap_err().error(),
+        Errno::ENOENT
+    );
+}
+
+#[ktest]
+fn cached_attr_lookup_observes_snapshot_changes() {
+    // 1. Create a device directory with an empty attribute snapshot.
+    let branch = MockBranchNode::new("root");
+    let node = MockMutableAttrNode::new();
+    branch.add_child(node.clone());
+    let root_dentry = init_sysfs(branch);
+    let leaf = root_dentry
+        .as_dir_dentry_or_err()
+        .unwrap()
+        .lookup_child("device")
+        .unwrap();
+    let dir = leaf.as_dir_dentry_or_err().unwrap();
+
+    // 2. Look up the missing attribute to cache its absence.
+    assert_eq!(
+        dir.lookup_child("status").unwrap_err().error(),
+        Errno::ENOENT
+    );
+
+    // 3. Publish a snapshot containing status. Lookup must find the new file.
+    let attrs = {
+        let mut builder = SysAttrSetBuilder::new();
+        builder.add("status".into(), SysPerms::DEFAULT_RO_ATTR_PERMS);
+        Arc::new(builder.build().unwrap())
+    };
+    *node.attrs.write() = attrs.clone();
+    let attr = dir.lookup_child("status").unwrap();
+    assert_eq!(attr.inode().type_(), InodeType::File);
+    // With the snapshot unchanged, the next lookup must reuse the cached file.
+    assert!(Arc::ptr_eq(&attr, &dir.lookup_child("status").unwrap()));
+
+    // 4. Publish an empty snapshot. The cached file must now disappear.
+    *node.attrs.write() = SysAttrSet::empty().clone();
+    assert_eq!(
+        dir.lookup_child("status").unwrap_err().error(),
+        Errno::ENOENT
+    );
+
+    // 5. Restore the snapshot. The cached absence must be replaced by a new dentry.
+    *node.attrs.write() = attrs;
+    let restored = dir.lookup_child("status").unwrap();
+    assert!(!Arc::ptr_eq(&attr, &restored));
+    assert_eq!(restored.inode().type_(), InodeType::File);
+}
+
+#[ktest]
+fn cached_attr_lookup_observes_permission_changes() {
+    // 1. Create a device with a read-only status attribute.
+    let branch = MockBranchNode::new("root");
+    let node = MockMutableAttrNode::new();
+    let attrs = {
+        let mut builder = SysAttrSetBuilder::new();
+        builder.add("status".into(), SysPerms::DEFAULT_RO_ATTR_PERMS);
+        Arc::new(builder.build().unwrap())
+    };
+    *node.attrs.write() = attrs;
+    branch.add_child(node.clone());
+    let root_dentry = init_sysfs(branch);
+    let leaf = root_dentry
+        .as_dir_dentry_or_err()
+        .unwrap()
+        .lookup_child("device")
+        .unwrap();
+    let dir = leaf.as_dir_dentry_or_err().unwrap();
+
+    // 2. Cache the attribute and check its initial mode (0444).
+    let attr = dir.lookup_child("status").unwrap();
+    assert_eq!(attr.inode().mode().unwrap(), mkmod!(a+r));
+
+    // 3. chmod the cached inode to 0400, leaving the attribute definition unchanged.
+    // The next lookup must reuse that inode and preserve the chmod result.
+    attr.inode().set_mode(&attr, mkmod!(u+r)).unwrap();
+    let cached = dir.lookup_child("status").unwrap();
+    assert!(Arc::ptr_eq(&attr, &cached));
+    assert_eq!(cached.inode().mode().unwrap(), mkmod!(u+r));
+
+    // 4. Replace the attribute definition with mode 0644, reusing its name and ID.
+    // Publish only the final snapshot, so lookup never sees the attribute absent.
+    let old_attrs = node.node_attrs();
+    let new_attrs = {
+        let mut builder = SysAttrSetBuilder::from_set(&old_attrs);
+        builder.remove("status");
+        builder.add("status".into(), SysPerms::DEFAULT_RW_ATTR_PERMS);
+        Arc::new(builder.build().unwrap())
+    };
+    assert_eq!(
+        old_attrs.get("status").unwrap().id(),
+        new_attrs.get("status").unwrap().id()
+    );
+    *node.attrs.write() = new_attrs;
+
+    // 5. Lookup must discard the old dentry and return the new definition's mode.
+    let updated = dir.lookup_child("status").unwrap();
+    assert!(!Arc::ptr_eq(&attr, &updated));
+    assert_eq!(updated.inode().mode().unwrap(), mkmod!(u+rw, a+r));
 }
