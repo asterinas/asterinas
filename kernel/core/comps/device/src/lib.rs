@@ -51,6 +51,8 @@ mod error;
 mod hooks;
 mod node;
 mod subsystem;
+#[cfg(ktest)]
+mod test;
 
 use alloc::{sync::Arc, vec::Vec};
 
@@ -86,6 +88,13 @@ pub type SysStr = aster_systree::SysStr;
 fn init() -> core::result::Result<(), ComponentInitError> {
     REGISTRY.call_once(|| Registry::new().expect("cannot create the device model roots"));
     Ok(())
+}
+
+/// Initializes the device model for kernel-mode tests.
+#[cfg(ktest)]
+pub fn init_for_ktest() {
+    aster_systree::init_for_ktest();
+    REGISTRY.call_once(|| Registry::new().expect("cannot create the device model roots"));
 }
 
 fn registry() -> &'static Registry {
