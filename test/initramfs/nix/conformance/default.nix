@@ -22,6 +22,7 @@ rec {
     root = ./../../src/conformance;
     fileset = ./../../src/conformance;
   };
+  pjdfstest = callPackage ./pjdfstest.nix { inherit conformanceSrc; };
   xfstests = callPackage ./xfstests.nix { inherit conformanceSrc; };
 
   package = stdenvNoCC.mkDerivation {
@@ -40,6 +41,7 @@ rec {
       ${lib.optionalString (testSuite == "ltp") "export LTP_PREBUILT_DIR=${ltp}"}
       ${lib.optionalString (testSuite == "gvisor") "export GVISOR_PREBUILT_DIR=${gvisor}"}
       ${lib.optionalString (testSuite == "kselftest") "export KSELFTEST_PREBUILT_DIR=${kselftest}"}
+      ${lib.optionalString (testSuite == "pjdfstest") "export PJDFSTEST_PREBUILT_DIR=${pjdfstest}"}
       ${lib.optionalString (testSuite == "xfstests") "export XFSTESTS_PREBUILT_DIR=${xfstests}"}
       make
     '';
