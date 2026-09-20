@@ -64,6 +64,8 @@ To display the GRUB menu if booting with GRUB
 The QEMU executable file
 - `--qemu-args <ARGS>`:
 Extra arguments for running QEMU
+- `--qemu-with-daemon <COMMAND>`:
+Host daemon to run alongside QEMU, including its path and optional arguments.
 - `--strip-elf`:
 Whether to strip the built kernel ELF using `rust-strip`
 - `--scheme <SCHEME>`:

@@ -37,6 +37,8 @@ pub struct QemuScheme {
     /// The QEMU output log used for panic translation and coverage collection.
     /// Relative paths are resolved from the OSDK working directory.
     pub log_file: Option<PathBuf>,
+    /// Host daemons and their arguments to run for the duration of QEMU.
+    pub with_daemons: Option<Vec<DaemonScheme>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Serialize)]
@@ -52,6 +54,9 @@ pub struct Qemu {
     pub with_monitor: bool,
     /// The QEMU output log used for panic translation and coverage collection.
     pub log_file: Option<PathBuf>,
+    /// Host daemons and their arguments to run for the duration of QEMU.
+    #[serde(default)]
+    pub with_daemons: Vec<DaemonScheme>,
 }
 
 impl Default for Qemu {
@@ -62,12 +67,13 @@ impl Default for Qemu {
             path: PathBuf::from(get_default_arch().system_qemu()),
             with_monitor: false,
             log_file: None,
+            with_daemons: Vec::new(),
         }
     }
 }
 
 // Implements `PartialEq` for `Qemu`, comparing `args` while ignoring numeric characters
-// (random ports), and comparing other fields (`bootdev_append_options` and `path`) normally.
+// (random ports), and comparing the remaining settings normally.
 impl PartialEq for Qemu {
     fn eq(&self, other: &Self) -> bool {
         fn strip_numbers(input: &str) -> String {
@@ -79,6 +85,7 @@ impl PartialEq for Qemu {
             && self.path == other.path
             && self.with_monitor == other.with_monitor
             && self.log_file == other.log_file
+            && self.with_daemons == other.with_daemons
     }
 }
 
@@ -111,6 +118,9 @@ impl QemuScheme {
         if self.log_file.is_none() {
             self.log_file.clone_from(&from.log_file);
         }
+        if self.with_daemons.is_none() {
+            self.with_daemons.clone_from(&from.with_daemons);
+        }
     }
 
     pub fn finalize(self, arch: Arch) -> Qemu {
@@ -120,8 +130,16 @@ impl QemuScheme {
             path: self.path.unwrap_or(PathBuf::from(arch.system_qemu())),
             with_monitor: self.with_monitor.unwrap_or(false),
             log_file: self.log_file,
+            with_daemons: self.with_daemons.unwrap_or_default(),
         }
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub(crate) struct DaemonScheme {
+    pub(crate) path: PathBuf,
+    #[serde(default)]
+    pub(crate) args: Vec<String>,
 }
 
 // Below are checked keys in qemu arguments. The key list is non-exhaustive.
