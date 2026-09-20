@@ -36,11 +36,20 @@ pub mod bus;
 pub mod class;
 pub mod common;
 pub mod hooks;
+#[cfg(ktest)]
+mod test;
 
 use component::{ComponentInitError, init_component};
 
 pub use self::common::registration::{add as add_device, remove as remove_device};
 use self::common::registry;
+
+/// Initializes the device model for kernel-mode tests.
+#[cfg(ktest)]
+pub fn init_for_ktest() {
+    aster_systree::init_for_ktest();
+    registry::init();
+}
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
