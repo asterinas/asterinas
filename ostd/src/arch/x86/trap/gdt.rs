@@ -3,6 +3,7 @@
 //! Configure the Global Descriptor Table (GDT).
 
 use alloc::boxed::Box;
+use core::cell::UnsafeCell;
 
 use x86_64::{
     PrivilegeLevel, VirtAddr,
@@ -31,7 +32,7 @@ use crate::cpu::local::{CpuLocal, StaticCpuLocal};
 /// The caller must ensure that no preemption can occur during the method, otherwise we may
 /// accidentally load a wrong GDT and TSS that actually belongs to another CPU.
 pub(super) unsafe fn init_on_cpu() {
-    let tss_ptr = LOCAL_TSS.as_ptr();
+    let tss_ptr = UnsafeCell::raw_get(LOCAL_TSS.as_ptr());
 
     // FIXME: The segment limit in the descriptor created by `tss_segment_unchecked` does not
     // include the I/O port bitmap.
@@ -94,11 +95,13 @@ pub(super) unsafe fn init_on_cpu() {
 // stack!
 //
 // No other special initialization is required because the kernel stack information is stored in
-// the TSS when we start the userspace program. See `syscall.S` for details.
+// the TSS when we start the userspace program. However, to ensure the store's safety, we should
+// wrap the TSS in an `UnsafeCell`. See `syscall.S` for details.
+//
 // SAFETY: This is properly handled in the linker script.
 #[unsafe(link_section = ".cpu_local_tss")]
-static LOCAL_TSS: StaticCpuLocal<TaskStateSegment> = {
-    let tss = TaskStateSegment::new();
+static LOCAL_TSS: StaticCpuLocal<UnsafeCell<TaskStateSegment>> = {
+    let tss = UnsafeCell::new(TaskStateSegment::new());
     // SAFETY: The `.cpu_local_tss` section is part of the CPU-local area.
     unsafe { CpuLocal::__new_static(tss) }
 };
