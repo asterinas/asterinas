@@ -2085,7 +2085,7 @@
       expectation: >
         A reviewer should identify the missing readable-input and writable-output
         checks as an independent defect and require EBADF for invalid descriptor
-        modes. 
+        modes.
 
     - target:
         kind: file
@@ -2098,14 +2098,14 @@
         The implementation does not reject a directory used as in_file before
         the transfer. It sends the directory through the generic read path,
         which can return the wrong result or error, including on edge cases
-        where the read loop is not entered. 
+        where the read loop is not entered.
       fix: >
         Detect an in_file whose inode type is Dir before the transfer and return
         EINVAL, independently of whether the requested count causes a read.
       expectation: >
         A reviewer should flag directory input handling as an independent
         compatibility defect and require an explicit EINVAL check before the
-        generic read path. 
+        generic read path.
 
     - target:
         kind: file
