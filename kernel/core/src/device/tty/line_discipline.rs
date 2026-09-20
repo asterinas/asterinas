@@ -2,7 +2,7 @@
 
 use ostd::const_assert;
 
-use super::termio::{CCtrlCharId, CTermios, CTermios2, CTermiosSpeeds, CWinSize};
+use super::termio::{CCtrlCharId, CTermio, CTermios, CTermios2, CTermiosSpeeds, CWinSize};
 use crate::{
     device::tty::termio::{CInputFlags, CLocalFlags},
     prelude::*,
@@ -249,6 +249,10 @@ impl LineDiscipline {
 
     pub(crate) fn termios(&self) -> &CTermios2 {
         &self.termios
+    }
+
+    pub(crate) fn set_termio(&mut self, termio: &CTermio) {
+        self.set_termios(termio.apply_to(self.termios()));
     }
 
     pub(crate) fn set_termios(&mut self, termios: CTermios) {

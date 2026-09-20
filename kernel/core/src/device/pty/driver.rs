@@ -171,6 +171,17 @@ impl TtyDriver for PtyDriver {
         self.pollee.notify(IoEvents::OUT);
     }
 
+    fn notify_input_flushed(&self) {
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/tty/n_tty.c#L325>.
+        let has_set = self.packet_ctrl.set_status(|packet_status| {
+            *packet_status |= PacketStatus::FLUSHREAD;
+        });
+        if has_set {
+            self.pollee
+                .notify(IoEvents::PRI | IoEvents::IN | IoEvents::RDNORM);
+        }
+    }
+
     fn on_termios_change(&self, old_termios: &CTermios, new_termios: &CTermios) {
         // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/pty.c#L246>.
         let extproc = old_termios.local_flags().contains(CLocalFlags::EXTPROC)
