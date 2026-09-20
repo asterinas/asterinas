@@ -1,0 +1,17 @@
+[package]
+name = "aster-device"
+version = "0.1.0"
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aster-systree.workspace = true
+aster-util.workspace = true
+component.workspace = true
+device-id.workspace = true
+ostd.workspace = true
+spin.workspace = true
+
+[lints]
+workspace = true
