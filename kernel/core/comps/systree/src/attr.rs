@@ -51,8 +51,8 @@ pub struct SysAttrSet {
 }
 
 impl SysAttrSet {
-    /// Maximum number of attributes allowed per node (limited by u8 ID space).
-    pub const CAPACITY: usize = 1 << u8::BITS;
+    /// Maximum number of attributes allowed per node.
+    pub const CAPACITY: usize = u8::MAX as usize;
 
     /// Creates a new, empty attribute set.
     ///

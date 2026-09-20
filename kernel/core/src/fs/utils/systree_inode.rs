@@ -792,7 +792,8 @@ mod ino {
     }
 
     pub(crate) fn from_dir_ino_and_attr_id(dir_ino: Ino, attr_id: u8) -> Ino {
-        dir_ino + (attr_id as Ino)
+        // Attribute IDs start at zero, so offset them past the directory's inode.
+        dir_ino + (attr_id as Ino) + 1
     }
 
     pub(crate) fn from_node_kind(inner: &SysTreeNodeKind) -> Ino {
