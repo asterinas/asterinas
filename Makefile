@@ -9,6 +9,7 @@ BOOT_METHOD ?= grub-rescue-iso
 BOOT_PROTOCOL ?= multiboot2
 ENABLE_KVM ?= 1
 INTEL_TDX ?= 0
+ACCEPT_MEMORY_MODE ?= lazy
 MEM ?= 8G
 OVMF ?= on
 RELEASE ?= 0
@@ -177,8 +178,15 @@ CARGO_OSDK_BUILD_ARGS += --init-args="/benchmark/common/bench_runner.sh $(BENCHM
 endif
 
 ifeq ($(INTEL_TDX), 1)
+ifneq ($(ACCEPT_MEMORY_MODE),lazy)
+ifneq ($(ACCEPT_MEMORY_MODE),eager)
+$(error ACCEPT_MEMORY_MODE must be one of: lazy, eager)
+endif
+endif
 BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_COMMON_ARGS += --scheme tdx
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="accept_memory=$(ACCEPT_MEMORY_MODE)"
+CARGO_OSDK_TEST_ARGS += --kcmd-args="accept_memory=$(ACCEPT_MEMORY_MODE)"
 endif
 
 ifneq (,$(filter multiboot pvh,$(BOOT_PROTOCOL)))

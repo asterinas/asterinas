@@ -72,6 +72,23 @@ pub(in crate::mm) fn min_paddr() -> Paddr {
     MIN_PADDR.load(Ordering::Relaxed)
 }
 
+/// Returns the number of bytes of physical memory still awaiting acceptance.
+#[cfg(feature = "cvm_guest")]
+pub fn load_total_unaccepted_bytes() -> usize {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::if_tdx_enabled!({
+            unaccepted::load_total_unaccepted_bytes()
+        } else {
+            0
+        })
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        0
+    }
+}
+
 /// Returns the maximum physical address that is tracked by frame metadata.
 pub(in crate::mm) fn max_paddr() -> Paddr {
     let max_paddr = MAX_PADDR.load(Ordering::Relaxed) as Paddr;
