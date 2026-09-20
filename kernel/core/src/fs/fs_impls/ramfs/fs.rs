@@ -1059,13 +1059,18 @@ impl FileOps for RamInode {
     ) -> Result<usize> {
         let written_len = match self.typ {
             InodeType::File => {
+                let write_len = reader.remain();
+                // An empty write must leave file data and metadata unchanged.
+                if write_len == 0 {
+                    return Ok(0);
+                }
+
                 let now = now();
 
                 let mut page_cache = self.inner.as_file().unwrap().lock();
 
                 let mut inode_meta = self.metadata.lock();
                 let file_size = inode_meta.size;
-                let write_len = reader.remain();
                 let new_size = offset + write_len;
                 let should_expand_size = new_size > file_size;
                 let new_size_aligned = new_size.align_up(BLOCK_SIZE);
