@@ -68,6 +68,7 @@ CONFORMANCE_TEST_EXTRA_BLOCKLISTS ?= ""
 #              it with `CONFORMANCE_TEST_GVISOR_FILTER`).
 # - kselftest: a `<collection>:<case>` entry, e.g. `timers:posix_timers`.
 # - ltp:       a syscall testcase id, e.g. `rename01`.
+# - pjdfstest: a test case path, e.g. `rename/24.t`.
 # - xfstests:  a test id, e.g. `generic/001`.
 CONFORMANCE_TEST_SELECTOR ?= ""
 # gVisor-only positive gtest filter, applied inside one selected gVisor test
@@ -77,6 +78,9 @@ CONFORMANCE_TEST_GVISOR_FILTER ?= ""
 XFSTESTS_FS_TYPE ?= ext2
 XFSTESTS_RUNLIST ?= short.list
 XFSTESTS_DISK_SIZE ?= 12G
+
+# Parameters for pjdfstest. Supported value: 'ext2', 'ramfs'.
+PJDFSTEST_FS_TYPE ?= ext2
 
 # Specify whether to build regression tests under `test/initramfs/src/regression`.
 ENABLE_REGRESSION_TEST ?= false
@@ -152,6 +156,9 @@ CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_RUNLIST=$(XFSTESTS_RUNLIST)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_TEST_DEV=$(XFSTESTS_TEST_DEV)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_SCRATCH_DEV=$(XFSTESTS_SCRATCH_DEV)"
+endif
+ifeq ($(CONFORMANCE_TEST_SUITE), pjdfstest)
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="PJDFSTEST_FS_TYPE=$(PJDFSTEST_FS_TYPE)"
 endif
 CARGO_OSDK_BUILD_ARGS += --init-args="/opt/run_conformance_test.sh"
 else ifeq ($(AUTO_TEST), regression)

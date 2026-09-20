@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: MPL-2.0
+
+# pjdfstest configuration file.
+#
+# <pjdfstest>/tests/misc.sh requires this file to work. `PJDFSTEST_FS_TYPE`
+# is used for setting which filesystem to test for, and 'ext2' and 'ramfs' are
+# supported at this point.
+
+PJDFSTEST_FS_TYPE=${PJDFSTEST_FS_TYPE:-ext2}
+
+case "$PJDFSTEST_FS_TYPE" in
+ext2)
+	if ! fs_type=$(stat -f -c %T /ext2 2>/dev/null); then
+		echo "Error: cannot read the filesystem type of /ext2" >&2
+		return 2
+	fi
+	if ! echo "$fs_type" | grep -q ext2; then
+		echo "Error: /ext2 is on '$fs_type', not ext2." >&2
+		return 2
+	fi
+
+	fs=ext2
+	PJDFSTEST_WORKDIR=/ext2
+	;;
+ramfs)
+	if ! fs_type=$(stat -f -c %T /ramfs 2>/dev/null); then
+		echo "Error: cannot read the filesystem type of /ramfs" >&2
+		return 2
+	fi
+	if ! echo "$fs_type" | grep -q ramfs; then
+		echo "Error: /ramfs is on '$fs_type', not ramfs." >&2
+		return 2
+	fi
+
+	fs=ramfs
+	PJDFSTEST_WORKDIR=/ramfs
+	;;
+*)
+	echo "Error: unsupported PJDFSTEST_FS_TYPE '$PJDFSTEST_FS_TYPE' (supported: ext2, ramfs)" >&2
+	return 1
+	;;
+esac
+
+export PJDFSTEST_FS_TYPE
+export PJDFSTEST_WORKDIR
+
+os=Linux
+GREP=grep
