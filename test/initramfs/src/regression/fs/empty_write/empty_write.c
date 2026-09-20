@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
 #define _GNU_SOURCE
+#include <fcntl.h>
 #include <limits.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
@@ -23,7 +24,9 @@ enum empty_write_op { OP_WRITE, OP_PWRITE, OP_PWRITEV };
 static const char *const op_names[] = { "write", "pwrite", "pwritev" };
 
 static char path[PATH_MAX];
+/* Keep fixture writes buffered; io_fd may use O_DIRECT. */
 static int fd;
+static int io_fd;
 static char empty_buffer[1];
 
 static int same_time(struct timespec a, struct timespec b)
@@ -31,7 +34,7 @@ static int same_time(struct timespec a, struct timespec b)
 	return a.tv_sec == b.tv_sec && a.tv_nsec == b.tv_nsec;
 }
 
-/* Restores a two-byte file with an old mtime and seeks `fd` to `position`. */
+/* Restores a two-byte file with an old mtime and seeks `io_fd` to `position`. */
 static void reset_fixture(struct stat *before, off_t position)
 {
 	const struct timespec times[2] = { { OLD_TIMESTAMP_SEC, 0 },
@@ -42,7 +45,7 @@ static void reset_fixture(struct stat *before, off_t position)
 	CHECK(futimens(fd, times));
 	CHECK(fstat(fd, before));
 	CHECK_WITH(before->st_size, _ret == 2);
-	CHECK_WITH(lseek(fd, position, SEEK_SET), _ret == position);
+	CHECK_WITH(lseek(io_fd, position, SEEK_SET), _ret == position);
 }
 
 static ssize_t empty_write(enum empty_write_op op, off_t offset)
@@ -54,11 +57,11 @@ static ssize_t empty_write(enum empty_write_op op, off_t offset)
 
 	switch (op) {
 	case OP_WRITE:
-		return write(fd, "", 0);
+		return write(io_fd, "", 0);
 	case OP_PWRITE:
-		return pwrite(fd, "", 0, offset);
+		return pwrite(io_fd, "", 0, offset);
 	case OP_PWRITEV:
-		return pwritev(fd, iov, 2, offset);
+		return pwritev(io_fd, iov, 2, offset);
 	}
 
 	errno = EINVAL;
@@ -68,6 +71,8 @@ static ssize_t empty_write(enum empty_write_op op, off_t offset)
 FN_SETUP(create_file)
 {
 	const char *dir = getenv("TEST_TMPDIR");
+	const char *direct_env = getenv("TEST_DIRECT");
+	int direct = direct_env && strcmp(direct_env, "1") == 0;
 
 	if (!dir) {
 		dir = "/tmp";
@@ -75,7 +80,9 @@ FN_SETUP(create_file)
 	CHECK_WITH(snprintf(path, sizeof(path), "%s/empty-write-XXXXXX", dir),
 		   _ret > 0 && (size_t)_ret < sizeof(path));
 	fd = CHECK(mkstemp(path));
-	fprintf(stderr, "fixture=%s\n", dir);
+	io_fd = CHECK(open(path, O_RDWR | (direct ? O_DIRECT : 0)));
+	fprintf(stderr, "fixture=%s mode=%s\n", dir,
+		direct ? "direct" : "buffered");
 }
 END_SETUP()
 
@@ -106,7 +113,7 @@ FN_TEST(empty_writes_preserve_metadata_and_position)
 			TEST_RES(same_time(before.st_ctim, after.st_ctim),
 				 _ret);
 			/* Empty writes must leave the descriptor position unchanged. */
-			TEST_RES(lseek(fd, 0, SEEK_CUR), _ret == position);
+			TEST_RES(lseek(io_fd, 0, SEEK_CUR), _ret == position);
 		}
 	}
 }
@@ -114,6 +121,7 @@ END_TEST()
 
 FN_SETUP(cleanup)
 {
+	CHECK(close(io_fd));
 	CHECK(close(fd));
 	CHECK(unlink(path));
 }
