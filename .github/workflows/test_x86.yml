@@ -154,6 +154,46 @@ jobs:
           conformance_test_extra_blocklists: ${{ matrix.conformance_test_extra_blocklists }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
 
+  pjdfstest:
+    name: pjdfstest (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    container:
+      image: asterinas/kernel-dev:0.18.1-20260918
+      options: -v /dev:/dev --privileged
+      volumes:
+        # Map the following directories on the host into the container so that
+        # the container can remove them to save some precious disk space (~16GB),
+        # which is quite limited on free-tier Github runners.
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # pjdfstest ships a runlist per filesystem and has no exfat runlist,
+          # so the exfat variant from `conformance-test` is deliberately absent.
+          - { variant: 'debug', conformance_test_workdir: '/tmp', release: false, boot_protocol: 'linux-efi-pe64' }
+          - { variant: 'ext2-microvm', scheme: 'microvm', conformance_test_workdir: '/ext2' }
+          - { variant: 'ext2-iommu-debug', scheme: 'iommu', conformance_test_workdir: '/ext2', release: false }
+          - { variant: 'multiboot2-smp4', boot_protocol: 'multiboot2', smp: 4, conformance_test_workdir: '/tmp' }
+    steps:
+      - name: Free disk space
+        run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
+      - uses: actions/checkout@v4
+      - name: Run pjdfstest (${{ matrix.variant }})
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'conformance'
+          conformance_test_suite: 'pjdfstest'
+          release: ${{ !contains(matrix.release, 'false') }}
+          enable_kvm: ${{ !contains(matrix.enable_kvm, 'false') }}
+          smp: ${{ matrix.smp }}
+          scheme: ${{ matrix.scheme }}
+          conformance_test_workdir: ${{ matrix.conformance_test_workdir }}
+          boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
+
   cross-compile-test:
     timeout-minutes: 30
     strategy:

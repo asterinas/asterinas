@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: MPL-2.0
+
+# pjdfstest configuration file.
+#
+# <pjdfstest>/tests/misc.sh requires this file to work. Upstream derives `fs`
+# from `df -PT`, which is unavailable in the Asterinas initramfs, so the
+# filesystem under test is identified from /proc/mounts instead.
+
+_pjdfstest_dir=${CONFORMANCE_TEST_WORKDIR:-.}
+_pjdfstest_mount_point=
+_pjdfstest_fs=
+while read -r _pjdfstest_src _pjdfstest_mp _pjdfstest_type _ || [ -n "$_pjdfstest_mp" ]; do
+	if [ "$_pjdfstest_mp" = / ]; then
+		case $_pjdfstest_dir in
+		/*) : ;;
+		*) _pjdfstest_mp=; continue ;;
+		esac
+	else
+		case $_pjdfstest_dir in
+		"$_pjdfstest_mp" | "$_pjdfstest_mp"/*) : ;;
+		*) _pjdfstest_mp=; continue ;;
+		esac
+	fi
+
+	if [ ${#_pjdfstest_mp} -ge ${#_pjdfstest_mount_point} ]; then
+		_pjdfstest_mount_point=$_pjdfstest_mp
+		_pjdfstest_fs=$_pjdfstest_type
+	fi
+
+	_pjdfstest_mp=
+done < /proc/mounts 2>/dev/null
+
+# The kernel reports the in-memory root filesystem as `rootfs`, but its
+# runlist and blocklist directory is named `ramfs`. This is the only place the
+# two names are reconciled, so the runner and the suite cannot disagree.
+case "$_pjdfstest_fs" in
+rootfs) fs=ramfs ;;
+*) fs="$_pjdfstest_fs" ;;
+esac
+
+unset _pjdfstest_dir _pjdfstest_mount_point _pjdfstest_fs _pjdfstest_src _pjdfstest_mp _pjdfstest_type
+
+os=Linux
+GREP=grep
