@@ -2,11 +2,12 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
+use align_ext::AlignExt;
 use ostd::{
     Error, Result,
     boot::boot_info,
     io::IoMem,
-    mm::{CachePolicy, HasSize, VmIo},
+    mm::{CachePolicy, HasSize, PAGE_SIZE, VmIo},
     sync::Mutex,
 };
 use spin::Once;
@@ -70,6 +71,11 @@ pub(crate) fn init() {
         return;
     }
 
+    if framebuffer_arg.address % PAGE_SIZE != 0 {
+        ostd::error!("Framebuffer address is not page-aligned");
+        return;
+    }
+
     // FIXME: There are several pixel formats that have the same BPP. We lost the information
     // during the boot phase, so here we guess the pixel format on a best effort basis.
     let pixel_format = match framebuffer_arg.bpp {
@@ -93,7 +99,13 @@ pub(crate) fn init() {
             .width
             .checked_mul(pixel_format.nbytes())
             .unwrap();
-        let fb_size = framebuffer_arg.height.checked_mul(line_size).unwrap();
+        let fb_size = framebuffer_arg
+            .height
+            .checked_mul(line_size)
+            .unwrap()
+            // The framebuffer should cover an entire set of pages. These pages can be mapped to
+            // userspace upon request.
+            .align_up(PAGE_SIZE);
 
         let fb_base = framebuffer_arg.address;
         // Use write-combining for framebuffer to enable faster write operations.
