@@ -1,6 +1,8 @@
 ENTRY(_start)
 OUTPUT_ARCH(riscv)
 
+/* Default ELF load address. A raw image may be loaded at any supported
+ * 2 MiB-aligned physical address without changing its virtual addresses. */
 KERNEL_LMA = 0x80200000;
 KERNEL_VMA = 0xffffffff80200000;
 KERNEL_VMA_OFFSET = KERNEL_VMA - KERNEL_LMA;
@@ -104,4 +106,7 @@ SECTIONS
     }
 
     __kernel_end = .;
+
+    # The bootstrap uses one level-2 table for the kernel image.
+    ASSERT(__kernel_end <= 0xffffffffc0000000, "RISC-V kernel exceeds boot mapping")
 }

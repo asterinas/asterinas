@@ -7,7 +7,7 @@ use core::arch::global_asm;
 use crate::{
     boot::smp::{PerApRawInfo, ap_early_entry},
     cpu_local_cell,
-    mm::{Paddr, Vaddr},
+    mm::{Paddr, Vaddr, kspace::kernel_loaded_offset},
 };
 
 // Include the AP boot assembly code
@@ -146,22 +146,23 @@ unsafe fn fill_boot_page_table_ptr(pt_ptr: Paddr) {
 }
 
 fn get_ap_boot_start_addr() -> Paddr {
-    const KERNEL_VMA: Vaddr = 0xffffffff00000000;
+    const KERNEL_VMA_OFFSET: Vaddr = 0xffffffff00000000;
 
-    let addr: Paddr;
+    let addr: Vaddr;
 
-    // We need to load the address of the symbol in assembly to avoid the
-    // linker relocation error. The symbol is not reachable using IP-offset
-    // addressing without the virtual offset.
+    // The boot symbol has a low link address. Use its high virtual alias to
+    // keep the PC-relative relocation within range, then recover the actual PA.
+    // SAFETY: This only computes an address without accessing memory or the stack.
     unsafe {
         core::arch::asm!(
-            "la {0}, ap_boot_start + {1}",
+            "lla {0}, ap_boot_start + {1}",
             out(reg) addr,
-            const KERNEL_VMA,
+            const KERNEL_VMA_OFFSET,
+            options(nomem, nostack),
         );
     }
 
-    addr - KERNEL_VMA
+    addr - kernel_loaded_offset()
 }
 
 fn get_bootstrap_hart_id() -> u32 {
