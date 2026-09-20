@@ -235,7 +235,7 @@ CARGO_OSDK_COMMON_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
 endif
 
 ifeq ($(ENABLE_KVM), 1)
-	ifeq ($(TARGET_ARCH), x86_64)
+	ifeq ($(shell [ -e /dev/kvm ] && [ "$$(uname -m)" = "$(TARGET_ARCH)" ] && echo yes),yes)
 	CARGO_OSDK_COMMON_ARGS += --qemu-args="-accel kvm"
 	endif
 endif
