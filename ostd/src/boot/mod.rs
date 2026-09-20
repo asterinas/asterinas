@@ -148,6 +148,17 @@ pub struct EarlyCmdline {
     /// which should instead register `crate::early_cmdline_parser`
     /// to acquire this information from the kernel parameter.
     pub has_early_console: bool,
+    /// How unaccepted memory is handled during boot.
+    pub accept_memory_mode: AcceptMemoryMode,
+}
+
+/// The mode used to accept unaccepted physical memory.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AcceptMemoryMode {
+    /// Accept memory on demand, the default behavior.
+    Lazy,
+    /// Accept all memory in parallel during boot.
+    Eager,
 }
 
 #[linkage = "weak"]
@@ -157,13 +168,18 @@ fn __early_cmdline_parser(_cmdline: &str) -> EarlyCmdline {
     EarlyCmdline {
         log_level: LevelFilter::Debug,
         has_early_console: true,
+        accept_memory_mode: AcceptMemoryMode::Lazy,
     }
 }
 
-/// Parses the early command line arguments.
-pub(crate) fn parse_early_cmdline() -> EarlyCmdline {
-    let kernel_cmdline = EARLY_INFO.get().unwrap().kernel_cmdline;
-    __early_cmdline_parser(kernel_cmdline)
+/// Parses and returns the cached early command line arguments.
+pub(crate) fn early_cmdline() -> &'static EarlyCmdline {
+    static EARLY_CMDLINE: Once<EarlyCmdline> = Once::new();
+
+    EARLY_CMDLINE.call_once(|| {
+        let kernel_cmdline = EARLY_INFO.get().unwrap().kernel_cmdline;
+        __early_cmdline_parser(kernel_cmdline)
+    })
 }
 
 /// Starts the kernel.
