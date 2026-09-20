@@ -212,6 +212,15 @@ Notes:
 - Use `warn` for normal operation, `info`/`debug` when troubleshooting,
   and `error` or lower for a quieter console.
 
+### `accept_memory`
+
+Select the TDX private-memory acceptance policy.
+This parameter is supported on x86-64 with `cvm_guest` enabled.
+
+Valid values:
+- `lazy` (default): accept memory when allocations require it.
+- `eager`: accept all memory during boot.
+
 ## Asterinas-specific
 
 ### `i8042.exist`
