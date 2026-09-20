@@ -1819,7 +1819,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 [[package]]
 name = "tdx-guest"
 version = "0.4.0"
-source = "git+https://github.com/Hsy-Intel/tdx-guest?rev=f73e5f90ee86ac716242475d8d0a2be67d372e1a#f73e5f90ee86ac716242475d8d0a2be67d372e1a"
+source = "git+https://github.com/Hsy-Intel/tdx-guest?rev=2dfb319e1895d6261e6de574a449d65cbebfae40#2dfb319e1895d6261e6de574a449d65cbebfae40"
 dependencies = [
  "bitflags 1.3.2",
  "iced-x86",

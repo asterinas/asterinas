@@ -6,6 +6,8 @@ use core::{alloc::Layout, ops::Range};
 
 use align_ext::AlignExt;
 
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+use super::unaccepted;
 use super::{Frame, meta::AnyFrameMeta, segment::Segment};
 use crate::{
     boot::memory_region::MemoryRegionType,
@@ -53,10 +55,9 @@ impl FrameAllocOptions {
     /// Allocates a single frame with additional metadata.
     pub fn alloc_frame_with<M: AnyFrameMeta>(&self, metadata: M) -> Result<Frame<M>> {
         let single_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-        let frame = get_global_frame_allocator()
-            .alloc(single_layout)
-            .map(|paddr| Frame::from_unused(paddr, metadata).unwrap())
-            .ok_or(Error::NoMemory)?;
+        let paddr = alloc_usable_memory(single_layout)?;
+
+        let frame = Frame::from_unused(paddr, metadata).unwrap();
 
         if self.zeroed {
             let addr = paddr_to_vaddr(frame.paddr()) as *mut u8;
@@ -87,13 +88,11 @@ impl FrameAllocOptions {
         if nframes == 0 {
             return Err(Error::InvalidArgs);
         }
-        let layout = Layout::from_size_align(nframes * PAGE_SIZE, PAGE_SIZE).unwrap();
-        let segment = get_global_frame_allocator()
-            .alloc(layout)
-            .map(|start| {
-                Segment::from_unused(start..start + nframes * PAGE_SIZE, metadata_fn).unwrap()
-            })
-            .ok_or(Error::NoMemory)?;
+        let total_size = nframes * PAGE_SIZE;
+        let layout = Layout::from_size_align(total_size, PAGE_SIZE).unwrap();
+        let start = alloc_usable_memory(layout)?;
+
+        let segment = Segment::from_unused(start..start + total_size, metadata_fn).unwrap();
 
         if self.zeroed {
             let addr = paddr_to_vaddr(segment.paddr()) as *mut u8;
@@ -188,6 +187,22 @@ pub(super) fn get_global_frame_allocator() -> &'static dyn GlobalFrameAllocator 
     unsafe { __GLOBAL_FRAME_ALLOCATOR_REF }
 }
 
+fn alloc_usable_memory(layout: Layout) -> Result<Paddr> {
+    let allocator = get_global_frame_allocator();
+    let paddr = allocator.alloc(layout).ok_or(Error::NoMemory)?;
+
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    crate::if_tdx_enabled!({
+        if let Err(err) = unaccepted::ensure_accepted(paddr, layout.size()) {
+            allocator.dealloc(paddr, layout.size());
+            crate::warn!("Failed to accept allocated memory: {:?}", err);
+            return Err(Error::NoMemory);
+        }
+    });
+
+    Ok(paddr)
+}
+
 /// Initializes the global frame allocator.
 ///
 /// It just does adds the frames to the global frame allocator. Calling it
@@ -203,7 +218,7 @@ pub(crate) unsafe fn init() {
 
     #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
     let unaccepted_range = crate::if_tdx_enabled!({
-        super::unaccepted::init_unaccepted_memory_state(&early_allocated_ranges)
+        unaccepted::init_unaccepted_memory_state(&early_allocated_ranges)
     } else {
         0..0
     });
@@ -395,7 +410,7 @@ pub(crate) fn early_alloc(layout: Layout) -> Option<Paddr> {
     crate::if_tdx_enabled!({
         // SAFETY: This lock serializes early accepts, and `allocator::init` retires
         // the early allocator before AP acceptance starts.
-        unsafe { super::unaccepted::accept_early_allocated_range(paddr, layout.size()) };
+        unsafe { unaccepted::accept_early_allocated_range(paddr, layout.size()) };
     });
     Some(paddr)
 }
