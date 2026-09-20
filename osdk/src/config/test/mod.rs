@@ -39,6 +39,11 @@ fn conditional_manifest() {
         Some(Path::new("qemu-serial.log"))
     );
 
+    // Managed daemon scheme
+    let daemon = &scheme.qemu.as_ref().unwrap().with_daemons.as_ref().unwrap()[0];
+    assert_eq!(daemon.path, Path::new("test-service"));
+    assert_eq!(daemon.args, ["--test"]);
+
     // Iommu
     let mut scheme = toml_manifest.get_scheme(Some("iommu".to_owned())).clone();
     scheme.inherit(&toml_manifest.default_scheme);
@@ -56,6 +61,9 @@ fn conditional_manifest() {
         scheme.qemu.as_ref().unwrap().log_file.as_deref(),
         Some(Path::new("qemu-serial.log"))
     );
+    let daemon = &scheme.qemu.as_ref().unwrap().with_daemons.as_ref().unwrap()[0];
+    assert_eq!(daemon.path, Path::new("test-service"));
+    assert_eq!(daemon.args, ["--test"]);
 
     // Tdx
     let scheme = toml_manifest.get_scheme(Some("tdx".to_owned()));
@@ -65,4 +73,21 @@ fn conditional_manifest() {
     );
 
     fs::remove_file(tmp_file).unwrap();
+}
+
+#[test]
+fn parse_quoted_daemon_arguments() {
+    let command = "/path/to/service --name 'hello world' --mode test";
+    let parts = shlex::split(command).unwrap();
+
+    assert_eq!(
+        parts,
+        [
+            "/path/to/service",
+            "--name",
+            "hello world",
+            "--mode",
+            "test",
+        ]
+    );
 }

@@ -13,6 +13,7 @@ mod bundle;
 mod cli;
 mod commands;
 mod config;
+mod daemon;
 mod error;
 mod util;
 

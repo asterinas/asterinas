@@ -20,7 +20,8 @@ use std::{
 
 use linux_bzimage_builder::PayloadEncoding;
 use scheme::{
-    Action, ActionScheme, BootProtocol, BootScheme, Build, GrubScheme, QemuScheme, Scheme,
+    Action, ActionScheme, BootProtocol, BootScheme, Build, DaemonScheme, GrubScheme, QemuScheme,
+    Scheme,
 };
 
 use crate::{
@@ -99,6 +100,28 @@ fn apply_args_before_finalize(
         if let Some(bootdev_options) = &args.bootdev_append_options {
             qemu.bootdev_append_options = Some(bootdev_options.clone());
         }
+        if !args.qemu_daemons.is_empty() {
+            qemu.with_daemons = Some(
+                args.qemu_daemons
+                    .iter()
+                    .map(|command| {
+                        let mut parts = shlex::split(command).unwrap_or_else(|| {
+                            error_msg!("failed to parse QEMU daemon command `{command}`");
+                            process::exit(Errno::ParseMetadata as _);
+                        });
+                        if parts.is_empty() {
+                            error_msg!("QEMU daemon command cannot be empty");
+                            process::exit(Errno::ParseMetadata as _);
+                        }
+                        let path = parts.remove(0);
+                        DaemonScheme {
+                            path: PathBuf::from(path),
+                            args: parts,
+                        }
+                    })
+                    .collect(),
+            );
+        }
     }
 
     canonicalize_and_eval(action_scheme, workdir);
@@ -126,16 +149,21 @@ fn canonicalize_and_eval(action_scheme: &mut ActionScheme, workdir: &PathBuf) {
             canonicalize(initramfs);
         }
 
-        if let Some(ref mut qemu) = action_scheme.qemu
-            && let Some(ref mut qemu_path) = qemu.path
-        {
-            canonicalize(qemu_path);
-        }
-
         if let Some(ref mut grub) = action_scheme.grub
             && let Some(ref mut grub_mkrescue_path) = grub.grub_mkrescue
         {
             canonicalize(grub_mkrescue_path);
+        }
+    }
+
+    if let Some(ref mut qemu) = action_scheme.qemu {
+        if let Some(ref mut qemu_path) = qemu.path {
+            canonicalize(qemu_path);
+        }
+        if let Some(daemons) = qemu.with_daemons.as_mut() {
+            for daemon in daemons {
+                canonicalize(&mut daemon.path);
+            }
         }
     }
 
