@@ -113,6 +113,8 @@ echo "Start mount bind file test......"
 test_mount_bind_file
 echo "All mount bind file test passed."
 
+TEST_TMPDIR=/tmp ./empty_write/empty_write
+
 ./getcwd/getcwd
 
 ./inotify/inotify_align
