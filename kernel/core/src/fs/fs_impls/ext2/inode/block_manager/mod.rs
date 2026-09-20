@@ -80,6 +80,17 @@ impl InodeBlockManager {
         IoRangeIter::new(block_range, tree)
     }
 
+    /// Creates a non-blocking iterator over existing and hole block ranges.
+    ///
+    /// The iterator reports `EAGAIN` instead of reading uncached indirect
+    /// blocks from disk or waiting on a contended block-pointer tree.
+    pub(super) fn iter_io_ranges_try(&self, block_range: Range<Iblock>) -> Result<IoRangeIter<'_>> {
+        let tree = self.block_ptr_tree.try_read().ok_or_else(|| {
+            Error::with_message(Errno::EAGAIN, "the block pointer tree is locked")
+        })?;
+        Ok(IoRangeIter::new_non_blocking(block_range, tree))
+    }
+
     /// Truncates blocks to the new_size (best-effort).
     pub(super) fn truncate_to_byte_len(&self, new_size: usize) {
         let fs = match self.fs() {

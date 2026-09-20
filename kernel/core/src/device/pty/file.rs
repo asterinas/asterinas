@@ -6,7 +6,7 @@ use crate::{
     device::PtySlave,
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, SettableStatusFlags, StatusFlags},
+        file::{PerOpenFileOps, RwfFlags, SettableStatusFlags, StatusFlags},
         vfs::{inode::FileOps, path::Path},
     },
     prelude::*,
@@ -66,6 +66,7 @@ impl FileOps for PtySlaveFile {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         self.0.read(writer, status_flags)
     }
@@ -75,6 +76,7 @@ impl FileOps for PtySlaveFile {
         _offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         self.0.write(reader, status_flags)
     }

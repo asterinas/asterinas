@@ -12,7 +12,7 @@ use super::{
 use crate::{
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags, SyncMode},
+        file::{PerOpenFileOps, RwfFlags, StatusFlags, SyncMode},
         vfs::inode::{FileOps, Inode},
     },
     prelude::*,
@@ -89,6 +89,7 @@ impl FileOps for VirtioFsFile {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let fh = self.open_handle.fh();
         let file_flags = self.open_handle.access_mode() as u32 | status_flags.bits();
@@ -106,6 +107,7 @@ impl FileOps for VirtioFsFile {
         offset: usize,
         reader: &mut VmReader,
         status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         let fh = self.open_handle.fh();
         let file_flags = self.open_handle.access_mode() as u32 | status_flags.bits();

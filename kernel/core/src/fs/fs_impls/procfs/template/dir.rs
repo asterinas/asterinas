@@ -12,7 +12,7 @@ use inherit_methods_macro::inherit_methods;
 use super::Common;
 use crate::{
     fs::{
-        file::{InodeMode, InodeType, StatusFlags},
+        file::{InodeMode, InodeType, RwfFlags, StatusFlags},
         procfs::{BLOCK_SIZE, ProcFs},
         utils::DirentVisitor,
         vfs::{
@@ -101,6 +101,7 @@ impl<D: ProcDirOps + 'static> FileOps for ProcDir<D> {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
@@ -110,6 +111,7 @@ impl<D: ProcDirOps + 'static> FileOps for ProcDir<D> {
         _offset: usize,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }

@@ -13,8 +13,8 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{
-            AccessMode, CreationFlags, FileCommon, FileLike, SettableStatusFlags, StatusFlags,
-            file_table::FdFlags,
+            AccessMode, CreationFlags, FileCommon, FileLike, RwfFlags, SettableStatusFlags,
+            StatusFlags, file_table::FdFlags,
         },
         pseudofs::AnonInodeFs,
         vfs::{
@@ -329,7 +329,7 @@ impl Pollable for InotifyFile {
 }
 
 impl FileLike for InotifyFile {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, _rwf_flags: RwfFlags) -> Result<usize> {
         if self.common.is_nonblocking() {
             self.try_read(writer)
         } else {

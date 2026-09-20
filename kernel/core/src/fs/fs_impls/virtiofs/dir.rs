@@ -8,7 +8,7 @@ use super::{inode::VirtioFsInode, open_handle::VirtioFsOpenHandle};
 use crate::{
     events::IoEvents,
     fs::{
-        file::{PerOpenFileOps, StatusFlags, SyncMode},
+        file::{PerOpenFileOps, RwfFlags, StatusFlags, SyncMode},
         utils::DirentVisitor,
         vfs::inode::{FileOps, Inode},
     },
@@ -43,6 +43,7 @@ impl FileOps for VirtioFsDir {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
     }
@@ -52,6 +53,7 @@ impl FileOps for VirtioFsDir {
         _offset: usize,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
     }

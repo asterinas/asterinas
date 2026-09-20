@@ -11,7 +11,7 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{
-            AccessMode, InodeHandle, InodeMode, InodeType, PerOpenFileOps, StatusFlags,
+            AccessMode, InodeHandle, InodeMode, InodeType, PerOpenFileOps, RwfFlags, StatusFlags,
             file_table::{FdFlags, FileDesc},
             mkmod,
         },
@@ -157,12 +157,14 @@ impl<T: NsCommonOps> FileOps for NsInode<T> {
         _offset: usize,
         _writer: &mut VmWriter,
         _status: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize>;
     fn write_at(
         &self,
         _offset: usize,
         _reader: &mut VmReader,
         _status: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize>;
 }
 
@@ -253,6 +255,7 @@ impl<T: NsCommonOps> FileOps for NsFile<T> {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         return_errno_with_message!(
             Errno::EINVAL,
@@ -265,6 +268,7 @@ impl<T: NsCommonOps> FileOps for NsFile<T> {
         _offset: usize,
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         return_errno_with_message!(
             Errno::EINVAL,

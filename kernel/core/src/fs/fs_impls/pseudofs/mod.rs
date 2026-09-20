@@ -40,7 +40,7 @@ use spin::Once;
 
 use crate::{
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, RwfFlags, StatusFlags, mkmod},
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
@@ -245,6 +245,7 @@ impl FileOps for PseudoInode {
         _offset: usize,
         _writer: &mut VmWriter,
         _status: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         return_errno_with_message!(
             Errno::ESPIPE,
@@ -257,6 +258,7 @@ impl FileOps for PseudoInode {
         _offset: usize,
         _reader: &mut VmReader,
         _status: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         return_errno_with_message!(
             Errno::ESPIPE,

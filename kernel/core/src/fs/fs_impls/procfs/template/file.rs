@@ -9,7 +9,7 @@ use inherit_methods_macro::inherit_methods;
 use super::Common;
 use crate::{
     fs::{
-        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags},
+        file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, RwfFlags, StatusFlags},
         procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
@@ -57,6 +57,7 @@ impl<F: ProcFileOps + 'static> FileOps for ProcFile<F> {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         self.inner.read_at(offset, writer)
     }
@@ -66,6 +67,7 @@ impl<F: ProcFileOps + 'static> FileOps for ProcFile<F> {
         offset: usize,
         reader: &mut VmReader,
         _status_flags: StatusFlags,
+        _rwf_flags: RwfFlags,
     ) -> Result<usize> {
         self.inner.write_at(offset, reader)
     }
