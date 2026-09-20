@@ -118,8 +118,15 @@ if [ "$1" = "riscv" ]; then
 fi
 
 if [ "$1" = "aarch64" ]; then
+    # QEMU in KVM mode on a native aarch64 host only accepts host-compatible
+    # CPU models (e.g. `host` or `max`).
+    if [ "${ENABLE_KVM:-1}" = "1" ] && [ -e /dev/kvm ] && [ "$(uname -m)" = "aarch64" ]; then
+        CPU_MODEL=host
+    else
+        CPU_MODEL=cortex-a72
+    fi
     QEMU_ARGS="\
-        -cpu cortex-a72 \
+        -cpu ${CPU_MODEL} \
         -machine virt,gic-version=3 \
         -m ${MEM:-8G} \
         -smp ${SMP:-1} \
