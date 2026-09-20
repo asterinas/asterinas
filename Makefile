@@ -474,7 +474,7 @@ check: private WORKSPACE_MEMBER_DIRS = \
 check: $(CARGO_OSDK)
 	@# Check if any git-tracked, non-patch files contain trailing whitespace
 	@# NOTE: `--git-dir` will suppress "detected dubious ownership in repository" errors
-	@if git --git-dir=$$PWD/.git ls-files | grep -v '[.]patch$$' | xargs grep -d skip ' $$' ; then \
+	@if git --git-dir=$$PWD/.git grep -n ' $$' -- ':!*.patch' ; then \
 		echo "Error: Files (as listed above) contain trailing whitespaces"; \
 		exit 1; \
 	fi
