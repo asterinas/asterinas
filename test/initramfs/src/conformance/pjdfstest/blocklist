@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: MPL-2.0
+
+# pjdfstest cases excluded from the run, one per line in the form
+# `<category>/<nn>.t` relative to the suite's `tests/` directory. Lines
+# starting with `#` and blank lines are ignored.
+#
+# This is applied on top of whatever `runlist` selects, so a case listed in both
+# does not run.
+#
+# A `CONFORMANCE_TEST_SELECTOR` overrides this list entirely, so individual
+# blocked cases can still be rerun on demand.
+
+# Failing in pjdfstest run on ext2
+chmod/00.t
+chmod/07.t
+chown/00.t
+chown/07.t
+open/24.t
+rename/09.t
+rename/10.t
+rmdir/02.t
+rmdir/11.t
+unlink/02.t
+unlink/11.t
+utimensat/06.t
+utimensat/07.t
+
+# Failing in pjdfstest run on ramfs
+mkfifo/00.t
+mknod/00.t
+mknod/11.t
+rename/23.t
