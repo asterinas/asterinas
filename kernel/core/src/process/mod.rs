@@ -38,7 +38,7 @@ pub(crate) use process::{
     Session, Sid, Terminal, broadcast_signal_async, enqueue_signal_async, spawn_init_process,
 };
 pub(crate) use process_filter::ProcessFilter;
-pub(crate) use process_vm::{INIT_STACK_SIZE, LockedHeap, ProcessVm, VmarSnapshot};
+pub(crate) use process_vm::{LockedHeap, ProcessVm, VmarSnapshot};
 pub(crate) use program_loader::{ShebangScriptPath, UndetectedExecutable};
 pub(crate) use rlimit::ResourceType;
 pub(crate) use stats::collect_process_creation_count;
