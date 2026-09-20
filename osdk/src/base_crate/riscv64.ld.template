@@ -1,20 +1,22 @@
-ENTRY(_start)
+ENTRY(_start_phys)
 OUTPUT_ARCH(riscv)
 
+/* Default ELF load address. A raw image may be loaded at any supported
+ * 2 MiB-aligned physical address without changing its virtual addresses. */
 KERNEL_LMA = 0x80200000;
 KERNEL_VMA = 0xffffffff80200000;
 KERNEL_VMA_OFFSET = KERNEL_VMA - KERNEL_LMA;
 
 SECTIONS
 {
-    # First, we use physical addresses for the boot sections.
-    . = KERNEL_LMA;
+    # All sections share one virtual layout, including the MMU-off entry code.
+    . = KERNEL_VMA;
 
-    __kernel_start = . + KERNEL_VMA_OFFSET;
+    __kernel_start = .;
 
     PROVIDE(__executable_start = __kernel_start);
 
-    .boot                   : AT(ADDR(.boot)) {
+    .boot                   : AT(ADDR(.boot) - KERNEL_VMA_OFFSET) {
         KEEP(*(.boot))
         # FIXME: We want to create a separate .boot.stack section so that the
         # executable doesn't contain the boot stack (which is just hundreds of
@@ -28,9 +30,6 @@ SECTIONS
         KEEP(*(.ap_boot))
         . = ALIGN(4096);
     }
-
-    # Then, we switch to virtual addresses for all the other sections.
-    . += KERNEL_VMA_OFFSET;
 
     .text                   : AT(ADDR(.text) - KERNEL_VMA_OFFSET) {
         *(.text .text.*)
@@ -104,4 +103,8 @@ SECTIONS
     }
 
     __kernel_end = .;
+    _start_phys = LOADADDR(.boot);
+
+    # The bootstrap uses one level-2 table for the kernel image.
+    ASSERT(__kernel_end <= 0xffffffffc0000000, "RISC-V kernel exceeds boot mapping")
 }
