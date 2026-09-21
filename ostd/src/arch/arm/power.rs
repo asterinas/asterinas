@@ -11,10 +11,7 @@ use core::arch::asm;
 use fdt::node::FdtNode;
 use spin::Once;
 
-use crate::{
-    arch::boot::DEVICE_TREE,
-    power::{ExitCode, inject_poweroff_handler, inject_restart_handler},
-};
+use crate::{arch::boot::DEVICE_TREE, power::ExitCode};
 
 #[derive(Debug)]
 enum PsciMethod {
@@ -41,11 +38,19 @@ enum PsciFunc {
     SystemReset = 0x8400_0009,
 }
 
-fn try_poweroff(_code: ExitCode) {
+/// Attempts to power off the system using an architecture-specific mechanism.
+///
+/// On ARM, this function attempts to power off the system if a supported PSCI device tree node
+/// exists. Otherwise, it does nothing and returns.
+pub fn try_poweroff(_code: ExitCode) {
     psci_call(PsciFunc::SystemOff);
 }
 
-fn try_restart(_code: ExitCode) {
+/// Attempts to restart the system using an architecture-specific mechanism.
+///
+/// On ARM, this function attempts to restart the system if a supported PSCI device tree node
+/// exists. Otherwise, it does nothing and returns.
+pub fn try_restart(_code: ExitCode) {
     psci_call(PsciFunc::SystemReset);
 }
 
@@ -97,6 +102,4 @@ pub(super) fn init() {
     crate::info!("PSCI detected: {:?}", psci_method);
 
     PSCI_METHOD.call_once(|| psci_method);
-    inject_poweroff_handler(try_poweroff);
-    inject_restart_handler(try_restart);
 }
