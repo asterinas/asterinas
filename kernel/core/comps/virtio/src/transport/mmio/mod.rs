@@ -8,10 +8,10 @@ use spin::Once;
 use self::driver::VirtioMmioDriver;
 
 mod bus;
-pub mod device;
-pub mod driver;
-pub mod layout;
-pub mod multiplex;
+mod device;
+mod driver;
+mod layout;
+mod multiplex;
 
 pub(crate) static VIRTIO_MMIO_DRIVER: Once<Arc<VirtioMmioDriver>> = Once::new();
 

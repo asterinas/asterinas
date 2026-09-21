@@ -130,7 +130,7 @@ struct Component {
 }
 
 impl Component {
-    pub fn init() -> Result<Self, ComponentInitError> {
+    fn init() -> Result<Self, ComponentInitError> {
         Ok(Self {
             input_core: Mutex::new(InputCore::new()),
         })

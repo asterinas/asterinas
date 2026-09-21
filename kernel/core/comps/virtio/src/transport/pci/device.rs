@@ -29,7 +29,7 @@ use crate::{
     },
 };
 
-pub struct VirtioPciNotify {
+struct VirtioPciNotify {
     offset_multiplier: u32,
     offset: u32,
     io_memory: IoMem,
