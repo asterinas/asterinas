@@ -93,18 +93,29 @@ pub const MAX_USERSPACE_VADDR: Vaddr = (0x0000_0040_0000_0000 << ADDR_WIDTH_SHIF
 /// address space, with the most significant bits in the addresses set).
 pub const KERNEL_VADDR_RANGE: Range<Vaddr> = KERNEL_BASE_VADDR..KERNEL_END_VADDR;
 
-/// The kernel code is linear mapped to this address.
+/// The offset from physical addresses to kernel image virtual addresses.
 ///
-/// FIXME: This offset should be randomly chosen by the loader or the
-/// boot compatibility layer. But we disabled it because OSTD
-/// doesn't support relocatable kernel yet.
+/// On RISC-V, the bootstrap computes this offset from the actual load address.
+/// Other architectures currently use a fixed offset.
 pub fn kernel_loaded_offset() -> usize {
-    KERNEL_CODE_BASE_VADDR
+    #[cfg(target_arch = "riscv64")]
+    {
+        unsafe extern "C" {
+            static __riscv_kernel_loaded_offset: usize;
+        }
+        // SAFETY: The BSP initializes this value before entering Rust, and it
+        // is never modified afterwards. APs are started after initialization.
+        unsafe { __riscv_kernel_loaded_offset }
+    }
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+        KERNEL_CODE_BASE_VADDR
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
 const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000;
-#[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
+#[cfg(target_arch = "aarch64")]
 const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000;
 #[cfg(target_arch = "loongarch64")]
 const KERNEL_CODE_BASE_VADDR: usize = 0x9000_0000_0000_0000;
