@@ -42,7 +42,7 @@ static VIRTIO_BLOCK_MAJOR_ID: Once<MajorIdOwner> = Once::new();
 
 #[init_component]
 fn virtio_component_init() -> Result<(), ComponentInitError> {
-    VIRTIO_BLOCK_MAJOR_ID.call_once(|| aster_block::allocate_major().unwrap());
+    VIRTIO_BLOCK_MAJOR_ID.call_once(|| aster_block::allocate_major("virtblk").unwrap());
 
     // Find all devices and register them to the corresponding crate
     transport::init();

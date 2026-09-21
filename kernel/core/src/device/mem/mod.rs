@@ -92,7 +92,7 @@ impl Device for MemDevice {
 static MEM_MAJOR: Once<MajorIdOwner> = Once::new();
 
 pub(super) fn init_in_first_kthread() {
-    MEM_MAJOR.call_once(|| acquire_major(MajorId::new(1)).unwrap());
+    MEM_MAJOR.call_once(|| acquire_major(MajorId::new(1), "mem").unwrap());
 
     register(Arc::new(MemDevice::new(MemFile::Full))).unwrap();
     register(Arc::new(MemDevice::new(MemFile::Null))).unwrap();
