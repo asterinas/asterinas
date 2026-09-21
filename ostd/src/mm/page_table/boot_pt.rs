@@ -161,7 +161,12 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     ///
     /// This function is unsafe because it can cause undefined behavior if the caller
     /// maps a page in the kernel address space.
-    pub unsafe fn map_base_page(&mut self, from: Vaddr, to: Paddr, prop: PageProperty) {
+    pub(in crate::mm) unsafe fn map_base_page(
+        &mut self,
+        from: Vaddr,
+        to: Paddr,
+        prop: PageProperty,
+    ) {
         let mut pt = self.root_pt;
         let mut level = C::NR_LEVELS;
         // Walk to the last level of the page table.

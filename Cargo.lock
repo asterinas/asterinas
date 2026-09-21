@@ -453,6 +453,7 @@ dependencies = [
  "io-util",
  "ostd",
  "ostd-pod",
+ "short-vis-path",
  "smallvec",
  "spin",
  "tdx-guest",

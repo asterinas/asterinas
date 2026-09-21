@@ -8,7 +8,7 @@ use crate::{
     packet::{ApplicationLayer, RxPacket, TransportLayer, TxPacket},
 };
 
-pub fn parse(
+pub(in crate::iface) fn parse(
     mut pkt: RxPacket<TransportLayer>,
     ip_repr: &IpRepr,
     csum: bool,
@@ -56,7 +56,7 @@ pub fn parse(
     Some((pkt.peel(size_of::<Header>()), repr))
 }
 
-pub fn emit(
+pub(in crate::iface) fn emit(
     pkt: TxPacket<ApplicationLayer>,
     ip_repr: &IpRepr,
     udp_repr: &UdpRepr,

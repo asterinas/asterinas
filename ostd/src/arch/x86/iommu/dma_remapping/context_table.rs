@@ -33,7 +33,7 @@ impl RootEntry {
     }
 }
 
-pub struct RootTable {
+pub(in crate::arch::iommu) struct RootTable {
     /// Total 256 bus, each entry is 128 bits.
     root_frame: Frame<()>,
     // TODO: Use radix tree instead.
@@ -48,7 +48,7 @@ pub(super) enum ContextTableError {
 }
 
 impl RootTable {
-    pub fn root_paddr(&self) -> Paddr {
+    pub(in crate::arch::iommu) fn root_paddr(&self) -> Paddr {
         self.root_frame.paddr()
     }
 
