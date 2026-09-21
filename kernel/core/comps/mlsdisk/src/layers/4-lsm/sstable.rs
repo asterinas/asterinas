@@ -542,37 +542,37 @@ impl<K: RecordKey<K>, V: RecordValue> SSTable<K, V> {
 }
 
 impl<K: RecordKey<K>> IndexEntry<K> {
-    pub fn range(&self) -> RangeInclusive<K> {
+    pub(crate) fn range(&self) -> RangeInclusive<K> {
         self.first..=self.last
     }
 
-    pub fn is_within_range(&self, key: &K) -> bool {
+    pub(crate) fn is_within_range(&self, key: &K) -> bool {
         self.range().contains(key)
     }
 
-    pub fn overlap_with(&self, rhs_range: &RangeInclusive<K>) -> bool {
+    pub(crate) fn overlap_with(&self, rhs_range: &RangeInclusive<K>) -> bool {
         let lhs_range = self.range();
         !(lhs_range.end() < rhs_range.start() || lhs_range.start() > rhs_range.end())
     }
 }
 
 impl RecordBlock {
-    pub fn from_buf(buf: Vec<u8>) -> Self {
+    pub(crate) fn from_buf(buf: Vec<u8>) -> Self {
         debug_assert_eq!(buf.len(), RECORD_BLOCK_SIZE);
         Self { buf }
     }
 
-    pub fn as_slice(&self) -> &[u8] {
+    pub(crate) fn as_slice(&self) -> &[u8] {
         &self.buf
     }
 
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+    pub(crate) fn as_mut_slice(&mut self) -> &mut [u8] {
         &mut self.buf
     }
 }
 
 impl<K: RecordKey<K>> QueryAccessor<K> {
-    pub fn hit_target(&self, target: &K) -> bool {
+    pub(crate) fn hit_target(&self, target: &K) -> bool {
         match self {
             QueryAccessor::Point(k) => k == target,
             QueryAccessor::Range(range) => range.contains(target),

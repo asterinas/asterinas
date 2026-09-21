@@ -2,7 +2,7 @@
 
 //! OS-specific or OS-dependent APIs.
 
-pub use alloc::{
+pub(crate) use alloc::{
     boxed::Box,
     collections::BTreeMap,
     string::{String, ToString},
@@ -20,8 +20,8 @@ use aes_gcm::{
     aes::Aes128,
 };
 use ctr::cipher::{NewCipher, StreamCipher};
-pub use hashbrown::{HashMap, HashSet};
-pub use ostd::sync::{Mutex, MutexGuard, RwLock, SpinLock};
+pub(crate) use hashbrown::{HashMap, HashSet};
+pub(crate) use ostd::sync::{Mutex, MutexGuard, RwLock, SpinLock};
 use ostd::{
     arch::read_random,
     sync::{self, PreemptDisabled, WaitQueue},
@@ -35,17 +35,17 @@ use crate::{
     prelude::Result,
 };
 
-pub type RwLockReadGuard<'a, T> = sync::RwLockReadGuard<'a, T, PreemptDisabled>;
-pub type RwLockWriteGuard<'a, T> = sync::RwLockWriteGuard<'a, T, PreemptDisabled>;
-pub type SpinLockGuard<'a, T> = sync::SpinLockGuard<'a, T, PreemptDisabled>;
-pub type Tid = u32;
+pub(crate) type RwLockReadGuard<'a, T> = sync::RwLockReadGuard<'a, T, PreemptDisabled>;
+pub(crate) type RwLockWriteGuard<'a, T> = sync::RwLockWriteGuard<'a, T, PreemptDisabled>;
+pub(crate) type SpinLockGuard<'a, T> = sync::SpinLockGuard<'a, T, PreemptDisabled>;
+pub(crate) type Tid = u32;
 
 /// A struct to get a unique identifier for the current thread.
-pub struct CurrentThread;
+pub(crate) struct CurrentThread;
 
 impl CurrentThread {
     /// Returns the Tid of current kernel thread.
-    pub fn id() -> Tid {
+    pub(crate) fn id() -> Tid {
         let Some(task) = Task::current() else {
             return 0;
         };
@@ -58,7 +58,7 @@ impl CurrentThread {
 /// until a certain condition becomes true.
 ///
 /// This is a copy from `aster-core`.
-pub struct Condvar {
+pub(crate) struct Condvar {
     waitqueue: Arc<WaitQueue>,
     counter: SpinLock<Inner>,
 }
@@ -70,7 +70,7 @@ struct Inner {
 
 impl Condvar {
     /// Creates a new condition variable.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Condvar {
             waitqueue: Arc::new(WaitQueue::new()),
             counter: SpinLock::new(Inner {
@@ -87,7 +87,7 @@ impl Condvar {
     /// Returns a new `MutexGuard` if the operation is successful,
     /// or returns the provided guard
     /// within a `LockErr` if the waiting operation fails.
-    pub fn wait<'a, T>(&self, guard: MutexGuard<'a, T>) -> Result<MutexGuard<'a, T>> {
+    pub(crate) fn wait<'a, T>(&self, guard: MutexGuard<'a, T>) -> Result<MutexGuard<'a, T>> {
         let cond = || {
             // Check if the notify counter is greater than 0.
             let mut counter = self.counter.lock();
@@ -114,7 +114,7 @@ impl Condvar {
     /// If there is a waiting thread, it will be unblocked
     /// and allowed to reacquire the associated mutex.
     /// If no threads are waiting, this function is a no-op.
-    pub fn notify_one(&self) {
+    pub(crate) fn notify_one(&self) {
         let mut counter = self.counter.lock();
         if counter.waiter_count == 0 {
             return;
@@ -129,7 +129,7 @@ impl Condvar {
     /// This method will unblock all waiting threads
     /// and they will be allowed to reacquire the associated mutex.
     /// If no threads are waiting, this function is a no-op.
-    pub fn notify_all(&self) {
+    pub(crate) fn notify_all(&self) {
         let mut counter = self.counter.lock();
         if counter.waiter_count == 0 {
             return;
@@ -148,7 +148,7 @@ impl fmt::Debug for Condvar {
 
 /// Wrap the `Mutex` provided by kernel, used for `Condvar`.
 #[repr(transparent)]
-pub struct CvarMutex<T> {
+pub(crate) struct CvarMutex<T> {
     inner: Mutex<T>,
 }
 
@@ -156,14 +156,14 @@ pub struct CvarMutex<T> {
 
 impl<T> CvarMutex<T> {
     /// Constructs a new `Mutex` lock, using the kernel's `struct mutex`.
-    pub fn new(t: T) -> Self {
+    pub(crate) fn new(t: T) -> Self {
         Self {
             inner: Mutex::new(t),
         }
     }
 
     /// Acquires the lock and gives the caller access to the data protected by it.
-    pub fn lock(&self) -> Result<MutexGuard<'_, T>> {
+    pub(crate) fn lock(&self) -> Result<MutexGuard<'_, T>> {
         let guard = self.inner.lock();
         Ok(guard)
     }
@@ -176,7 +176,7 @@ impl<T: fmt::Debug> fmt::Debug for CvarMutex<T> {
 }
 
 /// Spawns a new thread, returning a `JoinHandle` for it.
-pub fn spawn<F, T>(f: F) -> JoinHandle<T>
+pub(crate) fn spawn<F, T>(f: F) -> JoinHandle<T>
 where
     F: FnOnce() -> T + Send + Sync + 'static,
     T: Send + 'static,
@@ -204,7 +204,7 @@ where
 /// An owned permission to join on a thread (block on its termination).
 ///
 /// This struct is created by the `spawn` function.
-pub struct JoinHandle<T> {
+pub(crate) struct JoinHandle<T> {
     task: Arc<Task>,
     is_finished: Arc<AtomicBool>,
     data: Arc<SpinLock<Option<T>>>,
@@ -212,12 +212,12 @@ pub struct JoinHandle<T> {
 
 impl<T> JoinHandle<T> {
     /// Checks if the associated thread has finished running its main function.
-    pub fn is_finished(&self) -> bool {
+    pub(crate) fn is_finished(&self) -> bool {
         self.is_finished.load(Ordering::Acquire)
     }
 
     /// Waits for the associated thread to finish.
-    pub fn join(self) -> Result<T> {
+    pub(crate) fn join(self) -> Result<T> {
         while !self.is_finished() {
             Task::yield_now();
         }
@@ -299,7 +299,7 @@ pub struct Aead;
 
 impl Aead {
     /// Construct an `Aead` instance.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }
@@ -362,12 +362,12 @@ new_byte_array_type!(SkcipherIv, AES_CTR_IV_SIZE);
 
 /// A symmetric key cipher.
 #[derive(Debug, Default)]
-pub struct Skcipher;
+pub(crate) struct Skcipher;
 
 // TODO: impl `Skcipher` with linux kernel Crypto API.
 impl Skcipher {
     /// Construct a `Skcipher` instance.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self
     }
 }

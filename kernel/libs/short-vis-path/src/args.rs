@@ -31,7 +31,7 @@ impl Parse for Argument {
 
 /// Holds the parsed arguments from `#[add(...)]`.
 /// Maps each identifier to its corresponding path.
-pub struct AddArguments {
+pub(crate) struct AddArguments {
     args: BTreeMap<Ident, Path>,
 }
 
@@ -127,7 +127,7 @@ impl AddArguments {
     }
 
     #[cfg(test)]
-    pub fn test_new(ident: &str, path: &str) -> Self {
+    pub(crate) fn test_new(ident: &str, path: &str) -> Self {
         let mut args = BTreeMap::new();
         let path = parse_str(path).unwrap();
         args.insert(Ident::new(ident, Span::call_site()), path);

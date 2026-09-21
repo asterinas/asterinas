@@ -10,7 +10,7 @@ use crate::{prelude::*, util::BitMap};
 /// It tracks the completing process of each slot within the range.
 /// A "slot" indicates one specific key-value pair of the query.
 #[derive(Debug)]
-pub struct RangeQueryCtx<K, V> {
+pub(crate) struct RangeQueryCtx<K, V> {
     start: K,
     num_values: usize,
     complete_table: BitMap,
@@ -21,7 +21,7 @@ pub struct RangeQueryCtx<K, V> {
 impl<K: RecordKey<K>, V: RecordValue> RangeQueryCtx<K, V> {
     /// Create a new context with the given start key,
     /// and the number of values for query.
-    pub fn new(start: K, num_values: usize) -> Self {
+    pub(crate) fn new(start: K, num_values: usize) -> Self {
         Self {
             start,
             num_values,
@@ -33,7 +33,7 @@ impl<K: RecordKey<K>, V: RecordValue> RangeQueryCtx<K, V> {
 
     /// Gets the uncompleted range within the whole, returns `None`
     /// if all slots are already completed.
-    pub fn range_uncompleted(&self) -> Option<RangeInclusive<K>> {
+    pub(crate) fn range_uncompleted(&self) -> Option<RangeInclusive<K>> {
         if self.is_completed() {
             return None;
         }
@@ -45,20 +45,20 @@ impl<K: RecordKey<K>, V: RecordValue> RangeQueryCtx<K, V> {
     }
 
     /// Whether the uncompleted range contains the target key.
-    pub fn contains_uncompleted(&self, key: &K) -> bool {
+    pub(crate) fn contains_uncompleted(&self, key: &K) -> bool {
         let nth = *key - self.start;
         nth < self.num_values && !self.complete_table[nth]
     }
 
     /// Whether the range query context is completed, means
     /// all slots are filled with the corresponding values.
-    pub fn is_completed(&self) -> bool {
+    pub(crate) fn is_completed(&self) -> bool {
         self.min_uncompleted == self.num_values
     }
 
     /// Complete one slot within the range, with the specific
     /// key and the queried value.
-    pub fn complete(&mut self, key: K, value: V) {
+    pub(crate) fn complete(&mut self, key: K, value: V) {
         let nth = key - self.start;
         if self.complete_table[nth] {
             return;
@@ -70,7 +70,7 @@ impl<K: RecordKey<K>, V: RecordValue> RangeQueryCtx<K, V> {
     }
 
     /// Mark the specific slot as completed.
-    pub fn mark_completed(&mut self, key: K) {
+    pub(crate) fn mark_completed(&mut self, key: K) {
         let nth = key - self.start;
 
         self.complete_table.set(nth, true);
@@ -78,7 +78,7 @@ impl<K: RecordKey<K>, V: RecordValue> RangeQueryCtx<K, V> {
     }
 
     /// Turn the context into final results.
-    pub fn into_results(self) -> Vec<(K, V)> {
+    pub(crate) fn into_results(self) -> Vec<(K, V)> {
         debug_assert!(self.is_completed());
         self.res
     }

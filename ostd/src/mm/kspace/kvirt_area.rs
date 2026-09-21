@@ -52,7 +52,7 @@ mod allocator {
 // `KVirtArea`. However, `IoMem` need some non trivial refactoring to support
 // being implemented on a `!Send` and `!Sync` guard.
 #[derive(Debug)]
-pub struct KVirtArea {
+pub(crate) struct KVirtArea {
     range: Range<Vaddr>,
 }
 
@@ -79,20 +79,20 @@ impl Split for KVirtArea {
 }
 
 impl KVirtArea {
-    pub fn start(&self) -> Vaddr {
+    pub(crate) fn start(&self) -> Vaddr {
         self.range.start
     }
 
-    pub fn end(&self) -> Vaddr {
+    pub(crate) fn end(&self) -> Vaddr {
         self.range.end
     }
 
-    pub fn range(&self) -> Range<Vaddr> {
+    pub(crate) fn range(&self) -> Range<Vaddr> {
         self.range.start..self.range.end
     }
 
     #[cfg(ktest)]
-    pub fn query<'a, G: crate::task::atomic_mode::AsAtomicModeGuard>(
+    pub(crate) fn query<'a, G: crate::task::atomic_mode::AsAtomicModeGuard>(
         &'a self,
         guard: &'a G,
         addr: Vaddr,
@@ -121,7 +121,7 @@ impl KVirtArea {
     ///  - the area size is not a multiple of [`PAGE_SIZE`];
     ///  - the map offset is not aligned to [`PAGE_SIZE`];
     ///  - the map offset plus the size of the pages exceeds the area size.
-    pub fn map_frames<T: AnyFrameMeta + ?Sized>(
+    pub(crate) fn map_frames<T: AnyFrameMeta + ?Sized>(
         area_size: usize,
         map_offset: usize,
         frames: impl Iterator<Item = Frame<T>>,
@@ -165,7 +165,7 @@ impl KVirtArea {
     ///  - the map offset plus the length of the physical range exceeds the
     ///    area size;
     ///  - the provided physical range contains tracked physical addresses.
-    pub unsafe fn map_untracked_frames(
+    pub(crate) unsafe fn map_untracked_frames(
         area_size: usize,
         map_offset: usize,
         pa_range: Range<Paddr>,

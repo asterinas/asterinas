@@ -315,7 +315,7 @@ const fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> usize
 /// A handle to a page table.
 /// A page table can track the lifetime of the mapped physical pages.
 #[derive(Debug)]
-pub struct PageTable<C: PageTableConfig> {
+pub(crate) struct PageTable<C: PageTableConfig> {
     root: PageTableNode<C>,
 }
 
@@ -400,7 +400,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Create a new empty page table.
     ///
     /// Useful for the IOMMU page tables only.
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         PageTable {
             root: PageTableNode::<C>::alloc(C::NR_LEVELS),
         }
@@ -416,7 +416,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Obtaining the physical address of the root page table is safe, however, using it or
     /// providing it to the hardware will be unsafe since the page table node may be dropped,
     /// resulting in UAF.
-    pub fn root_paddr(&self) -> Paddr {
+    pub(crate) fn root_paddr(&self) -> Paddr {
         self.root.paddr()
     }
 
@@ -435,7 +435,7 @@ impl<C: PageTableConfig> PageTable<C> {
     ///
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped.
-    pub fn cursor_mut<'rcu, G: AsAtomicModeGuard>(
+    pub(crate) fn cursor_mut<'rcu, G: AsAtomicModeGuard>(
         &'rcu self,
         guard: &'rcu G,
         va: &Range<Vaddr>,
@@ -459,7 +459,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Create a new reference to the same page table.
     /// The caller must ensure that the kernel page table is not copied.
     /// This is only useful for IOMMU page tables. Think twice before using it in other cases.
-    pub unsafe fn shallow_copy(&self) -> Self {
+    pub(crate) unsafe fn shallow_copy(&self) -> Self {
         PageTable {
             root: self.root.clone(),
         }

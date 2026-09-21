@@ -12,10 +12,10 @@ mod vmar_impls;
 
 use ostd::mm::Vaddr;
 
-pub use self::vm_mapping::MapHandle;
 pub(crate) use self::{
     handle::VmarHandle,
     rmap::{Rmap, RmapEntry},
+    vm_mapping::MapHandle,
     vmar_impls::{
         RssType, Vmar, map::VmarMapOffset, page_fault::PageFaultInfo, remap::RemapOldMappingAction,
     },

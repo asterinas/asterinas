@@ -222,7 +222,7 @@ impl<D: BlockSet + 'static> WalAppendTx<D> {
 
 impl<D: BlockSet + 'static> WalTxInner<D> {
     /// Prepare phase for an Append TX, mainly to create new TX and WAL.
-    pub fn prepare(&mut self) -> Result<()> {
+    pub(crate) fn prepare(&mut self) -> Result<()> {
         debug_assert!(self.appended_log.is_none());
         let appended_log = {
             let store = &self.tx_log_store;
