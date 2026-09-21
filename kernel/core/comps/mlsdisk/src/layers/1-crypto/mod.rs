@@ -6,13 +6,13 @@ mod crypto_blob;
 mod crypto_chain;
 mod crypto_log;
 
-pub use self::{
+pub(crate) use self::{
     crypto_blob::CryptoBlob,
     crypto_chain::CryptoChain,
     crypto_log::{CryptoLog, NodeCache, RootMhtMeta},
 };
 
-pub type Key = crate::os::AeadKey;
-pub type Iv = crate::os::AeadIv;
-pub type Mac = crate::os::AeadMac;
-pub type VersionId = u64;
+pub(crate) type Key = crate::os::AeadKey;
+pub(crate) type Iv = crate::os::AeadIv;
+pub(crate) type Mac = crate::os::AeadMac;
+pub(crate) type VersionId = u64;

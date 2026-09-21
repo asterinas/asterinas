@@ -14,7 +14,7 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-pub use self::current::CurrentTx;
+pub(crate) use self::current::CurrentTx;
 use crate::{
     os::{CurrentThread, HashMap, Mutex, RwLock, Tid},
     prelude::*,
@@ -22,7 +22,7 @@ use crate::{
 
 /// A transaction provider.
 #[expect(clippy::type_complexity)]
-pub struct TxProvider {
+pub(crate) struct TxProvider {
     id: u64,
     initializer_map: RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
     precommit_handlers: RwLock<Vec<Box<dyn Fn(CurrentTx<'_>) -> Result<()> + Send + Sync>>>,
@@ -34,7 +34,7 @@ pub struct TxProvider {
 
 impl TxProvider {
     /// Creates a new TX provider.
-    pub fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         Arc::new_cyclic(|weak_self| Self {
             id: NEXT_ID.fetch_add(1, Ordering::Release),
@@ -48,7 +48,7 @@ impl TxProvider {
     }
 
     /// Creates a new TX that is attached to this TX provider.
-    pub fn new_tx(&self) -> CurrentTx<'_> {
+    pub(crate) fn new_tx(&self) -> CurrentTx<'_> {
         let mut tx_table = self.tx_table.lock();
         let tid = CurrentThread::id();
         if tx_table.contains_key(&tid) {
@@ -66,7 +66,7 @@ impl TxProvider {
     ///
     /// The caller of this method must be within the closure passed to
     /// `Tx::context`. Otherwise, the method would panic.
-    pub fn current(&self) -> CurrentTx<'_> {
+    pub(crate) fn current(&self) -> CurrentTx<'_> {
         CurrentTx::new(self)
     }
 
@@ -74,7 +74,7 @@ impl TxProvider {
     ///
     /// The registered initializer function will be called upon the creation of
     /// a TX.
-    pub fn register_data_initializer<T>(&self, f: Box<dyn Fn() -> T + Send + Sync>)
+    pub(crate) fn register_data_initializer<T>(&self, f: Box<dyn Fn() -> T + Send + Sync>)
     where
         T: TxData,
     {
@@ -104,7 +104,7 @@ impl TxProvider {
     /// Pre-commit callbacks are allowed to fail (unlike commit callbacks).
     /// If any pre-commit callbacks failed, the TX would be aborted and
     /// the commit callbacks would not get called.
-    pub fn register_precommit_handler<F>(&self, f: F)
+    pub(crate) fn register_precommit_handler<F>(&self, f: F)
     where
         F: Fn(CurrentTx<'_>) -> Result<()> + Send + Sync + 'static,
     {
@@ -128,7 +128,7 @@ impl TxProvider {
     /// Committing a TX triggers first the pre-commit stage of the TX and then
     /// the commit stage. The callbacks for the commit stage is not allowed
     /// to fail.
-    pub fn register_commit_handler<F>(&self, f: F)
+    pub(crate) fn register_commit_handler<F>(&self, f: F)
     where
         F: Fn(CurrentTx<'_>) + Send + Sync + 'static,
     {
@@ -149,7 +149,7 @@ impl TxProvider {
     ///
     /// A TX enters the abort stage when the TX is aborted by the user
     /// (via `Tx::abort`) or by a callback in the pre-commit stage.
-    pub fn register_abort_handler<F>(&self, f: F)
+    pub(crate) fn register_abort_handler<F>(&self, f: F)
     where
         F: Fn(CurrentTx<'_>) + Send + Sync + 'static,
     {
@@ -254,14 +254,14 @@ pub enum TxStatus {
 }
 
 /// The ID of a transaction.
-pub type TxId = u64;
+pub(crate) type TxId = u64;
 
 /// Per-transaction data.
 ///
 /// Using `TxProvider::register_data_initiailzer` to inject per-transaction data
 /// and using `CurrentTx::data_with` or `CurrentTx::data_mut_with` to access
 /// per-transaction data.
-pub trait TxData: Any + Send + Sync {}
+pub(crate) trait TxData: Any + Send + Sync {}
 
 #[cfg(test)]
 mod tests {

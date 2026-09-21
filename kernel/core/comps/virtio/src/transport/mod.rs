@@ -22,8 +22,8 @@ use crate::{
     queue::{AvailRing, Descriptor, UsedRing},
 };
 
-pub mod mmio;
-pub mod pci;
+pub(crate) mod mmio;
+pub(crate) mod pci;
 
 /// The transport of virtio device. Virtio device can use this transport to:
 /// 1. Set device status.
@@ -31,7 +31,7 @@ pub mod pci;
 /// 3. Access device config memory.
 /// 4. Config virtqueue.
 /// 5. Get the interrupt resources allocated to the device.
-pub trait VirtioTransport: Sync + Send + Debug {
+pub(crate) trait VirtioTransport: Sync + Send + Debug {
     // ====================Device related APIs=======================
 
     /// Get device type.
@@ -103,7 +103,7 @@ pub trait VirtioTransport: Sync + Send + Debug {
 
 /// Manage PCI device/notify configuration space (legacy/modern).
 #[derive(Debug)]
-pub struct ConfigManager<T: Pod> {
+pub(crate) struct ConfigManager<T: Pod> {
     modern_space: Option<SafePtr<T, IoMem>>,
     legacy_space: Option<(BarAccess, usize)>,
 }
@@ -218,7 +218,7 @@ pub enum VirtioTransportError {
 
 bitflags::bitflags! {
     /// The device status field.
-    pub struct DeviceStatus: u8 {
+    pub(crate) struct DeviceStatus: u8 {
         /// Indicates that the guest OS has found the device and recognized it
         /// as a valid virtio device.
         const ACKNOWLEDGE = 1;
@@ -256,7 +256,7 @@ bitflags::bitflags! {
 /// is dropped without [`finish_init`] being called), [`Drop`] sets `FAILED`. Once
 /// `finish_init` is called, the FAILED bit is no longer set on drop.
 #[derive(Debug)]
-pub struct DeviceTransport {
+pub(crate) struct DeviceTransport {
     inner: Box<dyn VirtioTransport>,
     is_completed: bool,
 }
@@ -276,7 +276,7 @@ impl DeviceTransport {
     /// Marks initialization as complete and sets the device status to `DRIVER_OK`.
     ///
     /// After this call, the wrapper will NOT set `FAILED` on drop.
-    pub fn finish_init(&mut self) {
+    pub(crate) fn finish_init(&mut self) {
         self.is_completed = true;
         let status = self.inner.read_device_status() | DeviceStatus::DRIVER_OK;
         self.inner.write_device_status(status).unwrap();

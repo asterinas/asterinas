@@ -33,7 +33,7 @@ pub struct VirtioMmioDevice {
 }
 
 #[derive(Debug)]
-pub struct VirtioMmioTransport {
+pub(crate) struct VirtioMmioTransport {
     layout: SafePtr<VirtioMmioLayout, IoMem>,
     device: Arc<VirtioMmioDevice>,
     common_device: MmioCommonDevice,

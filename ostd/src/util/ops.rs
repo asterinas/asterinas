@@ -9,7 +9,7 @@ use core::ops::Range;
 /// will be sorted in ascending order.
 ///
 /// [difference]: https://en.wikipedia.org/wiki/Set_(mathematics)#Set_difference
-pub fn range_difference<T: Ord + Copy>(
+pub(crate) fn range_difference<T: Ord + Copy>(
     a: &Range<T>,
     b: &Range<T>,
 ) -> impl Iterator<Item = Range<T>> {
