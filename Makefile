@@ -91,6 +91,18 @@ VHOST ?= off
 DNS_SERVER ?= none
 # End of network settings
 
+# Virtio-fs settings. Set VIRTIOFS=on to attach a virtio-fs device. Set
+# VIRTIOFS_SCRATCH=on to attach a second device (requires VIRTIOFS=on).
+# VIRTIOFS_CACHE accepts auto, always, never, or metadata.
+VIRTIOFS ?= off
+VIRTIOFS_SCRATCH ?= off
+VIRTIOFS_CACHE ?= auto
+ifeq ($(VIRTIOFS),on)
+# Each Make invocation gets an isolated virtio-fs work directory under /tmp.
+VIRTIOFS_WORK_DIR ?= $(shell mktemp -d -p /tmp asterinas-virtiofs-XXXXXX)
+endif
+# End of Virtio-fs settings.
+
 # NixOS settings
 NIXOS_DISK_SIZE_IN_MB ?= 16384
 NIXOS_DISABLE_SYSTEMD ?= false
@@ -254,6 +266,13 @@ endif
 
 ifeq ($(INITRAMFS),on)
 CARGO_OSDK_COMMON_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
+endif
+CARGO_OSDK_VIRTIOFSD := ./tools/run_virtiofsd.sh --cache-mode $(VIRTIOFS_CACHE) --work-dir
+ifeq ($(VIRTIOFS),on)
+CARGO_OSDK_COMMON_ARGS += --qemu-with-daemon="$(CARGO_OSDK_VIRTIOFSD) $(VIRTIOFS_WORK_DIR)"
+endif
+ifeq ($(VIRTIOFS_SCRATCH),on)
+CARGO_OSDK_COMMON_ARGS += --qemu-with-daemon="$(CARGO_OSDK_VIRTIOFSD) $(VIRTIOFS_WORK_DIR)/scratch"
 endif
 
 CARGO_OSDK_BUILD_ARGS += $(CARGO_OSDK_COMMON_ARGS)
