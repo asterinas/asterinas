@@ -142,7 +142,6 @@ dependencies = [
  "aster-console",
  "aster-framebuffer",
  "aster-fuse",
- "aster-i8042",
  "aster-input",
  "aster-logger",
  "aster-network",
@@ -167,6 +166,7 @@ dependencies = [
  "inherit-methods-macro",
  "int-to-c-enum",
  "intrusive-collections",
+ "inventory",
  "io-util",
  "jhash",
  "keyable-arc",
@@ -241,6 +241,7 @@ name = "aster-i8042"
 version = "0.1.0"
 dependencies = [
  "aster-cmdline",
+ "aster-core",
  "aster-input",
  "bitflags 2.13.0",
  "component",
@@ -465,6 +466,7 @@ version = "0.1.0"
 dependencies = [
  "aster-core",
  "aster-drm",
+ "aster-i8042",
  "aster-simpledrm",
  "aster-uart",
  "ostd",

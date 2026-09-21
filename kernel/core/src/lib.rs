@@ -51,6 +51,7 @@ pub mod fs;
 mod init;
 mod ipc;
 mod net;
+pub mod power;
 pub mod prelude;
 pub mod process;
 mod sched;
