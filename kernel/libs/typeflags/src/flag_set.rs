@@ -17,12 +17,12 @@ pub(crate) struct FlagSet {
 
 impl FlagSet {
     /// create a new empty flag set
-    pub fn new() -> Self {
+    fn new() -> Self {
         FlagSet { items: Vec::new() }
     }
 
     /// add a flag item
-    pub fn push_item(&mut self, flag_item: FlagItem) {
+    fn push_item(&mut self, flag_item: FlagItem) {
         self.items.push(flag_item);
     }
 
@@ -122,7 +122,7 @@ impl FlagSet {
 }
 
 #[derive(Clone)]
-pub struct FlagItem {
+struct FlagItem {
     /// the user provided name
     ident: Ident,
     /// the user-provided val
