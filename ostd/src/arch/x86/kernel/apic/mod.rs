@@ -41,7 +41,7 @@ static APIC_TYPE: Once<ApicType> = Once::new();
 /// let ticks = apic.timer_current_count();
 /// apic.set_timer_init_count(0);
 /// ```
-pub fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
+pub(in crate::arch) fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
     struct ForceSyncSend<T>(T);
 
     // SAFETY: `ForceSyncSend` is `Sync + Send`, but accessing its contained value is unsafe.
@@ -107,7 +107,7 @@ pub fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
     &**unsafe { apic.get() }
 }
 
-pub trait Apic: ApicTimer {
+pub(in crate::arch) trait Apic: ApicTimer {
     fn id(&self) -> u32;
 
     fn version(&self) -> u32;
@@ -119,7 +119,7 @@ pub trait Apic: ApicTimer {
     unsafe fn send_ipi(&self, icr: Icr);
 }
 
-pub trait ApicTimer {
+pub(in crate::arch) trait ApicTimer {
     /// Sets the initial timer count, the APIC timer will count down from this value.
     fn set_timer_init_count(&self, value: u64);
 
@@ -168,11 +168,11 @@ enum ApicType {
 /// - **Bit 18-19** Destination Shorthand   :Indicates destination set.
 /// - **Bit 20-55** Reserved
 /// - **Bit 56-63** Destination Field       :Specifies the target processor or processors.
-pub struct Icr(u64);
+pub(in crate::arch) struct Icr(u64);
 
 impl Icr {
     #[expect(clippy::too_many_arguments)]
-    pub fn new(
+    pub(in crate::arch) fn new(
         destination: ApicId,
         destination_shorthand: DestinationShorthand,
         trigger_mode: TriggerMode,
@@ -197,12 +197,12 @@ impl Icr {
     }
 
     /// Returns the lower 32 bits of the ICR.
-    pub fn lower(&self) -> u32 {
+    pub(in crate::arch) fn lower(&self) -> u32 {
         self.0 as u32
     }
 
     /// Returns the higher 32 bits of the ICR.
-    pub fn upper(&self) -> u32 {
+    pub(in crate::arch) fn upper(&self) -> u32 {
         (self.0 >> 32) as u32
     }
 }
@@ -210,7 +210,7 @@ impl Icr {
 /// The core identifier. ApicId can be divided into Physical ApicId and Logical ApicId.
 /// The Physical ApicId is the value read from the LAPIC ID Register, while the Logical ApicId has different
 /// encoding modes in XApic and X2Apic.
-pub enum ApicId {
+pub(in crate::arch) enum ApicId {
     XApic(u8),
     X2Apic(u32),
 }
@@ -222,14 +222,14 @@ impl ApicId {
     /// LDR, is derived from the 32-bit local x2APIC ID:
     /// Logical x2APIC ID = [(x2APIC ID\[19:4\] << 16) | (1 << x2APIC ID\[3:0\])]
     #[expect(unused)]
-    pub fn x2apic_logical_id(&self) -> u32 {
+    pub(in crate::arch) fn x2apic_logical_id(&self) -> u32 {
         (self.x2apic_logical_cluster_id() << 16) | (1 << self.x2apic_logical_field_id())
     }
 
     /// Returns the logical x2apic cluster ID.
     ///
     /// Logical cluster ID = x2APIC ID\[19:4\]
-    pub fn x2apic_logical_cluster_id(&self) -> u32 {
+    pub(in crate::arch) fn x2apic_logical_cluster_id(&self) -> u32 {
         let apic_id = match *self {
             ApicId::XApic(id) => id as u32,
             ApicId::X2Apic(id) => id,
@@ -242,7 +242,7 @@ impl ApicId {
     /// Specifically, the 16-bit logical ID sub-field is derived by the lowest
     /// 4 bits of the x2APIC ID, i.e.,
     /// Logical field ID = x2APIC ID\[3:0\].
-    pub fn x2apic_logical_field_id(&self) -> u32 {
+    pub(in crate::arch) fn x2apic_logical_field_id(&self) -> u32 {
         let apic_id = match *self {
             ApicId::XApic(id) => id as u32,
             ApicId::X2Apic(id) => id,
@@ -269,7 +269,7 @@ impl From<u32> for ApicId {
 /// to all processors in the system including the sender, IPIs to all processors
 /// in the system excluding the sender.
 #[repr(u64)]
-pub enum DestinationShorthand {
+pub(in crate::arch) enum DestinationShorthand {
     NoShorthand = 0b00,
     #[expect(dead_code)]
     MySelf = 0b01,
@@ -278,13 +278,13 @@ pub enum DestinationShorthand {
 }
 
 #[repr(u64)]
-pub enum TriggerMode {
+pub(in crate::arch) enum TriggerMode {
     Edge = 0,
     Level = 1,
 }
 
 #[repr(u64)]
-pub enum Level {
+pub(in crate::arch) enum Level {
     Deassert = 0,
     Assert = 1,
 }
@@ -293,21 +293,21 @@ pub enum Level {
 /// **0 (Idle)**            Indicates that this local APIC has completed sending any previous IPIs.
 /// **1 (Send Pending)**    Indicates that this local APIC has not completed sending the last IPI.
 #[repr(u64)]
-pub enum DeliveryStatus {
+pub(in crate::arch) enum DeliveryStatus {
     Idle = 0,
     #[expect(dead_code)]
     SendPending = 1,
 }
 
 #[repr(u64)]
-pub enum DestinationMode {
+pub(in crate::arch) enum DestinationMode {
     Physical = 0,
     #[expect(dead_code)]
     Logical = 1,
 }
 
 #[repr(u64)]
-pub enum DeliveryMode {
+pub(in crate::arch) enum DeliveryMode {
     /// Delivers the interrupt specified in the vector field to the target processor or processors.
     Fixed = 0b000,
     /// Same as fixed mode, except that the interrupt is delivered to the processor executing at
@@ -331,7 +331,7 @@ pub enum DeliveryMode {
 }
 
 #[derive(Debug)]
-pub enum ApicInitError {
+pub(in crate::arch) enum ApicInitError {
     /// No x2APIC or xAPIC found.
     NoApic,
 }
@@ -339,7 +339,7 @@ pub enum ApicInitError {
 #[expect(dead_code)]
 #[repr(u32)]
 #[derive(Debug)]
-pub enum DivideConfig {
+pub(in crate::arch) enum DivideConfig {
     Divide1 = 0b1011,
     Divide2 = 0b0000,
     Divide4 = 0b0001,
@@ -350,7 +350,7 @@ pub enum DivideConfig {
     Divide128 = 0b1010,
 }
 
-pub fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError> {
+pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError> {
     if x2apic::X2Apic::has_x2apic() {
         crate::info!("x2APIC found!");
         APIC_TYPE.call_once(|| ApicType::X2Apic);
