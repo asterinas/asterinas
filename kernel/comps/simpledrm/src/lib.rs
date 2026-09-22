@@ -215,17 +215,14 @@ impl DrmKmsOps for SimpleDrmDevice {
 
     fn probe_connector(&self, _connector: &DrmConnector) -> Result<DrmConnectorProbeState> {
         const SIMPLEDRM_VREFRESH_HZ: u32 = 60;
-        const SIMPLEDRM_ASSUMED_DPI: u32 = 96;
 
         let width = u32::try_from(self.boot_framebuffer.width())?;
         let height = u32::try_from(self.boot_framebuffer.height())?;
         let resolution = DrmSize::new(width, height);
 
         let display_mode = DrmDisplayMode::from_size(resolution, SIMPLEDRM_VREFRESH_HZ)?;
-        // `simpledrm` only has the boot framebuffer's pixel geometry here,
-        // so it relies on the shared physical-size fallback path.
         let display_info =
-            DrmDisplayInfo::from_dpi(resolution, SIMPLEDRM_ASSUMED_DPI, SubpixelOrder::Unknown)?;
+            display_info_from_boot(resolution, self.boot_framebuffer.physical_size_mm())?;
         Ok(DrmConnectorProbeState::new(
             DrmConnectorStatus::Connected,
             vec![display_mode],
@@ -280,6 +277,22 @@ fn drm_pixel_format(format: PixelFormat) -> Result<DrmPixelFormat> {
             );
         }
     })
+}
+
+fn display_info_from_boot(
+    resolution: DrmSize,
+    physical_size_mm: Option<(u16, u16)>,
+) -> Result<DrmDisplayInfo> {
+    if let Some((width_mm, height_mm)) = physical_size_mm {
+        return Ok(DrmDisplayInfo::new(
+            u32::from(width_mm),
+            u32::from(height_mm),
+            SubpixelOrder::Unknown,
+        ));
+    }
+
+    const SIMPLEDRM_ASSUMED_DPI: u32 = 96;
+    DrmDisplayInfo::from_dpi(resolution, SIMPLEDRM_ASSUMED_DPI, SubpixelOrder::Unknown)
 }
 
 #[cfg(ktest)]
@@ -338,5 +351,21 @@ mod test {
                 .error(),
             Errno::EINVAL
         );
+    }
+
+    #[ktest]
+    fn reports_boot_display_dimensions() {
+        let info = display_info_from_boot(DrmSize::new(1920, 1080), Some((520, 290))).unwrap();
+        assert_eq!(info.mm_width(), 520);
+        assert_eq!(info.mm_height(), 290);
+        assert_eq!(info.subpixel_order(), SubpixelOrder::Unknown as u32);
+    }
+
+    #[ktest]
+    fn estimates_missing_display_dimensions() {
+        let info = display_info_from_boot(DrmSize::new(1920, 1080), None).unwrap();
+        assert_eq!(info.mm_width(), 508);
+        assert_eq!(info.mm_height(), 285);
+        assert_eq!(info.subpixel_order(), SubpixelOrder::Unknown as u32);
     }
 }

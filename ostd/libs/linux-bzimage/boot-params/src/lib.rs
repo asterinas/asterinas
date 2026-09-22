@@ -10,6 +10,9 @@
 
 #![cfg_attr(not(test), no_std)]
 
+mod edid;
+pub use edid::{EDID_BASE_BLOCK_SIZE, EdidInfo};
+
 /// Magic stored in the boot protocol header.
 pub const LINUX_BOOT_HEADER_MAGIC: u32 = 0x53726448;
 
@@ -185,12 +188,6 @@ pub struct OlpcOfwHeader {
     pub ofw_version: u32,
     pub cif_handler: u32, /* callback into OFW */
     pub irq_desc_table: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct EdidInfo {
-    pub dummy: [u8; 128],
 }
 
 #[repr(C)]
