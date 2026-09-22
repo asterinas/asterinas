@@ -160,7 +160,7 @@ impl BioRequest {
         self.type_
     }
 
-    /// Returns the range of sector id on device.
+    /// Returns the range of the sector ID on the device.
     pub fn sid_range(&self) -> &Range<Sid> {
         &self.sid_range
     }
