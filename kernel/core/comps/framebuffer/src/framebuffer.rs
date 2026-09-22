@@ -31,6 +31,7 @@ pub struct FrameBuffer {
     height: usize,
     line_size: usize,
     pixel_format: PixelFormat,
+    physical_size_mm: Option<(u16, u16)>,
     cmap: Mutex<FbCmap>,
 }
 
@@ -105,6 +106,7 @@ pub(crate) fn init() {
             height: framebuffer_arg.height(),
             line_size: framebuffer_arg.pitch_bytes(),
             pixel_format,
+            physical_size_mm: framebuffer_arg.physical_size_mm(),
             cmap: Mutex::new(default_cmap),
         }
     };
@@ -122,6 +124,11 @@ impl FrameBuffer {
     /// Returns the height of the framebuffer in pixels.
     pub fn height(&self) -> usize {
         self.height
+    }
+
+    /// Returns the display width and height in millimeters, if known.
+    pub fn physical_size_mm(&self) -> Option<(u16, u16)> {
+        self.physical_size_mm
     }
 
     /// Returns the line size of the framebuffer in bytes.

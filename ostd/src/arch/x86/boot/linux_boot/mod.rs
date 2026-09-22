@@ -152,14 +152,15 @@ impl ToEarlyBootInfo for BootParams {
         } else {
             usize::from(screen.lfb_linelength)
         };
-        BootloaderFramebufferArg::new(
+        let framebuffer = BootloaderFramebufferArg::new(
             address,
             usize::from(screen.lfb_width),
             usize::from(screen.lfb_height),
             usize::from(screen.lfb_depth),
             pitch_bytes,
             layout,
-        )
+        )?;
+        Some(framebuffer.with_physical_size_mm(self.edid_info.physical_size_mm()))
     }
 
     fn memory_regions(
@@ -236,7 +237,7 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
 mod test {
     use core::{mem::MaybeUninit, ptr};
 
-    use linux_boot_params::BootE820Entry;
+    use linux_boot_params::{BootE820Entry, EdidInfo};
 
     use super::*;
     use crate::prelude::ktest;
@@ -275,6 +276,40 @@ mod test {
         assert_eq!(fb.pitch_bytes(), 9);
         assert_eq!(fb.physical_range(), 0x1_0000_1000..0x1_0000_1012);
         assert!(fb.rgb_layout().is_none());
+    }
+
+    #[ktest]
+    fn linux_framebuffer_preserves_edid_physical_dimensions() {
+        let mut params = boot_params_with_framebuffer();
+        params.edid_info = display_edid(52, 29);
+
+        let fb = params.framebuffer_arg().unwrap();
+        assert_eq!(fb.physical_size_mm(), Some((520, 290)));
+        assert_eq!((fb.width(), fb.height()), (3, 2));
+    }
+
+    #[ktest]
+    fn linux_framebuffer_preserves_unknown_physical_dimensions() {
+        let mut params = boot_params_with_framebuffer();
+        assert_eq!(params.framebuffer_arg().unwrap().physical_size_mm(), None);
+
+        // EDID 1.4 may describe only an aspect ratio, not physical dimensions.
+        for (width_cm, height_cm) in [(0, 0), (52, 0), (0, 29)] {
+            params.edid_info = display_edid(width_cm, height_cm);
+            assert_eq!(params.framebuffer_arg().unwrap().physical_size_mm(), None);
+        }
+    }
+
+    fn display_edid(width_cm: u8, height_cm: u8) -> EdidInfo {
+        let mut bytes = [0; linux_boot_params::EDID_BASE_BLOCK_SIZE];
+        bytes[..8].copy_from_slice(&[0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00]);
+        bytes[18] = 1;
+        bytes[19] = 4;
+        bytes[21] = width_cm;
+        bytes[22] = height_cm;
+        bytes[linux_boot_params::EDID_BASE_BLOCK_SIZE - 1] =
+            0u8.wrapping_sub(bytes.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)));
+        EdidInfo::from_bytes(&bytes).unwrap()
     }
 
     fn boot_params_with_framebuffer() -> BootParams {

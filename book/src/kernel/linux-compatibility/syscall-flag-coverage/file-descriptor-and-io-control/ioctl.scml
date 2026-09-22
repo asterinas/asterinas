@@ -22,6 +22,8 @@ ioctl(fd, op = <pty_master_ops> | <tty_ops> | <term_ops>, ..);
 // FBIOGET_FSCREENINFO reports the bootloader's scanline pitch, including padding.
 // FBIOGET_VSCREENINFO reports RGB bitfields matching the rendered pixel bytes.
 // Reserved bits are not reported as an alpha channel.
+// FBIOGET_VSCREENINFO reports physical width and height in millimeters from the
+// EDID base block, with 10 mm precision, or UINT32_MAX for both when unknown.
 ioctl(
     fd,
     op = FBIOGET_VSCREENINFO | FBIOPUT_VSCREENINFO | FBIOGET_FSCREENINFO |

@@ -52,6 +52,7 @@ pub struct BootloaderFramebufferArg {
     bits_per_pixel: usize,
     pitch_bytes: usize,
     rgb_layout: Option<FramebufferRgbLayout>,
+    physical_size_mm: Option<(u16, u16)>,
 }
 
 impl BootloaderFramebufferArg {
@@ -80,7 +81,18 @@ impl BootloaderFramebufferArg {
             bits_per_pixel,
             pitch_bytes,
             rgb_layout,
+            physical_size_mm: None,
         })
+    }
+
+    pub(crate) fn with_physical_size_mm(mut self, physical_size_mm: Option<(u16, u16)>) -> Self {
+        self.physical_size_mm = physical_size_mm;
+        self
+    }
+
+    /// Returns the display width and height in millimeters, if known.
+    pub fn physical_size_mm(&self) -> Option<(u16, u16)> {
+        self.physical_size_mm
     }
 
     /// Returns the physical address range, including scanline padding.

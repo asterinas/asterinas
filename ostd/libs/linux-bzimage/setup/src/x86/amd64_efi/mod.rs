@@ -2,6 +2,7 @@
 
 pub(super) mod alloc;
 mod decoder;
+mod edid;
 mod efi;
 
 use core::arch::{asm, global_asm};

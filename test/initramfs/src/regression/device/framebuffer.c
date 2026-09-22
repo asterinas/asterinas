@@ -51,6 +51,19 @@ FN_SETUP(open_framebuffer)
 }
 END_SETUP()
 
+FN_TEST(physical_display_size)
+{
+	struct fb_var_screeninfo var_info;
+
+	// A complete physical size is reported, or both dimensions are unknown.
+	// Unknown dimensions use the efifb sentinel rather than zero.
+	TEST_RES(ioctl(fb_fd, FBIOGET_VSCREENINFO, &var_info),
+		 _ret == 0 && var_info.width != 0 && var_info.height != 0 &&
+			 ((var_info.width == UINT32_MAX) ==
+			  (var_info.height == UINT32_MAX)));
+}
+END_TEST()
+
 FN_TEST(color_map)
 {
 	uint16_t red_expected[CMAP_LEN];
