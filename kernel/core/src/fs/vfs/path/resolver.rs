@@ -15,7 +15,10 @@ use crate::{
         vfs::{inode::SymbolicLink, path::MountNamespace},
     },
     prelude::*,
-    process::{pid_table::PidTable, posix_thread::AsPosixThread},
+    process::{
+        credentials::capabilities::CapSet, pid_table::PidTable, posix_thread::AsPosixThread,
+    },
+    security::lsm::hooks as lsm_hooks,
 };
 
 /// The file descriptor of the current working directory.
@@ -160,13 +163,35 @@ impl PathResolver {
         &self.cwd
     }
 
+    /// Changes the current working directory to `path`.
+    pub(crate) fn chdir(&mut self, path: Path) -> Result<()> {
+        path.check_dir_search_permission()?;
+
+        self.set_cwd(path);
+        Ok(())
+    }
+
+    /// Changes the root directory to `path`.
+    pub(crate) fn chroot(&mut self, path: Path, ctx: &Context) -> Result<()> {
+        path.check_dir_search_permission()?;
+
+        lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+            ctx.thread_local.borrow_user_ns().as_ref(),
+            ctx.posix_thread,
+            CapSet::SYS_CHROOT,
+        ))?;
+
+        self.set_root(path);
+        Ok(())
+    }
+
     /// Sets the current working directory to the given `path`.
-    pub(crate) fn set_cwd(&mut self, path: Path) {
+    fn set_cwd(&mut self, path: Path) {
         self.cwd = path;
     }
 
     /// Sets the root directory to the given `path`.
-    pub(crate) fn set_root(&mut self, path: Path) {
+    fn set_root(&mut self, path: Path) {
         self.root = path;
     }
 

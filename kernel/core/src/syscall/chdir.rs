@@ -3,10 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::{
-            InodeType,
-            file_table::{RawFileDesc, get_file_fast},
-        },
+        file::file_table::{RawFileDesc, get_file_fast},
         vfs::path::FsPath,
     },
     prelude::*,
@@ -24,10 +21,8 @@ pub(super) fn sys_chdir(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn>
         let fs_path = FsPath::try_from(path_name.as_ref())?;
         path_resolver.lookup(&fs_path)?
     };
-    if path.type_() != InodeType::Dir {
-        return_errno_with_message!(Errno::ENOTDIR, "must be directory");
-    }
-    path_resolver.set_cwd(path);
+
+    path_resolver.chdir(path)?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -39,10 +34,8 @@ pub(super) fn sys_fchdir(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallRe
         let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
         file.as_inode_handle_or_err()?.path().clone()
     };
-    if path.type_() != InodeType::Dir {
-        return_errno_with_message!(Errno::ENOTDIR, "must be directory");
-    }
+
     let fs_ref = ctx.thread_local.borrow_fs();
-    fs_ref.resolver().write().set_cwd(path);
+    fs_ref.resolver().write().chdir(path)?;
     Ok(SyscallReturn::Return(0))
 }

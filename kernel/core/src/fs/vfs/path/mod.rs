@@ -290,6 +290,16 @@ impl Path {
         self.clone()
     }
 
+    /// Checks whether this path is a searchable directory.
+    fn check_dir_search_permission(&self) -> Result<()> {
+        if self.type_() != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "must be directory");
+        }
+
+        self.inode()
+            .check_permission(Permission::MAY_EXEC | Permission::MAY_CHDIR)
+    }
+
     /// Checks whether the path is on a writable mount and filesystem.
     fn check_mount_writable(&self) -> Result<()> {
         if self.mount.flags().contains(PerMountFlags::RDONLY)
