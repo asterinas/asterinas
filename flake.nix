@@ -55,6 +55,7 @@
       });
 
       packages = forAllSystems (pkgs: {
+        inherit (pkgs) nixfmt nixos-install-tools cachix;
         qemu = pkgs.asterinas-qemu;
         grub = pkgs.asterinas-grub;
         ovmf = pkgs.asterinas-ovmf;

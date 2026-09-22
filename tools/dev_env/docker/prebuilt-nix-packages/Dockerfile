@@ -9,29 +9,25 @@ SHELL ["/bin/bash", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install Nix package manager and other Nix tools
-#
-# The nixpkgs and nixos channels are pinned to a particular commit (NixOS 26.05, 2026-07-19) for reproducibility.
 # FIXME: Installing Nix as root is not supported in single-user mode.
-RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
-    && . /etc/profile.d/nix.sh \
-    && nix-channel --add https://github.com/NixOS/nixpkgs/archive/fd1462031fdee08f65fd0b4c6b64e22239a77870.tar.gz nixpkgs \
-    && nix-channel --add https://github.com/NixOS/nixpkgs/archive/fd1462031fdee08f65fd0b4c6b64e22239a77870.tar.gz nixos \
-    && nix-channel --update \
-    && nix-env -iA nixpkgs.nixfmt \
-    && nix-env -iA nixpkgs.nixos-install-tools \
-    && nix-env -iA cachix -f https://cachix.org/api/v1/install \
-    && rm /nix/var/nix/gcroots/auto/* \
-    && nix-collect-garbage -d
-
-#= Build Nix packages ======================================================
+RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes --no-channel-add
 
 COPY flake.nix flake.lock rust-toolchain.toml /tmp/asterinas/
 COPY tools/dev_env/nix /tmp/asterinas/tools/dev_env/nix
 COPY test/initramfs /tmp/asterinas/test/initramfs
-COPY distro/nixpkgs.nix /tmp/asterinas/distro/nixpkgs.nix
-WORKDIR /tmp/asterinas/test/initramfs
+WORKDIR /tmp/asterinas
 ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
+
+# Install explicit store outputs into the existing profile so GC retains them.
+RUN . /etc/profile.d/nix.sh \
+    && nix --extra-experimental-features 'nix-command flakes' flake metadata --no-update-lock-file \
+    && paths=$(nix --extra-experimental-features 'nix-command flakes' build \
+        --no-update-lock-file --no-link --print-out-paths \
+        .#nixfmt .#nixos-install-tools .#cachix) \
+    && nix-env --install $paths \
+    && nix-collect-garbage -d
+
+WORKDIR /tmp/asterinas/test/initramfs
 
 # Build riscv64 packages
 RUN make riscv64_pkgs VERBOSE=0 \
@@ -54,7 +50,7 @@ RUN make initramfs_pkgs VERBOSE=0
 # Clean source files
 RUN rm -rf /tmp/asterinas
 
-# Let Github runners reuse Nixpkgs tarball installed in the Dockerfile.
+# Let GitHub runners reuse the input fetcher cache.
 RUN mkdir -p /github/home/.cache \
     && ln -s /root/.cache/nix /github/home/.cache/nix
 

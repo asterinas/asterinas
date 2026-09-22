@@ -38,12 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check nixpkgs revisions
-        # These files cannot read flake.lock, so they repeat the locked rev.
+        # The remaining legacy distro entry still repeats the locked revision.
         run: |
           revision="$(jq -r '.nodes.nixpkgs.locked.rev' flake.lock)"
 
           for file in \
-            tools/dev_env/docker/prebuilt-nix-packages/Dockerfile \
             distro/nixpkgs.nix
           do
             pinned="$(sed -nE 's#.*NixOS/nixpkgs/archive/([0-9a-f]{40})\.tar\.gz.*#\1#p' "$file" | sort -u | paste -sd ' ')"
