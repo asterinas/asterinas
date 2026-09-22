@@ -3,6 +3,7 @@
 use alloc::format;
 
 use aster_console::AnyConsoleDevice;
+use device_id::MajorId;
 use ostd::mm::Infallible;
 use spin::Once;
 
@@ -83,6 +84,7 @@ pub(super) fn init_in_first_process() -> Result<()> {
 
         SERIAL0.call_once(|| serial0.clone());
         char::register(serial0.clone())?;
+        char::register_major_name(MajorId::new(SerialDriver::DEVICE_MAJOR_ID as u16), "ttyS");
 
         serial_console.register_callback(Box::leak(Box::new(
             move |mut reader: VmReader<Infallible>| {

@@ -137,6 +137,11 @@ pub(super) fn init_in_first_process() -> Result<()> {
     char::register(Arc::new(TtyDevice))?;
     char::register(SystemConsole::singleton().clone())?;
 
+    // Make the fixed majors visible in `/proc/devices`, as in Linux.
+    char::register_major_name(MajorId::new(4), "tty");
+    char::register_major_name(MajorId::new(5), "/dev/tty");
+    char::register_major_name(MajorId::new(5), "/dev/console");
+
     Ok(())
 }
 

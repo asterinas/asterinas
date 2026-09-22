@@ -27,7 +27,10 @@ static MAJORS: Mutex<BTreeMap<u16, &'static str>> = Mutex::new(BTreeMap::new());
 
 /// Acquires a major ID with a name.
 ///
-/// The name is shown in `/proc/devices`.
+/// The name is attached to this major number registration. For example,
+/// the name "virtblk" is attached to the major ID of virtio-blk devices and
+/// the name "nvme" is attached to that of NVMe devices. These names along
+/// with the major numbers are shown in `/proc/devices`.
 ///
 /// The returned `MajorIdOwner` object represents the ownership to the major ID.
 /// Until the object is dropped, this major ID cannot be acquired via `acquire_major` or `allocate_major` again.
@@ -64,7 +67,7 @@ pub fn allocate_major(name: &'static str) -> Result<MajorIdOwner, Error> {
 }
 
 /// Collects all acquired major IDs and their names.
-pub fn major_devices() -> Vec<(u16, &'static str)> {
+pub fn collect_major_devices() -> Vec<(u16, &'static str)> {
     MAJORS
         .lock()
         .iter()
@@ -154,12 +157,12 @@ mod test {
         // An acquired major ID cannot be acquired again.
         assert!(acquire_major(major, "ktest2").is_err());
 
-        // The name is shown in `major_devices`.
-        assert!(major_devices().contains(&(300, "ktest")));
+        // The name is shown in `collect_major_devices`.
+        assert!(collect_major_devices().contains(&(300, "ktest")));
 
         // Once the owner is dropped, the major ID is released.
         drop(owner);
-        assert!(!major_devices().iter().any(|(id, _)| *id == 300));
+        assert!(!collect_major_devices().iter().any(|(id, _)| *id == 300));
     }
 
     #[ktest]
@@ -169,6 +172,6 @@ mod test {
 
         // The allocated major ID is in the dynamic allocation range.
         assert!((1..=LAST_DYNAMIC_MAJOR).contains(&major));
-        assert!(major_devices().contains(&(major, "ktest")));
+        assert!(collect_major_devices().contains(&(major, "ktest")));
     }
 }

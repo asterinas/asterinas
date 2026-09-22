@@ -24,11 +24,12 @@ use aster_core::{
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     security::lsm::hooks::{self as lsm_hook, CapableContext},
 };
+use device_id::MajorId;
 use ostd::task::Task;
 
 use crate::{
     device::{DrmDevice, DrmFeatures, RegisteredDrmDevice},
-    minor::{DrmMinor, DrmMinorType},
+    minor::{DRM_MAJOR_ID, DrmMinor, DrmMinorType},
 };
 
 extern crate alloc;
@@ -65,6 +66,8 @@ pub fn register_device(device: Arc<dyn DrmDevice>) -> Result<()> {
         }
         return Err(error);
     }
+
+    char::register_major_name(MajorId::new(DRM_MAJOR_ID), "drm");
 
     Ok(())
 }

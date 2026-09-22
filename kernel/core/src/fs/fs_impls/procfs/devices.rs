@@ -12,13 +12,13 @@ use crate::{
     prelude::*,
 };
 
-/// Represents the inode at /proc/devices.
+/// Represents the inode at `/proc/devices`.
 pub(super) struct DevicesFileOps;
 
 impl DevicesFileOps {
     pub(super) fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
         // Reference:
-        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/devices.c>
+        // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/devices.c#L60>
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/generic.c#L549-L550>
         ProcFile::new(Self, parent, mkmod!(a+r))
     }
@@ -29,7 +29,7 @@ impl ProcFileOps for DevicesFileOps {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
         writeln!(printer, "Character devices:")?;
-        for (major, name) in char::major_devices() {
+        for (major, name) in char::collect_major_devices() {
             writeln!(printer, "{:3} {}", major, name)?;
         }
 
@@ -37,7 +37,7 @@ impl ProcFileOps for DevicesFileOps {
         writeln!(printer)?;
 
         writeln!(printer, "Block devices:")?;
-        for (major, name) in aster_block::major_devices() {
+        for (major, name) in aster_block::collect_major_devices() {
             writeln!(printer, "{:3} {}", major, name)?;
         }
 

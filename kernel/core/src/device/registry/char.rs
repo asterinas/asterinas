@@ -68,11 +68,14 @@ pub(crate) const MAX_MAJOR: u16 = 511;
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/linux/fs.h#L2840>.
 const DYNAMIC_MAJOR_ID_RANGES: [Range<u16>; 2] = [234..255, 384..512];
 
-static MAJORS: Mutex<BTreeMap<u16, &'static str>> = Mutex::new(BTreeMap::new());
+static MAJORS: Mutex<BTreeMap<u16, Vec<&'static str>>> = Mutex::new(BTreeMap::new());
 
 /// Acquires a major ID with a name.
 ///
-/// The name is shown in `/proc/devices`.
+/// The name is attached to this major number registration. For example,
+/// the name "mem" is attached to the major ID 1 of memory devices such as
+/// `/dev/null` and `/dev/zero`. These names along with the major numbers
+/// are shown in `/proc/devices`.
 ///
 /// The returned `MajorIdOwner` object represents the ownership to the major ID.
 /// Until the object is dropped, this major ID cannot be acquired via `acquire_major` or `allocate_major` again.
@@ -82,11 +85,12 @@ pub(crate) fn acquire_major(major: MajorId, name: &'static str) -> Result<MajorI
     }
 
     let mut majors = MAJORS.lock();
+
     match majors.entry(major.get()) {
         Entry::Occupied(_) => {
             return_errno_with_message!(Errno::EEXIST, "the major ID has already been acquired")
         }
-        Entry::Vacant(entry) => entry.insert(name),
+        Entry::Vacant(entry) => entry.insert(vec![name]),
     };
 
     Ok(MajorIdOwner(major))
@@ -107,7 +111,7 @@ pub(crate) fn allocate_major(name: &'static str) -> Result<MajorIdOwner> {
         .flat_map(|range| range.clone().rev())
     {
         if let Entry::Vacant(entry) = majors.entry(id) {
-            entry.insert(name);
+            entry.insert(vec![name]);
             return Ok(MajorIdOwner(MajorId::new(id)));
         }
     }
@@ -115,12 +119,26 @@ pub(crate) fn allocate_major(name: &'static str) -> Result<MajorIdOwner> {
     return_errno_with_message!(Errno::ENOSPC, "no more major IDs are available");
 }
 
+/// Registers a name for a fixed major ID.
+///
+/// Unlike `acquire_major`, this function does not acquire the major ID;
+/// it only makes the name visible in `/proc/devices`. Multiple names can be
+/// registered for the same major ID. For example, in Linux the major ID 4 is
+/// shared by the names "tty" and "ttyS".
+pub fn register_major_name(major: MajorId, name: &'static str) {
+    let mut majors = MAJORS.lock();
+    let names = majors.entry(major.get()).or_default();
+    if !names.contains(&name) {
+        names.push(name);
+    }
+}
+
 /// Collects all acquired major IDs and their names.
-pub(crate) fn major_devices() -> Vec<(u16, &'static str)> {
+pub(crate) fn collect_major_devices() -> Vec<(u16, &'static str)> {
     MAJORS
         .lock()
         .iter()
-        .map(|(major, name)| (*major, *name))
+        .flat_map(|(major, names)| names.iter().map(|name| (*major, *name)))
         .collect()
 }
 
@@ -160,12 +178,12 @@ mod test {
         // An acquired major ID cannot be acquired again.
         assert!(acquire_major(major, "ktest2").is_err());
 
-        // The name is shown in `major_devices`.
-        assert!(major_devices().contains(&(42, "ktest")));
+        // The name is shown in `collect_major_devices`.
+        assert!(collect_major_devices().contains(&(42, "ktest")));
 
         // Once the owner is dropped, the major ID is released.
         drop(owner);
-        assert!(!major_devices().iter().any(|(id, _)| *id == 42));
+        assert!(!collect_major_devices().iter().any(|(id, _)| *id == 42));
     }
 
     #[ktest]
