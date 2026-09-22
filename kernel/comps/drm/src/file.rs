@@ -26,6 +26,7 @@ use ostd::{
 use crate::{
     device::{DrmDevice, DrmFeatures, DrmMaster},
     has_current_sys_admin,
+    kms::{DrmKmsDevice, DrmModeConfig},
     minor::{DrmMinor, DrmMinorType},
 };
 
@@ -51,6 +52,14 @@ impl DrmFile {
 
     pub(super) fn minor_type(&self) -> DrmMinorType {
         self.minor.type_()
+    }
+
+    pub(super) fn kms_device(&self) -> Option<&dyn DrmKmsDevice> {
+        self.minor.kms_device()
+    }
+
+    pub(super) fn mode_config(&self) -> Option<&DrmModeConfig> {
+        self.kms_device().map(|kms_device| kms_device.mode_config())
     }
 
     pub(super) fn has_features(&self, feature: DrmFeatures) -> bool {

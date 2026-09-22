@@ -16,6 +16,7 @@ use device_id::{DeviceId, MajorId, MinorId};
 use crate::{
     device::{DrmDevice, DrmMaster, RegisteredDrmDevice},
     file::DrmFile,
+    kms::DrmKmsDevice,
 };
 
 const DRM_MAJOR_ID: u16 = 226;
@@ -59,6 +60,10 @@ impl DrmMinor {
 
     pub(super) fn device(&self) -> &Arc<dyn DrmDevice> {
         self.registered_device.device()
+    }
+
+    pub(super) fn kms_device(&self) -> Option<&dyn DrmKmsDevice> {
+        self.device().kms_device()
     }
 
     /// Opens a client through this minor and returns its master context, if applicable.

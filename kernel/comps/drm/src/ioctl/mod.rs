@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod general;
+mod kms;
+
 use aster_core::{dispatch_ioctl, prelude::*, util::ioctl::RawIoctl};
 use ioctl_defs::*;
 
@@ -41,6 +43,43 @@ impl DrmFile {
             cmd @ DrmIoctlDropMaster => {
                 self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::empty())?;
                 self.drm_drop_master(cmd)
+            }
+            // KMS ioctl cmds.
+            cmd @ DrmIoctlModeGetResources => {
+                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::MODESET)?;
+                self.drm_mode_get_resources(cmd)
+            }
+            cmd @ DrmIoctlModeGetCrtc => {
+                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::MODESET)?;
+                self.drm_mode_get_crtc(cmd)
+            }
+            cmd @ DrmIoctlModeGetEncoder => {
+                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::MODESET)?;
+                self.drm_mode_get_encoder(cmd)
+            }
+            cmd @ DrmIoctlModeGetConnector => {
+                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::MODESET)?;
+                self.drm_mode_get_connector(cmd)
+            }
+            cmd @ DrmIoctlModeGetProperty => {
+                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::MODESET)?;
+                self.drm_mode_get_property(cmd)
+            }
+            cmd @ DrmIoctlModeGetPropBlob => {
+                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::MODESET)?;
+                self.drm_mode_get_blob(cmd)
+            }
+            cmd @ DrmIoctlModeGetPlaneResources => {
+                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::MODESET)?;
+                self.drm_mode_get_plane_resources(cmd)
+            }
+            cmd @ DrmIoctlModeGetPlane => {
+                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::MODESET)?;
+                self.drm_mode_get_plane(cmd)
+            }
+            cmd @ DrmIoctlModeObjectGetProps => {
+                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::MODESET)?;
+                self.drm_mode_object_get_props(cmd)
             }
             _ => {
                 ostd::warn!(
@@ -114,7 +153,14 @@ mod ioctl_defs {
         util::ioctl::{InData, InOutData, NoData, OutData},
     };
 
-    use super::general::{DrmAuth, DrmGetCap, DrmSetClientCap, DrmUnique, DrmVersion};
+    use super::{
+        general::{DrmAuth, DrmGetCap, DrmSetClientCap, DrmUnique, DrmVersion},
+        kms::{
+            DrmModeCrtc, DrmModeGetConnector, DrmModeGetEncoder, DrmModeGetPlane,
+            DrmModeGetPlaneRes, DrmModeGetResources,
+        },
+    };
+    use crate::ioctl::kms::{DrmModeGetBlob, DrmModeGetProperty, DrmModeObjectGetProps};
 
     pub(super) type DrmIoctlVersion =
         ioc!(DRM_IOCTL_VERSION, b'd', 0x00, InOutData<DrmVersion>);
@@ -130,4 +176,42 @@ mod ioctl_defs {
         ioc!(DRM_IOCTL_AUTH_MAGIC, b'd', 0x11, InData<DrmAuth>);
     pub(super) type DrmIoctlSetMaster = ioc!(DRM_IOCTL_SET_MASTER, b'd', 0x1e, NoData);
     pub(super) type DrmIoctlDropMaster = ioc!(DRM_IOCTL_DROP_MASTER, b'd', 0x1f, NoData);
+    pub(super) type DrmIoctlModeGetResources =
+        ioc!(DRM_IOCTL_MODE_GETRESOURCES, b'd', 0xa0, InOutData<DrmModeGetResources>);
+    pub(super) type DrmIoctlModeGetCrtc =
+        ioc!(DRM_IOCTL_MODE_GETCRTC, b'd', 0xa1, InOutData<DrmModeCrtc>);
+    pub(super) type DrmIoctlModeGetEncoder =
+        ioc!(DRM_IOCTL_MODE_GETENCODER, b'd', 0xa6, InOutData<DrmModeGetEncoder>);
+    pub(super) type DrmIoctlModeGetConnector = ioc!(
+        DRM_IOCTL_MODE_GETCONNECTOR,
+        b'd',
+        0xa7,
+        InOutData<DrmModeGetConnector>
+    );
+    pub(super) type DrmIoctlModeGetProperty = ioc!(
+        DRM_IOCTL_MODE_GETPROPERTY,
+        b'd',
+        0xaa,
+        InOutData<DrmModeGetProperty>
+    );
+    pub(super) type DrmIoctlModeGetPropBlob = ioc!(
+        DRM_IOCTL_MODE_GETPROPBLOB,
+        b'd',
+        0xac,
+        InOutData<DrmModeGetBlob>
+    );
+    pub(super) type DrmIoctlModeGetPlaneResources = ioc!(
+        DRM_IOCTL_MODE_GETPLANERESOURCES,
+        b'd',
+        0xb5,
+        InOutData<DrmModeGetPlaneRes>
+    );
+    pub(super) type DrmIoctlModeGetPlane =
+        ioc!(DRM_IOCTL_MODE_GETPLANE, b'd', 0xb6, InOutData<DrmModeGetPlane>);
+    pub(super) type DrmIoctlModeObjectGetProps = ioc!(
+        DRM_IOCTL_MODE_OBJ_GETPROPERTIES,
+        b'd',
+        0xb9,
+        InOutData<DrmModeObjectGetProps>
+    );
 }

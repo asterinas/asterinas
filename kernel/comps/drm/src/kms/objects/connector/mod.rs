@@ -52,6 +52,10 @@ impl DrmConnector {
         self.probe_state.lock().clone()
     }
 
+    pub fn update_probe_state(&self, probe_state: DrmConnectorProbeState) {
+        *self.probe_state.lock() = probe_state;
+    }
+
     pub fn possible_encoders(&self) -> &[KmsObjectIndex] {
         &self.possible_encoders
     }
