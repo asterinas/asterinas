@@ -1121,15 +1121,14 @@ impl MapHandle<'_, '_, '_> {
     pub(super) const DEVICE_RSS_TYPE: RssType = RssType::File;
 
     /// Returns the size of the target mapping in bytes.
-    pub(crate) fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.vm_mapping.map_size.get()
     }
 
     /// Maps a [`UFrame`].
     ///
     /// `offset` specifies the virtual address offset (from the start of the memory region).
-    #[expect(dead_code)]
-    pub(crate) fn map_frame(&mut self, offset: usize, frame: UFrame) {
+    pub fn map_frame(&mut self, offset: usize, frame: UFrame) {
         let map_size = self.size();
         if offset >= map_size {
             return;
@@ -1161,7 +1160,7 @@ impl MapHandle<'_, '_, '_> {
     /// Maps an [`IoMem`].
     ///
     /// `offset` specifies the virtual address offset (from the start of the memory region).
-    pub(crate) fn map_iomem(&mut self, offset: usize, io_mem: IoMem) {
+    pub fn map_iomem(&mut self, offset: usize, io_mem: IoMem) {
         let map_size = self.size();
         if offset >= map_size {
             return;
