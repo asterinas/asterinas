@@ -67,7 +67,7 @@ capset04
 # cachestat03
 # cachestat04
 
-# chdir01
+chdir01
 chdir02
 chdir04
 
@@ -93,7 +93,7 @@ chown05
 # chroot01
 chroot02
 # chroot03
-# chroot04
+chroot04
 
 # clock_adjtime01
 # clock_adjtime02
@@ -268,7 +268,7 @@ posix_fadvise03_64
 
 fchdir01
 fchdir02
-# fchdir03
+fchdir03
 
 fchmod01
 fchmod02

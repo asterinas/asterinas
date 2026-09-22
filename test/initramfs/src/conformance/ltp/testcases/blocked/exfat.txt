@@ -5,12 +5,14 @@ chmod01
 chmod01A
 chmod08
 chown05
+chroot04
 creat03
 dup05
 dup203
 dup205
 faccessat201
 fallocate03
+fchdir03
 fchmod01
 fchmod02
 fchmodat01
