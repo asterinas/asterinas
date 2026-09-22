@@ -77,9 +77,9 @@ jobs:
         uses: cachix/install-nix-action@v31
       - name: Check in Nix dev shell
         run: |
-          nix develop --ignore-environment --keep HOME \
+          nix develop --no-update-lock-file --ignore-environment --keep HOME \
             --command make check
       - name: Build and boot Asterinas
         run: |
-          nix develop --ignore-environment --keep HOME \
+          nix develop --no-update-lock-file --ignore-environment --keep HOME \
             --command make run_kernel AUTO_TEST=boot ENABLE_KVM=${{ matrix.enable_kvm }}

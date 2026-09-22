@@ -10,6 +10,7 @@
   conformance,
   regression,
   dnsServer,
+  gvisorLibDir,
 }:
 let
   boot_hello = builtins.path { path = ./../src/boot_hello.sh; };
@@ -22,7 +23,7 @@ let
     if conformance != null && conformance.testSuite == "gvisor" then
       builtins.path {
         name = "gvisor-libs";
-        path = "/lib/x86_64-linux-gnu";
+        path = gvisorLibDir;
       }
     else
       null;

@@ -6,6 +6,7 @@
   workDir ? "/tmp",
   testSelector ? "",
   smp ? 1,
+  gvisorPrebuiltDir,
 }:
 rec {
   inherit testSuite;
@@ -13,7 +14,7 @@ rec {
   # FIXME: Build gvisor syscall test with nix.
   gvisor = builtins.path {
     name = "gvisor-prebuilt";
-    path = builtins.getEnv "GVISOR_PREBUILT_DIR";
+    path = gvisorPrebuiltDir;
   };
   kselftest = callPackage ./kselftest.nix { };
 
@@ -32,8 +33,8 @@ rec {
       mkdir -p $out
       export INITRAMFS=$out
       export CONFORMANCE_TEST_SUITE=${testSuite}
-      export CONFORMANCE_TEST_WORKDIR=${workDir}
-      export CONFORMANCE_TEST_SELECTOR=${testSelector}
+      export CONFORMANCE_TEST_WORKDIR=${lib.escapeShellArg workDir}
+      export CONFORMANCE_TEST_SELECTOR=${lib.escapeShellArg testSelector}
       export SMP=${toString smp}
       ${lib.optionalString (testSuite == "ltp") "export LTP_PREBUILT_DIR=${ltp}"}
       ${lib.optionalString (testSuite == "gvisor") "export GVISOR_PREBUILT_DIR=${gvisor}"}

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 {
-  stdenv,
+  initramfsPkgs,
   mkShell,
   asterinas-rust-toolchain,
   asterinas-vdso,
@@ -90,7 +90,7 @@ let
     iproute2
     # tools/atomic_wget.sh downloads prebuilt artifacts for the benchmarks.
     wget
-    # test/initramfs still builds images through nix-build,
+    # The image builders invoke Nix,
     # `aster-nixos-install` calls `nixos-install` from PATH, and
     # `make push_cachix` publishes the distro caches.
     nix
@@ -99,20 +99,13 @@ let
   ];
   # Host-side clients of the network benchmarks, from the definitions the
   # prebuilt-nix-packages image installs with `make install_host_pkgs`.
-  benchmarkHostClients =
-    let
-      initramfsPkgs = import ../../../test/initramfs/nix {
-        target = stdenv.hostPlatform.parsed.cpu.name;
-        system = stdenv.hostPlatform.system;
-      };
-    in
-    [
-      initramfsPkgs.apacheHttpd
-      initramfsPkgs.iperf3
-      initramfsPkgs.libmemcached
-      initramfsPkgs.lmbench
-      initramfsPkgs.redis
-    ];
+  benchmarkHostClients = [
+    initramfsPkgs.apacheHttpd
+    initramfsPkgs.iperf3
+    initramfsPkgs.libmemcached
+    initramfsPkgs.lmbench
+    initramfsPkgs.redis
+  ];
 in
 mkShell {
   packages = [

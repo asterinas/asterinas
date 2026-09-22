@@ -3,10 +3,7 @@
   description = "Asterinas development environment";
 
   inputs = {
-    # Keep Nix-based builds on the nixpkgs revision the rest of the repository
-    # pins: tools/dev_env/docker/prebuilt-nix-packages/Dockerfile and
-    # test/initramfs/nix/default.nix.
-    nixpkgs.url = "github:NixOS/nixpkgs/fd1462031fdee08f65fd0b4c6b64e22239a77870";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     # Match typos 1.39.0 from osdk/tools/docker/Dockerfile.
     nixpkgs-typos.url = "github:NixOS/nixpkgs/c5ae371f1a6a7fd27823bc500d9390b38c05fa55";
     rust-overlay = {
@@ -40,6 +37,8 @@
         );
     in
     {
+      lib.mkInitramfs = sourceRoot: import (sourceRoot + "/test/initramfs/nix") { inherit nixpkgs; };
+
       # rust-overlay is composed in so the overlay is usable on its own.
       overlays.default = nixpkgs.lib.composeExtensions (import rust-overlay) (
         import ./tools/dev_env/nix/overlay.nix
@@ -47,6 +46,10 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.callPackage ./tools/dev_env/nix/devshell.nix {
+          initramfsPkgs = self.lib.mkInitramfs self.outPath {
+            target = pkgs.stdenv.hostPlatform.parsed.cpu.name;
+            system = pkgs.stdenv.hostPlatform.system;
+          };
           typos = nixpkgs-typos.legacyPackages.${pkgs.stdenv.hostPlatform.system}.typos;
         };
       });

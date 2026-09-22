@@ -26,6 +26,8 @@ RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
 
 #= Build Nix packages ======================================================
 
+COPY flake.nix flake.lock rust-toolchain.toml /tmp/asterinas/
+COPY tools/dev_env/nix /tmp/asterinas/tools/dev_env/nix
 COPY test/initramfs /tmp/asterinas/test/initramfs
 COPY distro/nixpkgs.nix /tmp/asterinas/distro/nixpkgs.nix
 WORKDIR /tmp/asterinas/test/initramfs

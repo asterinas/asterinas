@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
+.DEFAULT_GOAL := initramfs-boot-images
+
 TARGET_ARCH ?= x86_64
 SMP ?= 1
 VERBOSE ?= 1
@@ -13,9 +15,6 @@ ENABLE_REGRESSION_TEST ?= false
 # - linux: Define only `__linux__`. Tests may fail in Asterinas.
 REGRESSION_TEST_PLATFORM ?= asterinas
 DNS_SERVER ?= none
-# Set Nix's cached tarballs to be live for a longer period of time (30 days) to avoid network traffics.
-# Nix's default value is rather small (1 hour or 3600 seconds).
-NIXPKGS_CACHE_TTL := 2592000 # In seconds
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
@@ -48,21 +47,33 @@ endif
 
 # Decreases the level of verbosity of diagnostic messages from Nix.
 ifeq ($(VERBOSE), 0)
-NIX_QUIET = --quiet -Q
+NIX_QUIET = --quiet
 endif
 
+NIX := nix --extra-experimental-features 'nix-command flakes'
+NIX_BUILD := $(NIX) build --impure --no-update-lock-file \
+	--expr '(builtins.getFlake (toString ../..)).lib.mkInitramfs ../..'
+# Quote Make values before the shell sees paths or test selectors.
+shell_quote = '$(subst ','"'"',$(1))'
+GVISOR_LIB_DIR ?= /lib/x86_64-linux-gnu
+
+.PHONY: check-nix-lock
+check-nix-lock:
+	@$(NIX) flake metadata ../.. --no-update-lock-file >/dev/null
+
 BOOT_IMAGE_NIX_ARGS := \
-	--tarball-ttl $(NIXPKGS_CACHE_TTL) \
-	--argstr target $(TARGET_ARCH) \
+	--argstr target $(call shell_quote,$(TARGET_ARCH)) \
 	--arg enableBenchmarkTest $(ENABLE_BENCHMARK_TEST) \
 	--arg enableConformanceTest $(ENABLE_CONFORMANCE_TEST) \
 	--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
-	--argstr benchmarkName $(BENCHMARK) \
-	--argstr conformanceTestSuite $(CONFORMANCE_TEST_SUITE) \
-	--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
-	--argstr conformanceTestSelector "$(CONFORMANCE_TEST_SELECTOR)" \
-	--argstr regressionTestPlatform $(REGRESSION_TEST_PLATFORM) \
-	--argstr dnsServer ${DNS_SERVER} \
+	--argstr benchmarkName $(call shell_quote,$(BENCHMARK)) \
+	--argstr conformanceTestSuite $(call shell_quote,$(CONFORMANCE_TEST_SUITE)) \
+	--argstr conformanceTestWorkDir $(call shell_quote,$(CONFORMANCE_TEST_WORKDIR)) \
+	--argstr conformanceTestSelector $(call shell_quote,$(CONFORMANCE_TEST_SELECTOR)) \
+	--argstr regressionTestPlatform $(call shell_quote,$(REGRESSION_TEST_PLATFORM)) \
+	--argstr dnsServer $(call shell_quote,$(DNS_SERVER)) \
+	--argstr gvisorPrebuiltDir $(call shell_quote,$(GVISOR_PREBUILT_DIR)) \
+	--argstr gvisorLibDir $(call shell_quote,$(GVISOR_LIB_DIR)) \
 	--arg smp $(SMP)
 
 .PHONY: initramfs-boot-images
@@ -85,18 +96,18 @@ endif
 
 .PHONY: $(INITRAMFS_IMAGE)
 $(INITRAMFS_IMAGE): $(INITRAMFS_DIR)
-	@nix-build \
+	@$(NIX_BUILD) \
 		$(BOOT_IMAGE_NIX_ARGS) \
 		--arg initramfsCompressed $(INITRAMFS_COMPRESSED) \
 		--out-link $@ \
-		nix -A initramfs-image
+		initramfs-image
 
 .PHONY: $(INITRAMFS_DIR)
-$(INITRAMFS_DIR):
-	@nix-build \
+$(INITRAMFS_DIR): check-nix-lock
+	@$(NIX_BUILD) \
 		$(BOOT_IMAGE_NIX_ARGS) \
 		--out-link $@ \
-		nix -A initramfs
+		initramfs
 
 .PHONY: rootfs-image
 rootfs-image: $(ROOTFS_IMAGE)
@@ -110,77 +121,64 @@ rootfs-boot-images: rootfs-image data-disk-images
 endif
 
 .PHONY: $(ROOTFS_IMAGE)
-$(ROOTFS_IMAGE):
-	@nix-build \
+$(ROOTFS_IMAGE): check-nix-lock
+	@$(NIX_BUILD) \
 		$(BOOT_IMAGE_NIX_ARGS) \
 		--out-link $@ \
-		nix -A rootfs-image
+		rootfs-image
 
 # Prebuild x86_64 packages
-x86_64_pkgs:
-	@nix-build \
-		nix/default.nix \
-		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+x86_64_pkgs: check-nix-lock
+	@$(NIX_BUILD) \
 		$(NIX_QUIET) \
 		--argstr target x86_64 \
 		--arg enableBenchmarkTest true \
 		--arg enableConformanceTest true \
 		--out-link /nix/var/nix/gcroots/auto/x86_64-pkgs \
-		-A busybox \
-		-A benchmark.fio \
-		-A benchmark.hackbench \
-		-A benchmark.iperf3 \
-		-A benchmark.lmbench \
-		-A benchmark.memcached \
-		-A benchmark.nginx \
-		-A benchmark.redis \
-		-A benchmark.schbench \
-		-A benchmark.sqlite-speedtest1 \
-		-A benchmark.sysbench \
-		-A conformance.ltp \
-		-A conformance.kselftest \
-		-A regression.package
+		busybox \
+		benchmark.fio \
+		benchmark.hackbench \
+		benchmark.iperf3 \
+		benchmark.lmbench \
+		benchmark.memcached \
+		benchmark.nginx \
+		benchmark.redis \
+		benchmark.schbench \
+		benchmark.sqlite-speedtest1 \
+		benchmark.sysbench \
+		conformance.ltp \
+		conformance.kselftest \
+		regression.package
 
 # Prebuild riscv64 packages
 # Note: This may cause GitHub Runner ResourceExhausted errors when publish nix docker image.
 # If such errors occur, try building each package individually and clear the build cache.
-riscv64_pkgs:
-	@nix-build \
-		nix/default.nix \
-		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+riscv64_pkgs: check-nix-lock
+	@$(NIX_BUILD) \
 		$(NIX_QUIET) \
 		--argstr target riscv64 \
 		--arg enableBenchmarkTest false \
 		--arg enableConformanceTest true \
 		--out-link /nix/var/nix/gcroots/auto/riscv64-pkgs \
-		-A busybox \
-		-A conformance.ltp \
-		-A regression.package
+		busybox \
+		conformance.ltp \
+		regression.package
 
-install_host_pkgs:
-	@nix-env \
-		--file nix/default.nix \
-		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
-		--install \
-		-A apacheHttpd \
-		-A iperf3 \
-		-A libmemcached \
-		-A lmbench \
-		-A redis
+install_host_pkgs: check-nix-lock
+	@paths=$$($(NIX_BUILD) --no-link --print-out-paths \
+		apacheHttpd iperf3 libmemcached lmbench redis) && nix-env --install $$paths
 
 nix_gc:
 	@nix-collect-garbage -d
 
 # This target is used to accelerate CI workflows, e.g., `benchmark_x86` and `benchmark_x86_tdx`.
-initramfs_pkgs:
-	@nix-build \
-		nix/default.nix \
-		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+initramfs_pkgs: check-nix-lock
+	@$(NIX_BUILD) \
 		$(NIX_QUIET) \
 		--argstr target x86_64 \
 		--arg enableBenchmarkTest true \
 		--out-link /nix/var/nix/gcroots/auto/x86_64-initramfs-with-benchmark \
-		-A initramfs-image
+		initramfs-image
 
 $(EXT2_IMAGE):
 	@mkdir -p $(BUILD_DIR)

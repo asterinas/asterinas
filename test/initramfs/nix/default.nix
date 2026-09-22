@@ -1,4 +1,7 @@
+{ nixpkgs }:
 {
+  gvisorPrebuiltDir ? null,
+  gvisorLibDir ? null,
   target ? "x86_64",
   enableBenchmarkTest ? false,
   enableConformanceTest ? false,
@@ -24,7 +27,7 @@ let
     else
       throw "Target arch ${target} not yet supported.";
 
-  pkgs = import ../../../distro/nixpkgs.nix {
+  pkgs = import nixpkgs {
     config = { };
     overlays = [ ];
     inherit system crossSystem;
@@ -35,7 +38,7 @@ rec {
   busybox = pkgs.busybox;
   benchmark = pkgs.callPackage ./benchmark { inherit benchmarkName; };
   conformance = pkgs.callPackage ./conformance {
-    inherit smp;
+    inherit smp gvisorPrebuiltDir;
     testSuite = conformanceTestSuite;
     workDir = conformanceTestWorkDir;
     testSelector = conformanceTestSelector;
@@ -43,7 +46,7 @@ rec {
   regression = pkgs.callPackage ./regression { testPlatform = regressionTestPlatform; };
 
   initramfs = pkgs.callPackage ./initramfs.nix {
-    inherit busybox;
+    inherit busybox gvisorLibDir;
     benchmark = if enableBenchmarkTest then benchmark else null;
     conformance = if enableConformanceTest then conformance else null;
     regression = if enableRegressionTest then regression else null;

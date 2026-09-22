@@ -65,7 +65,7 @@ CONFORMANCE_TEST_EXTRA_BLOCKLISTS ?= ""
 # - kselftest: a `<collection>:<case>` entry, e.g. `timers:posix_timers`.
 # - ltp:       a syscall testcase id, e.g. `rename01`.
 # - xfstests:  a test id, e.g. `generic/001`.
-CONFORMANCE_TEST_SELECTOR ?= ""
+CONFORMANCE_TEST_SELECTOR ?=
 # gVisor-only positive gtest filter, applied inside one selected gVisor test
 # binary, e.g. `EpollTest.CloseFile:EpollTest.Oneshot`.
 CONFORMANCE_TEST_GVISOR_FILTER ?= ""
