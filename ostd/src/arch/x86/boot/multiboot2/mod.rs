@@ -7,7 +7,7 @@ use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
 use super::ToEarlyBootInfo;
 use crate::{
     boot::{
-        BootloaderAcpiArg, BootloaderFramebufferArg,
+        BootloaderAcpiArg, BootloaderFramebufferArg, FramebufferRgbLayout,
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
     },
     mm::{Paddr, kspace::paddr_to_vaddr},
@@ -99,14 +99,23 @@ impl ToEarlyBootInfo for BootInformation<'_> {
     }
 
     fn framebuffer_arg(&self) -> Option<BootloaderFramebufferArg> {
-        let fb_tag = self.framebuffer_tag()?.ok()?;
-
-        Some(BootloaderFramebufferArg {
-            address: fb_tag.address() as usize,
-            width: fb_tag.width() as usize,
-            height: fb_tag.height() as usize,
-            bpp: fb_tag.bpp() as usize,
-        })
+        let fb = self.framebuffer_tag()?.ok()?;
+        let multiboot2::FramebufferType::RGB { red, green, blue } = fb.buffer_type().ok()? else {
+            return None;
+        };
+        let layout = FramebufferRgbLayout::new(
+            (red.position, red.size),
+            (green.position, green.size),
+            (blue.position, blue.size),
+        );
+        BootloaderFramebufferArg::new(
+            usize::try_from(fb.address()).ok()?,
+            fb.width() as usize,
+            fb.height() as usize,
+            usize::from(fb.bpp()),
+            fb.pitch() as usize,
+            Some(layout),
+        )
     }
 
     fn memory_regions(
@@ -170,4 +179,76 @@ unsafe extern "sysv64" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) 
     // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
     // once after setting up necessary resources.
     unsafe { start_kernel() };
+}
+
+#[cfg(ktest)]
+mod test {
+    use multiboot2::{Builder, FramebufferField, FramebufferTag, FramebufferType, MaybeDynSized};
+
+    use super::*;
+    use crate::prelude::ktest;
+
+    #[ktest]
+    fn multiboot2_framebuffer_preserves_pitch_and_channels() {
+        for (red_pos, blue_pos) in [(0, 16), (16, 0)] {
+            let buffer_type = FramebufferType::RGB {
+                red: FramebufferField {
+                    position: red_pos,
+                    size: 8,
+                },
+                green: FramebufferField {
+                    position: 8,
+                    size: 8,
+                },
+                blue: FramebufferField {
+                    position: blue_pos,
+                    size: 8,
+                },
+            };
+            let fb = parse_framebuffer(buffer_type.clone(), 16).unwrap();
+            assert_eq!(fb.physical_range(), 0x1000..0x1020);
+            assert_eq!((fb.width(), fb.height(), fb.bits_per_pixel()), (3, 2, 32));
+            assert_eq!(fb.pitch_bytes(), 16);
+            let layout = fb.rgb_layout().unwrap();
+            assert_eq!(layout.red(), (red_pos, 8));
+            assert_eq!(layout.green(), (8, 8));
+            assert_eq!(layout.blue(), (blue_pos, 8));
+
+            assert!(parse_framebuffer(buffer_type, 11).is_none());
+        }
+    }
+
+    #[ktest]
+    fn multiboot2_framebuffer_requires_rgb_metadata() {
+        assert!(parse_framebuffer(FramebufferType::Text, 16).is_none());
+        assert!(parse_framebuffer(FramebufferType::Indexed { palette: &[] }, 16).is_none());
+
+        let structure = Builder::new().build();
+        // SAFETY:
+        // 1. The builder provides an aligned, initialized boot information structure.
+        // 2. The structure remains alive for every use of `info`.
+        let info = unsafe { BootInformation::load(structure.as_ptr()) }.unwrap();
+        assert!(info.framebuffer_arg().is_none());
+    }
+
+    fn parse_framebuffer(
+        buffer_type: FramebufferType<'_>,
+        pitch_bytes: u32,
+    ) -> Option<BootloaderFramebufferArg> {
+        let structure = Builder::new()
+            .framebuffer(FramebufferTag::new(
+                0x1000,
+                pitch_bytes,
+                3,
+                2,
+                32,
+                buffer_type,
+            ))
+            .build();
+        // SAFETY:
+        // 1. The builder provides an aligned, initialized boot information structure.
+        // 2. The structure remains alive for every use of `info`.
+        let info = unsafe { BootInformation::load(structure.as_ptr()) }.unwrap();
+        info.framebuffer_arg()
+    }
 }

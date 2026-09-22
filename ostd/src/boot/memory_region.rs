@@ -91,9 +91,10 @@ impl MemoryRegion {
 
     /// Constructs a framebuffer memory region.
     pub fn framebuffer(fb: &crate::boot::BootloaderFramebufferArg) -> Self {
+        let range = fb.physical_range();
         Self {
-            base: fb.address,
-            len: (fb.width * fb.height * fb.bpp).div_ceil(8), // round up when divide with 8 (bits/Byte)
+            base: range.start,
+            len: range.len(),
             typ: MemoryRegionType::Framebuffer,
         }
     }
