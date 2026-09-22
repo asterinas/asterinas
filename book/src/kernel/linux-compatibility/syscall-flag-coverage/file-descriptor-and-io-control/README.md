@@ -144,6 +144,13 @@ Supported functionality in SCML:
 {{#include ioctl.scml}}
 ```
 
+For boot framebuffer devices,
+`FBIOGET_FSCREENINFO` reports the bootloader's scanline pitch in `line_length`,
+including padding after the visible pixels.
+For supported RGB layouts,
+`FBIOGET_VSCREENINFO` reports channel bitfields matching the rendered pixel bytes.
+Reserved bits are not reported as an alpha channel.
+
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/ioctl.2.html).
 

@@ -18,7 +18,10 @@ ioctl(fd, op = FIONCLEX | FIOCLEX | FIONBIO | FIOASYNC, ..);
 // Control terminal devices
 ioctl(fd, op = <pty_master_ops> | <tty_ops> | <term_ops>, ..);
 
-// Control framebuffer display
+// Control framebuffer display.
+// FBIOGET_FSCREENINFO reports the bootloader's scanline pitch, including padding.
+// FBIOGET_VSCREENINFO reports RGB bitfields matching the rendered pixel bytes.
+// Reserved bits are not reported as an alpha channel.
 ioctl(
     fd,
     op = FBIOGET_VSCREENINFO | FBIOPUT_VSCREENINFO | FBIOGET_FSCREENINFO |
