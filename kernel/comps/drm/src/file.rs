@@ -34,7 +34,7 @@ use crate::{
     device::{DrmDevice, DrmMaster},
     gem::object::DrmGemObject,
     has_current_sys_admin,
-    kms::objects::framebuffer::DrmFramebuffer,
+    kms::objects::{KmsObjectId, framebuffer::DrmFramebuffer},
     minor::{DrmMinor, DrmMinorType},
 };
 
@@ -164,7 +164,7 @@ impl DrmFile {
         Ok(handle)
     }
 
-    fn lookup_gem_object(&self, handle: u32) -> Result<Arc<DrmGemObject>> {
+    pub(super) fn lookup_gem_object(&self, handle: u32) -> Result<Arc<DrmGemObject>> {
         self.gem_handles
             .lock()
             .objects
@@ -187,6 +187,35 @@ impl DrmFile {
 
         gem_object.revoke_mmap(self.client_id);
         Ok(())
+    }
+
+    pub(super) fn add_framebuffer(&self, framebuffer: Arc<DrmFramebuffer>) {
+        let mut framebuffers = self.framebuffers.lock();
+        framebuffers.push(framebuffer);
+    }
+
+    pub(super) fn lookup_framebuffer(&self, id: KmsObjectId) -> Option<Arc<DrmFramebuffer>> {
+        self.framebuffers
+            .lock()
+            .iter()
+            .find(|framebuffer| framebuffer.id() == id)
+            .cloned()
+    }
+
+    pub(super) fn framebuffer_ids(&self) -> Vec<KmsObjectId> {
+        self.framebuffers
+            .lock()
+            .iter()
+            .map(|framebuffer| framebuffer.id())
+            .collect()
+    }
+
+    pub(super) fn remove_framebuffer(&self, id: KmsObjectId) -> Option<Arc<DrmFramebuffer>> {
+        let mut framebuffers = self.framebuffers.lock();
+        let position = framebuffers
+            .iter()
+            .position(|framebuffer| framebuffer.id() == id)?;
+        Some(framebuffers.swap_remove(position))
     }
 
     /// Keeps tracking the ioctl caller while this file has never been master,

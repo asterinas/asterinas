@@ -11,7 +11,14 @@
 use aster_core::prelude::*;
 use ostd::sync::Mutex;
 
-use crate::{device::DrmDevice, kms::objects::DrmKmsObjectStore, utils::DrmSize};
+use crate::{
+    device::DrmDevice,
+    kms::objects::{
+        DrmKmsObjectStore,
+        connector::{DrmConnector, DrmConnectorProbeState},
+    },
+    utils::DrmSize,
+};
 
 pub mod display_info;
 pub mod display_mode;
@@ -26,6 +33,11 @@ pub mod pixel_format;
 /// such as connector probing.
 pub trait DrmKmsOps: DrmDevice {
     fn mode_config(&self) -> &DrmModeConfig;
+
+    /// Probes a connector and returns its refreshed probe-derived state.
+    ///
+    /// The DRM core resolves the connector and commits the returned state.
+    fn probe_connector(&self, connector: &DrmConnector) -> Result<DrmConnectorProbeState>;
 }
 
 /// Describes a DRM device's global mode-setting capabilities and KMS objects.
