@@ -8,6 +8,7 @@ CONFORMANCE_TEST_SUITE ?= ltp
 CONFORMANCE_TEST_WORKDIR ?= /tmp
 CONFORMANCE_TEST_SELECTOR ?=
 ENABLE_REGRESSION_TEST ?= false
+ENABLE_DRM_TOOLS ?= false
 # Specify platform macros when building regression tests (supported: asterinas, linux).
 # - asterinas: Define both `__asterinas__` and `__linux__`. Tests may fail in Linux.
 # - linux: Define only `__linux__`. Tests may fail in Asterinas.
@@ -57,6 +58,7 @@ BOOT_IMAGE_NIX_ARGS := \
 	--arg enableBenchmarkTest $(ENABLE_BENCHMARK_TEST) \
 	--arg enableConformanceTest $(ENABLE_CONFORMANCE_TEST) \
 	--arg enableRegressionTest $(ENABLE_REGRESSION_TEST) \
+	--arg enableDrmTools $(ENABLE_DRM_TOOLS) \
 	--argstr benchmarkName $(BENCHMARK) \
 	--argstr conformanceTestSuite $(CONFORMANCE_TEST_SUITE) \
 	--argstr conformanceTestWorkDir $(CONFORMANCE_TEST_WORKDIR) \
