@@ -37,7 +37,7 @@ use crate::{
 static NR_BLOCK_DEVICE: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug)]
-pub struct BlockDevice {
+pub(crate) struct BlockDevice {
     device: Arc<DeviceInner>,
     /// The software staging queue.
     queue: BioRequestSingleQueue,
@@ -92,15 +92,20 @@ impl BlockDevice {
             partition_manager: PartitionManager::new(),
         });
 
-        aster_block::register(block_device).unwrap();
+        aster_block::register_with_request_handler(block_device).unwrap();
 
         bio_segment_pool_init();
         Ok(())
     }
 
-    /// Dequeues a `BioRequest` from the software staging queue and
-    /// processes the request.
-    pub fn handle_requests(&self) {
+    /// Negotiate features for the device specified bits 0~23
+    pub(crate) fn negotiate_features(device_features: u64) -> u64 {
+        BlockFeatures::negotiated_with_device(device_features).bits()
+    }
+}
+
+impl aster_block::BlockRequestHandler for BlockDevice {
+    fn handle_next_request(&self) {
         let request = self.queue.dequeue();
         info!("Handle Request: {:?}", request);
         match request.type_() {
@@ -108,11 +113,6 @@ impl BlockDevice {
             BioType::Write => self.device.write(request),
             BioType::Flush => self.device.flush(request),
         }
-    }
-
-    /// Negotiate features for the device specified bits 0~23
-    pub(crate) fn negotiate_features(device_features: u64) -> u64 {
-        BlockFeatures::negotiated_with_device(device_features).bits()
     }
 }
 
