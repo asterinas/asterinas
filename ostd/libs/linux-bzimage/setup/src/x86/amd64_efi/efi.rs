@@ -92,7 +92,7 @@ fn efi_phase_boot(boot_params: &mut BootParams) {
 
     // Fill the boot params with the screen info if it is not provided.
     if boot_params.screen_info.lfb_base == 0 && boot_params.screen_info.ext_lfb_base == 0 {
-        fill_screen_info(&mut boot_params.screen_info);
+        fill_screen_info(&mut boot_params.screen_info, &mut boot_params.edid_info);
     }
 
     // Decode the payload and load it as an ELF file.
@@ -248,7 +248,10 @@ fn find_rsdp_addr() -> Option<*const ()> {
     None
 }
 
-fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
+fn fill_screen_info(
+    screen_info: &mut linux_boot_params::ScreenInfo,
+    edid_info: &mut linux_boot_params::EdidInfo,
+) {
     use uefi::{
         boot::{OpenProtocolAttributes, OpenProtocolParams, open_protocol},
         proto::console::gop::{GraphicsOutput, PixelFormat},
@@ -338,6 +341,11 @@ fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
     screen_info.blue_size = 8;
     screen_info.rsvd_pos = 24;
     screen_info.rsvd_size = 8;
+
+    // EDID must describe this GOP output, not another display found globally.
+    // Clear stale data if this output has no usable EDID. Pre-filled screen
+    // information and its bootloader-supplied EDID are left together unchanged.
+    *edid_info = super::edid::read(handle).unwrap_or_default();
 
     uefi::println!(
         "[EFI stub] Found the framebuffer at {:#x} with {}x{} pixels",

@@ -285,6 +285,12 @@ impl FbHandle {
 
         let pixel_format = self.framebuffer.pixel_format();
         let (red, green, blue, transp) = FbBitfield::from_pixel_format(pixel_format);
+        // Linux fb_var_screeninfo uses -1 when physical dimensions are unknown.
+        let (width_mm, height_mm) = self
+            .framebuffer
+            .physical_size_mm()
+            .map(|(width, height)| (u32::from(width), u32::from(height)))
+            .unwrap_or((u32::MAX, u32::MAX));
 
         FbVarScreenInfo {
             xres: self.framebuffer.width() as u32,
@@ -296,6 +302,8 @@ impl FbHandle {
             green,
             blue,
             transp,
+            height: height_mm,
+            width: width_mm,
             pixclock: DEFAULT_PIXEL_CLOCK_DIVISOR / self.framebuffer.width() as u32 * 1000
                 / self.framebuffer.height() as u32,
             left_margin: (self.framebuffer.width() as u32 / 8) & 0xf8,
