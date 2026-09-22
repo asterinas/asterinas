@@ -37,7 +37,7 @@ pub(crate) mod framebuffer;
 pub mod plane;
 pub mod property;
 
-pub type KmsObjectId = u32;
+pub(crate) type KmsObjectId = u32;
 
 pub(crate) const MAX_OBJECTS_PER_TYPE: usize = u32::BITS as usize;
 
@@ -287,11 +287,11 @@ impl DrmKmsObjectStore {
         Ok(blob)
     }
 
-    fn lookup_property(&self, id: KmsObjectId) -> Option<&Arc<DrmProperty>> {
+    pub(crate) fn lookup_property(&self, id: KmsObjectId) -> Option<&Arc<DrmProperty>> {
         self.properties.get(&id)
     }
 
-    fn lookup_property_blob(&self, id: KmsObjectId) -> Option<&Arc<DrmPropertyBlob>> {
+    pub(crate) fn lookup_property_blob(&self, id: KmsObjectId) -> Option<&Arc<DrmPropertyBlob>> {
         self.property_blobs.get(&id)
     }
 }

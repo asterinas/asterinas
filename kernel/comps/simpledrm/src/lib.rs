@@ -26,9 +26,15 @@ use aster_drm::{
     gem::{DrmGemOps, object::DrmGemObject, shmem::DrmGemShmemBackend},
     kms::{
         DrmKmsOps, DrmModeConfig,
+        display_info::{DrmDisplayInfo, SubpixelOrder},
+        display_mode::DrmDisplayMode,
         objects::{
-            builder::DrmKmsObjectStoreBuilder, connector::DrmConnectorType,
-            encoder::DrmEncoderType, plane::DrmPlaneType,
+            builder::DrmKmsObjectStoreBuilder,
+            connector::{
+                DrmConnector, DrmConnectorProbeState, DrmConnectorStatus, DrmConnectorType,
+            },
+            encoder::DrmEncoderType,
+            plane::DrmPlaneType,
         },
         pixel_format::DrmPixelFormat,
     },
@@ -42,6 +48,9 @@ use component::{ComponentInitError, init_component};
 
 const SIMPLEDRM_NAME: &str = "simpledrm";
 const SIMPLEDRM_DESC: &str = "DRM driver for simple-framebuffer platform devices";
+
+const SIMPLEDRM_VREFRESH_HZ: u32 = 60;
+const SIMPLEDRM_ASSUMED_DPI: u32 = 96;
 
 #[init_component(process)]
 fn init() -> Result<(), ComponentInitError> {
@@ -67,6 +76,7 @@ fn init() -> Result<(), ComponentInitError> {
 
 #[derive(Debug)]
 struct SimpleDrmDevice {
+    boot_framebuffer: Arc<FrameBuffer>,
     features: DrmFeatures,
     mode_config: DrmModeConfig,
 }
@@ -112,6 +122,7 @@ impl SimpleDrmDevice {
         .with_shadow_buffer();
 
         Ok(Self {
+            boot_framebuffer: boot_framebuffer.clone(),
             features: DrmFeatures::empty(),
             mode_config,
         })
@@ -149,5 +160,22 @@ impl DrmGemOps for SimpleDrmDevice {
 impl DrmKmsOps for SimpleDrmDevice {
     fn mode_config(&self) -> &DrmModeConfig {
         &self.mode_config
+    }
+
+    fn probe_connector(&self, _connector: &DrmConnector) -> Result<DrmConnectorProbeState> {
+        let width = u32::try_from(self.boot_framebuffer.width())?;
+        let height = u32::try_from(self.boot_framebuffer.height())?;
+        let resolution = DrmSize::new(width, height);
+
+        let display_mode = DrmDisplayMode::from_size(resolution, SIMPLEDRM_VREFRESH_HZ)?;
+        // `simpledrm` only has the boot framebuffer's pixel geometry here, so
+        // it relies on the shared physical-size fallback path.
+        let display_info =
+            DrmDisplayInfo::from_dpi(resolution, SIMPLEDRM_ASSUMED_DPI, SubpixelOrder::Unknown)?;
+        Ok(DrmConnectorProbeState::new(
+            DrmConnectorStatus::Connected,
+            vec![display_mode],
+            display_info,
+        ))
     }
 }

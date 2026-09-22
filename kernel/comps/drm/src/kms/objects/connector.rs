@@ -23,7 +23,7 @@ use crate::kms::{
 /// Each bit in `possible_encoders` corresponds to an index in the encoder
 /// registration order.
 #[derive(Debug)]
-pub(crate) struct DrmConnector {
+pub struct DrmConnector {
     id: KmsObjectId,
     index: KmsObjectIndex,
     config: DrmConnectorConfig,
@@ -73,11 +73,15 @@ impl DrmConnector {
         self.probe_state.lock().clone()
     }
 
+    pub(crate) fn update_probe_state(&self, probe_state: DrmConnectorProbeState) {
+        *self.probe_state.lock() = probe_state;
+    }
+
     pub(crate) fn possible_encoders(&self) -> u32 {
         self.config.possible_encoders.as_raw_slice()[0]
     }
 
-    pub fn properties(&self) -> &DrmPropertyAttachments {
+    pub(crate) fn properties(&self) -> &DrmPropertyAttachments {
         &self.properties
     }
 }
@@ -109,13 +113,25 @@ impl DrmConnectorState {
 /// It is refreshed by connector probing and kept separate from the
 /// userspace-configurable `DrmConnectorState`.
 #[derive(Clone, Debug)]
-pub(crate) struct DrmConnectorProbeState {
+pub struct DrmConnectorProbeState {
     status: DrmConnectorStatus,
     display_modes: Vec<DrmDisplayMode>,
     display_info: DrmDisplayInfo,
 }
 
 impl DrmConnectorProbeState {
+    pub fn new(
+        status: DrmConnectorStatus,
+        display_modes: Vec<DrmDisplayMode>,
+        display_info: DrmDisplayInfo,
+    ) -> Self {
+        Self {
+            status,
+            display_modes,
+            display_info,
+        }
+    }
+
     pub(crate) fn status(&self) -> DrmConnectorStatus {
         self.status
     }
@@ -173,7 +189,7 @@ pub enum DrmConnectorType {
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/drm/drm_connector.h#L61-L92>.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum DrmConnectorStatus {
+pub enum DrmConnectorStatus {
     Connected = 1,
     Disconnected = 2,
     UnknownConnection = 3,

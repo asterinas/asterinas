@@ -2,6 +2,7 @@
 
 mod gem;
 mod general;
+mod kms;
 
 use aster_core::{dispatch_ioctl, prelude::*, util::ioctl::RawIoctl};
 
@@ -28,10 +29,6 @@ impl DrmFile {
             cmd @ GetCap => {
                 self.check_ioctl_access(DrmIoctlAccess::RENDER_ALLOW)?;
                 self.drm_get_cap(cmd)
-            }
-            cmd @ SetClientCap => {
-                self.check_ioctl_access(DrmIoctlAccess::empty())?;
-                self.drm_set_client_cap(cmd)
             }
             cmd @ AuthMagic => {
                 self.check_ioctl_access(DrmIoctlAccess::MASTER)?;
@@ -62,6 +59,55 @@ impl DrmFile {
                 self.check_gem_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_mode_destroy_dumb(cmd)
             }
+            // KMS ioctl cmds.
+            cmd @ SetClientCap => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_set_client_cap(cmd)
+            }
+            cmd @ ModeGetResources => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_get_resources(cmd)
+            }
+            cmd @ ModeGetCrtc => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_get_crtc(cmd)
+            }
+            cmd @ ModeGetEncoder => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_get_encoder(cmd)
+            }
+            cmd @ ModeGetConnector => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_get_connector(cmd)
+            }
+            cmd @ ModeGetProperty => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_get_property(cmd)
+            }
+            cmd @ ModeGetPropBlob => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_get_blob(cmd)
+            }
+            cmd @ ModeAddFb => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_add_fb(cmd)
+            }
+            cmd @ ModeRmFb => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_rm_fb(cmd)
+            }
+            cmd @ ModeGetPlaneResources => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_get_plane_resources(cmd)
+            }
+            cmd @ ModeGetPlane => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_get_plane(cmd)
+            }
+            cmd @ ModeObjectGetProps => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_object_get_props(cmd)
+            }
             _ => {
                 ostd::warn!(
                     "unknown ioctl minor={:?} cmd={:#x}",
@@ -76,6 +122,14 @@ impl DrmFile {
     fn check_gem_ioctl_access(&self, required_access: DrmIoctlAccess) -> Result<()> {
         if self.device().as_gem_ops().is_none() {
             return_errno_with_message!(Errno::EOPNOTSUPP, "the DRM device does not support GEM");
+        }
+
+        self.check_ioctl_access(required_access)
+    }
+
+    fn check_kms_ioctl_access(&self, required_access: DrmIoctlAccess) -> Result<()> {
+        if self.device().as_kms_ops().is_none() {
+            return_errno_with_message!(Errno::EOPNOTSUPP, "the DRM device does not support KMS");
         }
 
         self.check_ioctl_access(required_access)
@@ -133,7 +187,12 @@ mod ioctl_defs {
 
     use crate::ioctl::{
         gem::{DrmGemClose, DrmModeCreateDumb, DrmModeDestroyDumb, DrmModeMapDumb},
-        general::{DrmAuth, DrmGetCap, DrmSetClientCap, DrmUnique, DrmVersion},
+        general::{DrmAuth, DrmGetCap, DrmUnique, DrmVersion},
+        kms::{
+            DrmModeCrtc, DrmModeFbCmd, DrmModeGetBlob, DrmModeGetConnector, DrmModeGetEncoder,
+            DrmModeGetPlane, DrmModeGetPlaneRes, DrmModeGetProperty, DrmModeGetResources,
+            DrmModeObjectGetProps, DrmSetClientCap,
+        },
     };
 
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h>
@@ -149,4 +208,15 @@ mod ioctl_defs {
     pub(super) type ModeCreateDumb          = ioc!(DRM_IOCTL_MODE_CREATE_DUMB,          b'd', 0xb2, InOutData<DrmModeCreateDumb>);
     pub(super) type ModeMapDumb             = ioc!(DRM_IOCTL_MODE_MAP_DUMB,             b'd', 0xb3, InOutData<DrmModeMapDumb>);
     pub(super) type ModeDestroyDumb         = ioc!(DRM_IOCTL_MODE_DESTROY_DUMB,         b'd', 0xb4, InOutData<DrmModeDestroyDumb>);
+    pub(super) type ModeGetResources        = ioc!(DRM_IOCTL_MODE_GETRESOURCES,         b'd', 0xa0, InOutData<DrmModeGetResources>);
+    pub(super) type ModeGetCrtc             = ioc!(DRM_IOCTL_MODE_GETCRTC,              b'd', 0xa1, InOutData<DrmModeCrtc>);
+    pub(super) type ModeGetEncoder          = ioc!(DRM_IOCTL_MODE_GETENCODER,           b'd', 0xa6, InOutData<DrmModeGetEncoder>);
+    pub(super) type ModeGetConnector        = ioc!(DRM_IOCTL_MODE_GETCONNECTOR,         b'd', 0xa7, InOutData<DrmModeGetConnector>);
+    pub(super) type ModeGetProperty         = ioc!(DRM_IOCTL_MODE_GETPROPERTY,          b'd', 0xaa, InOutData<DrmModeGetProperty>);
+    pub(super) type ModeGetPropBlob         = ioc!(DRM_IOCTL_MODE_GETPROPBLOB,          b'd', 0xac, InOutData<DrmModeGetBlob>);
+    pub(super) type ModeAddFb               = ioc!(DRM_IOCTL_MODE_ADDFB,                b'd', 0xae, InOutData<DrmModeFbCmd>);
+    pub(super) type ModeRmFb                = ioc!(DRM_IOCTL_MODE_RMFB,                 b'd', 0xaf, InOutData<u32>);
+    pub(super) type ModeGetPlaneResources   = ioc!(DRM_IOCTL_MODE_GETPLANERESOURCES,    b'd', 0xb5, InOutData<DrmModeGetPlaneRes>);
+    pub(super) type ModeGetPlane            = ioc!(DRM_IOCTL_MODE_GETPLANE,             b'd', 0xb6, InOutData<DrmModeGetPlane>);
+    pub(super) type ModeObjectGetProps      = ioc!(DRM_IOCTL_MODE_OBJ_GETPROPERTIES,    b'd', 0xb9, InOutData<DrmModeObjectGetProps>);
 }
