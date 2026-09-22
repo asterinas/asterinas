@@ -4,11 +4,7 @@ use aster_core::prelude::*;
 use int_to_c_enum::TryFromInt;
 use ostd::mm::VmIo;
 
-use crate::{
-    device::DrmFeatures,
-    file::{DrmClientCaps, DrmFile},
-    ioctl::ioctl_defs,
-};
+use crate::{device::DrmFeatures, file::DrmFile, ioctl::ioctl_defs};
 
 impl DrmFile {
     pub(super) fn drm_get_version(&self, cmd: ioctl_defs::Version) -> Result<i32> {
@@ -68,29 +64,6 @@ impl DrmFile {
     }
 
     pub(super) fn drm_get_cap(&self, cmd: ioctl_defs::GetCap) -> Result<i32> {
-        /// DRM device capabilities accepted by `DRM_IOCTL_GET_CAP`.
-        ///
-        /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L628>.
-        #[repr(u64)]
-        #[derive(Debug, TryFromInt)]
-        enum DrmGetCapability {
-            DumbBuffer = 0x1,
-            VblankHighCrtc = 0x2,
-            DumbPreferredDepth = 0x3,
-            DumbPreferShadow = 0x4,
-            Prime = 0x5,
-            TimestampMonotonic = 0x6,
-            AsyncPageFlip = 0x7,
-            CursorWidth = 0x8,
-            CursorHeight = 0x9,
-            Addfb2Modifiers = 0x10,
-            PageFlipTarget = 0x11,
-            CrtcInVblankEvent = 0x12,
-            SyncObj = 0x13,
-            SyncObjTimeline = 0x14,
-            AtomicAsyncPageFlip = 0x15,
-        }
-
         let mut args: DrmGetCap = cmd.read()?;
         let Ok(cap) = DrmGetCapability::try_from(args.capability) else {
             return_errno_with_message!(Errno::EINVAL, "the DRM device capability is unknown");
@@ -109,15 +82,7 @@ impl DrmFile {
             DrmGetCapability::SyncObjTimeline => {
                 device.has_features(DrmFeatures::SYNCOBJ_TIMELINE) as u64
             }
-            _ => {
-                // TODO: Restore KMS capability reporting when `DrmModesetOps` and
-                // `DrmDevice::as_modeset_ops` are introduced. The presence of the
-                // modeset operations should be the sole source of truth for KMS
-                // support, while individual values should come from the mode config
-                // and its CRTC operations. Dumb-buffer support should additionally
-                // be derived from the corresponding GEM operations.
-                return_errno_with_message!(Errno::EOPNOTSUPP, "the DRM device lacks modesetting")
-            }
+            _ => self.kms_get_cap(cap)?,
         };
 
         args.value = value;
@@ -126,86 +91,50 @@ impl DrmFile {
         Ok(0)
     }
 
-    pub(super) fn drm_set_client_cap(&self, cmd: ioctl_defs::SetClientCap) -> Result<i32> {
-        /// DRM client capabilities accepted by `DRM_IOCTL_SET_CLIENT_CAP`.
-        ///
-        /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L791>.
-        #[repr(u64)]
-        #[derive(Debug, TryFromInt)]
-        enum DrmSetCapability {
-            Stereo3D = 0x1,
-            UniversalPlane = 0x2,
-            Atomic = 0x3,
-            AspectRatio = 0x4,
-            WritebackConnectors = 0x5,
-            CursorPlaneHotspot = 0x6,
-        }
-
-        let args: DrmSetClientCap = cmd.read()?;
+    fn kms_get_cap(&self, cap: DrmGetCapability) -> Result<u64> {
         let device = self.device();
+        let kms_ops = device.as_kms_ops().ok_or_else(|| {
+            Error::with_message(Errno::EOPNOTSUPP, "the DRM device lacks modesetting")
+        })?;
+        let mode_config = kms_ops.mode_config();
 
-        let Ok(cap) = DrmSetCapability::try_from(args.capability) else {
-            return_errno_with_message!(Errno::EINVAL, "the DRM client capability is unknown");
+        let result = match cap {
+            DrmGetCapability::DumbBuffer => {
+                // `DrmGemOps` currently requires `create_dumb`,
+                // so checking `as_gem_ops()` is sufficient to report dumb-buffer support.
+                device.as_gem_ops().is_some() as u64
+            }
+            DrmGetCapability::VblankHighCrtc => 1,
+            DrmGetCapability::DumbPreferredDepth => {
+                u64::from(mode_config.preferred_dumb_buffer_depth())
+            }
+            DrmGetCapability::DumbPreferShadow => mode_config.prefer_shadow_buffer() as u64,
+            DrmGetCapability::AsyncPageFlip => mode_config.supports_async_page_flip() as u64,
+            DrmGetCapability::CursorWidth => {
+                const DRM_DEFAULT_CURSOR_WIDTH: u64 = 64;
+                mode_config
+                    .cursor_size()
+                    .map_or(DRM_DEFAULT_CURSOR_WIDTH, |size| u64::from(size.width()))
+            }
+            DrmGetCapability::CursorHeight => {
+                const DRM_DEFAULT_CURSOR_HEIGHT: u64 = 64;
+                mode_config
+                    .cursor_size()
+                    .map_or(DRM_DEFAULT_CURSOR_HEIGHT, |size| u64::from(size.height()))
+            }
+            DrmGetCapability::Addfb2Modifiers => mode_config.supports_fb_modifiers() as u64,
+            DrmGetCapability::PageFlipTarget => {
+                // TODO: Report support once every CRTC exposes a target-aware page-flip operation.
+                0
+            }
+            DrmGetCapability::CrtcInVblankEvent => 1,
+            // TODO: Derive this from atomic CRTC operations
+            // once atomic modesetting is implemented.
+            DrmGetCapability::AtomicAsyncPageFlip => 0,
+            _ => 0,
         };
 
-        match cap {
-            DrmSetCapability::Stereo3D => self.set_client_caps(
-                DrmClientCaps::STEREO_3D,
-                parse_boolean_capability(args.value)?,
-            ),
-            DrmSetCapability::UniversalPlane => self.set_client_caps(
-                DrmClientCaps::UNIVERSAL_PLANES,
-                parse_boolean_capability(args.value)?,
-            ),
-            DrmSetCapability::Atomic => {
-                // TODO: Enable this capability when `DrmAtomicOps` and
-                // `DrmDevice::as_atomic_ops` are introduced. The presence of the
-                // atomic operations should be the sole source of truth for atomic
-                // modesetting support.
-                return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
-                    "the DRM device lacks atomic modesetting"
-                );
-            }
-            DrmSetCapability::AspectRatio => self.set_client_caps(
-                DrmClientCaps::ASPECT_RATIO,
-                parse_boolean_capability(args.value)?,
-            ),
-            DrmSetCapability::WritebackConnectors => {
-                if !self.has_client_caps(DrmClientCaps::ATOMIC) {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
-                        "the atomic DRM client capability must be enabled before writeback connectors"
-                    );
-                }
-
-                self.set_client_caps(
-                    DrmClientCaps::WRITEBACK_CONNECTORS,
-                    parse_boolean_capability(args.value)?,
-                );
-            }
-            DrmSetCapability::CursorPlaneHotspot => {
-                if !device.has_features(DrmFeatures::CURSOR_HOTSPOT) {
-                    return_errno_with_message!(
-                        Errno::EOPNOTSUPP,
-                        "the DRM device lacks cursor hotspot support"
-                    );
-                }
-
-                if !self.has_client_caps(DrmClientCaps::ATOMIC) {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
-                        "the atomic DRM client capability must be enabled before cursor hotspots"
-                    );
-                }
-
-                self.set_client_caps(
-                    DrmClientCaps::CURSOR_PLANE_HOTSPOT,
-                    parse_boolean_capability(args.value)?,
-                );
-            }
-        }
-        Ok(0)
+        Ok(result)
     }
 
     pub(super) fn drm_auth_magic(&self, cmd: ioctl_defs::AuthMagic) -> Result<i32> {
@@ -241,17 +170,6 @@ fn copy_drm_field(
     Ok(())
 }
 
-fn parse_boolean_capability(value: u64) -> Result<bool> {
-    match value {
-        0 => Ok(false),
-        1 => Ok(true),
-        _ => return_errno_with_message!(
-            Errno::EINVAL,
-            "a boolean DRM client capability must be zero or one"
-        ),
-    }
-}
-
 /// `struct drm_version` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L139>.
@@ -281,22 +199,35 @@ pub(super) struct DrmUnique {
     unique: usize,
 }
 
+/// DRM device capabilities accepted by `DRM_IOCTL_GET_CAP`.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L628>.
+#[repr(u64)]
+#[derive(Debug, TryFromInt)]
+enum DrmGetCapability {
+    DumbBuffer = 0x1,
+    VblankHighCrtc = 0x2,
+    DumbPreferredDepth = 0x3,
+    DumbPreferShadow = 0x4,
+    Prime = 0x5,
+    TimestampMonotonic = 0x6,
+    AsyncPageFlip = 0x7,
+    CursorWidth = 0x8,
+    CursorHeight = 0x9,
+    Addfb2Modifiers = 0x10,
+    PageFlipTarget = 0x11,
+    CrtcInVblankEvent = 0x12,
+    SyncObj = 0x13,
+    SyncObjTimeline = 0x14,
+    AtomicAsyncPageFlip = 0x15,
+}
+
 /// `struct drm_get_cap` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L786>.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct DrmGetCap {
-    capability: u64,
-    value: u64,
-}
-
-/// `struct drm_set_client_cap` in Linux.
-///
-/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L879>.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
-pub(super) struct DrmSetClientCap {
     capability: u64,
     value: u64,
 }
