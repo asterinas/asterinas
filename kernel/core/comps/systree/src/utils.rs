@@ -67,14 +67,14 @@ pub fn relative_path(from_dir: &str, to: &str) -> String {
 
 /// Fields for all `SysObj` types, including `SysNode` and `SysBranchNode`.
 #[derive(Debug)]
-pub struct ObjFields<T: SysObj> {
+pub struct ObjFields<T: SysObj + ?Sized> {
     id: SysNodeId,
     name: SysStr,
     parent: Once<Weak<dyn SysBranchNode>>,
     weak_self: Weak<T>,
 }
 
-impl<T: SysObj> ObjFields<T> {
+impl<T: SysObj + ?Sized> ObjFields<T> {
     /// Creates object fields for a non-root node.
     ///
     /// # Panics
