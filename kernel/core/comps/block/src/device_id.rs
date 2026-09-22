@@ -50,10 +50,9 @@ pub fn acquire_major(major: MajorId, name: &'static str) -> Result<MajorIdOwner,
 
 /// Allocates a major ID with a name.
 ///
-/// The name is shown in `/proc/devices`.
-///
-/// The returned `MajorIdOwner` object represents the ownership to the major ID.
-/// Until the object is dropped, this major ID cannot be acquired via `acquire_major` or `allocate_major` again.
+/// Similar to [`acquire_major`], this function returns a free major ID.
+/// The difference is that this function allocates the largest free major ID,
+/// rather than a specified one.
 pub fn allocate_major(name: &'static str) -> Result<MajorIdOwner, Error> {
     let mut majors = MAJORS.lock();
     for id in (1..LAST_DYNAMIC_MAJOR + 1).rev() {

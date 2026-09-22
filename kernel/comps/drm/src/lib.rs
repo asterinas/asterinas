@@ -67,7 +67,13 @@ pub fn register_device(device: Arc<dyn DrmDevice>) -> Result<()> {
         return Err(error);
     }
 
-    char::register_major_name(MajorId::new(DRM_MAJOR_ID), "drm");
+    // Make the fixed major visible in `/proc/devices`, as in Linux. If
+    // another DRM device has already acquired the major, keep the existing
+    // registration. The owner is intentionally forgotten to keep the major
+    // registered permanently.
+    if let Ok(owner) = char::acquire_major(MajorId::new(DRM_MAJOR_ID), "drm") {
+        core::mem::forget(owner);
+    }
 
     Ok(())
 }

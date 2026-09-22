@@ -137,10 +137,16 @@ pub(super) fn init_in_first_process() -> Result<()> {
     char::register(Arc::new(TtyDevice))?;
     char::register(SystemConsole::singleton().clone())?;
 
-    // Make the fixed majors visible in `/proc/devices`, as in Linux.
-    char::register_major_name(MajorId::new(4), "tty");
-    char::register_major_name(MajorId::new(5), "/dev/tty");
-    char::register_major_name(MajorId::new(5), "/dev/console");
+    // Acquire the fixed majors so that their names are visible in
+    // `/proc/devices`, as in Linux. The owners are intentionally forgotten
+    // so that the majors remain registered permanently.
+    let tty_major = char::acquire_major(MajorId::new(4), "tty")?;
+    tty_major.add_name("ttyS");
+    core::mem::forget(tty_major);
+
+    let console_major = char::acquire_major(MajorId::new(5), "/dev/tty")?;
+    console_major.add_name("/dev/console");
+    core::mem::forget(console_major);
 
     Ok(())
 }

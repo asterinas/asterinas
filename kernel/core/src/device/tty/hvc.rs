@@ -80,7 +80,11 @@ pub(super) fn init_in_first_process() -> Result<()> {
 
         HVC0.call_once(|| hvc0.clone());
         char::register(hvc0.clone())?;
-        char::register_major_name(MajorId::new(HvcDriver::DEVICE_MAJOR_ID as u16), "hvc");
+
+        // Make the fixed major visible in `/proc/devices`, as in Linux.
+        // The owner is intentionally forgotten to keep the major registered.
+        let owner = char::acquire_major(MajorId::new(HvcDriver::DEVICE_MAJOR_ID as u16), "hvc")?;
+        core::mem::forget(owner);
 
         virtio_console.register_callback(Box::leak(Box::new(
             move |mut reader: VmReader<Infallible>| {
