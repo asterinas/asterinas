@@ -186,7 +186,7 @@ jobs:
         - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
         - /usr/local/lib/android:/usr/local/lib/android
         - /usr/share/dotnet:/usr/share/dotnet
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
