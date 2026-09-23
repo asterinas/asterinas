@@ -59,7 +59,7 @@ impl CUserRegsStruct {
     ///
     /// `orig_rax` is left at zero. Callers needing the syscall-entry
     /// value should assign it from `ThreadLocal::orig_syscall_ret`.
-    pub(crate) fn from_regs(user_context: &UserContext, fs_base: FsBase, gs_base: GsBase) -> Self {
+    fn from_regs(user_context: &UserContext, fs_base: FsBase, gs_base: GsBase) -> Self {
         let mut out = Self::default();
         let bytes = out.as_mut_bytes();
         for rule in REG_RULES {
@@ -95,7 +95,7 @@ impl CUserRegsStruct {
     /// # Errors
     ///
     /// Returns `EIO` on any invalid value.
-    pub(crate) fn apply_to(
+    fn apply_to(
         &self,
         user_context: &mut UserContext,
         fs_base: &mut FsBase,
@@ -129,8 +129,94 @@ impl CUserRegsStruct {
     }
 }
 
+/// x86-64 register state saved while a tracee is stopped.
+pub(crate) struct PtraceState {
+    user_context: UserContext,
+    fs_base: FsBase,
+    gs_base: GsBase,
+    orig_syscall_ret: usize,
+}
+
+impl PtraceState {
+    const NOT_A_SYSCALL: usize = usize::MAX;
+
+    /// Captures the register state needed by x86-64 ptrace operations.
+    pub(crate) fn capture(ctx: &Context, user_context: &UserContext) -> Self {
+        let supp = ctx.thread_local.supp_user_context();
+        Self {
+            user_context: user_context.clone(),
+            fs_base: supp.fs_base().get(),
+            gs_base: supp.gs_base().get(),
+            orig_syscall_ret: ctx
+                .thread_local
+                .orig_syscall_ret()
+                .unwrap_or(Self::NOT_A_SYSCALL),
+        }
+    }
+
+    /// Restores the possibly modified register state when the tracee resumes.
+    pub(crate) fn restore(self, ctx: &Context, user_context: &mut UserContext) {
+        *user_context = self.user_context;
+        let supp = ctx.thread_local.supp_user_context();
+        supp.fs_base().set(self.fs_base);
+        supp.gs_base().set(self.gs_base);
+        let orig_syscall_ret =
+            (self.orig_syscall_ret != Self::NOT_A_SYSCALL).then_some(self.orig_syscall_ret);
+        ctx.thread_local.set_orig_syscall_ret(orig_syscall_ret);
+    }
+
+    /// Returns the x86-64 general-purpose register ABI snapshot.
+    pub(crate) fn get_user_regs(&self) -> CUserRegsStruct {
+        let mut regs = CUserRegsStruct::from_regs(&self.user_context, self.fs_base, self.gs_base);
+        regs.orig_rax = self.orig_syscall_ret;
+        regs
+    }
+
+    /// Applies an x86-64 general-purpose register ABI snapshot.
+    pub(crate) fn set_user_regs(&mut self, regs: CUserRegsStruct) -> Result<()> {
+        regs.apply_to(&mut self.user_context, &mut self.fs_base, &mut self.gs_base)?;
+        self.orig_syscall_ret = regs.orig_rax;
+        Ok(())
+    }
+
+    /// Reads one word from the x86-64 USER area.
+    pub(crate) fn peek_user(&self, offset: usize) -> Result<usize> {
+        read_user_word(
+            &self.user_context,
+            self.fs_base,
+            self.gs_base,
+            self.orig_syscall_ret,
+            offset,
+        )
+    }
+
+    /// Writes one word to the x86-64 USER area.
+    pub(crate) fn poke_user(&mut self, offset: usize, value: usize) -> Result<()> {
+        write_user_word(
+            &mut self.user_context,
+            &mut self.fs_base,
+            &mut self.gs_base,
+            &mut self.orig_syscall_ret,
+            offset,
+            value,
+        )
+    }
+
+    /// Enables single-step execution.
+    pub(crate) fn enable_single_step(&mut self) {
+        self.user_context
+            .set_rflags(self.user_context.rflags() | RFlags::TRAP_FLAG.bits() as usize);
+    }
+
+    /// Disables single-step execution.
+    pub(crate) fn disable_single_step(&mut self) {
+        self.user_context
+            .set_rflags(self.user_context.rflags() & !(RFlags::TRAP_FLAG.bits() as usize));
+    }
+}
+
 /// Reads one word from the x86-64 USER area at `offset`.
-pub(crate) fn read_user_word(
+fn read_user_word(
     user_context: &UserContext,
     fs_base: FsBase,
     gs_base: GsBase,
@@ -174,7 +260,7 @@ pub(crate) fn read_user_word(
 }
 
 /// Writes one word to the x86-64 USER area at `offset`.
-pub(crate) fn write_user_word(
+fn write_user_word(
     user_context: &mut UserContext,
     fs_base: &mut FsBase,
     gs_base: &mut GsBase,
@@ -215,16 +301,6 @@ pub(crate) fn write_user_word(
     let rule =
         RegRule::for_offset(offset).expect("offset has been validated by `check_user_offset`");
     rule.apply(user_context.general_regs_mut(), value)
-}
-
-/// Enables x86-64 single-step execution by setting the trap flag.
-pub(crate) fn enable_single_step(user_context: &mut UserContext) {
-    user_context.set_rflags(user_context.rflags() | RFlags::TRAP_FLAG.bits() as usize);
-}
-
-/// Disables x86-64 single-step execution by clearing the trap flag.
-pub(crate) fn disable_single_step(user_context: &mut UserContext) {
-    user_context.set_rflags(user_context.rflags() & !(RFlags::TRAP_FLAG.bits() as usize));
 }
 
 // =====================================================================
