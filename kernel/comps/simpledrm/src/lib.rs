@@ -17,7 +17,7 @@ macro_rules! __log_prefix {
     };
 }
 
-use alloc::{sync::Arc, vec};
+use alloc::{sync::Arc, vec, vec::Vec};
 use core::fmt::Debug;
 
 use aster_core::prelude::*;
@@ -33,12 +33,14 @@ use aster_drm::{
             connector::{
                 DrmConnector, DrmConnectorProbeState, DrmConnectorStatus, DrmConnectorType,
             },
-            encoder::DrmEncoderType,
+            crtc::DrmCrtc,
+            encoder::{DrmEncoder, DrmEncoderType},
+            framebuffer::DrmFramebuffer,
             plane::DrmPlaneType,
         },
         pixel_format::DrmPixelFormat,
     },
-    utils::DrmSize,
+    utils::{DrmRect, DrmSize},
 };
 use aster_framebuffer::{
     framebuffer::{self, FrameBuffer},
@@ -78,6 +80,7 @@ fn init() -> Result<(), ComponentInitError> {
 struct SimpleDrmDevice {
     boot_framebuffer: Arc<FrameBuffer>,
     features: DrmFeatures,
+    pixel_format: DrmPixelFormat,
     mode_config: DrmModeConfig,
 }
 
@@ -124,8 +127,83 @@ impl SimpleDrmDevice {
         Ok(Self {
             boot_framebuffer: boot_framebuffer.clone(),
             features: DrmFeatures::empty(),
+            pixel_format,
             mode_config,
         })
+    }
+
+    fn flush_framebuffer(&self, framebuffer: &DrmFramebuffer, source_rect: DrmRect) -> Result<()> {
+        if framebuffer.pixel_format() != self.pixel_format {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the DRM framebuffer format is not supported by simpledrm"
+            );
+        }
+
+        let framebuffer_size = framebuffer.size();
+        let framebuffer_rect =
+            DrmRect::new(0, 0, framebuffer_size.width(), framebuffer_size.height());
+        if !framebuffer_rect.contains_rect(&source_rect) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the simpledrm scanout rectangle exceeds the DRM framebuffer"
+            );
+        }
+
+        let output_width = u32::try_from(self.boot_framebuffer.width())?;
+        let output_height = u32::try_from(self.boot_framebuffer.height())?;
+        if source_rect.width() != output_width || source_rect.height() != output_height {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the simpledrm scanout size does not match the physical framebuffer"
+            );
+        }
+
+        let bytes_per_pixel = framebuffer.pixel_format().bytes_per_pixel();
+        let row_len = self
+            .boot_framebuffer
+            .width()
+            .checked_mul(bytes_per_pixel)
+            .ok_or(Errno::EOVERFLOW)?;
+        if row_len > self.boot_framebuffer.line_size() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the simpledrm scanout row exceeds the physical framebuffer pitch"
+            );
+        }
+
+        let pitch = framebuffer.pitch() as usize;
+        let framebuffer_offset = framebuffer.offset() as usize;
+        let source_x = source_rect.x() as usize;
+        let source_y = source_rect.y() as usize;
+
+        let source_x_bytes = source_x
+            .checked_mul(bytes_per_pixel)
+            .ok_or(Errno::EOVERFLOW)?;
+        let mut row = Vec::new();
+        row.try_reserve_exact(row_len)
+            .map_err(|_| Error::with_message(Errno::ENOMEM, "failed to allocate a scanout row"))?;
+        row.resize(row_len, 0);
+
+        for row_index in 0..self.boot_framebuffer.height() {
+            let source_row = source_y.checked_add(row_index).ok_or(Errno::EOVERFLOW)?;
+            let source_offset = source_row
+                .checked_mul(pitch)
+                .and_then(|offset| offset.checked_add(source_x_bytes))
+                .and_then(|offset| offset.checked_add(framebuffer_offset))
+                .ok_or(Errno::EOVERFLOW)?;
+            framebuffer
+                .gem_object()
+                .read_bytes(source_offset, row.as_mut_slice())?;
+
+            let destination_offset = row_index
+                .checked_mul(self.boot_framebuffer.line_size())
+                .ok_or(Errno::EOVERFLOW)?;
+            self.boot_framebuffer
+                .write_bytes_at(destination_offset, row.as_slice())?;
+        }
+
+        Ok(())
     }
 }
 
@@ -177,5 +255,47 @@ impl DrmKmsOps for SimpleDrmDevice {
             vec![display_mode],
             display_info,
         ))
+    }
+
+    fn set_crtc(
+        &self,
+        _crtc: &DrmCrtc,
+        framebuffer: Option<&DrmFramebuffer>,
+        source_rect: DrmRect,
+        display_mode: Option<DrmDisplayMode>,
+        connector_encoders: &[(Arc<DrmConnector>, Arc<DrmEncoder>)],
+    ) -> Result<()> {
+        let Some(display_mode) = display_mode else {
+            return Ok(());
+        };
+
+        if connector_encoders.len() != 1 {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "simpledrm requires exactly one connector for an enabled CRTC"
+            );
+        }
+
+        let mode_width = display_mode.hdisplay();
+        let mode_height = display_mode.vdisplay();
+        if mode_width != u32::try_from(self.boot_framebuffer.width())?
+            || mode_height != u32::try_from(self.boot_framebuffer.height())?
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "simpledrm only supports the physical framebuffer display mode"
+            );
+        }
+
+        let framebuffer = framebuffer.ok_or(Errno::EINVAL)?;
+        self.flush_framebuffer(framebuffer, source_rect)
+    }
+
+    fn dirty_fb(&self, framebuffer: &DrmFramebuffer, source_rects: &[DrmRect]) -> Result<()> {
+        for source_rect in source_rects {
+            self.flush_framebuffer(framebuffer, *source_rect)?;
+        }
+
+        Ok(())
     }
 }

@@ -18,7 +18,7 @@ use crate::{
 ///
 // TODO: Support framebuffers backed by multiple planes.
 #[derive(Debug)]
-pub(crate) struct DrmFramebuffer {
+pub struct DrmFramebuffer {
     id: KmsObjectId,
     size: DrmSize,
     pixel_format: DrmPixelFormat,
@@ -79,13 +79,11 @@ impl DrmFramebuffer {
         self.id
     }
 
-    #[expect(unused)]
-    pub(crate) fn size(&self) -> DrmSize {
+    pub fn size(&self) -> DrmSize {
         self.size
     }
 
-    #[expect(unused)]
-    pub(crate) fn pixel_format(&self) -> DrmPixelFormat {
+    pub fn pixel_format(&self) -> DrmPixelFormat {
         self.pixel_format
     }
 
@@ -94,13 +92,11 @@ impl DrmFramebuffer {
         self.flags
     }
 
-    #[expect(unused)]
-    pub(crate) fn pitch(&self) -> u32 {
+    pub fn pitch(&self) -> u32 {
         self.pitch
     }
 
-    #[expect(unused)]
-    pub(crate) fn offset(&self) -> u32 {
+    pub fn offset(&self) -> u32 {
         self.offset
     }
 
@@ -109,8 +105,7 @@ impl DrmFramebuffer {
         self.modifier
     }
 
-    #[expect(unused)]
-    pub(crate) fn gem_object(&self) -> &DrmGemObject {
+    pub fn gem_object(&self) -> &DrmGemObject {
         &self.gem_object
     }
 }

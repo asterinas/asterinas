@@ -10,16 +10,24 @@
 //! Individual planes, CRTCs, encoders, connectors, and properties are defined
 //! in the [`objects`] module.
 
+use alloc::sync::Arc;
+
 use aster_core::prelude::*;
 use ostd::sync::Mutex;
 
 use crate::{
     device::DrmDevice,
-    kms::objects::{
-        DrmKmsObjectStore,
-        connector::{DrmConnector, DrmConnectorProbeState},
+    kms::{
+        display_mode::DrmDisplayMode,
+        objects::{
+            DrmKmsObjectStore,
+            connector::{DrmConnector, DrmConnectorProbeState},
+            crtc::DrmCrtc,
+            encoder::DrmEncoder,
+            framebuffer::DrmFramebuffer,
+        },
     },
-    utils::DrmSize,
+    utils::{DrmRect, DrmSize},
 };
 
 pub mod display_info;
@@ -41,6 +49,28 @@ pub trait DrmKmsOps: DrmDevice {
     ///
     /// The DRM core resolves the connector and commits the returned state.
     fn probe_connector(&self, connector: &DrmConnector) -> Result<DrmConnectorProbeState>;
+
+    /// Applies a legacy CRTC configuration.
+    ///
+    /// `None` for `display_mode` disables the CRTC.
+    /// Enabling a CRTC requires one mode, one framebuffer, and the connector set
+    /// driven by that mode.
+    ///
+    /// `source_rect` identifies the framebuffer region scanned out by the CRTC.
+    /// Each connector is paired with the encoder selected by the DRM core.
+    /// The DRM core holds the mode configuration's object-store lock while
+    /// invoking this method, so implementations must not access that store.
+    fn set_crtc(
+        &self,
+        crtc: &DrmCrtc,
+        framebuffer: Option<&DrmFramebuffer>,
+        source_rect: DrmRect,
+        display_mode: Option<DrmDisplayMode>,
+        connector_encoders: &[(Arc<DrmConnector>, Arc<DrmEncoder>)],
+    ) -> Result<()>;
+
+    /// Refreshes the regions of a framebuffer currently scanned out by planes.
+    fn dirty_fb(&self, framebuffer: &DrmFramebuffer, source_rects: &[DrmRect]) -> Result<()>;
 }
 
 /// Describes a DRM device's global mode-setting capabilities and KMS objects.

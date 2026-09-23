@@ -16,7 +16,7 @@ use crate::kms::{
 /// both links are non-owning because the KMS object store owns the topology
 /// objects.
 #[derive(Debug)]
-pub(crate) struct DrmCrtc {
+pub struct DrmCrtc {
     id: KmsObjectId,
     index: KmsObjectIndex,
     config: DrmCrtcConfig,
@@ -56,6 +56,10 @@ impl DrmCrtc {
         self.state.lock().clone()
     }
 
+    pub(crate) fn update_state(&self, state: DrmCrtcState) {
+        *self.state.lock() = state;
+    }
+
     pub(crate) fn primary_plane(&self) -> &Weak<DrmPlane> {
         &self.config.primary_plane
     }
@@ -73,10 +77,10 @@ impl DrmCrtc {
 /// Immutable configuration of a DRM CRTC.
 #[derive(Debug)]
 pub(super) struct DrmCrtcConfig {
-    pub gamma_size: u32,
-    pub primary_plane: Weak<DrmPlane>,
+    pub(super) gamma_size: u32,
+    pub(super) primary_plane: Weak<DrmPlane>,
     #[expect(unused)]
-    pub cursor_plane: Weak<DrmPlane>,
+    pub(super) cursor_plane: Weak<DrmPlane>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -87,6 +91,14 @@ pub(crate) struct DrmCrtcState {
 }
 
 impl DrmCrtcState {
+    pub(crate) fn new(display_mode: DrmDisplayMode) -> Self {
+        Self {
+            display_mode: Some(display_mode),
+            is_enabled: true,
+            is_active: true,
+        }
+    }
+
     pub(crate) fn display_mode(&self) -> Option<DrmDisplayMode> {
         self.display_mode
     }

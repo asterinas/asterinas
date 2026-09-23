@@ -69,6 +69,10 @@ impl DrmConnector {
         self.state.lock().clone()
     }
 
+    pub(crate) fn update_state(&self, state: DrmConnectorState) {
+        *self.state.lock() = state;
+    }
+
     pub(crate) fn probe_state_snapshot(&self) -> DrmConnectorProbeState {
         self.probe_state.lock().clone()
     }
@@ -101,6 +105,10 @@ pub(crate) struct DrmConnectorState {
 }
 
 impl DrmConnectorState {
+    pub(crate) fn new(encoder: Weak<DrmEncoder>) -> Self {
+        Self { encoder }
+    }
+
     pub(crate) fn encoder(&self) -> &Weak<DrmEncoder> {
         &self.encoder
     }

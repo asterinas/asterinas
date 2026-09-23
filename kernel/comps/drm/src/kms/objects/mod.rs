@@ -31,9 +31,9 @@ use crate::kms::objects::{
 
 pub mod builder;
 pub mod connector;
-pub(crate) mod crtc;
+pub mod crtc;
 pub mod encoder;
-pub(crate) mod framebuffer;
+pub mod framebuffer;
 pub mod plane;
 pub mod property;
 

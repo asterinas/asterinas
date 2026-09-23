@@ -252,3 +252,39 @@ impl TryFrom<DrmDisplayMode> for DrmModeInfo {
         })
     }
 }
+
+impl TryFrom<DrmModeInfo> for DrmDisplayMode {
+    type Error = Error;
+
+    fn try_from(mode_info: DrmModeInfo) -> Result<Self> {
+        let horizontal = DrmModeTiming::try_from((
+            mode_info.hdisplay,
+            mode_info.hsync_start,
+            mode_info.hsync_end,
+            mode_info.htotal,
+        ))?;
+        let vertical = DrmModeTiming::try_from((
+            mode_info.vdisplay,
+            mode_info.vsync_start,
+            mode_info.vsync_end,
+            mode_info.vtotal,
+        ))?;
+        let flags = DrmModeFlag::from_bits(mode_info.flags).ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "the display mode has unknown flags")
+        })?;
+        let mode_type = DrmModeType::from_bits(mode_info.type_).ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "the display mode has an unknown type")
+        })?;
+
+        Ok(Self {
+            pixel_clock_khz: mode_info.clock,
+            horizontal,
+            vertical,
+            hskew: u32::from(mode_info.hskew),
+            vscan: u32::from(mode_info.vscan),
+            flags,
+            mode_type,
+            name: *mode_info.name.as_array(),
+        })
+    }
+}
