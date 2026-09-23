@@ -358,7 +358,11 @@ pub trait Mappable {
     /// Fills the memory region to map with `handle`.
     ///
     /// `offset` specifies the file offset, which must be page-aligned.
-    fn map(&self, offset: usize, handle: MapHandle) -> Box<dyn MappedObject>;
+    ///
+    /// This method may fail after some pages have already been installed
+    /// through `handle`. In this case, the caller should remove those pages
+    /// and destroy the memory mapping.
+    fn map(&self, offset: usize, handle: MapHandle) -> Result<Box<dyn MappedObject>>;
 }
 
 /// A trait that describes memory mapping behavior for special files (after `mmap`).
