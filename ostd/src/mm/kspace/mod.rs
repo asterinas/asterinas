@@ -52,13 +52,13 @@ use super::{
         meta::{AnyFrameMeta, MetaPageMeta, mapping},
     },
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-    page_table::{PageTable, PageTableConfig},
+    page_table::{PageTable, PageTableConfig, largest_pages, max_page_level},
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
     const_assert, info,
-    mm::{HasPaddr, PAGE_SIZE, PagingLevel, frame::FrameRef, page_table::largest_pages},
+    mm::{HasPaddr, PAGE_SIZE, PagingLevel, frame::FrameRef},
     task::disable_preempt,
 };
 
@@ -240,7 +240,10 @@ pub(crate) fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
+        let min_level = max_page_level::<KernelPtConfig>(from.len());
+        let mut cursor = kpt
+            .cursor_mut_with_min_level(&preempt_guard, &from, min_level)
+            .unwrap();
         for (pa, level) in largest_pages::<KernelPtConfig>(from.start, 0, max_paddr) {
             // SAFETY: we are doing the linear mapping for the kernel.
             unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
@@ -256,10 +259,12 @@ pub(crate) fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
+        let min_level = max_page_level::<KernelPtConfig>(from.len());
+        let mut cursor = kpt
+            .cursor_mut_with_min_level(&preempt_guard, &from, min_level)
+            .unwrap();
         // We use untracked mapping so that we can benefit from huge pages.
         // We won't unmap them anyway, so there's no leaking problem yet.
-        // TODO: support tracked huge page mapping.
         let pa_range = meta_pages.into_raw();
         for (pa, level) in
             largest_pages::<KernelPtConfig>(from.start, pa_range.start, pa_range.len())
@@ -286,7 +291,10 @@ pub(crate) fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
+        let min_level = max_page_level::<KernelPtConfig>(from.len());
+        let mut cursor = kpt
+            .cursor_mut_with_min_level(&preempt_guard, &from, min_level)
+            .unwrap();
         for (pa, level) in largest_pages::<KernelPtConfig>(from.start, region.base(), from.len()) {
             // SAFETY: we are doing the kernel code mapping.
             unsafe { cursor.map(MappedItem::Untracked(pa, level, prop)) };
