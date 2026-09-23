@@ -3,7 +3,7 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
 use aster_core::{fs::file::MappedObject, prelude::*, vm::vmar::MapHandle};
-use ostd::mm::{FrameAllocOptions, PAGE_SIZE, UFrame};
+use ostd::mm::{FrameAllocOptions, PAGE_SIZE, UFrame, VmIo};
 
 use crate::gem::object::{DrmGemObject, DrmGemObjectBackend};
 
@@ -65,6 +65,26 @@ impl DrmGemShmemBackend {
 }
 
 impl DrmGemObjectBackend for DrmGemShmemBackend {
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+        let mut object_offset = offset;
+        let mut copied = 0;
+
+        while copied < buf.len() {
+            let page_index = object_offset / PAGE_SIZE;
+            let page_offset = object_offset % PAGE_SIZE;
+            let copy_len = (PAGE_SIZE - page_offset).min(buf.len() - copied);
+            let page = self.pages.get(page_index).ok_or_else(|| {
+                Error::with_message(Errno::EINVAL, "the GEM read exceeds the shmem object")
+            })?;
+
+            page.read_bytes(page_offset, &mut buf[copied..copied + copy_len])?;
+            object_offset += copy_len;
+            copied += copy_len;
+        }
+
+        Ok(())
+    }
+
     fn create_mapped_object(&self, offset: usize, _size: usize) -> Result<Box<dyn MappedObject>> {
         Ok(Box::new(DrmGemShmemMappedObject {
             backend: self.clone(),

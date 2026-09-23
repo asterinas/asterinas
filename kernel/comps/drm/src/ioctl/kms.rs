@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Arc, vec, vec::Vec};
+use alloc::{
+    sync::{Arc, Weak},
+    vec,
+    vec::Vec,
+};
 
 use aster_core::prelude::*;
 use aster_util::fixed_str::FixedCStr;
@@ -13,18 +17,21 @@ use crate::{
     file::{DrmClientCaps, DrmFile},
     ioctl::ioctl_defs,
     kms::{
-        display_mode::DrmModeInfo,
+        display_mode::{DrmDisplayMode, DrmModeInfo},
         objects::{
             DrmKmsObjectType, KmsObjectIndex,
+            connector::{DrmConnector, DrmConnectorState},
+            crtc::DrmCrtcState,
+            encoder::DrmEncoder,
             framebuffer::{DrmFramebuffer, DrmFramebufferFlags},
-            plane::DrmPlaneType,
+            plane::{DrmPlaneState, DrmPlaneType},
             property::{
                 DRM_PROP_NAME_LEN, DrmPropertyAttachments, DrmPropertyFlags, DrmPropertyValueType,
             },
         },
         pixel_format::DrmPixelFormat,
     },
-    utils::DrmSize,
+    utils::{DrmRect, DrmSize},
 };
 
 impl DrmFile {
@@ -203,6 +210,189 @@ impl DrmFile {
         drop(object_store);
 
         cmd.write(&args)?;
+        Ok(0)
+    }
+
+    pub(super) fn drm_mode_set_crtc(&self, cmd: ioctl_defs::ModeSetCrtc) -> Result<i32> {
+        let args: DrmModeCrtc = cmd.read()?;
+        let kms_ops = self.device().as_kms_ops().unwrap();
+
+        // SETCRTC either configures a display mode or disables the CRTC and clears its state.
+        // Enabling requires a framebuffer and connectors; disabling requires no connectors.
+        let display_mode: Option<DrmDisplayMode> = (args.mode_valid != 0)
+            .then(|| args.mode.try_into())
+            .transpose()?;
+
+        if display_mode.is_none() && args.count_connectors != 0 {
+            return_errno_with_message!(Errno::EINVAL, "disabling a CRTC requires no connectors");
+        }
+
+        if display_mode.is_some() && (args.count_connectors == 0 || args.fb_id == 0) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "enabling a CRTC requires connectors and a framebuffer"
+            );
+        }
+
+        // This check only prevents an excessively large allocation for the connector ID array below.
+        // The object-store lock need not be held beyond reading the count.
+        let connector_count = kms_ops
+            .mode_config()
+            .object_store()
+            .lock()
+            .connectors()
+            .count();
+        if args.count_connectors as usize > connector_count {
+            return_errno_with_message!(Errno::EINVAL, "too many connectors for SETCRTC");
+        }
+
+        let connector_ids = cmd.with_data_ptr(|args_ptr| {
+            copy_array_from_user(
+                args_ptr.vm(),
+                args.set_connectors_ptr,
+                args.count_connectors,
+            )
+        })?;
+
+        // Serialize validation, driver application, and state publication with framebuffer removal.
+        let object_store = kms_ops.mode_config().object_store().lock();
+        let crtc = object_store
+            .lookup_crtc_by_id(args.crtc_id)
+            .ok_or(Errno::ENOENT)?;
+        let primary_plane = crtc.primary_plane().upgrade().ok_or(Errno::ENOENT)?;
+        let framebuffer = if display_mode.is_none() {
+            None
+        } else if args.fb_id == u32::MAX {
+            // SETCRTC uses -1 to request the primary plane's currently bound framebuffer.
+            let Some(framebuffer) = primary_plane.state().lock().framebuffer().upgrade() else {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the CRTC has no current framebuffer to reuse"
+                );
+            };
+            Some(framebuffer)
+        } else {
+            Some(self.lookup_framebuffer(args.fb_id).ok_or(Errno::ENOENT)?)
+        };
+        let source_rect = display_mode.map_or_else(DrmRect::default, |mode| {
+            DrmRect::new(args.x, args.y, mode.hdisplay(), mode.vdisplay())
+        });
+        let mut matched_connector_encoders: Vec<(&Arc<DrmConnector>, &Arc<DrmEncoder>)> =
+            Vec::with_capacity(connector_ids.len());
+
+        if display_mode.is_some() {
+            // Validate the scanout format and bounds before changing the driver configuration.
+            let framebuffer = framebuffer
+                .as_ref()
+                .expect("an enabled CRTC has a framebuffer");
+            if !primary_plane
+                .pixel_formats()
+                .contains(&framebuffer.pixel_format())
+            {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the DRM framebuffer format is unsupported by the primary plane"
+                );
+            }
+
+            let framebuffer_size = framebuffer.size();
+            if !DrmRect::new(0, 0, framebuffer_size.width(), framebuffer_size.height())
+                .contains_rect(&source_rect)
+            {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the CRTC scanout rectangle exceeds the DRM framebuffer"
+                );
+            }
+
+            // Build the replacement routing without changing the current associations.
+            let crtc_index = crtc.index().get();
+            for connector_id in &connector_ids {
+                let connector = object_store
+                    .lookup_connector_by_id(*connector_id)
+                    .ok_or(Errno::ENOENT)?;
+
+                if matched_connector_encoders
+                    .iter()
+                    .any(|(previously_matched_connector, _)| {
+                        Arc::ptr_eq(previously_matched_connector, connector)
+                    })
+                {
+                    return_errno_with_message!(Errno::EINVAL, "a DRM connector is specified twice");
+                }
+
+                // Encoders may move from another CRTC, but each must be unique and
+                // support cloning with every other encoder selected for this request.
+                let Some(matched_encoder) =
+                    connector
+                        .possible_encoders()
+                        .iter_ones()
+                        .find_map(|encoder_index| {
+                            let candidate_encoder = object_store
+                                .lookup_encoder_by_index(KmsObjectIndex::new(encoder_index))?;
+                            if !candidate_encoder.possible_crtcs()[crtc_index] {
+                                return None;
+                            }
+                            let compatible = matched_connector_encoders.iter().all(
+                                |(_, previously_matched_encoder)| {
+                                    !Arc::ptr_eq(candidate_encoder, previously_matched_encoder)
+                                        && candidate_encoder.possible_clones()
+                                            [previously_matched_encoder.index().get()]
+                                        && previously_matched_encoder.possible_clones()
+                                            [candidate_encoder.index().get()]
+                                },
+                            );
+                            compatible.then_some(candidate_encoder)
+                        })
+                else {
+                    return_errno_with_message!(
+                        Errno::EINVAL,
+                        "the connector has no encoder compatible with the requested routing"
+                    );
+                };
+
+                matched_connector_encoders.push((connector, matched_encoder));
+            }
+        }
+
+        // Apply the driver configuration before publishing the matching core state.
+        kms_ops.set_crtc(crtc.index(), framebuffer.as_deref(), source_rect)?;
+
+        // Remove the previous routing before attaching the replacement connectors.
+        let crtc_ref = Arc::downgrade(crtc);
+        for connector in object_store.connectors() {
+            let mut state = connector.state().lock();
+            if state
+                .encoder()
+                .upgrade()
+                .is_some_and(|encoder| encoder.current_crtc().ptr_eq(&crtc_ref))
+            {
+                *state = DrmConnectorState::default();
+            }
+        }
+        for encoder in object_store.encoders() {
+            if encoder.current_crtc().ptr_eq(&crtc_ref) {
+                encoder.set_current_crtc(Weak::new());
+            }
+        }
+
+        if let Some(display_mode) = display_mode {
+            crtc.update_state(DrmCrtcState::new(display_mode));
+            primary_plane.update_state(DrmPlaneState::new(
+                source_rect,
+                DrmRect::new(0, 0, display_mode.hdisplay(), display_mode.vdisplay()),
+                Arc::downgrade(framebuffer.as_ref().unwrap()),
+                crtc_ref,
+            ));
+            for (connector, encoder) in matched_connector_encoders {
+                encoder.set_current_crtc(Arc::downgrade(crtc));
+                connector.update_state(DrmConnectorState::new(Arc::downgrade(encoder)));
+            }
+        } else {
+            crtc.update_state(DrmCrtcState::default());
+            primary_plane.update_state(DrmPlaneState::default());
+        }
+
         Ok(0)
     }
 
@@ -478,26 +668,75 @@ impl DrmFile {
     pub(super) fn drm_mode_rm_fb(&self, cmd: ioctl_defs::ModeRmFb) -> Result<i32> {
         let fb_id: u32 = cmd.read()?;
 
-        let framebuffer = self.lookup_framebuffer(fb_id).ok_or(Errno::ENOENT)?;
         let mode_config = self.device().as_kms_ops().unwrap().mode_config();
+        // Hold the object-store lock across lookup, removal, and ID release so
+        // `fb_id` cannot be reused for another framebuffer in between.
         let mut object_store = mode_config.object_store().lock();
+        let framebuffer = self.lookup_framebuffer(fb_id).ok_or(Errno::ENOENT)?;
 
-        for plane in object_store.planes() {
-            if plane
+        if object_store.planes().any(|plane| {
+            plane
                 .state()
                 .lock()
                 .framebuffer()
                 .ptr_eq(&Arc::downgrade(&framebuffer))
-            {
-                return_errno_with_message!(
-                    Errno::EBUSY,
-                    "the DRM framebuffer is still in use by a plane"
-                );
-            }
+        }) {
+            return_errno_with_message!(
+                Errno::EBUSY,
+                "the DRM framebuffer is still in use by a plane"
+            );
         }
 
         self.remove_framebuffer(fb_id).ok_or(Errno::ENOENT)?;
         object_store.free_object_id(fb_id);
+
+        Ok(0)
+    }
+
+    pub(super) fn drm_mode_dirty_fb(&self, cmd: ioctl_defs::ModeDirtyFb) -> Result<i32> {
+        // TODO: Honor dirtyfb flags, color, and clip rectangles. For now,
+        // treat every dirtyfb request as a whole-framebuffer refresh.
+        let args: DrmModeFbDirtyCmd = cmd.read()?;
+
+        let framebuffer = self.lookup_framebuffer(args.fb_id).ok_or(Errno::ENOENT)?;
+        if (args.num_clips == 0) != (args.clips_ptr == 0) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the DRM clip count and pointer are inconsistent"
+            );
+        }
+        const DRM_MODE_FB_DIRTY_ANNOTATE_COPY: u32 = 0x01;
+        if args.flags & DRM_MODE_FB_DIRTY_ANNOTATE_COPY != 0 && !args.num_clips.is_multiple_of(2) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "DRM copy annotation requires pairs of clip rectangles"
+            );
+        }
+        const DRM_MODE_FB_DIRTY_MAX_CLIPS: u32 = 256;
+        if args.num_clips > DRM_MODE_FB_DIRTY_MAX_CLIPS {
+            return_errno_with_message!(Errno::EINVAL, "too many DRM clip rectangles");
+        }
+
+        // Validate userspace access even though the refresh covers the whole framebuffer.
+        cmd.with_data_ptr(|args_ptr| {
+            copy_array_from_user::<DrmClipRect>(args_ptr.vm(), args.clips_ptr, args.num_clips)
+                .map(drop)
+        })?;
+
+        let kms_ops = self.device().as_kms_ops().unwrap();
+        let object_store = kms_ops.mode_config().object_store().lock();
+        let source_rects = object_store
+            .planes()
+            .filter_map(|plane| {
+                let state = plane.state().lock();
+                state
+                    .framebuffer()
+                    .ptr_eq(&Arc::downgrade(&framebuffer))
+                    .then_some(state.source_rect())
+            })
+            .collect::<Vec<_>>();
+
+        kms_ops.refresh_dirty_fb(&framebuffer, &source_rects)?;
 
         Ok(0)
     }
@@ -698,6 +937,25 @@ fn copy_array_to_user<T: Pod>(
     Ok(())
 }
 
+fn copy_array_from_user<T: Pod>(
+    userspace: &impl VmIo,
+    user_ptr: u64,
+    count: u32,
+) -> Result<Vec<T>> {
+    let count = count as usize;
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    if user_ptr == 0 {
+        return_errno_with_message!(Errno::EFAULT, "the DRM userspace array pointer is null");
+    }
+
+    let mut values = vec![T::new_zeroed(); count];
+    userspace.read_slice(user_ptr as usize, values.as_mut_slice())?;
+
+    Ok(values)
+}
+
 /// `struct drm_set_client_cap` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L879>.
@@ -830,6 +1088,31 @@ pub(super) struct DrmModeFbCmd {
     bpp: u32,
     depth: u32,
     handle: u32,
+}
+
+/// `struct drm_clip_rect` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h>.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+struct DrmClipRect {
+    x1: u16,
+    y1: u16,
+    x2: u16,
+    y2: u16,
+}
+
+/// `struct drm_mode_fb_dirty_cmd` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L744-L777>.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(super) struct DrmModeFbDirtyCmd {
+    fb_id: u32,
+    flags: u32,
+    color: u32,
+    num_clips: u32,
+    clips_ptr: u64,
 }
 
 /// `struct drm_mode_get_plane_res` in Linux.

@@ -29,16 +29,18 @@ use aster_drm::{
         display_info::{DrmDisplayInfo, SubpixelOrder},
         display_mode::DrmDisplayMode,
         objects::{
+            KmsObjectIndex,
             builder::DrmKmsObjectStoreBuilder,
             connector::{
                 DrmConnector, DrmConnectorProbeState, DrmConnectorStatus, DrmConnectorType,
             },
             encoder::DrmEncoderType,
+            framebuffer::DrmFramebuffer,
             plane::DrmPlaneType,
         },
         pixel_format::DrmPixelFormat,
     },
-    utils::DrmSize,
+    utils::{DrmRect, DrmSize},
 };
 use aster_framebuffer::{
     framebuffer::{self, FrameBuffer},
@@ -75,6 +77,7 @@ fn init() -> Result<(), ComponentInitError> {
 struct SimpleDrmDevice {
     boot_framebuffer: Arc<FrameBuffer>,
     features: DrmFeatures,
+    pixel_format: DrmPixelFormat,
     mode_config: DrmModeConfig,
 }
 
@@ -86,7 +89,7 @@ impl SimpleDrmDevice {
             format => {
                 // TODO: Derive the exact DRM format once framebuffer initialization
                 // preserves the complete boot framebuffer layout.
-                // See: `kernel/core/comps/framebuffer/src/framebuffer.rs:73`.
+                // See `aster_framebuffer::framebuffer::init` for boot framebuffer initialization.
                 //
                 // Until then, advertise XRGB8888 so simpledrm remains available for
                 // KMS query tests. This may not match the actual framebuffer layout.
@@ -121,8 +124,74 @@ impl SimpleDrmDevice {
         Ok(Self {
             boot_framebuffer: boot_framebuffer.clone(),
             features: DrmFeatures::empty(),
+            pixel_format,
             mode_config,
         })
+    }
+
+    fn flush_framebuffer(&self, framebuffer: &DrmFramebuffer, source_rect: DrmRect) -> Result<()> {
+        if framebuffer.pixel_format() != self.pixel_format {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the DRM framebuffer format is not supported by simpledrm"
+            );
+        }
+
+        let framebuffer_size = framebuffer.size();
+        let framebuffer_rect =
+            DrmRect::new(0, 0, framebuffer_size.width(), framebuffer_size.height());
+        if !framebuffer_rect.contains_rect(&source_rect) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the simpledrm scanout rectangle exceeds the DRM framebuffer"
+            );
+        }
+
+        let output_width = self.boot_framebuffer.width();
+        let output_height = self.boot_framebuffer.height();
+        if source_rect.width() as usize != output_width
+            || source_rect.height() as usize != output_height
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the simpledrm scanout size does not match the physical framebuffer"
+            );
+        }
+
+        let bytes_per_pixel = framebuffer.pixel_format().bytes_per_pixel();
+        let row_len = output_width
+            .checked_mul(bytes_per_pixel)
+            .ok_or(Errno::EOVERFLOW)?;
+        let destination_pitch = self.boot_framebuffer.line_size();
+        if row_len > destination_pitch {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the simpledrm scanout row exceeds the physical framebuffer pitch"
+            );
+        }
+
+        let source_pitch = framebuffer.pitch() as usize;
+        let framebuffer_offset = framebuffer.offset() as usize;
+        let source_x = source_rect.x() as usize;
+        let source_y = source_rect.y() as usize;
+
+        let source_x_bytes = source_x
+            .checked_mul(bytes_per_pixel)
+            .ok_or(Errno::EOVERFLOW)?;
+        let mut row = vec![0; row_len];
+
+        for row_index in 0..output_height {
+            let source_offset =
+                framebuffer_offset + (source_y + row_index) * source_pitch + source_x_bytes;
+            framebuffer
+                .gem_object()
+                .read_bytes(source_offset, row.as_mut_slice())?;
+            let destination_offset = row_index * destination_pitch;
+            self.boot_framebuffer
+                .write_bytes_at(destination_offset, row.as_slice())?;
+        }
+
+        Ok(())
     }
 }
 
@@ -177,5 +246,33 @@ impl DrmKmsOps for SimpleDrmDevice {
             vec![display_mode],
             display_info,
         ))
+    }
+
+    fn set_crtc(
+        &self,
+        _crtc_index: KmsObjectIndex,
+        framebuffer: Option<&DrmFramebuffer>,
+        source_rect: DrmRect,
+    ) -> Result<()> {
+        // simpledrm has a single CRTC backed by the boot framebuffer, so the CRTC index is unused.
+        // With no framebuffer, there is nothing to copy to the firmware framebuffer.
+        // simpledrm cannot turn off the firmware display, so the last image remains visible
+        // while the DRM core clears its state.
+        if let Some(framebuffer) = framebuffer {
+            self.flush_framebuffer(framebuffer, source_rect)?;
+        }
+        Ok(())
+    }
+
+    fn refresh_dirty_fb(
+        &self,
+        framebuffer: &DrmFramebuffer,
+        source_rects: &[DrmRect],
+    ) -> Result<()> {
+        for source_rect in source_rects {
+            self.flush_framebuffer(framebuffer, *source_rect)?;
+        }
+
+        Ok(())
     }
 }

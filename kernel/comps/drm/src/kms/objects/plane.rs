@@ -65,6 +65,10 @@ impl DrmPlane {
         &self.state
     }
 
+    pub(crate) fn update_state(&self, state: DrmPlaneState) {
+        *self.state.lock() = state;
+    }
+
     pub(crate) fn possible_crtcs(&self) -> &KmsObjectMask {
         &self.config.possible_crtcs
     }
@@ -99,6 +103,20 @@ pub(crate) struct DrmPlaneState {
 }
 
 impl DrmPlaneState {
+    pub(crate) fn new(
+        source_rect: DrmRect,
+        crtc_rect: DrmRect,
+        framebuffer: Weak<DrmFramebuffer>,
+        crtc: Weak<DrmCrtc>,
+    ) -> Self {
+        Self {
+            source_rect,
+            crtc_rect,
+            framebuffer,
+            crtc,
+        }
+    }
+
     pub(crate) fn source_rect(&self) -> DrmRect {
         self.source_rect
     }
