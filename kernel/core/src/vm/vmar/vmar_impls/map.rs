@@ -9,7 +9,7 @@ use crate::{
         ramfs::memfd::MemfdInode,
     },
     prelude::*,
-    vm::{page_cache::Vmo, perms::VmPerms},
+    vm::{page_cache::Vmo, perms::VmPerms, vmar::MapHandle},
 };
 
 impl Vmar {
@@ -386,7 +386,16 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
         // VMAR.
         if let Some(mappable) = device_mappable {
             let mut rss_delta = RssDelta::new(parent);
-            vm_mapping.populate_device(parent.vm_space(), mappable, vmo_offset, &mut rss_delta);
+            if let Err(err) =
+                vm_mapping.populate_device(parent.vm_space(), mappable, vmo_offset, &mut rss_delta)
+            {
+                // Unmap all populated pages if a failure occurs.
+                rss_delta.add(
+                    MapHandle::DEVICE_RSS_TYPE,
+                    -(vm_mapping.unmap(parent.vm_space()) as isize),
+                );
+                return Err(err);
+            }
         }
 
         // Add the mapping to the VMAR.

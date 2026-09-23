@@ -555,12 +555,12 @@ impl PerOpenFileOps for FbHandle {
 }
 
 impl Mappable for FbHandle {
-    fn map(&self, offset: usize, mut handle: MapHandle) -> Box<dyn MappedObject> {
+    fn map(&self, offset: usize, mut handle: MapHandle) -> Result<Box<dyn MappedObject>> {
         let io_mem = self.framebuffer.io_mem();
         let mapped_handle = Box::new(FbMapHandle);
 
         let io_mem_sliced = if offset >= io_mem.size() {
-            return mapped_handle;
+            return Ok(mapped_handle);
         } else if offset != 0 {
             io_mem.slice(offset..io_mem.size())
         } else {
@@ -569,7 +569,7 @@ impl Mappable for FbHandle {
 
         handle.map_iomem(0, io_mem_sliced);
 
-        mapped_handle
+        Ok(mapped_handle)
     }
 }
 

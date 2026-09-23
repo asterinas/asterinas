@@ -1118,14 +1118,19 @@ pub struct MapHandle<'a, 'b, 'c> {
 }
 
 impl MapHandle<'_, '_, '_> {
-    const DEVICE_RSS_TYPE: RssType = RssType::File;
+    pub(super) const DEVICE_RSS_TYPE: RssType = RssType::File;
+
+    /// Returns the size of the target mapping in bytes.
+    pub(crate) fn size(&self) -> usize {
+        self.vm_mapping.map_size.get()
+    }
 
     /// Maps a [`UFrame`].
     ///
     /// `offset` specifies the virtual address offset (from the start of the memory region).
     #[expect(dead_code)]
     pub(crate) fn map_frame(&mut self, offset: usize, frame: UFrame) {
-        let map_size = self.vm_mapping.map_size.get();
+        let map_size = self.size();
         if offset >= map_size {
             return;
         }
@@ -1157,7 +1162,7 @@ impl MapHandle<'_, '_, '_> {
     ///
     /// `offset` specifies the virtual address offset (from the start of the memory region).
     pub(crate) fn map_iomem(&mut self, offset: usize, io_mem: IoMem) {
-        let map_size = self.vm_mapping.map_size.get();
+        let map_size = self.size();
         if offset >= map_size {
             return;
         }
@@ -1196,7 +1201,7 @@ impl VmMapping {
         mappable: &dyn Mappable,
         vmo_offset: usize,
         rss_delta: &mut RssDelta,
-    ) {
+    ) -> Result<()> {
         debug_assert!(matches!(self.mapped_mem, MappedMemory::Anonymous));
 
         let handle = MapHandle {
@@ -1204,8 +1209,9 @@ impl VmMapping {
             vm_space,
             rss_delta,
         };
-        let mapped_obj = mappable.map(vmo_offset, handle);
+        let mapped_obj = mappable.map(vmo_offset, handle)?;
 
         self.mapped_mem = MappedMemory::Device(mapped_obj);
+        Ok(())
     }
 }
