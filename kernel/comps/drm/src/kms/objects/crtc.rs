@@ -56,6 +56,10 @@ impl DrmCrtc {
         &self.state
     }
 
+    pub(crate) fn update_state(&self, state: DrmCrtcState) {
+        *self.state.lock() = state;
+    }
+
     pub(crate) fn primary_plane(&self) -> &Weak<DrmPlane> {
         &self.config.primary_plane
     }
@@ -83,6 +87,14 @@ pub(crate) struct DrmCrtcState {
 }
 
 impl DrmCrtcState {
+    pub(crate) fn new(display_mode: DrmDisplayMode) -> Self {
+        Self {
+            display_mode: Some(display_mode),
+            is_enabled: true,
+            is_active: true,
+        }
+    }
+
     pub(crate) fn display_mode(&self) -> Option<DrmDisplayMode> {
         self.display_mode
     }

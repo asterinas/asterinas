@@ -13,7 +13,7 @@ use crate::kms::objects::{KmsObjectId, KmsObjectIndex, KmsObjectMask, crtc::DrmC
 /// Its current CRTC is mutable routing state,
 /// while the compatibility masks use per-type object indices to describe the device's fixed KMS topology.
 #[derive(Debug)]
-pub(crate) struct DrmEncoder {
+pub struct DrmEncoder {
     id: KmsObjectId,
     index: KmsObjectIndex,
     config: DrmEncoderConfig,
@@ -44,6 +44,10 @@ impl DrmEncoder {
 
     pub(crate) fn current_crtc(&self) -> Weak<DrmCrtc> {
         self.current_crtc.lock().clone()
+    }
+
+    pub(crate) fn set_current_crtc(&self, crtc: Weak<DrmCrtc>) {
+        *self.current_crtc.lock() = crtc;
     }
 
     pub(crate) fn possible_crtcs(&self) -> &KmsObjectMask {

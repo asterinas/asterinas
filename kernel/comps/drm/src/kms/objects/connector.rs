@@ -67,6 +67,10 @@ impl DrmConnector {
         &self.state
     }
 
+    pub(crate) fn update_state(&self, state: DrmConnectorState) {
+        *self.state.lock() = state;
+    }
+
     pub(crate) fn probe_state(&self) -> &Mutex<DrmConnectorProbeState> {
         &self.probe_state
     }
@@ -99,6 +103,10 @@ pub(crate) struct DrmConnectorState {
 }
 
 impl DrmConnectorState {
+    pub(crate) fn new(encoder: Weak<DrmEncoder>) -> Self {
+        Self { encoder }
+    }
+
     pub(crate) fn encoder(&self) -> &Weak<DrmEncoder> {
         &self.encoder
     }

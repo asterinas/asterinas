@@ -14,10 +14,11 @@ use ostd::sync::Mutex;
 use crate::{
     device::DrmDevice,
     kms::objects::{
-        DrmKmsObjectStore,
+        DrmKmsObjectStore, KmsObjectIndex,
         connector::{DrmConnector, DrmConnectorProbeState},
+        framebuffer::DrmFramebuffer,
     },
-    utils::DrmSize,
+    utils::{DrmRect, DrmSize},
 };
 
 pub mod display_info;
@@ -38,6 +39,37 @@ pub trait DrmKmsOps: DrmDevice {
     ///
     /// The DRM core resolves the connector and commits the returned state.
     fn probe_connector(&self, connector: &DrmConnector) -> Result<DrmConnectorProbeState>;
+
+    /// Configures scanout for a CRTC through the legacy modesetting path.
+    ///
+    /// `crtc_index` identifies the CRTC. Passing `Some(framebuffer)` enables scanout from
+    /// `source_rect`; passing `None` disables scanout.
+    ///
+    /// The DRM core validates the mode and connector-encoder assignments before calling this
+    /// method. It updates the corresponding core state only if this method returns successfully.
+    ///
+    /// # Locking
+    ///
+    /// The DRM core holds the object-store lock across this call. Implementations must not access
+    /// the object store while this method is running.
+    fn set_crtc(
+        &self,
+        crtc_index: KmsObjectIndex,
+        framebuffer: Option<&DrmFramebuffer>,
+        source_rect: DrmRect,
+    ) -> Result<()>;
+
+    /// Refreshes the regions of a framebuffer currently scanned out by planes.
+    ///
+    /// # Locking
+    ///
+    /// The DRM core holds the object-store lock across this call. Implementations must not access
+    /// the object store while this method is running.
+    fn refresh_dirty_fb(
+        &self,
+        framebuffer: &DrmFramebuffer,
+        source_rects: &[DrmRect],
+    ) -> Result<()>;
 }
 
 /// Describes a DRM device's global mode-setting capabilities and KMS objects.
