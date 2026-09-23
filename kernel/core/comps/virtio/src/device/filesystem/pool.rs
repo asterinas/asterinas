@@ -17,6 +17,7 @@ use ostd::{
         io::util::{HasVmReaderWriter, VmReaderWriterResult},
     },
 };
+use smallvec::SmallVec;
 use spin::Once;
 
 use crate::dma_buf::DmaBuf;
@@ -120,17 +121,20 @@ impl VirtiofsDmaPool<ToDevice> {
     }
 }
 
-/// A data payload buffer used by FUSE I/O operations.
+/// Data payload buffers used by FUSE I/O operations.
 pub(super) enum FuseDataBuf {
     /// Data filled by the device for read FUSE operations.
-    Read(FuseReplyBuf),
+    Read(FuseReplyBufs),
     /// Data sent to the device for write FUSE operations.
-    Write(FuseRequestBuf),
+    Write(FuseRequestBufs),
 }
 
 /// A DMA buffer used by FUSE requests.
 #[derive(Clone, Debug)]
 pub struct FuseRequestBuf(Arc<Slice<DmaBuffer<ToDevice>>>);
+
+/// Request buffers used by a FUSE write operation.
+pub type FuseRequestBufs = SmallVec<[FuseRequestBuf; 1]>;
 
 impl FuseRequestBuf {
     /// Returns the length of the DMA buffer.
@@ -164,6 +168,9 @@ impl HasVmReaderWriter for FuseRequestBuf {
 /// A DMA buffer used by FUSE replies.
 #[derive(Clone, Debug)]
 pub struct FuseReplyBuf(Arc<Slice<DmaBuffer<FromDevice>>>);
+
+/// Reply buffers used by a FUSE read operation.
+pub type FuseReplyBufs = SmallVec<[FuseReplyBuf; 1]>;
 
 impl FuseReplyBuf {
     /// Maps `segment` as a DMA buffer for FUSE reply payloads.

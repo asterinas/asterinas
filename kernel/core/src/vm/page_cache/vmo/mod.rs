@@ -110,7 +110,7 @@ pub(crate) use options::VmoOptions;
 ///   the page is removed from the VMO.
 ///
 /// The auxiliary `is_writing_back` bit is set under the page lock, then cleared
-/// later by the BIO completion callback after the writeback state has been
+/// later by the I/O completion callback after the writeback state has been
 /// handed off. Anonymous VMOs stay `UpToDate` in steady state once a page is
 /// committed.
 pub struct Vmo {

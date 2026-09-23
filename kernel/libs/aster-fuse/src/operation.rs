@@ -56,6 +56,11 @@ pub enum ReplyExpectation {
     FixedPayload(NonZeroUsize),
     /// A reply contains a `ReplyHeader` and up to the given payload bytes.
     VariablePayload(NonZeroUsize),
+    /// A write-specific reply expectation that enables short-write reporting.
+    ///
+    /// The requested size is compared with the accepted byte count in
+    /// [`crate::ops::write::WriteReply`] before a completion is reported.
+    WritePayload { requested_size: usize },
 }
 
 impl ReplyExpectation {

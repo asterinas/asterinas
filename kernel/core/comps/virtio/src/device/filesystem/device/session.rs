@@ -23,9 +23,12 @@ use aster_fuse::{
     },
 };
 use ostd::{info, mm::io::util::HasVmReaderWriter};
+use smallvec::smallvec;
 
 use super::{super::DEVICE_NAME, FileSystemDevice, FuseWaiter};
-use crate::device::filesystem::pool::{FuseDataBuf, FuseReplyBuf, FuseRequestBuf};
+use crate::device::filesystem::pool::{
+    FuseDataBuf, FuseReplyBuf, FuseReplyBufs, FuseRequestBuf, FuseRequestBufs,
+};
 
 /// A mount-scoped FUSE session.
 ///
@@ -167,7 +170,7 @@ impl FuseSession {
         read_request: ReadReq,
         data_buf: FuseReplyBuf,
     ) -> Result<usize, FuseError> {
-        let waiter = self.read_async(nodeid, read_request, data_buf, None)?;
+        let waiter = self.read_async(nodeid, read_request, smallvec![data_buf], None)?;
         let read_len = waiter.wait().payload_len()?;
         if read_len > read_request.size() as usize {
             return Err(FuseError::MalformedResponse);
@@ -185,14 +188,14 @@ impl FuseSession {
         &self,
         nodeid: FuseNodeId,
         read_request: ReadReq,
-        data_buf: FuseReplyBuf,
+        data_bufs: FuseReplyBufs,
         complete_fn: Option<FuseCompleteFn>,
     ) -> Result<Arc<FuseWaiter>, FuseError> {
         let mut operation = ReadOperation::new(read_request);
         self.device.submit_fuse_op(
             nodeid,
             &mut operation,
-            Some(FuseDataBuf::Read(data_buf)),
+            Some(FuseDataBuf::Read(data_bufs)),
             complete_fn,
         )
     }
@@ -208,7 +211,7 @@ impl FuseSession {
         let waiter = self.device.submit_fuse_op(
             nodeid,
             &mut operation,
-            Some(FuseDataBuf::Read(data_buf.clone())),
+            Some(FuseDataBuf::Read(smallvec![data_buf.clone()])),
             None,
         )?;
         let payload_len = waiter.wait().payload_len()?;
@@ -226,7 +229,7 @@ impl FuseSession {
         let waiter = self.device.submit_fuse_op(
             nodeid,
             &mut operation,
-            Some(FuseDataBuf::Read(data_buf.clone())),
+            Some(FuseDataBuf::Read(smallvec![data_buf.clone()])),
             None,
         )?;
         let payload_len = waiter.wait().payload_len()?;
@@ -244,7 +247,7 @@ impl FuseSession {
         write_request: WriteReq,
         data_buf: FuseRequestBuf,
     ) -> Result<usize, FuseError> {
-        let waiter = self.write_async(nodeid, write_request, data_buf, None)?;
+        let waiter = self.write_async(nodeid, write_request, smallvec![data_buf], None)?;
         let payload_len = waiter.wait().payload_len()?;
 
         let write_reply = waiter.parse_reply::<WriteOperation>(payload_len)?;
@@ -264,14 +267,14 @@ impl FuseSession {
         &self,
         nodeid: FuseNodeId,
         write_request: WriteReq,
-        data_buf: FuseRequestBuf,
+        data_bufs: FuseRequestBufs,
         complete_fn: Option<FuseCompleteFn>,
     ) -> Result<Arc<FuseWaiter>, FuseError> {
         let mut operation = WriteOperation::new(write_request);
         self.device.submit_fuse_op(
             nodeid,
             &mut operation,
-            Some(FuseDataBuf::Write(data_buf)),
+            Some(FuseDataBuf::Write(data_bufs)),
             complete_fn,
         )
     }
