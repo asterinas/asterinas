@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use device_id::MajorIdOwner;
+
 use crate::{
     device::tty::{Tty, termio::CTermios},
     fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
@@ -16,8 +18,11 @@ use crate::{
 ///
 /// [`Tty`]: super::Tty
 pub(crate) trait TtyDriver: Send + Sync + 'static {
-    /// The device major ID.
-    const DEVICE_MAJOR_ID: u32;
+    /// Returns the owned major ID of the TTY devices created by this driver.
+    ///
+    /// The major ID must be acquired from the char device registry, e.g., via
+    /// [`crate::device::registry::char::acquire_major`].
+    fn major_id_owner() -> &'static MajorIdOwner;
 
     /// Returns the metadata that specifies a TTY device inode to be created in devtmpfs, if any.
     fn devtmpfs_meta(&self, _index: u32) -> Option<DevtmpfsNodeMeta>;

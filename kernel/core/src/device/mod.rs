@@ -9,7 +9,7 @@ mod pty;
 pub mod registry;
 pub(crate) mod tty;
 
-use device_id::DeviceId;
+use device_id::{DeviceId, MajorIdOwner, MinorId};
 pub(crate) use mem::{getrandom, geturandom};
 pub(crate) use pty::{PtyMaster, PtySlave, new_pty_pair};
 pub(crate) use registry::lookup;
@@ -24,8 +24,11 @@ pub trait Device: Send + Sync + 'static {
     /// Returns the device type.
     fn type_(&self) -> DeviceType;
 
-    /// Returns the device ID.
-    fn id(&self) -> DeviceId;
+    /// Returns the owned major ID and the minor ID of the device.
+    ///
+    /// Every device must hold the ownership of its major ID via a [`MajorIdOwner`],
+    /// ensuring that the major ID has been properly acquired from the device registry.
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId);
 
     /// Returns the metadata that specifies a device inode to be created in devtmpfs, if any.
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta>;
@@ -33,6 +36,14 @@ pub trait Device: Send + Sync + 'static {
     /// Opens the device, returning a file-like object that the userspace can interact with by
     /// doing I/O.
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>>;
+}
+
+impl dyn Device {
+    /// Returns the device ID.
+    pub fn id(&self) -> DeviceId {
+        let (major_owner, minor) = self.owned_id();
+        DeviceId::new(major_owner.get(), minor)
+    }
 }
 
 impl Debug for dyn Device {

@@ -12,7 +12,7 @@ use aster_block::{
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     id::Bid,
 };
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{MajorIdOwner, MinorId};
 use ostd::mm::{FrameAllocOptions, HasSize, Segment, VmIo, io::util::HasVmReaderWriter};
 
 use super::{
@@ -63,6 +63,7 @@ pub(super) fn set_bit_lsb0(buf: &mut [u8], bit: usize) {
 
 pub(super) struct Ext2MemoryDisk {
     segment: Segment<()>,
+    major: MajorIdOwner,
     flush_count: AtomicUsize,
     fail_flush: AtomicBool,
 }
@@ -76,6 +77,7 @@ impl Ext2MemoryDisk {
             .unwrap();
         Self {
             segment,
+            major: aster_block::allocate_major("ext2-memory-disk").unwrap(),
             flush_count: AtomicUsize::new(0),
             fail_flush: AtomicBool::new(false),
         }
@@ -156,8 +158,8 @@ impl BlockDevice for Ext2MemoryDisk {
         "ext2-memory-disk"
     }
 
-    fn id(&self) -> DeviceId {
-        DeviceId::new(MajorId::new(1), MinorId::new(0))
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        (&self.major, MinorId::new(0))
     }
 }
 

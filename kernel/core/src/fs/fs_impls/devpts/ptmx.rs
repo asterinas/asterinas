@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{MajorIdOwner, MinorId};
 
 use super::{BLOCK_SIZE, DevPts, PTMX_INO};
 use crate::{
@@ -20,8 +20,6 @@ use crate::{
     process::{Gid, Uid},
 };
 
-/// Same major number with Linux.
-const PTMX_MAJOR_NUM: u16 = 5;
 /// Same minor number with Linux.
 const PTMX_MINOR_NUM: u32 = 2;
 
@@ -178,8 +176,15 @@ impl Device for Inner {
         DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        DeviceId::new(MajorId::new(PTMX_MAJOR_NUM), MinorId::new(PTMX_MINOR_NUM))
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        // `/dev/ptmx` shares major 5 with `/dev/tty` and `/dev/console`,
+        // registering its own name under that major.
+        static PTMX_MAJOR: spin::Once<MajorIdOwner> = spin::Once::new();
+        let owner = PTMX_MAJOR.call_once(|| {
+            crate::device::registry::char::acquire_major(device_id::MajorId::new(5), "/dev/ptmx")
+                .unwrap()
+        });
+        (owner, MinorId::new(PTMX_MINOR_NUM))
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {

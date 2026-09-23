@@ -7,11 +7,12 @@ use alloc::{
 };
 
 use aster_core::{
-    device::{Device, DeviceType},
+    device::{Device, DeviceType, registry::char},
     fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
     prelude::*,
 };
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{MajorId, MajorIdOwner, MinorId};
+use spin::Once;
 
 use crate::{
     device::{DrmDevice, DrmMaster, RegisteredDrmDevice},
@@ -21,6 +22,12 @@ use crate::{
 const DRM_MAJOR_ID: u16 = 226;
 const PRIMARY_MINOR_BASE: u32 = 0;
 const RENDER_MINOR_BASE: u32 = 128;
+
+/// Returns the owned major ID shared by all DRM minor devices.
+fn drm_major_id_owner() -> &'static MajorIdOwner {
+    static DRM_MAJOR: Once<MajorIdOwner> = Once::new();
+    DRM_MAJOR.call_once(|| char::acquire_major(MajorId::new(DRM_MAJOR_ID), "drm").unwrap())
+}
 
 /// Represents a DRM minor node exposed to userspace.
 ///
@@ -106,13 +113,13 @@ impl DrmMinor {
 }
 
 impl Device for DrmMinor {
-    fn id(&self) -> DeviceId {
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
         let index = self.registered_device.index();
         let minor_id = match self.type_ {
             DrmMinorType::Primary => PRIMARY_MINOR_BASE + index,
             DrmMinorType::Render => RENDER_MINOR_BASE + index,
         };
-        DeviceId::new(MajorId::new(DRM_MAJOR_ID), MinorId::new(minor_id))
+        (drm_major_id_owner(), MinorId::new(minor_id))
     }
 
     fn type_(&self) -> DeviceType {

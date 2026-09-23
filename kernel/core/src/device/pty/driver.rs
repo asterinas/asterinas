@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use device_id::{MajorId, MajorIdOwner};
+use spin::Once;
+
 use super::file::PtySlaveFile;
 use crate::{
     device::{
         pty::packet::{PacketCtrl, PacketStatus},
+        registry::char,
         tty::{
             Tty, TtyDriver, TtyFlags,
             termio::{CCtrlCharId, CInputFlags, CLocalFlags, CTermios},
@@ -109,8 +113,11 @@ impl PtyDriver {
 }
 
 impl TtyDriver for PtyDriver {
-    // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L147>.
-    const DEVICE_MAJOR_ID: u32 = 136;
+    fn major_id_owner() -> &'static MajorIdOwner {
+        static PTY_MAJOR: Once<MajorIdOwner> = Once::new();
+        // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L147>.
+        PTY_MAJOR.call_once(|| char::acquire_major(MajorId::new(136), "pts").unwrap())
+    }
 
     fn devtmpfs_meta(&self, _index: u32) -> Option<DevtmpfsNodeMeta> {
         None

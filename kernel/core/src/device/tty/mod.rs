@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{MajorId, MajorIdOwner, MinorId};
 use ostd::sync::LocalIrqDisabled;
+use spin::Once;
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
-    device::{Device, DeviceType},
+    device::{Device, DeviceType, registry::char},
     dispatch_ioctl,
     events::IoEvents,
     fs::{
@@ -42,6 +43,24 @@ pub(super) fn init_in_first_process() -> Result<()> {
     vt::init_in_first_process()?;
 
     Ok(())
+}
+
+/// Returns the owned major ID shared by TTY devices with major ID 4,
+/// such as `/dev/tty0`, `/dev/ttyN`, and `/dev/ttySN`.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
+pub(crate) fn tty_major_id_owner() -> &'static MajorIdOwner {
+    static TTY_MAJOR: Once<MajorIdOwner> = Once::new();
+    TTY_MAJOR.call_once(|| char::acquire_major(MajorId::new(4), "tty").unwrap())
+}
+
+/// Returns the owned major ID shared by TTY devices with major ID 5,
+/// such as `/dev/tty`, `/dev/console`, and `/dev/ptmx`.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L23>.
+pub(crate) fn tty_aux_major_id_owner() -> &'static MajorIdOwner {
+    static TTY_AUX_MAJOR: Once<MajorIdOwner> = Once::new();
+    TTY_AUX_MAJOR.call_once(|| char::acquire_major(MajorId::new(5), "/dev/tty").unwrap())
 }
 
 const IO_CAPACITY: usize = 4096;
@@ -354,11 +373,8 @@ impl<D: TtyDriver> Device for Tty<D> {
         DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        DeviceId::new(
-            MajorId::new(D::DEVICE_MAJOR_ID as u16),
-            MinorId::new(self.index),
-        )
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        (D::major_id_owner(), MinorId::new(self.index))
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {

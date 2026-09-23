@@ -33,7 +33,7 @@ use aster_block::{
     id::Sid,
 };
 use component::{ComponentInitError, init_component};
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{DeviceId, MajorId, MajorIdOwner, MinorId};
 use ostd::{
     mm::{VmIo, io::util::HasVmReaderWriter},
     prelude::*,
@@ -148,6 +148,7 @@ mod test {
         mm::{FrameAllocOptions, Segment},
         prelude::*,
     };
+    use spin::Once;
 
     use super::*;
 
@@ -203,11 +204,17 @@ mod test {
         }
 
         fn name(&self) -> &str {
-            todo!()
+            "mlsdisk-memory-disk"
         }
 
-        fn id(&self) -> DeviceId {
-            todo!()
+        fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+            static MAJOR_ID_OWNER: Once<MajorIdOwner> = Once::new();
+
+            let owner = MAJOR_ID_OWNER.call_once(|| {
+                aster_block::allocate_major("mlsdisk-memory-disk")
+                    .expect("failed to allocate a major ID for MemoryDisk")
+            });
+            (owner, MinorId::new(0))
         }
     }
 

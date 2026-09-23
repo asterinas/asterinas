@@ -20,6 +20,7 @@ ostd.workspace = true
 ostd-pod.workspace = true
 postcard.workspace = true
 serde.workspace = true
+spin.workspace = true
 zerocopy.workspace = true
 
 [lints]

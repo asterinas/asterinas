@@ -3,6 +3,7 @@
 use alloc::format;
 
 use aster_console::AnyConsoleDevice;
+use device_id::{MajorId, MajorIdOwner};
 use ostd::mm::Infallible;
 use spin::Once;
 
@@ -23,8 +24,11 @@ pub(super) struct HvcDriver {
 }
 
 impl TtyDriver for HvcDriver {
-    // Reference: <https://elixir.bootlin.com/linux/v6.17/source/Documentation/admin-guide/devices.txt#L2936>.
-    const DEVICE_MAJOR_ID: u32 = 229;
+    fn major_id_owner() -> &'static MajorIdOwner {
+        static HVC_MAJOR: Once<MajorIdOwner> = Once::new();
+        // Reference: <https://elixir.bootlin.com/linux/v6.17/source/Documentation/admin-guide/devices.txt#L2936>.
+        HVC_MAJOR.call_once(|| char::acquire_major(MajorId::new(229), "hvc").unwrap())
+    }
 
     fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsNodeMeta> {
         Some(DevtmpfsNodeMeta::new(format!("hvc{}", index)).unwrap())
