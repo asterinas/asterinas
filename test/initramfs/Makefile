@@ -215,12 +215,12 @@ $(XFSTESTS_SCRATCH_IMAGE):
 .PHONY: format
 format:
 	@$(MAKE) --no-print-directory -C src/regression format
-	@nixfmt nix
+	@../../tools/nixfmt.sh nix
 
 .PHONY: check
 check:
 	@$(MAKE) --no-print-directory -C src/regression check
-	@nixfmt --check nix
+	@../../tools/nixfmt.sh --check nix
 
 .PHONY: clean
 clean:

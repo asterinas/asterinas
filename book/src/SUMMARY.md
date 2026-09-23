@@ -26,6 +26,7 @@
 # Asterinas Kernel
 
 * [Getting Started](kernel/README.md)
+    * [Using Nix for Development](kernel/nix-development.md)
 * [Advanced Build and Test Instructions](kernel/advanced-instructions.md)
     * [Intel TDX](kernel/intel-tdx.md)
 * [The Framekernel Architecture](kernel/the-framekernel-architecture.md)

@@ -109,6 +109,12 @@ impl Vmar {
                     "remap: device mappings cannot be expanded"
                 );
             }
+            if let Some(vmo) = old_mapping.vmo()
+                && let offset = vmo.offset() + (old_addr - old_mapping.map_to_addr())
+                && offset.checked_add(new_size).is_none()
+            {
+                return_errno_with_message!(Errno::EINVAL, "remap: the file offset overflows");
+            }
             inner.check_extra_size_fits_rlimit(new_size - old_size)?;
         }
 

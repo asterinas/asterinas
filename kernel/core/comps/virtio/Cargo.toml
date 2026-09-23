@@ -25,6 +25,7 @@ int-to-c-enum.workspace = true
 io-util.workspace = true
 ostd.workspace = true
 ostd-pod.workspace = true
+short-vis-path.workspace = true
 smallvec.workspace = true
 spin.workspace = true
 typeflags-util.workspace = true

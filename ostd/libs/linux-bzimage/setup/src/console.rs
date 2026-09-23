@@ -32,7 +32,7 @@ impl Write for Stdout {
 static STDOUT: Mutex<Option<Stdout>> = Mutex::new(None);
 
 /// Prints a format string and its arguments to the standard output.
-pub fn print_fmt(args: fmt::Arguments) {
+pub(crate) fn print_fmt(args: fmt::Arguments) {
     let mut stdout = STDOUT.lock();
 
     // Fast path: The standard output has been initialized.

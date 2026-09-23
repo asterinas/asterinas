@@ -124,6 +124,20 @@ boot_stack_top:
 .text
 
 bsp_boot_virt:
+    # Load the address range of the BSS section.
+.extern __bss
+    lla     t0, __bss
+.extern __bss_end
+    lla     t1, __bss_end
+
+    # Initialize the BSS section.
+bsp_zero_bss_loop:
+    bgeu    t0, t1, bsp_zero_bss_end
+    sb      zero, 0(t0)
+    addi    t0, t0, 1
+    j       bsp_zero_bss_loop
+bsp_zero_bss_end:
+
     # Initialize GP to the CPU-local storage's base address.
 .extern __cpu_local_start
     lla    gp, __cpu_local_start

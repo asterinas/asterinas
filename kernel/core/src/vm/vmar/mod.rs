@@ -15,6 +15,7 @@ use ostd::mm::Vaddr;
 pub(crate) use self::{
     handle::VmarHandle,
     rmap::{Rmap, RmapEntry},
+    vm_mapping::MapHandle,
     vmar_impls::{
         RssType, Vmar, map::VmarMapOffset, page_fault::PageFaultInfo, remap::RemapOldMappingAction,
     },

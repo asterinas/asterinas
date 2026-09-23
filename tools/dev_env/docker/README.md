@@ -29,7 +29,7 @@ execute the following command:
 cd <asterinas dir>
 # Build Docker image
 docker buildx build \
-    -f tools/docker/Dockerfile \
+    -f tools/dev_env/docker/Dockerfile \
     --platform linux/amd64,linux/arm64 \
     --build-arg ASTER_RUST_VERSION=$(grep "channel" rust-toolchain.toml | awk -F '"' '{print $2}') \
     --build-arg BASE_VERSION=$(cat DOCKER_IMAGE_VERSION) \

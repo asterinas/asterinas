@@ -76,7 +76,7 @@ jobs:
       push: true
       platforms: linux/amd64,linux/arm64
       context: .
-      file: ./tools/docker/prebuilt-nix-packages/Dockerfile
+      file: ./tools/dev_env/docker/prebuilt-nix-packages/Dockerfile
       meta-images: asterinas/prebuilt-nix-packages
       meta-tags: |
         type=raw,value=${{ needs.prepare.outputs.image_version }}
@@ -101,7 +101,7 @@ jobs:
       push: true
       platforms: linux/amd64,linux/arm64
       context: .
-      file: ./tools/docker/kernel-dev/Dockerfile
+      file: ./tools/dev_env/docker/kernel-dev/Dockerfile
       meta-images: asterinas/kernel-dev
       meta-tags: |
         type=raw,value=${{ needs.prepare.outputs.image_version }}
@@ -126,7 +126,7 @@ jobs:
       push: true
       platforms: linux/amd64,linux/arm64
       context: .
-      file: ./tools/docker/Dockerfile
+      file: ./tools/dev_env/docker/Dockerfile
       meta-images: asterinas/dev
       meta-tags: |
         type=raw,value=${{ needs.prepare.outputs.image_version }}

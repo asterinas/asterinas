@@ -142,7 +142,7 @@ impl Device for DrmMinor {
 /// Primary nodes provide display-management and authenticated legacy
 /// operations, while render nodes provide unprivileged rendering access.
 #[derive(Clone, Copy, Debug)]
-pub enum DrmMinorType {
+pub(super) enum DrmMinorType {
     Primary,
     Render,
 }

@@ -60,7 +60,7 @@ fn insert_if_absent(paths: &mut Vec<Path>, new_path: Path) {
     }
 }
 
-pub fn expand_pod_union(input: DeriveInput) -> TokenStream2 {
+pub(super) fn expand_pod_union(input: DeriveInput) -> TokenStream2 {
     if !has_repr_c(&input.attrs) {
         panic!("`#[pod_union]` requires `#[repr(C)]` or `#[repr(C, ...)]` on unions");
     }

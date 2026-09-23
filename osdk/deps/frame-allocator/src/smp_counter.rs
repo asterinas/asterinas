@@ -91,7 +91,7 @@ mod test {
     fn per_cpu_counter() {
         fast_smp_counter! {
             /// The total size of free memory.
-            pub static FREE_SIZE_COUNTER: usize;
+            pub(crate) static FREE_SIZE_COUNTER: usize;
         }
 
         let guard = irq::disable_local();
