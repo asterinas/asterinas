@@ -12,6 +12,7 @@ use alloc::sync::Arc;
 
 use aster_fuse::{
     FuseCompleteFn, FuseCompletion, FuseNodeId, FuseUnique, ReplyExpectation, ReplyHeader,
+    WriteReply,
 };
 use ostd::mm::io::util::HasVmReaderWriter;
 use smallvec::SmallVec;
@@ -103,7 +104,7 @@ impl FuseRequest {
             reply_buf.sync_from_device().unwrap();
         }
 
-        let Some(reply_header_buf) = reply_bufs.header() else {
+        let Ok(reply_header_buf) = reply_bufs.reply_header_buf() else {
             return FuseCompletion::MalformedResponse;
         };
 
@@ -125,7 +126,30 @@ impl FuseRequest {
         }
 
         let payload_len = reply_header.len() as usize - size_of::<ReplyHeader>();
-        FuseCompletion::Complete(payload_len)
+
+        match self.reply_expectation {
+            ReplyExpectation::WritePayload { requested_size } => {
+                let Some(payload_buf) = reply_bufs.payload_bufs().first() else {
+                    return FuseCompletion::MalformedResponse;
+                };
+                let mut reader = payload_buf.reader().unwrap();
+                let Ok(write_reply) = reader.read_val::<WriteReply>() else {
+                    return FuseCompletion::MalformedResponse;
+                };
+                let written = write_reply.size();
+                if written > requested_size {
+                    FuseCompletion::MalformedResponse
+                } else if written < requested_size {
+                    FuseCompletion::ShortWrite {
+                        payload_len,
+                        written,
+                    }
+                } else {
+                    FuseCompletion::Complete(payload_len)
+                }
+            }
+            _ => FuseCompletion::Complete(payload_len),
+        }
     }
 
     fn is_reply_shape_valid(&self, reply_header: &ReplyHeader, reply_len: usize) -> bool {
@@ -153,6 +177,9 @@ impl FuseRequest {
             }
             ReplyExpectation::VariablePayload(max_payload_len) => {
                 declared_payload_len <= max_payload_len.get()
+            }
+            ReplyExpectation::WritePayload { .. } => {
+                declared_payload_len == size_of::<WriteReply>()
             }
         }
     }

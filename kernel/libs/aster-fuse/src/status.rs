@@ -9,6 +9,13 @@ use crate::FuseResult;
 pub enum FuseCompletion {
     /// The request completed with a reply payload length.
     Complete(usize),
+    /// A write reply was valid but written fewer bytes than requested.
+    ShortWrite {
+        /// The length of the reply payload after the common reply header.
+        payload_len: usize,
+        /// The number of bytes written by the server.
+        written: usize,
+    },
     /// The request completed with a malformed response.
     MalformedResponse,
     /// The request completed with a remote FUSE error code.
@@ -19,7 +26,7 @@ impl FuseCompletion {
     /// Returns the completed reply payload length.
     pub fn payload_len(self) -> FuseResult<usize> {
         match self {
-            Self::Complete(payload_len) => Ok(payload_len),
+            Self::Complete(payload_len) | Self::ShortWrite { payload_len, .. } => Ok(payload_len),
             Self::MalformedResponse => Err(crate::FuseError::MalformedResponse),
             Self::RemoteError(error) => Err(crate::FuseError::RemoteError(error)),
         }

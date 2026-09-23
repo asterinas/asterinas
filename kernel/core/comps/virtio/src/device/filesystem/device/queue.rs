@@ -25,10 +25,11 @@ use crate::queue::VirtQueue;
 
 /// Maximum virtqueue descriptors used by one FUSE request.
 ///
-/// Current requests use at most two to-device buffers (request header/body and
-/// optional write payload) and two from-device buffers (reply header and
-/// optional read payload).
-pub(super) const MAX_DMA_BUFS_PER_REQUEST: usize = 4;
+/// A request may contain a request header, multiple read/write payload buffers,
+/// a reply header, and a write reply payload. Operation-specific limits reserve
+/// descriptors for these fixed parts and keep one request from exhausting a
+/// queue.
+pub(crate) const MAX_DMA_BUFS_PER_REQUEST: usize = 64;
 
 /// A virtio-fs request queue and its in-flight request state.
 pub(super) struct FsRequestQueue {
