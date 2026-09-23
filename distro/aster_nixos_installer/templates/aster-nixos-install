@@ -147,12 +147,17 @@ NIXPKGS_PATH="@aster-nixpkgs@"
 # causing redundant downloads after every `make clean`.
 #
 # See: https://www.mankier.com/8/nixos-install#--system
-SYSTEM_CLOSURE=$(nix-build "${NIXPKGS_PATH}/nixos" -A system \
+SYSTEM_CLOSURE=$(nix --extra-experimental-features nix-command build --impure \
+    --expr '{ nixpkgsPath, configPath, system }: import (builtins.toPath nixpkgsPath + "/nixos") {
+        inherit system;
+        configuration = builtins.toPath configPath;
+    }' system \
+    --argstr nixpkgsPath "${NIXPKGS_PATH}" \
     --option extra-platforms "${NIX_SYSTEM}" \
     --argstr system "${NIX_SYSTEM}" \
-    -I "nixos-config=${BUILD_DIR}/etc/nixos/configuration.nix" \
+    --argstr configPath "${BUILD_DIR}/etc/nixos/configuration.nix" \
     "${COMMON_NIX_ARGS[@]}" \
-    --no-out-link)
+    --no-link --print-out-paths)
 
 export PATH=${PATH}:/run/current-system/sw/bin
 nixos-install --root ${BUILD_DIR} --no-root-passwd \

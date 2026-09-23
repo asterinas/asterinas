@@ -7,27 +7,42 @@
   extra-trusted-public-keys ? "",
   config-file-name ? "configuration.nix",
   target_platform ? "x86_64-linux",
-  pkgs ? import ../nixpkgs.nix { },
+  pkgs,
+  kernel,
+  config-dir,
 }:
 let
   asterinas = builtins.path {
     name = "asterinas-osdk-bin";
-    path = ../../target/osdk/iso_root/boot/asterinas-osdk-bin;
+    path = kernel;
   };
-  etc-nixos = builtins.path { path = ../etc_nixos; };
+  etc-nixos = builtins.path {
+    name = "etc_nixos";
+    path = config-dir;
+  };
 
   aster_configuration = pkgs.replaceVarsWith {
     src = ./templates/aster_configuration.nix;
-    replacements = {
-      asterinas = asterinas;
-      aster-disable-systemd = disable-systemd;
-      aster-stage-2-hook = stage-2-hook;
-      aster-log-level = log-level;
-      aster-console = console;
-      aster-target-platform = target_platform;
-      aster-substituters = extra-substituters;
-      aster-trusted-public-keys = extra-trusted-public-keys;
-    };
+    # The placeholders are already quoted. Remove only the literal's outer quotes.
+    replacements =
+      pkgs.lib.mapAttrs
+        (
+          _: value:
+          let
+            literal = pkgs.lib.strings.escapeNixString value;
+          in
+          builtins.substring 1 (builtins.stringLength literal - 2) literal
+        )
+        {
+          asterinas = asterinas;
+          aster-disable-systemd = disable-systemd;
+          aster-stage-2-hook = stage-2-hook;
+          aster-log-level = log-level;
+          aster-console = console;
+          aster-target-platform = target_platform;
+          aster-substituters = extra-substituters;
+          aster-trusted-public-keys = extra-trusted-public-keys;
+        };
   };
   aster_nixos_install = pkgs.replaceVarsWith {
     src = ./templates/aster-nixos-install;

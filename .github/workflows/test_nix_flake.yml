@@ -10,7 +10,6 @@ on:
       - test/initramfs/nix/**
       - test/nixos/Makefile
       - tools/nixfmt.sh
-      - distro/nixpkgs.nix
       - tools/dev_env/nix/**
       - rust-toolchain.toml
       - tools/dev_env/docker/prebuilt-nix-packages/Dockerfile
@@ -26,7 +25,6 @@ on:
       - test/initramfs/nix/**
       - test/nixos/Makefile
       - tools/nixfmt.sh
-      - distro/nixpkgs.nix
       - tools/dev_env/nix/**
       - rust-toolchain.toml
       - tools/dev_env/docker/prebuilt-nix-packages/Dockerfile
@@ -37,21 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check nixpkgs revisions
-        # The remaining legacy distro entry still repeats the locked revision.
-        run: |
-          revision="$(jq -r '.nodes.nixpkgs.locked.rev' flake.lock)"
-
-          for file in \
-            distro/nixpkgs.nix
-          do
-            pinned="$(sed -nE 's#.*NixOS/nixpkgs/archive/([0-9a-f]{40})\.tar\.gz.*#\1#p' "$file" | sort -u | paste -sd ' ')"
-            if [ "$pinned" != "$revision" ]; then
-              echo "$file: expected only nixpkgs $revision, found: ${pinned:-none}" >&2
-              exit 1
-            fi
-          done
-          echo "nixpkgs revision: $revision"
       - name: Install Nix
         uses: cachix/install-nix-action@v31
       - name: Check flake

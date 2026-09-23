@@ -380,7 +380,9 @@ run_nixos:
 
 # Build the Asterinas NixOS patched packages
 cachix:
-	@nix-build distro/cachix \
+	@nix --extra-experimental-features 'nix-command flakes' flake metadata --no-update-lock-file >/dev/null
+	@nix --extra-experimental-features 'nix-command flakes' build --impure --no-update-lock-file \
+		--expr '(builtins.getFlake (toString ./.)).lib.mkDistro ./.' cachix \
 		--option extra-substituters "${RELEASE_SUBSTITUTER} ${DEV_SUBSTITUTER}" \
 		--option extra-trusted-public-keys "${RELEASE_TRUSTED_PUBLIC_KEY} ${DEV_TRUSTED_PUBLIC_KEY}" \
 		--out-link cachix.list

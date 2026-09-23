@@ -16,8 +16,11 @@ CONFIG_PATH=${DISTRO_DIR}/etc_nixos/${CONFIG_FILE_NAME}
 
 NIX_SYSTEM=$("${SCRIPT_DIR}/print_target_nix_system.sh" "${TARGET_ARCH}") || exit 1
 
-pushd $DISTRO_DIR
-nix-build aster_nixos_installer/default.nix \
+pushd "${ASTERINAS_DIR}"
+nix --extra-experimental-features 'nix-command flakes' flake metadata --no-update-lock-file >/dev/null
+nix --extra-experimental-features 'nix-command flakes' build --impure --no-update-lock-file \
+    --expr '(builtins.getFlake (toString ./.)).lib.mkDistro ./.' installer \
+    --out-link "${DISTRO_DIR}/result" \
     --argstr target_platform "${NIX_SYSTEM}" \
     --argstr disable-systemd "${NIXOS_DISABLE_SYSTEMD}" \
     --argstr stage-2-hook "${NIXOS_STAGE_2_INIT}" \

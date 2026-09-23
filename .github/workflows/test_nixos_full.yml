@@ -22,6 +22,8 @@ on:
     paths: &triggering_paths
       # Paths of test infra, which triggers smoke test.
       # REMINDER: Keep in sync with INFRA_PATH_PREFIXES below.
+      - flake.nix
+      - flake.lock
       - distro/**
       - tools/nixos/**
       - tools/github_workflows/filter_json_array_with_changed_files.sh
@@ -63,6 +65,9 @@ jobs:
           fetch-depth: 0
       - name: Compute changed files
         id: diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           case '${{ github.event_name }}' in
             pull_request)
@@ -81,11 +86,25 @@ jobs:
               fi
               ;;
           esac
+          if [ -f /tmp/changed ] && grep -Fxq flake.lock /tmp/changed; then
+            # Other flake inputs do not change the runtime package set.
+            if [ "$BASE_SHA" = '0000000000000000000000000000000000000000' ]; then
+              echo 'nixpkgs_changed=true' >> "$GITHUB_OUTPUT"
+            else
+              old=$(git show "$BASE_SHA:flake.lock" | jq -Sc '.nodes as $n | $n[$n.root.inputs.nixpkgs].locked')
+              new=$(git show "$HEAD_SHA:flake.lock" | jq -Sc '.nodes as $n | $n[$n.root.inputs.nixpkgs].locked')
+              if [ "$old" != "$new" ]; then
+                echo 'nixpkgs_changed=true' >> "$GITHUB_OUTPUT"
+              fi
+            fi
+          fi
       - name: Select matrix
         id: select
         env:
           # Keep in sync with on.<event>.paths above (anchored as &triggering_paths).
           INFRA_PATH_PREFIXES: |
+            flake.nix
+            flake.lock
             distro/
             tools/nixos/
             tools/github_workflows/filter_json_array_with_changed_files.sh
@@ -137,7 +156,7 @@ jobs:
                 exit 1
               fi
             fi
-          elif grep -Fxq 'distro/nixpkgs.nix' /tmp/changed; then
+          elif [ '${{ steps.diff.outputs.nixpkgs_changed }}' = 'true' ]; then
             matrix="$FULL_TEST_MATRIX"
           else
             matrix="$(

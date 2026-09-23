@@ -18,7 +18,10 @@ NIX_SYSTEM=$("${SCRIPT_DIR}/print_target_nix_system.sh" "${TARGET_ARCH}") || exi
 
 mkdir -p ${TARGET_DIR}
 
-nix-build ${DISTRO_DIR}/iso_image \
+cd "${ASTERINAS_DIR}"
+nix --extra-experimental-features 'nix-command flakes' flake metadata --no-update-lock-file >/dev/null
+nix --extra-experimental-features 'nix-command flakes' build --impure --no-update-lock-file \
+    --expr '(builtins.getFlake (toString ./.)).lib.mkDistro ./.' iso \
     --argstr target_platform "${NIX_SYSTEM}" \
     --arg autoInstall ${AUTO_INSTALL} \
     --argstr config-file-name "${CONFIG_FILE_NAME}" \
