@@ -101,11 +101,15 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     /// The cursor created will only be able to query or jump within the given
     /// range. Out-of-bound accesses will result in panics or errors as return values,
     /// depending on the access method.
+    /// See [`PageTable::cursor_mut_with_min_level`] for the requirements on `min_level`.
     pub(in crate::mm) fn new(
         pt: &'rcu PageTable<C>,
         guard: &'rcu dyn InAtomicMode,
         va: &Range<Vaddr>,
+        min_level: PagingLevel,
     ) -> Result<Self, PageTableError> {
+        assert!((1..=C::NR_LEVELS).contains(&min_level));
+
         if !is_valid_range::<C>(va) {
             return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
         }
@@ -116,7 +120,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
 
         const { assert!(C::NR_LEVELS as usize <= MAX_NR_LEVELS) };
 
-        Ok(locking::lock_range(pt, guard, va))
+        Ok(locking::lock_range(pt, guard, va, min_level))
     }
 
     /// Gets the current virtual address.
@@ -363,12 +367,14 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// The cursor created will only be able to map, query or jump within the given
     /// range. Out-of-bound accesses will result in panics or errors as return values,
     /// depending on the access method.
+    /// See [`PageTable::cursor_mut_with_min_level`] for the requirements on `min_level`.
     pub(super) fn new(
         pt: &'rcu PageTable<C>,
         guard: &'rcu dyn InAtomicMode,
         va: &Range<Vaddr>,
+        min_level: PagingLevel,
     ) -> Result<Self, PageTableError> {
-        Cursor::new(pt, guard, va).map(|inner| Self(inner))
+        Cursor::new(pt, guard, va, min_level).map(|inner| Self(inner))
     }
 
     /// Moves the cursor forward to the next mapped virtual address.
@@ -410,6 +416,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     ///
     /// This function will panic if
     ///  - the virtual address range to be mapped is out of the locked range;
+    ///  - the item requires a higher level than the cursor has locked;
     ///  - the current virtual address is not aligned to the page size of the
     ///    item to be mapped;
     ///  - the virtual address range contains mappings that conflicts with the item.
@@ -424,7 +431,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
 
         let (_, level, _) = C::item_raw_info(&item);
         assert!(
-            level <= C::HIGHEST_TRANSLATION_LEVEL,
+            level <= C::HIGHEST_TRANSLATION_LEVEL && level <= self.0.guard_level,
             "cursor level not suitable for mapping"
         );
         let size = page_size::<C>(level);

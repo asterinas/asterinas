@@ -12,7 +12,7 @@ use crate::{
         HasSize, PAGE_SIZE, Paddr, Split, Vaddr,
         frame::{Frame, meta::AnyFrameMeta},
         page_prop::PageProperty,
-        page_table::largest_pages,
+        page_table::{largest_pages, max_page_level},
     },
 };
 
@@ -186,7 +186,10 @@ impl KVirtArea {
             let va_range = range.start + map_offset..range.start + map_offset + len;
 
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-            let mut cursor = page_table.cursor_mut(&irq_guard, &va_range).unwrap();
+            let min_level = max_page_level::<KernelPtConfig>(len);
+            let mut cursor = page_table
+                .cursor_mut_with_min_level(&irq_guard, &va_range, min_level)
+                .unwrap();
 
             for (pa, level) in largest_pages::<KernelPtConfig>(va_range.start, pa_range.start, len)
             {

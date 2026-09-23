@@ -178,6 +178,16 @@ impl<C: PageTableConfig> PagingConstsTrait for C {
     const VA_SIGN_EXT: bool = C::C::VA_SIGN_EXT;
 }
 
+/// Returns the highest supported page level whose size fits in `len` bytes, or level 1.
+///
+/// This bounds the level of any page in the range, regardless of alignment.
+pub(crate) fn max_page_level<C: PagingConstsTrait>(len: usize) -> PagingLevel {
+    (1..=C::HIGHEST_TRANSLATION_LEVEL)
+        .rev()
+        .find(|&level| page_size::<C>(level) <= len)
+        .unwrap_or(1)
+}
+
 /// Splits the address range into largest page table items.
 ///
 /// Each of the returned items is a tuple of the physical address and the
@@ -431,16 +441,33 @@ impl<C: PageTableConfig> PageTable<C> {
         unsafe { page_walk::<C>(self.root_paddr(), vaddr) }
     }
 
-    /// Create a new cursor exclusively accessing the virtual address range for mapping.
+    /// Creates a cursor exclusively accessing the virtual address range for mapping.
     ///
-    /// If another cursor is already accessing the range, the new cursor may wait until the
-    /// previous cursor is dropped.
+    /// Uses fine-grained locking. For huge pages, use [`Self::cursor_mut_with_min_level`].
+    /// If another cursor is already accessing the range, waits until it is dropped.
     pub(crate) fn cursor_mut<'rcu, G: AsAtomicModeGuard>(
         &'rcu self,
         guard: &'rcu G,
         va: &Range<Vaddr>,
     ) -> Result<CursorMut<'rcu, C>, PageTableError> {
-        CursorMut::new(self, guard.as_atomic_mode_guard(), va)
+        self.cursor_mut_with_min_level(guard, va, 1)
+    }
+
+    /// Creates a mapping cursor that locks at `min_level` or higher.
+    ///
+    /// Use the highest page level to be mapped. The range or existing mappings may
+    /// require a higher lock level. Higher levels can serialize disjoint accesses.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min_level` is outside `1..=C::NR_LEVELS`.
+    pub(crate) fn cursor_mut_with_min_level<'rcu, G: AsAtomicModeGuard>(
+        &'rcu self,
+        guard: &'rcu G,
+        va: &Range<Vaddr>,
+        min_level: PagingLevel,
+    ) -> Result<CursorMut<'rcu, C>, PageTableError> {
+        CursorMut::new(self, guard.as_atomic_mode_guard(), va, min_level)
     }
 
     /// Create a new cursor exclusively accessing the virtual address range for querying.
@@ -453,7 +480,7 @@ impl<C: PageTableConfig> PageTable<C> {
         guard: &'rcu G,
         va: &Range<Vaddr>,
     ) -> Result<Cursor<'rcu, C>, PageTableError> {
-        Cursor::new(self, guard.as_atomic_mode_guard(), va)
+        Cursor::new(self, guard.as_atomic_mode_guard(), va, 1)
     }
 
     /// Create a new reference to the same page table.

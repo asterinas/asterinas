@@ -49,7 +49,10 @@ mod test_utils {
         prop: PageProperty,
     ) {
         let preempt_guard = disable_preempt();
-        let mut cursor = pt.cursor_mut(&preempt_guard, &va).unwrap();
+        let min_level = max_page_level::<TestPtConfig>(va.len());
+        let mut cursor = pt
+            .cursor_mut_with_min_level(&preempt_guard, &va, min_level)
+            .unwrap();
         for (paddr, level) in largest_pages::<TestPtConfig>(va.start, pa, va.len()) {
             unsafe { cursor.map((paddr, level, prop)) };
         }
@@ -332,6 +335,58 @@ mod range_checks {
         let virt_range =
             (MAX_USERSPACE_VADDR - (PAGE_SIZE / 2))..(MAX_USERSPACE_VADDR + (PAGE_SIZE / 2));
         let _ = create_user_pt_mapped_at(virt_range);
+    }
+}
+
+mod lock_levels {
+    use super::{test_utils::*, *};
+
+    #[ktest]
+    fn map_huge_pages_with_minimum_lock_level() {
+        let huge_size = page_size::<TestPtConfig>(2);
+        let giant_size = page_size::<TestPtConfig>(3);
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let guard = disable_preempt();
+        for (level, range) in [
+            (1, PAGE_SIZE..2 * PAGE_SIZE),
+            (2, huge_size..2 * huge_size),
+            (3, giant_size..2 * giant_size),
+            (2, giant_size - huge_size..giant_size + huge_size),
+        ] {
+            let pt = PageTable::<TestPtConfig>::empty();
+            let size = page_size::<TestPtConfig>(level);
+            let min_level = max_page_level::<TestPtConfig>(range.len());
+            assert_eq!(min_level, level);
+            let mut cursor = pt
+                .cursor_mut_with_min_level(&guard, &range, min_level)
+                .unwrap();
+            for pa in (0..range.len()).step_by(size) {
+                // SAFETY: The test page table is never activated and mappings are untracked.
+                unsafe { cursor.map((pa, level, prop)) };
+            }
+            assert_eq!(cursor.virt_addr(), range.end);
+            assert!(cursor.jump(range.end).is_err());
+            cursor.jump(range.start).unwrap();
+            let (mapped_range, item) = cursor.query().unwrap();
+            assert_eq!(mapped_range, range.start..range.start + size);
+            assert_eq!(item.unwrap().0, (0, level, prop));
+            assert_eq!(pt.page_walk(range.end - 1), Some((range.len() - 1, prop)));
+            assert!(pt.page_walk(range.end).is_none());
+        }
+    }
+
+    #[ktest]
+    #[should_panic(expected = "cursor level not suitable for mapping")]
+    fn map_above_locked_level() {
+        let pt = PageTable::<TestPtConfig>::empty();
+        let guard = disable_preempt();
+        let mut cursor = pt
+            .cursor_mut(&guard, &(0..page_size::<TestPtConfig>(2)))
+            .unwrap();
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+
+        // SAFETY: The test page table is never activated and mappings are untracked.
+        unsafe { cursor.map((0, 2, prop)) };
     }
 }
 
