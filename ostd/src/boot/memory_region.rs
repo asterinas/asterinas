@@ -152,7 +152,7 @@ impl MemoryRegion {
         };
         MemoryRegion {
             base,
-            len: end - base,
+            len: end.saturating_sub(base),
             typ: self.typ,
         }
     }
@@ -363,5 +363,19 @@ mod test {
         assert_eq!(regions[4].base(), PAGE_SIZE * 9);
         assert_eq!(regions[4].len(), PAGE_SIZE * 2);
         assert_eq!(regions[4].typ(), MemoryRegionType::Usable);
+    }
+
+    #[ktest]
+    fn subpage_unaligned_usable_region() {
+        let mut regions = MemoryRegionArray::<64>::new();
+        // A usable region of 0x100 bytes, not page-aligned.
+        regions
+            .push(MemoryRegion::new(
+                PAGE_SIZE + 1,
+                0x100,
+                MemoryRegionType::Usable,
+            ))
+            .unwrap();
+        let _ = regions.into_non_overlapping();
     }
 }
