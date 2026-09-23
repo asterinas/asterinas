@@ -140,19 +140,21 @@ impl MemoryRegion {
     }
 
     fn as_aligned(&self) -> Self {
-        let (base, end) = match self.typ() {
-            MemoryRegionType::Usable => (
-                self.base().align_up(PAGE_SIZE),
-                self.end().align_down(PAGE_SIZE),
-            ),
-            _ => (
-                self.base().align_down(PAGE_SIZE),
-                self.end().align_up(PAGE_SIZE),
-            ),
+        let (base, len) = match self.typ() {
+            MemoryRegionType::Usable => {
+                let aligned_base = self.base().align_up(PAGE_SIZE);
+                let aligned_end = self.end().align_down(PAGE_SIZE);
+                (aligned_base, aligned_end.saturating_sub(aligned_base))
+            }
+            _ => {
+                let aligned_base = self.base().align_down(PAGE_SIZE);
+                let aligned_end = self.end().align_up(PAGE_SIZE);
+                (aligned_base, aligned_end - aligned_base)
+            }
         };
         MemoryRegion {
             base,
-            len: end - base,
+            len,
             typ: self.typ,
         }
     }
@@ -231,13 +233,18 @@ impl<const LEN: usize> MemoryRegionArray<LEN> {
     ///
     /// This method will panic if the number of output regions is greater than `LEN`.
     pub(crate) fn into_non_overlapping(mut self) -> Self {
-        let max_addr = self
-            .iter()
-            .map(|r| r.end())
-            .max()
-            .unwrap_or(0)
-            .align_down(PAGE_SIZE);
-        self.regions.iter_mut().for_each(|r| *r = r.as_aligned());
+        // Align the regions and drop those that become empty after alignment.
+        let mut count = 0;
+        for i in 0..self.count {
+            let region = self.regions[i].as_aligned();
+            if !region.is_empty() {
+                self.regions[count] = region;
+                count += 1;
+            }
+        }
+        self.count = count;
+
+        let max_addr = self.iter().map(|r| r.end()).max().unwrap_or(0);
 
         let mut result = MemoryRegionArray::<LEN>::new();
 
@@ -272,6 +279,10 @@ impl<const LEN: usize> MemoryRegionArray<LEN> {
                 .unwrap();
 
             cur_right = right;
+        }
+
+        if result.is_empty() {
+            return result;
         }
 
         // Merge the adjacent regions with the same type.
@@ -363,5 +374,25 @@ mod test {
         assert_eq!(regions[4].base(), PAGE_SIZE * 9);
         assert_eq!(regions[4].len(), PAGE_SIZE * 2);
         assert_eq!(regions[4].typ(), MemoryRegionType::Usable);
+    }
+
+    #[ktest]
+    fn into_non_overlapping_drops_usable_subpage_regions() {
+        let mut regions = MemoryRegionArray::<64>::new();
+        let bases = [
+            100 * PAGE_SIZE,       // page-aligned
+            100 * PAGE_SIZE + 123, // unaligned
+        ];
+        let subpage_lens = [0, PAGE_SIZE / 2, PAGE_SIZE - 1];
+        for base in bases {
+            for len in subpage_lens {
+                regions
+                    .push(MemoryRegion::new(base, len, MemoryRegionType::Usable))
+                    .unwrap();
+            }
+        }
+        // `into_non_overlapping` drops usable regions whose lengths are smaller than a page.
+        let regions = regions.into_non_overlapping();
+        assert!(regions.is_empty());
     }
 }
