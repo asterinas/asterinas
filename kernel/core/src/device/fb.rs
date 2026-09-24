@@ -20,7 +20,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::RawIoctl,
-    vm::{FileMmapRequest, vmar::MapHandle},
+    vm::vmar::{FileMmapRequest, MapHandle},
 };
 
 #[derive(Debug)]

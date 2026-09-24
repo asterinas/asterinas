@@ -18,7 +18,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     thread::work_queue::{self, WorkPriority},
-    vm::FileMmapRequest,
+    vm::vmar::FileMmapRequest,
 };
 
 /// A per-open file object backed by a FUSE file handle.

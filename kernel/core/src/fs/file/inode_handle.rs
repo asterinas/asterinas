@@ -23,7 +23,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::RawIoctl,
-    vm::FileMmapRequest,
+    vm::vmar::FileMmapRequest,
 };
 
 pub(crate) struct InodeHandle {
