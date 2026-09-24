@@ -588,4 +588,10 @@ pub(super) fn init_in_first_kthread() {
     }
 
     char::register(Arc::new(Fb)).expect("failed to register framebuffer char device");
+
+    // Make the fixed major visible in `/proc/devices`, as in Linux.
+    // The owner is intentionally forgotten to keep the major registered.
+    let owner = char::acquire_major(MajorId::new(29), "fb")
+        .expect("failed to acquire the framebuffer major ID");
+    core::mem::forget(owner);
 }
