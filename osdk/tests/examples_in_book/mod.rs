@@ -5,4 +5,6 @@
 mod create_os_projects;
 mod test_and_run_projects;
 mod work_in_workspace;
+#[cfg(target_arch = "x86_64")]
+mod write_a_hypervisor_in_100_lines;
 mod write_a_kernel_in_100_lines;
