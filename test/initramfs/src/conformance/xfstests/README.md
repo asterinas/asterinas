@@ -16,8 +16,7 @@ xfstests/
 |       |-- block.list       # Tests excluded from every run
 |       |-- short.list       # Default quick run list
 |       `-- full.list        # Broader manual or scheduled run list
-|-- tmpfs/
-|   `-- ...
+|-- ...                      # One directory per supported filesystem
 `-- template/                # Starting point for a new filesystem
 ```
 
