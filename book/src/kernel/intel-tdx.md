@@ -79,6 +79,41 @@ go to the project folder to build and run Asterinas.
 If everything goes well,
 Asterinas is now up and running inside a TD.
 
+## Memory acceptance
+
+Asterinas accepts TDX private memory on demand by default.
+Early boot accepts the memory needed for its allocations.
+Usable unaccepted memory is deferred into a segmented reservoir.
+When the frame allocator cannot satisfy a request,
+OSTD refills memory from the reservoir in coarse chunks to amortize TDCALL overhead.
+Every physical frame allocation ensures memory is accepted before access or zeroing.
+Bitmap updates and acceptance operations use 64 independent shard locks,
+allowing concurrent acceptance across CPUs with in-flight tracking.
+
+To select the policy explicitly:
+
+```bash
+make run_kernel INTEL_TDX=1 ACCEPT_MEMORY_MODE=lazy
+make run_kernel INTEL_TDX=1 ACCEPT_MEMORY_MODE=eager
+```
+
+These options pass `accept_memory=lazy` or `accept_memory=eager`
+on the kernel command line.
+Eager mode accepts remaining memory in parallel on the BSP and secondary CPUs,
+with one disjoint bitmap-unit range assigned to each CPU.
+The BSP publishes the remaining free memory after every CPU completes acceptance.
+It trades longer boot time for avoiding runtime acceptance latency.
+
+`/proc/meminfo` reports remaining pending memory in the `Unaccepted` field.
+Freeing a previously accepted page does not make it unaccepted again.
+
+The EFI stub retains this boot path's OVMF/TDVF requirement:
+RAM below 4 GiB must already be accepted by firmware.
+The stub builds the bitmap from unaccepted EFI memory-map entries above 4 GiB
+and passes it through the Linux boot parameters.
+It does not require a firmware-installed Linux unaccepted-memory table.
+Use more than 4 GiB of guest RAM to exercise deferred acceptance.
+
 ## Using GDB to debug
 
 A Trust Domain (TD) is debuggable if its `ATTRIBUTES.DEBUG` bit is 1.

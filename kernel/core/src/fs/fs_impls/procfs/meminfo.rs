@@ -55,6 +55,13 @@ impl ProcFileOps for MemInfoFileOps {
         let slab = crate::vm::mem_slab() / 1024;
         writeln!(printer, "Slab:\t{} kB", slab)?;
 
+        #[cfg(feature = "cvm_guest")]
+        writeln!(
+            printer,
+            "Unaccepted:\t{} kB",
+            ostd::mm::frame::load_total_unaccepted_bytes() / 1024
+        )?;
+
         Ok(printer.bytes_written())
     }
 }

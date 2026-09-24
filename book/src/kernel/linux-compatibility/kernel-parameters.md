@@ -212,6 +212,21 @@ Notes:
 - Use `warn` for normal operation, `info`/`debug` when troubleshooting,
   and `error` or lower for a quieter console.
 
+### `accept_memory`
+
+Select the TDX private-memory acceptance policy.
+This parameter is supported on x86-64 with `cvm_guest` enabled
+and is consumed by OSTD during early boot.
+
+Valid values:
+- `lazy` (default): accept deferred memory when allocations require it.
+- `eager`: accept all remaining memory during boot.
+
+If repeated, the last value takes effect.
+An invalid value selects `lazy` and emits a warning.
+The parameter has no effect outside a TDX guest.
+Background acceptance is not supported.
+
 ## Asterinas-specific
 
 ### `i8042.exist`

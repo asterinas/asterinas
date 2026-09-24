@@ -12,7 +12,7 @@ use core::ops::Range;
 pub(crate) fn range_difference<T: Ord + Copy>(
     a: &Range<T>,
     b: &Range<T>,
-) -> impl Iterator<Item = Range<T>> {
+) -> impl Iterator<Item = Range<T>> + use<T> {
     use core::cmp::{max, min};
 
     let r = if b.is_empty() {

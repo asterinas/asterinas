@@ -38,6 +38,9 @@ pub mod segment;
 pub mod unique;
 pub mod untyped;
 
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+pub(crate) mod unaccepted;
+
 mod frame_ref;
 pub use frame_ref::FrameRef;
 
@@ -67,6 +70,23 @@ static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 /// Returns the minimum physical address that is tracked by frame metadata.
 pub(in crate::mm) fn min_paddr() -> Paddr {
     MIN_PADDR.load(Ordering::Relaxed)
+}
+
+/// Returns the number of bytes of physical memory still awaiting acceptance.
+#[cfg(feature = "cvm_guest")]
+pub fn load_total_unaccepted_bytes() -> usize {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::if_tdx_enabled!({
+            unaccepted::load_total_unaccepted_bytes()
+        } else {
+            0
+        })
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        0
+    }
 }
 
 /// Returns the maximum physical address that is tracked by frame metadata.
