@@ -16,7 +16,10 @@ use crate::{
     prelude::*,
     process::{Process, signal::Pollable},
     util::ioctl::RawIoctl,
-    vm::{FileMmapRequest, page_cache::Vmo, vmar::MapHandle},
+    vm::{
+        page_cache::Vmo,
+        vmar::{FileMmapRequest, MapHandle},
+    },
 };
 
 /// The basic operations defined on a file
