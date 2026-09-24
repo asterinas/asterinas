@@ -3,3 +3,7 @@ benchmarks:
   - ext2_seq_read_bw
   - ext2_seq_write_bw_no_iommu
   - ext2_seq_read_bw_no_iommu
+  - nvme_seq_write_bw
+  - nvme_seq_read_bw
+  - nvme_seq_write_bw_no_iommu
+  - nvme_seq_read_bw_no_iommu
