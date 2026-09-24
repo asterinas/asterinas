@@ -120,7 +120,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     }
 
     /// Gets the current virtual address.
-    pub(in crate::mm) fn virt_addr(&self) -> Vaddr {
+    pub(crate) fn virt_addr(&self) -> Vaddr {
         self.va
     }
 
@@ -128,7 +128,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the item at that slot.
-    pub(in crate::mm) fn query(&mut self) -> Result<PagesState<'rcu, C>, PageTableError> {
+    pub(crate) fn query(&mut self) -> Result<PagesState<'rcu, C>, PageTableError> {
         if self.va >= self.barrier_va.end {
             return Err(PageTableError::InvalidVaddr(self.va));
         }
@@ -166,7 +166,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     /// Panics if:
     ///  - the length is longer than the remaining range of the cursor;
     ///  - the length is not page-aligned.
-    pub(in crate::mm) fn find_next(&mut self, len: usize) -> Option<Vaddr> {
+    pub(crate) fn find_next(&mut self, len: usize) -> Option<Vaddr> {
         self.find_next_impl(len, false, false)
     }
 
@@ -261,7 +261,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
     /// # Panics
     ///
     /// This method panics if the address has bad alignment.
-    pub(in crate::mm) fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
+    pub(crate) fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
         assert!(va.is_multiple_of(C::BASE_PAGE_SIZE));
         if !self.barrier_va.contains(&va) {
             return Err(PageTableError::InvalidVaddr(va));
@@ -374,7 +374,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// Moves the cursor forward to the next mapped virtual address.
     ///
     /// This is the same as [`Cursor::find_next`].
-    pub(in crate::mm) fn find_next(&mut self, len: usize) -> Option<Vaddr> {
+    pub(crate) fn find_next(&mut self, len: usize) -> Option<Vaddr> {
         self.0.find_next(len)
     }
 
@@ -385,12 +385,12 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// # Panics
     ///
     /// This method panics if the address has bad alignment.
-    pub(in crate::mm) fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
+    pub(crate) fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
         self.0.jump(va)
     }
 
     /// Gets the current virtual address.
-    pub(in crate::mm) fn virt_addr(&self) -> Vaddr {
+    pub(crate) fn virt_addr(&self) -> Vaddr {
         self.0.virt_addr()
     }
 
@@ -398,7 +398,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the item at that slot.
-    pub(in crate::mm) fn query(&mut self) -> Result<PagesState<'rcu, C>, PageTableError> {
+    pub(crate) fn query(&mut self) -> Result<PagesState<'rcu, C>, PageTableError> {
         self.0.query()
     }
 
@@ -541,7 +541,7 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     /// Panics if:
     ///  - the length is longer than the remaining range of the cursor;
     ///  - the length is not page-aligned.
-    pub(in crate::mm) unsafe fn protect_next(
+    pub(crate) unsafe fn protect_next(
         &mut self,
         len: usize,
         op: &mut impl FnMut(&mut PageProperty),

@@ -104,6 +104,10 @@ pub(crate) unsafe fn late_init_on_bsp() {
         }
     });
 
+    // SAFETY: We called `init_ept_support` on the BSP before calling
+    // `late_init_on_bsp` and on all APs in `boot_all_aps` above.
+    unsafe { vm::vmx::invept::init() };
+
     // SAFETY:
     // 1. All the system device memory have been removed from the builder.
     // 2. All the port I/O regions belonging to the system device are defined using the macros.
