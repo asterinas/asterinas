@@ -255,7 +255,7 @@ struct PartitionNode {
 
 impl BlockDevice for PartitionNode {
     fn enqueue(&self, mut bio: SubmittedBio) -> Result<(), BioEnqueueError> {
-        bio.set_sid_offset(self.info.start_sector());
+        bio.offset_mapped_sid_range(self.info.start_sector())?;
         self.device.enqueue(bio)
     }
 
@@ -286,6 +286,88 @@ impl PartitionNode {
             device,
             info,
         }
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use ::device_id::MajorId;
+    use ostd::prelude::ktest;
+
+    use super::*;
+    use crate::{
+        bio::{Bio, BioDirection, BioSegment, BioType},
+        id::Sid,
+    };
+
+    #[derive(Debug)]
+    struct RecordingBlockDevice {
+        id: DeviceId,
+        last_range: Mutex<Option<Range<Sid>>>,
+    }
+
+    impl RecordingBlockDevice {
+        fn new(minor: u32) -> Arc<Self> {
+            Arc::new(Self {
+                id: DeviceId::new(MajorId::new(510), MinorId::new(minor)),
+                last_range: Mutex::new(None),
+            })
+        }
+    }
+
+    impl BlockDevice for RecordingBlockDevice {
+        fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
+            *self.last_range.lock() = Some(bio.sid_range().clone());
+            Ok(())
+        }
+
+        fn metadata(&self) -> BlockDeviceMeta {
+            BlockDeviceMeta::default()
+        }
+
+        fn name(&self) -> &str {
+            "partition-test-backing"
+        }
+
+        fn id(&self) -> DeviceId {
+            self.id
+        }
+    }
+
+    #[ktest]
+    fn remaps_data_bio_to_partition_start() {
+        let backing = RecordingBlockDevice::new(5);
+        let partition = PartitionNode::new(
+            DeviceId::new(MajorId::new(510), MinorId::new(6)),
+            String::from("partition-data-test"),
+            backing.clone(),
+            PartitionInfo::Mbr(MbrEntry {
+                flag: 0,
+                start_chs: ChsAddr([0, 1, 0]),
+                type_: 0x83,
+                end_chs: ChsAddr([0, 1, 0]),
+                start_sector: 100,
+                total_sectors: 128,
+            }),
+        );
+        let bio = Bio::new(
+            BioType::Read,
+            Sid::new(7),
+            vec![BioSegment::alloc_exact(
+                1,
+                4 * SECTOR_SIZE,
+                BioDirection::FromDevice,
+            )],
+            None,
+        )
+        .submit_for_test();
+
+        partition.enqueue(bio).unwrap();
+
+        assert_eq!(
+            *backing.last_range.lock(),
+            Some(Sid::new(107)..Sid::new(111))
+        );
     }
 }
 
