@@ -6,11 +6,10 @@
 //!
 //! 1. **`/dev/tdx_guest` character device** — exposes the `TDX_CMD_GET_REPORT0`
 //!    ioctl, which lets userspace request a `TDREPORT_STRUCT` from the TDX module
-//!    (see [`TdxGuest`]).
+//!    (see `TdxGuest`).
 //!
-//! 2. **Measurement register API** — a set of public functions used by other
-//!    kernel subsystems (e.g. the TSM-MR sysfs layer) to interact with TDX
-//!    measurement registers.
+//! 2. **Measurement register support** — internal helpers used by this crate
+//!    to expose TDX measurement registers through the TSM-MR sysfs interface.
 //!
 //! # Cached-report model
 //!
@@ -23,188 +22,165 @@
 //! Because `TDG.MR.REPORT` is relatively expensive, the module keeps a single
 //! **global cached report** in `TDX_REPORT` and satisfies measurement-register
 //! reads from that cache.  The cache becomes **stale** after any
-//! [`extend_tdx_mr`] call, because extending an RTMR changes hardware state
+//! `extend_tdx_mr` call, because extending an RTMR changes hardware state
 //! that is not reflected in the snapshot until the next refresh.
 //!
 //! # Measurement register API quick reference
 //!
 //! | Function | TDCALL? | Use when… |
 //! |---|---|---|
-//! | [`get_tdx_mr`] | No | Reading a register whose value is not expected to have changed since the last refresh (cheap). |
-//! | [`get_tdx_mr_refresh`] | Yes | Reading a register whose current hardware value is needed — e.g. immediately after [`extend_tdx_mr`]. The refresh and the register read are performed atomically under the write lock. |
-//! | [`refresh_tdx_report`] | Yes | Regenerating the report with a custom `report_data` blob (used by the `TDX_CMD_GET_REPORT0` ioctl and the quote path) without reading a specific register. |
-//! | [`extend_tdx_mr`] | Yes | Extending an RTMR. After extending, the cached report is stale; use [`get_tdx_mr_refresh`] (or [`refresh_tdx_report`] followed by [`get_tdx_mr`]) to observe the updated value. |
+//! | `get_tdx_mr` | No | Reading a register whose value is not expected to have changed since the last refresh (cheap). |
+//! | `get_tdx_mr_refresh` | Yes | Reading a register whose current hardware value is needed — e.g. immediately after `extend_tdx_mr`. The refresh and the register read are performed atomically under the write lock. |
+//! | `refresh_tdx_report` | Yes | Regenerating the report with a custom `report_data` blob (used by the `TDX_CMD_GET_REPORT0` ioctl and the quote path) without reading a specific register. |
+//! | `extend_tdx_mr` | Yes | Extending an RTMR. After extending, the cached report is stale; use `get_tdx_mr_refresh` (or `refresh_tdx_report` followed by `get_tdx_mr`) to observe the updated value. |
 //!
 //! For the TDX architecture specification see Intel's
 //! [TDX Module Specification](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-trust-domain-extensions.html).
 
+#![no_std]
+#![deny(unsafe_code)]
+#![cfg(target_arch = "x86_64")]
+#![cfg(feature = "cvm_guest")]
+
+extern crate alloc;
+
+use alloc::{boxed::Box, sync::Arc, vec};
 use core::{mem::offset_of, time::Duration};
 
+use aster_core::{
+    device::misc::{
+        Errno, Error, InOutIoctl, MiscDevice, MiscDeviceFile, RawIoctl, Result,
+        register_misc_device,
+    },
+    time::sleep,
+};
+use aster_tsm_configfs::{ReportProvider, ReportProviderError, register_report_provider};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use device_id::{DeviceId, MinorId};
+use component::{ComponentInitError, init_component};
+#[macro_use]
+extern crate ostd_pod;
 use ostd::{
     const_assert,
-    mm::{FrameAllocOptions, HasPaddr, HasSize, USegment, VmIo, dma::DmaCoherent},
-    sync::{RwMutexWriteGuard, Waiter},
+    mm::{
+        FrameAllocOptions, HasPaddr, HasSize, PAGE_SIZE, USegment, VmIo, VmReader, VmWriter,
+        dma::DmaCoherent,
+    },
+    sync::{RwMutex, RwMutexWriteGuard, Waiter},
 };
+use ostd_pod::IntoBytes;
 use spin::Once;
 use tdx_guest::{
     tdcall::{self, TdCallError},
     tdvmcall::{self, TdVmcallError},
 };
 
-use crate::{
-    device::{Device, DeviceType, registry::char::register},
-    dispatch_ioctl,
-    events::IoEvents,
-    fs::{
-        devtmpfs::DevtmpfsNodeMeta,
-        file::{PerOpenFileOps, StatusFlags},
-        vfs::{inode::FileOps, path::Path},
-    },
-    prelude::*,
-    process::signal::{PollHandle, Pollable},
-    util::ioctl::RawIoctl,
-};
+mod tsm_mr;
 
 const TDX_GUEST_MINOR: u32 = 0x7b;
 
 /// The `/dev/tdx_guest` device.
+struct TdxGuest;
+
 #[derive(Debug)]
-pub(crate) struct TdxGuest {
-    id: DeviceId,
-}
+struct TdxReportProvider;
 
-impl TdxGuest {
-    pub(crate) fn new() -> Arc<Self> {
-        let major = super::MISC_MAJOR.get().unwrap().get();
-        let minor = MinorId::new(TDX_GUEST_MINOR);
+impl ReportProvider for TdxReportProvider {
+    fn name(&self) -> &'static str {
+        "tdx_guest"
+    }
 
-        let id = DeviceId::new(major, minor);
-        Arc::new(Self { id })
+    fn get_report(&self, inblob: &[u8]) -> core::result::Result<Box<[u8]>, ReportProviderError> {
+        tdx_get_quote(inblob).map_err(|_| ReportProviderError)
     }
 }
 
-impl Device for TdxGuest {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Char
-    }
+static TDX_REPORT_PROVIDER: TdxReportProvider = TdxReportProvider;
 
-    fn id(&self) -> DeviceId {
-        self.id
-    }
-
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
-        Some(DevtmpfsNodeMeta::new("tdx_guest").unwrap())
-    }
-
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+impl MiscDevice for TdxGuest {
+    fn open(&self) -> Result<Box<dyn MiscDeviceFile>> {
         Ok(Box::new(TdxGuestFile))
     }
 }
 
-impl From<TdCallError> for Error {
-    fn from(err: TdCallError) -> Self {
-        match err {
-            TdCallError::TdxNoValidVeInfo => {
-                Error::with_message(Errno::EINVAL, "TdCallError::TdxNoValidVeInfo")
-            }
-            TdCallError::TdxOperandInvalid => {
-                Error::with_message(Errno::EINVAL, "TdCallError::TdxOperandInvalid")
-            }
-            TdCallError::TdxPageAlreadyAccepted => {
-                Error::with_message(Errno::EINVAL, "TdCallError::TdxPageAlreadyAccepted")
-            }
-            TdCallError::TdxPageSizeMismatch => {
-                Error::with_message(Errno::EINVAL, "TdCallError::TdxPageSizeMismatch")
-            }
-            TdCallError::TdxOperandBusy => {
-                Error::with_message(Errno::EBUSY, "TdCallError::TdxOperandBusy")
-            }
-            TdCallError::Other => Error::with_message(Errno::EAGAIN, "TdCallError::Other"),
-            _ => todo!(),
+fn map_tdcall_error(err: TdCallError) -> Error {
+    match err {
+        TdCallError::TdxNoValidVeInfo => {
+            Error::with_message(Errno::EINVAL, "TdCallError::TdxNoValidVeInfo")
         }
+        TdCallError::TdxOperandInvalid => {
+            Error::with_message(Errno::EINVAL, "TdCallError::TdxOperandInvalid")
+        }
+        TdCallError::TdxPageAlreadyAccepted => {
+            Error::with_message(Errno::EINVAL, "TdCallError::TdxPageAlreadyAccepted")
+        }
+        TdCallError::TdxPageSizeMismatch => {
+            Error::with_message(Errno::EINVAL, "TdCallError::TdxPageSizeMismatch")
+        }
+        TdCallError::TdxOperandBusy => {
+            Error::with_message(Errno::EBUSY, "TdCallError::TdxOperandBusy")
+        }
+        TdCallError::Other => Error::with_message(Errno::EAGAIN, "TdCallError::Other"),
+        _ => todo!(),
     }
 }
 
-impl From<TdVmcallError> for Error {
-    fn from(err: TdVmcallError) -> Self {
-        match err {
-            TdVmcallError::TdxRetry => {
-                Error::with_message(Errno::EINVAL, "TdVmcallError::TdxRetry")
-            }
-            TdVmcallError::TdxOperandInvalid => {
-                Error::with_message(Errno::EINVAL, "TdVmcallError::TdxOperandInvalid")
-            }
-            TdVmcallError::TdxGpaInuse => {
-                Error::with_message(Errno::EINVAL, "TdVmcallError::TdxGpaInuse")
-            }
-            TdVmcallError::TdxAlignError => {
-                Error::with_message(Errno::EINVAL, "TdVmcallError::TdxAlignError")
-            }
-            TdVmcallError::Other => Error::with_message(Errno::EAGAIN, "TdVmcallError::Other"),
+fn map_tdvmcall_error(err: TdVmcallError) -> Error {
+    match err {
+        TdVmcallError::TdxRetry => Error::with_message(Errno::EINVAL, "TdVmcallError::TdxRetry"),
+        TdVmcallError::TdxOperandInvalid => {
+            Error::with_message(Errno::EINVAL, "TdVmcallError::TdxOperandInvalid")
         }
+        TdVmcallError::TdxGpaInuse => {
+            Error::with_message(Errno::EINVAL, "TdVmcallError::TdxGpaInuse")
+        }
+        TdVmcallError::TdxAlignError => {
+            Error::with_message(Errno::EINVAL, "TdVmcallError::TdxAlignError")
+        }
+        TdVmcallError::Other => Error::with_message(Errno::EAGAIN, "TdVmcallError::Other"),
     }
 }
 
 struct TdxGuestFile;
 
-impl Pollable for TdxGuestFile {
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
-    }
-}
-
-impl FileOps for TdxGuestFile {
-    fn read_at(
-        &self,
-        _offset: usize,
-        _writer: &mut VmWriter,
-        _status_flags: StatusFlags,
-    ) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "the file is not valid for reading")
-    }
-
-    fn write_at(
-        &self,
-        _offset: usize,
-        _reader: &mut VmReader,
-        _status_flags: StatusFlags,
-    ) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "the file not valid for writing")
-    }
-}
-
-impl PerOpenFileOps for TdxGuestFile {
+impl MiscDeviceFile for TdxGuestFile {
     fn check_seekable(&self) -> Result<()> {
-        return_errno_with_message!(Errno::ESPIPE, "seek is not supported")
+        Err(Error::with_message(Errno::ESPIPE, "seek is not supported"))
     }
 
-    fn is_offset_aware(&self) -> bool {
-        false
+    fn read(&self, _writer: &mut VmWriter, _is_nonblocking: bool) -> Result<usize> {
+        Err(Error::with_message(
+            Errno::EINVAL,
+            "the file is not valid for reading",
+        ))
     }
 
-    fn ioctl(&self, _path: &Path, raw_ioctl: RawIoctl) -> Result<i32> {
-        use ioctl_defs::*;
+    fn write(&self, _reader: &mut VmReader, _is_nonblocking: bool) -> Result<usize> {
+        Err(Error::with_message(
+            Errno::EINVAL,
+            "the file not valid for writing",
+        ))
+    }
 
-        dispatch_ioctl!(match raw_ioctl {
-            cmd @ GetTdxReport => {
-                cmd.with_data_ptr(|data_ptr| {
-                    let inblob = {
-                        let inblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, report_data);
-                        inblob_ptr.read()?
-                    };
+    fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        let Some(command) = ioctl_defs::GetTdxReport::try_from_raw(raw_ioctl) else {
+            return Err(Error::with_message(
+                Errno::ENOTTY,
+                "the ioctl command is unknown",
+            ));
+        };
 
-                    let report = tdx_report_or_err()?.write();
-                    refresh_tdx_report_locked(&report, Some(inblob.as_bytes()))?;
-                    let outblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, tdx_report);
-                    outblob_ptr.copy_from(&SafePtr::new(&*report, 0))?;
+        command.with_data_ptr(|data_ptr| {
+            let inblob = {
+                let inblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, report_data);
+                inblob_ptr.read()?
+            };
 
-                    Ok(0)
-                })
-            }
-            _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+            let report = tdx_report_or_err()?.write();
+            refresh_tdx_report_locked(&report, Some(inblob.as_bytes()))?;
+            let outblob_ptr = field_ptr!(&data_ptr, TdxReportRequest, tdx_report);
+            outblob_ptr.copy_from(&SafePtr::new(&*report, 0))?;
+
+            Ok(0)
         })
     }
 }
@@ -261,7 +237,8 @@ pub(crate) fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
     // FIXME: The `get_quote` API from the `tdx_guest` crate should have been marked `unsafe`
     // because it has no way to determine if the input physical address is safe or not.
     let shared_mask = tdx_guest::shared_mask();
-    tdvmcall::get_quote((buf.paddr() as u64) | shared_mask, buf.size() as u64)?;
+    tdvmcall::get_quote((buf.paddr() as u64) | shared_mask, buf.size() as u64)
+        .map_err(map_tdvmcall_error)?;
 
     // Poll for the quote to be ready.
     let status_ptr = field_ptr!(&header_ptr, TdxQuoteHdr, status);
@@ -272,7 +249,7 @@ pub(crate) fn tdx_get_quote(inblob: &[u8]) -> Result<Box<[u8]>> {
         if status != GET_QUOTE_IN_FLIGHT {
             break;
         }
-        let _ = sleep_waiter.wait_until_or_timeout(|| -> Option<()> { None }, &sleep_duration);
+        sleep(&sleep_waiter, &sleep_duration);
     }
 
     // Note: We cannot convert `DmaCoherent` to `USegment` here. When shared memory is converted back
@@ -362,11 +339,11 @@ pub(crate) fn extend_tdx_mr(reg: Rtmr, data: &[u8; SHA384_DIGEST_SIZE]) -> Resul
     let buf: USegment = FrameAllocOptions::new().alloc_segment(1)?.into();
     buf.write_bytes(0, data).unwrap();
 
-    tdcall::extend_rtmr(buf.paddr() as u64, index)?;
+    tdcall::extend_rtmr(buf.paddr() as u64, index).map_err(map_tdcall_error)?;
     Ok(())
 }
 
-pub(super) fn init() -> Result<()> {
+fn init_tdx() -> Result<()> {
     TDX_REPORT.call_once(|| {
         let report = FrameAllocOptions::new()
             .alloc_segment(size_of::<TdReport>().div_ceil(PAGE_SIZE))
@@ -375,7 +352,18 @@ pub(super) fn init() -> Result<()> {
         RwMutex::new(report)
     });
     refresh_tdx_report(None)?;
-    register(TdxGuest::new())?;
+    register_misc_device(TDX_GUEST_MINOR, "tdx_guest", Arc::new(TdxGuest))?;
+    register_report_provider(&TDX_REPORT_PROVIDER).unwrap();
+    Ok(())
+}
+
+#[init_component(process)]
+fn init() -> core::result::Result<(), ComponentInitError> {
+    ostd::if_tdx_enabled!({
+        init_tdx().unwrap();
+        tsm_mr::init();
+    });
+
     Ok(())
 }
 
@@ -385,7 +373,7 @@ fn refresh_tdx_report_locked(
 ) -> Result<()> {
     if let Some(inblob) = inblob {
         if inblob.len() != size_of::<ReportData>() {
-            return_errno_with_message!(Errno::EINVAL, "Invalid inblob length");
+            return Err(Error::with_message(Errno::EINVAL, "Invalid inblob length"));
         }
 
         // Use `inblob` as the data associated with the report.
@@ -403,7 +391,7 @@ fn refresh_tdx_report_locked(
 
     // FIXME: The `get_report` API from the `tdx_guest` crate should have been marked `unsafe`
     // because it has no way to determine if the input physical address is safe or not.
-    tdcall::get_report(report.paddr() as u64, report_data_ptr as u64)?;
+    tdcall::get_report(report.paddr() as u64, report_data_ptr as u64).map_err(map_tdcall_error)?;
     Ok(())
 }
 
@@ -488,11 +476,9 @@ impl TdReport {
 }
 
 mod ioctl_defs {
-    use super::TdxReportRequest;
-    use crate::{ioc, util::ioctl::InOutData};
+    use super::{InOutIoctl, TdxReportRequest};
 
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/tdx-guest.h#L40>
 
-    pub(super) type GetTdxReport =
-        ioc!(TDX_CMD_GET_REPORT0, b'T', 0x01, InOutData<TdxReportRequest>);
+    pub(super) type GetTdxReport = InOutIoctl<b'T', 0x01, TdxReportRequest>;
 }

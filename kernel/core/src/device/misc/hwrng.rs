@@ -6,19 +6,9 @@
 //! currently selected [`EntropyDevice`] backend.
 
 use aster_virtio::device::entropy::{self, device::EntropyDevice};
-use device_id::{DeviceId, MinorId};
 
-use crate::{
-    device::{Device, DeviceType, registry::char},
-    events::IoEvents,
-    fs::{
-        devtmpfs::DevtmpfsNodeMeta,
-        file::{PerOpenFileOps, StatusFlags},
-        vfs::inode::FileOps,
-    },
-    prelude::*,
-    process::signal::{PollHandle, Pollable},
-};
+use super::{MiscDevice, MiscDeviceFile, register_misc_device};
+use crate::prelude::*;
 
 const HWRNG_MINOR: u32 = 183;
 
@@ -29,35 +19,10 @@ const HWRNG_MINOR: u32 = 183;
 static RNG_CURRENT: Mutex<Option<Arc<EntropyDevice>>> = Mutex::new(None);
 
 /// The `/dev/hwrng` device.
-#[derive(Debug)]
-struct HwRngDevice {
-    id: DeviceId,
-}
+struct HwRngDevice;
 
-impl HwRngDevice {
-    fn new() -> Arc<Self> {
-        let major = super::MISC_MAJOR.get().unwrap().get();
-        let minor = MinorId::new(HWRNG_MINOR);
-
-        let id = DeviceId::new(major, minor);
-        Arc::new(Self { id })
-    }
-}
-
-impl Device for HwRngDevice {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Char
-    }
-
-    fn id(&self) -> DeviceId {
-        self.id
-    }
-
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
-        Some(DevtmpfsNodeMeta::new("hwrng").unwrap())
-    }
-
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+impl MiscDevice for HwRngDevice {
+    fn open(&self) -> Result<Box<dyn MiscDeviceFile>> {
         // TODO: Reject non-read-only opens with `EINVAL`
         // once device `open` callbacks receive `AccessMode`.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/core.c#L169>.
@@ -68,26 +33,15 @@ impl Device for HwRngDevice {
 /// A file handle opened from `/dev/hwrng`.
 struct HwRngFile;
 
-impl Pollable for HwRngFile {
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        // Linux's `/dev/hwrng` does not implement `.poll`, so userspace sees the VFS
-        // default ("always ready").
-        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/core.c#L287-L292>.
-        mask & (IoEvents::IN | IoEvents::OUT)
+impl MiscDeviceFile for HwRngFile {
+    fn check_seekable(&self) -> Result<()> {
+        Ok(())
     }
-}
 
-impl FileOps for HwRngFile {
-    fn read_at(
-        &self,
-        _offset: usize,
-        writer: &mut VmWriter,
-        status_flags: StatusFlags,
-    ) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter, is_nonblocking: bool) -> Result<usize> {
         // Linux looks up the selected device at `read()`.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/core.c#L215>.
         let dev = current_device()?;
-        let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
 
         let mut total_copied: usize = 0;
         while writer.avail() > 0 {
@@ -126,28 +80,13 @@ impl FileOps for HwRngFile {
         Ok(total_copied)
     }
 
-    fn write_at(
-        &self,
-        _offset: usize,
-        _reader: &mut VmReader,
-        _status_flags: StatusFlags,
-    ) -> Result<usize> {
+    fn write(&self, _reader: &mut VmReader, _is_nonblocking: bool) -> Result<usize> {
         // FIXME: Opening this device with `O_WRONLY` or `O_RDWR` fails on Linux. Therefore, the
         // write operation should never be reached. See the TODO in `HwRngDevice::open`.
         return_errno_with_message!(
             Errno::EBADF,
             "the hardware RNG device does not support writing"
         );
-    }
-}
-
-impl PerOpenFileOps for HwRngFile {
-    fn check_seekable(&self) -> Result<()> {
-        Ok(())
-    }
-
-    fn is_offset_aware(&self) -> bool {
-        false
     }
 }
 
@@ -163,5 +102,5 @@ pub(super) fn init_in_first_kthread() {
         *RNG_CURRENT.lock() = Some(device);
     }
 
-    char::register(HwRngDevice::new()).unwrap();
+    register_misc_device(HWRNG_MINOR, "hwrng", Arc::new(HwRngDevice)).unwrap();
 }

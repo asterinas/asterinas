@@ -29,7 +29,9 @@ use ostd::{
     sync::RwMutex,
 };
 
-use crate::device::misc::tdxguest::{self, MeasurementReg, Rtmr, SHA384_DIGEST_SIZE};
+use crate::{
+    MeasurementReg, Rtmr, SHA384_DIGEST_SIZE, extend_tdx_mr, get_tdx_mr, get_tdx_mr_refresh,
+};
 
 pub(super) fn init() {
     let node = {
@@ -49,7 +51,7 @@ pub(super) fn init() {
         devices_node
     };
 
-    crate::fs::sysfs::systree_singleton()
+    aster_systree::primary_tree()
         .root()
         .add_child(node.clone())
         .unwrap();
@@ -91,10 +93,10 @@ struct Measurement {
     /// Whether the cached TDX report is in sync with current hardware state.
     ///
     /// Set to `false` by `write_attr` after a successful
-    /// [`tdxguest::extend_tdx_mr`] call, because the extend changes RTMR
+    /// [`extend_tdx_mr`] call, because the extend changes RTMR
     /// hardware state that is not yet reflected in the cached
     /// `TDREPORT_STRUCT`.  Set back to `true` by `read_attr_at` once it has
-    /// re-generated the report via [`tdxguest::get_tdx_mr_refresh`].
+    /// re-generated the report via [`get_tdx_mr_refresh`].
     ///
     /// Invariant: when `in_sync` is `true`, the cached report correctly
     /// reflects the current value of every RTMR.  Static registers
@@ -116,10 +118,10 @@ struct MeasurementAttr {
     /// runtime, so `false` is correct for them — the cached `TDREPORT_STRUCT`
     /// is always authoritative.
     ///
-    /// RTMRs can be extended at any time via [`tdxguest::extend_tdx_mr`], which
+    /// RTMRs can be extended at any time via [`extend_tdx_mr`], which
     /// changes hardware state without updating the cache.  For these registers
     /// `refresh_on_read` is `true`, and `read_attr_at` will conditionally
-    /// re-generate the report (via [`tdxguest::get_tdx_mr_refresh`]) whenever
+    /// re-generate the report (via [`get_tdx_mr_refresh`]) whenever
     /// [`Measurement::in_sync`] is `false`.
     refresh_on_read: bool,
 }
@@ -215,7 +217,7 @@ inherit_sys_leaf_node!(Measurement, fields, {
 
         let mr = (if attr.refresh_on_read() && !*in_sync {
             let mut in_sync_write = in_sync.upgrade();
-            let mr = tdxguest::get_tdx_mr_refresh(attr.reg);
+            let mr = get_tdx_mr_refresh(attr.reg);
             *in_sync_write = true;
             #[expect(unused_assignments, reason = "the value is a lock guard")]
             {
@@ -223,7 +225,7 @@ inherit_sys_leaf_node!(Measurement, fields, {
             }
             mr
         } else {
-            tdxguest::get_tdx_mr(attr.reg)
+            get_tdx_mr(attr.reg)
         })
         .map_err(|_| Error::AttributeError)?;
 
@@ -261,7 +263,7 @@ inherit_sys_leaf_node!(Measurement, fields, {
 
         let mut in_sync = self.in_sync.write();
 
-        tdxguest::extend_tdx_mr(rtmr, &data).map_err(|_| Error::AttributeError)?;
+        extend_tdx_mr(rtmr, &data).map_err(|_| Error::AttributeError)?;
 
         if attr.refresh_on_read() {
             *in_sync = false;

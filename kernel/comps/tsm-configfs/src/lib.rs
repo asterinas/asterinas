@@ -11,21 +11,74 @@
 //! For more information about the interface,
 //! checkout Linux's [documentation](https://www.kernel.org/doc/Documentation/ABI/testing/configfs-tsm).
 
+#![no_std]
+#![deny(unsafe_code)]
+#![cfg(target_arch = "x86_64")]
+#![cfg(feature = "cvm_guest")]
+extern crate alloc;
+
 use alloc::{boxed::Box, string::ToString, sync::Arc};
 use core::fmt::Debug;
 
+use aster_configfs::register_subsystem;
 use aster_systree::{
     BranchNodeFields, Error, NormalNodeFields, Result, SysAttrSetBuilder, SysObj, SysPerms, SysStr,
     inherit_sys_branch_node, inherit_sys_leaf_node,
 };
 use aster_util::printer::VmPrinter;
+use component::{ComponentInitError, init_component};
 use inherit_methods_macro::inherit_methods;
 use ostd::{
     mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
     sync::RwMutex,
 };
+use spin::Mutex;
 
-use crate::{device::misc::tdxguest::tdx_get_quote, fs::configfs};
+/// A backend capable of generating attestation reports for the TSM frontend.
+pub trait ReportProvider: Debug + Sync {
+    /// Returns the provider name exposed through the Configfs ABI.
+    fn name(&self) -> &'static str;
+
+    /// Generates a report for the supplied report data.
+    fn get_report(&self, inblob: &[u8]) -> core::result::Result<Box<[u8]>, ReportProviderError>;
+}
+
+/// An error reported while generating an attestation report.
+///
+/// The Configfs frontend intentionally exposes provider failures as
+/// an invalid operation.
+#[derive(Debug)]
+pub struct ReportProviderError;
+
+/// The error returned when a report provider is already registered.
+#[derive(Debug)]
+pub struct ReportProviderAlreadyRegistered;
+
+static REPORT_PROVIDER: Mutex<Option<&'static dyn ReportProvider>> = Mutex::new(None);
+
+/// Registers the report provider used by the TSM Configfs frontend.
+///
+/// The provider must remain valid for the lifetime of the kernel. Only one
+/// provider can be registered.
+pub fn register_report_provider(
+    provider: &'static dyn ReportProvider,
+) -> core::result::Result<(), ReportProviderAlreadyRegistered> {
+    let mut registered_provider = REPORT_PROVIDER.lock();
+    if registered_provider.is_some() {
+        return Err(ReportProviderAlreadyRegistered);
+    }
+
+    *registered_provider = Some(provider);
+    Ok(())
+}
+
+fn report_provider() -> Result<&'static dyn ReportProvider> {
+    REPORT_PROVIDER
+        .lock()
+        .as_ref()
+        .copied()
+        .ok_or(Error::ResourceUnavailable)
+}
 
 #[derive(Debug)]
 struct Tsm {
@@ -74,7 +127,7 @@ inherit_sys_branch_node!(ReportSet, fields, {
     }
 
     fn create_child(&self, name: &str) -> Result<Arc<dyn SysObj>> {
-        let report = ReportNode::new(SysStr::from(name.to_string()));
+        let report = ReportNode::new(SysStr::from(name.to_string()))?;
         self.add_child(report.clone())?;
         Ok(report)
     }
@@ -154,14 +207,14 @@ enum TsmProviderState {
 
 #[derive(Debug)]
 struct TsmProvider {
-    provider: SysStr,
+    provider: &'static dyn ReportProvider,
     state: TsmProviderState,
 }
 
 impl TsmProvider {
-    pub(crate) fn new() -> Self {
+    fn new(provider: &'static dyn ReportProvider) -> Self {
         TsmProvider {
-            provider: SysStr::from("tdx_guest"),
+            provider,
             state: TsmProviderState::InblobNeeded,
         }
     }
@@ -174,7 +227,8 @@ struct ReportNode {
 }
 
 impl ReportNode {
-    fn new(name: SysStr) -> Arc<Self> {
+    fn new(name: SysStr) -> Result<Arc<Self>> {
+        let provider = report_provider()?;
         let mut builder = SysAttrSetBuilder::new();
         builder.add(SysStr::from("inblob"), SysPerms::DEFAULT_RW_ATTR_PERMS);
         builder.add(SysStr::from("outblob"), SysPerms::DEFAULT_RO_ATTR_PERMS);
@@ -182,13 +236,13 @@ impl ReportNode {
         builder.add(SysStr::from("generation"), SysPerms::DEFAULT_RO_ATTR_PERMS);
         let attrs = builder.build().unwrap();
 
-        Arc::new_cyclic(|weak_self| {
+        Ok(Arc::new_cyclic(|weak_self| {
             let fields = NormalNodeFields::new(name, attrs, weak_self.clone());
             ReportNode {
                 fields,
-                data: RwMutex::new(TsmProvider::new()),
+                data: RwMutex::new(TsmProvider::new(provider)),
             }
-        })
+        }))
     }
 
     fn read_inblob(&self, reader: &mut VmReader, inblob: &mut [u8]) -> Result<usize> {
@@ -216,19 +270,20 @@ inherit_sys_leaf_node!(ReportNode, fields, {
             "provider" => {
                 let data = self.data.read();
                 let mut printer = VmPrinter::new_skip(writer, offset);
-                writeln!(printer, "{}", data.provider)?;
+                writeln!(printer, "{}", data.provider.name())?;
                 Ok(printer.bytes_written())
             }
 
             "outblob" => {
                 let mut data = self.data.write();
+                let provider = data.provider;
                 match data.state {
                     TsmProviderState::InblobNeeded => Err(Error::InvalidOperation),
 
                     TsmProviderState::InblobProvided {
                         ref inblob,
                         generation,
-                    } => match tdx_get_quote(inblob) {
+                    } => match provider.get_report(inblob) {
                         Ok(quote) => {
                             let res = self.write_outblob(writer, &quote[offset..]);
 
@@ -312,6 +367,11 @@ inherit_sys_leaf_node!(ReportNode, fields, {
     }
 });
 
-pub(super) fn init() {
-    configfs::register_subsystem(Tsm::new()).unwrap();
+#[init_component(kthread)]
+fn init() -> core::result::Result<(), ComponentInitError> {
+    ostd::if_tdx_enabled!({
+        register_subsystem(Tsm::new()).unwrap();
+    });
+
+    Ok(())
 }
