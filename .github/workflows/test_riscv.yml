@@ -58,20 +58,26 @@ jobs:
 
           - test_id: 'conformance-release'
             release: true
+            suite: 'ltp'
 
           - test_id: 'conformance-release-smp4'
             release: true
             smp: 4
+            suite: 'ltp'
+
+          - test_id: 'conformance-kselftest-release'
+            release: true
+            suite: 'kselftest'
       fail-fast: false
     steps:
       - name: Free disk space
         # Remove unused packages from the host to save disk space.
         run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
       - uses: actions/checkout@v4
-      - name: Run integration tests ${{ (startsWith(matrix.test_id, 'conformance') && 'with LTP') || '' }}
+      - name: Run integration tests ${{ (startsWith(matrix.test_id, 'conformance') && format('with {0}', matrix.suite)) || '' }}
         uses: ./.github/actions/test
         with:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') || 'conformance' }}
           release: ${{ !contains(matrix.release, 'false') }}
           arch: 'riscv64'
-          conformance_test_suite: 'ltp'
+          conformance_test_suite: ${{ matrix.suite }}
