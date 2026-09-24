@@ -38,6 +38,9 @@ impl ExfatUpcaseTable {
         }
 
         let fs = fs_weak.upgrade().unwrap();
+        if !fs.is_valid_cluster(dentry.start_cluster) {
+            return_errno_with_message!(Errno::EINVAL, "invalid upcase table start cluster");
+        }
         let num_clusters = (dentry.size as usize).align_up(fs.cluster_size()) / fs.cluster_size();
         let chain = ExfatChain::new(
             fs_weak.clone(),
@@ -47,7 +50,7 @@ impl ExfatUpcaseTable {
         )?;
 
         let mut buf = vec![0; dentry.size as usize];
-        fs.read_meta_at(chain.physical_cluster_start_offset(), &mut buf)?;
+        fs.read_meta_at(chain.physical_cluster_start_offset()?, &mut buf)?;
 
         if dentry.checksum != calc_checksum_32(&buf) {
             return_errno_with_message!(Errno::EINVAL, "invalid checksum")
