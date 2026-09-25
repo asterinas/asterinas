@@ -199,7 +199,7 @@ $(LTP_DEV_IMAGE):
 
 $(SSD_IMAGE):
 	@mkdir -p $(BUILD_DIR)
-	@dd if=/dev/zero of=$(SSD_IMAGE) bs=256M count=1
+	@dd if=/dev/zero of=$(SSD_IMAGE) bs=2G count=1
 	@mke2fs -t ext2 -F $(SSD_IMAGE)
 
 $(XFSTESTS_TEST_IMAGE):

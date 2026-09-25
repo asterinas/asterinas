@@ -58,8 +58,12 @@ jobs:
           # FIXME: IOMMU are not supported in TDX now.
           # - fio/ext2_seq_write_bw
           # - fio/ext2_seq_read_bw
+          # - fio/nvme_seq_write_bw
+          # - fio/nvme_seq_read_bw
           - fio/ext2_seq_write_bw_no_iommu
           - fio/ext2_seq_read_bw_no_iommu
+          - fio/nvme_seq_write_bw_no_iommu
+          - fio/nvme_seq_read_bw_no_iommu
           # Loopback-related network benchmarks
           - lmbench/tcp_loopback_bw_128
           - lmbench/tcp_loopback_bw_4k
