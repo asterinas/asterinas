@@ -31,6 +31,10 @@ COPY distro/nixpkgs.nix /tmp/asterinas/distro/nixpkgs.nix
 WORKDIR /tmp/asterinas/test/initramfs
 ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
 
+# Build aarch64 packages
+RUN make aarch64_pkgs VERBOSE=0 \
+    && make nix_gc
+
 # Build riscv64 packages
 RUN make riscv64_pkgs VERBOSE=0 \
     && make nix_gc

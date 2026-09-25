@@ -157,6 +157,22 @@ riscv64_pkgs:
 		-A conformance.ltp \
 		-A regression.package
 
+# Prebuild aarch64 packages
+# Note: This may cause GitHub Runner ResourceExhausted errors when publish nix docker image.
+# If such errors occur, try building each package individually and clear the build cache.
+aarch64_pkgs:
+	@nix-build \
+		nix/default.nix \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+		$(NIX_QUIET) \
+		--argstr target aarch64 \
+		--arg enableBenchmarkTest false \
+		--arg enableConformanceTest true \
+		--out-link /nix/var/nix/gcroots/auto/aarch64-pkgs \
+		-A busybox \
+		-A conformance.ltp \
+		-A regression.package
+
 install_host_pkgs:
 	@nix-env \
 		--file nix/default.nix \
