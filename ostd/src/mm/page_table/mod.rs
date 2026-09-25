@@ -323,6 +323,7 @@ const fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> usize
 }
 
 /// A handle to a page table.
+///
 /// A page table can track the lifetime of the mapped physical pages.
 #[derive(Debug)]
 pub(crate) struct PageTable<C: PageTableConfig> {
@@ -340,7 +341,7 @@ impl PageTable<UserPtConfig> {
 }
 
 impl PageTable<KernelPtConfig> {
-    /// Create a new kernel page table.
+    /// Creates a new kernel page table.
     pub(in crate::mm) fn new_kernel_page_table() -> Self {
         let kpt = Self::empty();
 
@@ -358,7 +359,7 @@ impl PageTable<KernelPtConfig> {
         kpt
     }
 
-    /// Create a new user page table.
+    /// Creates a new user page table.
     ///
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
@@ -407,7 +408,7 @@ impl PageTable<KernelPtConfig> {
 }
 
 impl<C: PageTableConfig> PageTable<C> {
-    /// Create a new empty page table.
+    /// Creates a new empty page table.
     ///
     /// Useful for the IOMMU page tables only.
     pub(crate) fn empty() -> Self {
@@ -421,7 +422,7 @@ impl<C: PageTableConfig> PageTable<C> {
         unsafe { self.root.first_activate() };
     }
 
-    /// The physical address of the root page table.
+    /// Returns the physical address of the root page table.
     ///
     /// Obtaining the physical address of the root page table is safe, however, using it or
     /// providing it to the hardware will be unsafe since the page table node may be dropped,
@@ -430,7 +431,7 @@ impl<C: PageTableConfig> PageTable<C> {
         self.root.paddr()
     }
 
-    /// Query about the mapping of a single byte at the given virtual address.
+    /// Queries about the mapping of a single byte at the given virtual address.
     ///
     /// Note that this function may fail reflect an accurate result if there are
     /// cursors concurrently accessing the same virtual address range, just like what
@@ -470,7 +471,7 @@ impl<C: PageTableConfig> PageTable<C> {
         CursorMut::new(self, guard.as_atomic_mode_guard(), va, min_level)
     }
 
-    /// Create a new cursor exclusively accessing the virtual address range for querying.
+    /// Creates a new cursor exclusively accessing the virtual address range for querying.
     ///
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped. The modification to the mapping by the cursor may also
@@ -483,7 +484,10 @@ impl<C: PageTableConfig> PageTable<C> {
         Cursor::new(self, guard.as_atomic_mode_guard(), va, 1)
     }
 
-    /// Create a new reference to the same page table.
+    /// Creates a new reference to the same page table.
+    ///
+    /// # Safety
+    ///
     /// The caller must ensure that the kernel page table is not copied.
     /// This is only useful for IOMMU page tables. Think twice before using it in other cases.
     pub(crate) unsafe fn shallow_copy(&self) -> Self {
@@ -493,7 +497,7 @@ impl<C: PageTableConfig> PageTable<C> {
     }
 }
 
-/// A software emulation of the MMU address translation process.
+/// Performs a software emulation of the MMU address translation process.
 ///
 /// This method returns the physical address of the given virtual address and
 /// the page property if a valid mapping exists for the given virtual address.
