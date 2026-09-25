@@ -13,9 +13,11 @@ TARGET_DIR=$1
 LTP_PREBUILT_DIR=${LTP_PREBUILT_DIR:-/opt/ltp}
 CONFORMANCE_TEST_WORKDIR=${CONFORMANCE_TEST_WORKDIR:-/tmp}
 CONFORMANCE_TEST_SELECTOR=${CONFORMANCE_TEST_SELECTOR:-}
+HOST_PLATFORM=${HOST_PLATFORM:-}
 
 SCRIPT_DIR=$(dirname "$0")
 ALL_TESTS="$SCRIPT_DIR/testcases/all.txt"
+AARCH64_BLOCKLIST="$SCRIPT_DIR/testcases/blocked/aarch64.txt"
 EXT2_BLOCKLIST="$SCRIPT_DIR/testcases/blocked/ext2.txt"
 EXFAT_BLOCKLIST="$SCRIPT_DIR/testcases/blocked/exfat.txt"
 RUN_BASH="$SCRIPT_DIR/run_ltp_test.sh"
@@ -80,6 +82,12 @@ if [ -n "$CONFORMANCE_TEST_SELECTOR" ]; then
     if [ "$invalid_selector" -ne 0 ]; then
         exit 2
     fi
+elif [ "$HOST_PLATFORM" = "aarch64-linux" ]; then
+    if [ ! -n "$CONFORMANCE_TEST_WORKDIR" ]; then
+        echo "Error: CONFORMANCE_TEST_WORKDIR is not supported on AArch64"
+        exit 2
+    fi
+    filter_tests_by_blocklist "$AARCH64_BLOCKLIST"
 elif [ "$CONFORMANCE_TEST_WORKDIR" = "/ext2" ]; then
     filter_tests_by_blocklist "$EXT2_BLOCKLIST"
 elif [ "$CONFORMANCE_TEST_WORKDIR" = "/exfat" ]; then

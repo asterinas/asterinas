@@ -13,15 +13,58 @@ jobs:
     container:
       image: asterinas/kernel-dev:0.18.1-20260926
       options: -v /dev:/dev --privileged
+      volumes:
+        # Map the following directories on the host into the container so that
+        # the container can remove them to save some precious disk space (~16GB),
+        # which is quite limited on free-tier Github runners.
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
     strategy:
       matrix:
         id: ['lint', 'compile']
       fail-fast: false
     steps:
+      - name: Free disk space
+        # Remove unused packages from the host to save disk space.
+        run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
       - uses: actions/checkout@v4
       - name: Run basic tests
         uses: ./.github/actions/test
         with:
           auto_test: 'general'
-          runs_on: 'ubuntu-latest'
           arch: 'aarch64'
+
+  integration-test:
+    runs-on: ubuntu-latest
+    container:
+      image: asterinas/kernel-dev:0.18.1-20260926
+      options: -v /dev:/dev --privileged
+      volumes:
+        # Map the following directories on the host into the container so that
+        # the container can remove them to save some precious disk space (~16GB),
+        # which is quite limited on free-tier Github runners.
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
+    strategy:
+      matrix:
+        include:
+          - test_id: 'boot-release'
+            release: true
+
+          - test_id: 'conformance-release'
+            release: true
+      fail-fast: false
+    steps:
+      - name: Free disk space
+        # Remove unused packages from the host to save disk space.
+        run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
+      - uses: actions/checkout@v4
+      - name: Run integration tests ${{ (startsWith(matrix.test_id, 'conformance') && 'with LTP') || '' }}
+        uses: ./.github/actions/test
+        with:
+          auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') || 'conformance' }}
+          release: ${{ !contains(matrix.release, 'false') }}
+          arch: 'aarch64'
+          conformance_test_suite: 'ltp'
