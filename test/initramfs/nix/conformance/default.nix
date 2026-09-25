@@ -2,6 +2,7 @@
   lib,
   stdenvNoCC,
   callPackage,
+  hostPlatform,
   testSuite ? "ltp",
   workDir ? "/tmp",
   testSelector ? "",
@@ -35,6 +36,7 @@ rec {
       export CONFORMANCE_TEST_WORKDIR=${workDir}
       export CONFORMANCE_TEST_SELECTOR=${testSelector}
       export SMP=${toString smp}
+      export HOST_PLATFORM=${hostPlatform.system}
       ${lib.optionalString (testSuite == "ltp") "export LTP_PREBUILT_DIR=${ltp}"}
       ${lib.optionalString (testSuite == "gvisor") "export GVISOR_PREBUILT_DIR=${gvisor}"}
       ${lib.optionalString (testSuite == "kselftest") "export KSELFTEST_PREBUILT_DIR=${kselftest}"}

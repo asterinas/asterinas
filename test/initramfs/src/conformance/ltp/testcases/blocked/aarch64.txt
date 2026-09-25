@@ -1,0 +1,41 @@
+# The following tests will fail.
+clone10
+mmap06
+mmap21_01
+mmap21_02
+mremap01
+open07
+read02
+readlinkat01
+rename01
+rename01
+rename03
+rename04
+rename05
+rename06
+rename07
+rename08
+rename09
+rename09
+rename10
+rename12
+rename13
+rename15
+
+# The following tests will produce warnings. All warnings are of the same kind:
+# "tst_tmpdir.c:339: tst_rmdir: rmobj(/tmp/LTP_symkYW5pj) failed: Cannot open directory stream for oldfile (via fd 7); errno=20: ENOTDIR"
+fallocate01
+fcntl22
+fcntl22_64
+fdatasync01
+fstatat01
+mkdirat01
+mknodat01
+msync01
+msync02
+removexattr01
+renameat201
+renameat202
+setfsuid04
+symlink03
+symlinkat01
