@@ -107,4 +107,18 @@ pub(crate) fn enable_cpu_features() {
             tmp = out(reg) _,
         );
     }
+
+    // SAFETY: It is safe to enable EL0 access to the frequency register and virtual
+    // counter registers, as reading them does not affect the kernel's memory safety.
+    unsafe {
+        // Counter-timer Kernel Control Register (CNTKCTL).
+        // EL0VCTEN, bit [1] = 1: This control does not cause EL0 accesses to the
+        // frequency register and virtual counter registers to be trapped.
+        asm!(
+            "mov {tmp}, #(1 << 1)",
+            "msr cntkctl_el1, {tmp}",
+            "isb",
+            tmp = out(reg) _,
+        );
+    }
 }
