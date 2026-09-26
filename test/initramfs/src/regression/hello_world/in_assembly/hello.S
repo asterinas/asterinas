@@ -34,6 +34,21 @@ print_message:
     sub     a2, a2, a1              # calculate message len
     ecall
     ret
+#elif defined(__aarch64__)
+    bl      print_message
+    bl      print_message
+    bl      print_message
+    mov     x8, 93                  // syscall number of exit
+    mov     x0, 0                   // exit code
+    svc     #0
+print_message:
+    mov     x8, 64                  // syscall number of write
+    mov     x0, 1                   // stdout
+    ldr     x1, =message            // address of message
+    ldr     x2, =message_end
+    sub     x2, x2, x1              // calculate message len
+    svc     #0
+    ret
 #else
 #error "unsupported architecture"
 #endif
