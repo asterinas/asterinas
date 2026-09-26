@@ -12,10 +12,10 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include <xf86drm.h>
 
 #define DRM_CARD_DEVICE "/dev/dri/card0"
 #define DRM_RENDER_DEVICE "/dev/dri/renderD128"
-#define DRM_FIELD_LEN 64
 #define DRM_MAJOR 226
 
 struct drm_node {
@@ -70,36 +70,6 @@ static inline int open_optional_drm_node(const char *path)
 	fprintf(stderr, "fatal error: open('%s') failed: %s\n", path,
 		strerror(errno));
 	exit(EXIT_FAILURE);
-}
-
-static inline int get_drm_version(int fd, struct drm_version *version,
-				  char *name, char *date, char *desc,
-				  size_t len)
-{
-	memset(name, 0, len);
-	memset(date, 0, len);
-	memset(desc, 0, len);
-	memset(version, 0, sizeof(*version));
-
-	version->name_len = len;
-	version->name = name;
-	version->date_len = len;
-	version->date = date;
-	version->desc_len = len;
-	version->desc = desc;
-
-	return ioctl(fd, DRM_IOCTL_VERSION, version);
-}
-
-static inline int get_drm_cap(int fd, uint64_t capability, uint64_t *value)
-{
-	struct drm_get_cap cap = {
-		.capability = capability,
-	};
-	int ret = ioctl(fd, DRM_IOCTL_GET_CAP, &cap);
-
-	*value = cap.value;
-	return ret;
 }
 
 static inline int is_boolean_drm_cap(uint64_t value)
