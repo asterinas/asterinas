@@ -5,6 +5,7 @@
 use core::fmt;
 
 use bitflags::bitflags;
+use fdt::node::FdtNode;
 use spin::Once;
 
 use super::boot::DEVICE_TREE;
@@ -18,7 +19,10 @@ use crate::{
 pub static SERIAL_PORT: Once<SpinLock<Pl011Uart, LocalIrqDisabled>> = Once::new();
 
 /// A PL011 serial port.
-pub struct Pl011Uart(*mut u32);
+pub struct Pl011Uart {
+    base: *mut u32,
+    node: FdtNode<'static, 'static>,
+}
 
 unsafe impl Send for Pl011Uart {}
 unsafe impl Sync for Pl011Uart {}
@@ -28,6 +32,8 @@ bitflags! {
     struct Status: u32 {
         /// Transmit FIFO full.
         const TXFF = 1 << 5;
+        /// Receive FIFO empty.
+        const RXFE = 1 << 4;
     }
 }
 
@@ -35,13 +41,32 @@ impl Pl011Uart {
     // Reference: <https://developer.arm.com/documentation/ddi0183/g/programmers-model/summary-of-registers>
     const OFFSET_UARTDR: usize = 0x000; // Data Register.
     const OFFSET_UARTFR: usize = 0x018; // Flag Register.
+    const OFFSET_UARTIMSC: usize = 0x038; // Interrupt Mask Set/Clear Register.
 
     /// # Safety
     ///
     /// The caller must ensure that the base address is a valid serial base address and that it has
     /// exclusive ownership of the serial registers.
-    pub(self) const unsafe fn new(base: *mut u32) -> Self {
-        Self(base)
+    pub(self) unsafe fn new(base: *mut u32, node: FdtNode<'static, 'static>) -> Self {
+        Self { base, node }
+    }
+
+    /// Returns the FDT node of the serial port.
+    pub fn fdt_node(&self) -> FdtNode<'static, 'static> {
+        self.node
+    }
+
+    /// Enables receive interrupts.
+    pub fn enable_recv_interrupt(&mut self) {
+        // Reference: <https://developer.arm.com/documentation/ddi0183/g/programmers-model/register-descriptions/interrupt-mask-set-clear-register--uartimsc>
+        const RXIM: u32 = 1 << 4; // Receive interrupt mask.
+
+        // SAFETY: `base + OFFSET_UARTIMSC` is a valid register of the serial port.
+        unsafe {
+            let uartimsc = self.base.byte_add(Self::OFFSET_UARTIMSC);
+            let val = uartimsc.read_volatile();
+            uartimsc.write_volatile(val | RXIM);
+        }
     }
 
     /// Sends a byte to the serial port.
@@ -52,18 +77,32 @@ impl Pl011Uart {
         self.write_data(byte);
     }
 
+    /// Receives a byte from the serial port.
+    pub fn recv(&mut self) -> Option<u8> {
+        if self.read_status().contains(Status::RXFE) {
+            None
+        } else {
+            Some(self.read_data())
+        }
+    }
+
     fn write_data(&mut self, data: u8) {
-        // SAFETY: `self.0 + OFFSET_UARTDR` is a valid register of the serial port.
+        // SAFETY: `base + OFFSET_UARTDR` is a valid register of the serial port.
         unsafe {
-            self.0
+            self.base
                 .byte_add(Self::OFFSET_UARTDR)
                 .write_volatile(data as u32);
         }
     }
 
+    fn read_data(&mut self) -> u8 {
+        // SAFETY: `base + OFFSET_UARTDR` is a valid register of the serial port.
+        unsafe { self.base.byte_add(Self::OFFSET_UARTDR).read_volatile() as u8 }
+    }
+
     fn read_status(&self) -> Status {
-        // SAFETY: `self.0 + OFFSET_UARTFR` is a valid register of the serial port.
-        let raw = unsafe { self.0.byte_add(Self::OFFSET_UARTFR).read_volatile() };
+        // SAFETY: `base + OFFSET_UARTFR` is a valid register of the serial port.
+        let raw = unsafe { self.base.byte_add(Self::OFFSET_UARTFR).read_volatile() };
         Status::from_bits_truncate(raw)
     }
 }
@@ -83,7 +122,7 @@ pub(crate) fn init(early_cmdline: &EarlyCmdline) {
         return;
     }
 
-    let Some(base_address) = lookup_pl011_base_address() else {
+    let Some((base_address, fdt_node)) = lookup_pl011_base_address() else {
         return;
     };
 
@@ -93,11 +132,11 @@ pub(crate) fn init(early_cmdline: &EarlyCmdline) {
     //    has a correct memory attribute (i.e., device memory).
     // 3. FIXME: We should reserve the address region in `io_mem_allocator` to ensure the
     //    exclusive ownership.
-    let pl011 = unsafe { Pl011Uart::new(paddr_to_vaddr(base_address) as *mut u32) };
+    let pl011 = unsafe { Pl011Uart::new(paddr_to_vaddr(base_address) as *mut u32, fdt_node) };
     SERIAL_PORT.call_once(|| SpinLock::new(pl011));
 }
 
-fn lookup_pl011_base_address() -> Option<usize> {
+fn lookup_pl011_base_address() -> Option<(usize, FdtNode<'static, 'static>)> {
     let device_tree = DEVICE_TREE.get().unwrap();
     let stdout_path = device_tree
         .find_node("/chosen")?
@@ -105,7 +144,7 @@ fn lookup_pl011_base_address() -> Option<usize> {
         .as_str()?;
     let stdout = device_tree.find_node(stdout_path)?;
     if stdout.compatible()?.all().any(|c| c == "arm,pl011") {
-        Some(stdout.reg()?.next()?.starting_address as usize)
+        Some((stdout.reg()?.next()?.starting_address as usize, stdout))
     } else {
         None
     }
