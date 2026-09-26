@@ -144,6 +144,22 @@ Supported functionality in SCML:
 {{#include ioctl.scml}}
 ```
 
+For boot framebuffer devices,
+`FBIOGET_FSCREENINFO` reports the bootloader's scanline pitch in `line_length`,
+including padding after the visible pixels.
+For supported RGB layouts,
+`FBIOGET_VSCREENINFO` reports channel bitfields matching the rendered pixel bytes.
+Reserved bits are not reported as an alpha channel.
+
+When the Linux boot parameters contain a valid EDID 1.0 through 1.4 base block,
+`FBIOGET_VSCREENINFO` reports the display's physical `width` and `height`
+in millimeters, with 10 mm precision.
+These fields describe physical dimensions, not pixel resolution.
+If either dimension is unavailable,
+both fields contain `UINT32_MAX`, matching the Linux efifb convention.
+EDID extension blocks and aspect-ratio encodings do not provide dimensions
+through this interface.
+
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/ioctl.2.html).
 

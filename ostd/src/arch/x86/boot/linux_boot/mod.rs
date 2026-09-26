@@ -11,7 +11,7 @@ use crate::arch::init_cvm_guest;
 use crate::{
     arch::if_tdx_enabled,
     boot::{
-        BootloaderAcpiArg, BootloaderFramebufferArg,
+        BootloaderAcpiArg, BootloaderFramebufferArg, FramebufferRgbLayout,
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
     },
     mm::kspace::paddr_to_vaddr,
@@ -136,19 +136,31 @@ impl ToEarlyBootInfo for BootParams {
     }
 
     fn framebuffer_arg(&self) -> Option<BootloaderFramebufferArg> {
-        let screen_info = self.screen_info;
-
-        let address = screen_info.lfb_base as usize | ((screen_info.ext_lfb_base as usize) << 32);
-        if address == 0 {
-            return None;
-        }
-
-        Some(BootloaderFramebufferArg {
+        let screen = self.screen_info;
+        let address = screen.lfb_base as usize | ((screen.ext_lfb_base as usize) << 32);
+        let layout = (screen.red_size != 0 || screen.green_size != 0 || screen.blue_size != 0)
+            .then(|| {
+                FramebufferRgbLayout::new(
+                    (screen.red_pos, screen.red_size),
+                    (screen.green_pos, screen.green_size),
+                    (screen.blue_pos, screen.blue_size),
+                )
+            });
+        // Older EFI stubs did not fill in the scanline length.
+        let pitch_bytes = if screen.lfb_linelength == 0 {
+            usize::from(screen.lfb_width).checked_mul(usize::from(screen.lfb_depth).div_ceil(8))?
+        } else {
+            usize::from(screen.lfb_linelength)
+        };
+        let framebuffer = BootloaderFramebufferArg::new(
             address,
-            width: screen_info.lfb_width as usize,
-            height: screen_info.lfb_height as usize,
-            bpp: screen_info.lfb_depth as usize,
-        })
+            usize::from(screen.lfb_width),
+            usize::from(screen.lfb_height),
+            usize::from(screen.lfb_depth),
+            pitch_bytes,
+            layout,
+        )?;
+        Some(framebuffer.with_physical_size_mm(self.edid_info.physical_size_mm()))
     }
 
     fn memory_regions(
@@ -219,4 +231,115 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
     // once after setting up necessary resources.
     unsafe { start_kernel() };
+}
+
+#[cfg(ktest)]
+mod test {
+    use core::{mem::MaybeUninit, ptr};
+
+    use linux_boot_params::{BootE820Entry, EdidInfo};
+
+    use super::*;
+    use crate::prelude::ktest;
+
+    #[ktest]
+    fn linux_framebuffer_preserves_pitch_and_channels() {
+        let mut params = boot_params_with_framebuffer();
+        for (red_pos, blue_pos) in [(0, 16), (16, 0)] {
+            params.screen_info.red_pos = red_pos;
+            params.screen_info.blue_pos = blue_pos;
+
+            let fb = params.framebuffer_arg().unwrap();
+            assert_eq!(fb.physical_range(), 0x1_0000_1000..0x1_0000_1020);
+            assert_eq!((fb.width(), fb.height(), fb.bits_per_pixel()), (3, 2, 32));
+            assert_eq!(fb.pitch_bytes(), 16);
+            let layout = fb.rgb_layout().unwrap();
+            assert_eq!(layout.red(), (red_pos, 8));
+            assert_eq!(layout.green(), (8, 8));
+            assert_eq!(layout.blue(), (blue_pos, 8));
+        }
+
+        params.screen_info.lfb_linelength = 11;
+        assert!(params.framebuffer_arg().is_none());
+    }
+
+    #[ktest]
+    fn linux_framebuffer_accepts_legacy_metadata() {
+        let mut params = boot_params_with_framebuffer();
+        params.screen_info.lfb_linelength = 0;
+        params.screen_info.lfb_depth = 24;
+        params.screen_info.red_size = 0;
+        params.screen_info.green_size = 0;
+        params.screen_info.blue_size = 0;
+
+        let fb = params.framebuffer_arg().unwrap();
+        assert_eq!(fb.pitch_bytes(), 9);
+        assert_eq!(fb.physical_range(), 0x1_0000_1000..0x1_0000_1012);
+        assert!(fb.rgb_layout().is_none());
+    }
+
+    #[ktest]
+    fn linux_framebuffer_preserves_edid_physical_dimensions() {
+        let mut params = boot_params_with_framebuffer();
+        params.edid_info = display_edid(52, 29);
+
+        let fb = params.framebuffer_arg().unwrap();
+        assert_eq!(fb.physical_size_mm(), Some((520, 290)));
+        assert_eq!((fb.width(), fb.height()), (3, 2));
+    }
+
+    #[ktest]
+    fn linux_framebuffer_preserves_unknown_physical_dimensions() {
+        let mut params = boot_params_with_framebuffer();
+        assert_eq!(params.framebuffer_arg().unwrap().physical_size_mm(), None);
+
+        // EDID 1.4 may describe only an aspect ratio, not physical dimensions.
+        for (width_cm, height_cm) in [(0, 0), (52, 0), (0, 29)] {
+            params.edid_info = display_edid(width_cm, height_cm);
+            assert_eq!(params.framebuffer_arg().unwrap().physical_size_mm(), None);
+        }
+    }
+
+    fn display_edid(width_cm: u8, height_cm: u8) -> EdidInfo {
+        let mut bytes = [0; linux_boot_params::EDID_BASE_BLOCK_SIZE];
+        bytes[..8].copy_from_slice(&[0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00]);
+        bytes[18] = 1;
+        bytes[19] = 4;
+        bytes[21] = width_cm;
+        bytes[22] = height_cm;
+        bytes[linux_boot_params::EDID_BASE_BLOCK_SIZE - 1] =
+            0u8.wrapping_sub(bytes.iter().fold(0u8, |sum, byte| sum.wrapping_add(*byte)));
+        EdidInfo::from_bytes(&bytes).unwrap()
+    }
+
+    fn boot_params_with_framebuffer() -> BootParams {
+        let mut params = MaybeUninit::<BootParams>::zeroed();
+        // SAFETY:
+        // 1. All fields except the E820 entry types admit zero.
+        // 2. Every E820 entry is initialized with a valid enum discriminant
+        //    before the `BootParams` value is created.
+        let mut params = unsafe {
+            ptr::addr_of_mut!((*params.as_mut_ptr()).e820_table).write(core::array::from_fn(
+                |_| BootE820Entry {
+                    addr: 0,
+                    size: 0,
+                    typ: E820Type::Reserved,
+                },
+            ));
+            params.assume_init()
+        };
+        params.screen_info.lfb_base = 0x1000;
+        params.screen_info.ext_lfb_base = 1;
+        params.screen_info.lfb_width = 3;
+        params.screen_info.lfb_height = 2;
+        params.screen_info.lfb_depth = 32;
+        params.screen_info.lfb_linelength = 16;
+        params.screen_info.red_pos = 16;
+        params.screen_info.red_size = 8;
+        params.screen_info.green_pos = 8;
+        params.screen_info.green_size = 8;
+        params.screen_info.blue_pos = 0;
+        params.screen_info.blue_size = 8;
+        params
+    }
 }

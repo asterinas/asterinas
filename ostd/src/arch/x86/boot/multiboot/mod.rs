@@ -3,7 +3,7 @@
 use super::ToEarlyBootInfo;
 use crate::{
     boot::{
-        BootloaderAcpiArg, BootloaderFramebufferArg,
+        BootloaderAcpiArg, BootloaderFramebufferArg, FramebufferRgbLayout,
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
     },
     mm::{Paddr, kspace::paddr_to_vaddr},
@@ -17,6 +17,8 @@ use crate::{
 core::arch::global_asm!(include_str!("header.S"));
 
 const MULTIBOOT_ENTRY_MAGIC: u32 = 0x2BADB002;
+const FRAMEBUFFER_INFO_PRESENT: u32 = 1 << 12;
+const FRAMEBUFFER_TYPE_RGB: u8 = 1;
 
 /// Representation of Multiboot Information according to specification.
 ///
@@ -317,16 +319,29 @@ impl ToEarlyBootInfo for MultibootLegacyInfo {
     }
 
     fn framebuffer_arg(&self) -> Option<BootloaderFramebufferArg> {
-        if self.framebuffer_table.addr == 0 {
+        // Bit 12 makes the framebuffer fields valid; type 1 is direct RGB.
+        // Indexed color and text buffers cannot be rendered as packed pixels.
+        // https://www.gnu.org/software/grub/manual/multiboot/multiboot.html#Boot-information-format
+        if self.flags & FRAMEBUFFER_INFO_PRESENT == 0
+            || self.framebuffer_table.typ != FRAMEBUFFER_TYPE_RGB
+        {
             return None;
         }
-
-        Some(BootloaderFramebufferArg {
-            address: self.framebuffer_table.addr as usize,
-            width: self.framebuffer_table.width as usize,
-            height: self.framebuffer_table.height as usize,
-            bpp: self.framebuffer_table.bpp as usize,
-        })
+        let fb = self.framebuffer_table;
+        let fields = fb.color_info;
+        let layout = FramebufferRgbLayout::new(
+            (fields[0], fields[1]),
+            (fields[2], fields[3]),
+            (fields[4], fields[5]),
+        );
+        BootloaderFramebufferArg::new(
+            usize::try_from(fb.addr).ok()?,
+            fb.width as usize,
+            fb.height as usize,
+            usize::from(fb.bpp),
+            fb.pitch as usize,
+            Some(layout),
+        )
     }
 
     fn memory_regions(
@@ -396,4 +411,66 @@ unsafe extern "sysv64" fn __multiboot_entry(boot_magic: u32, boot_params: u64) -
     // SAFETY: The safety is guaranteed by the safety preconditions and the fact that we call it
     // once after setting up necessary resources.
     unsafe { start_kernel() };
+}
+
+#[cfg(ktest)]
+mod test {
+    use super::*;
+    use crate::prelude::ktest;
+
+    #[ktest]
+    fn multiboot_framebuffer_preserves_pitch_and_channels() {
+        let mut info = info_with_framebuffer();
+        for (red_pos, blue_pos) in [(0, 16), (16, 0)] {
+            info.framebuffer_table.color_info = [red_pos, 8, 8, 8, blue_pos, 8];
+
+            let fb = info.framebuffer_arg().unwrap();
+            assert_eq!(fb.physical_range(), 0x1000..0x1020);
+            assert_eq!((fb.width(), fb.height(), fb.bits_per_pixel()), (3, 2, 32));
+            assert_eq!(fb.pitch_bytes(), 16);
+            let layout = fb.rgb_layout().unwrap();
+            assert_eq!(layout.red(), (red_pos, 8));
+            assert_eq!(layout.green(), (8, 8));
+            assert_eq!(layout.blue(), (blue_pos, 8));
+        }
+
+        info.framebuffer_table.pitch = 11;
+        assert!(info.framebuffer_arg().is_none());
+    }
+
+    #[ktest]
+    fn multiboot_framebuffer_requires_rgb_metadata() {
+        let mut info = info_with_framebuffer();
+        info.flags = 0;
+        assert!(info.framebuffer_arg().is_none());
+
+        // The Multiboot v1 contract assigns bit 12 to framebuffer information,
+        // and framebuffer types 0, 1, and 2 to indexed, RGB, and text modes.
+        info.flags = 1 << 12;
+        for typ in [0, 2] {
+            info.framebuffer_table.typ = typ;
+            assert!(info.framebuffer_arg().is_none());
+        }
+        info.framebuffer_table.typ = 1;
+        assert!(info.framebuffer_arg().is_some());
+    }
+
+    fn info_with_framebuffer() -> MultibootLegacyInfo {
+        // SAFETY:
+        // 1. Every field is an integer or an array of integers, so zero is valid.
+        // 2. Only the framebuffer parser reads this value; no address fields
+        //    are dereferenced.
+        let mut info: MultibootLegacyInfo = unsafe { core::mem::zeroed() };
+        info.flags = 1 << 12;
+        info.framebuffer_table = FramebufferTable {
+            addr: 0x1000,
+            pitch: 16,
+            width: 3,
+            height: 2,
+            bpp: 32,
+            typ: 1,
+            color_info: [16, 8, 8, 8, 0, 8],
+        };
+        info
+    }
 }
