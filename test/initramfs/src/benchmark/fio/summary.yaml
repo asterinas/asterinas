@@ -1,5 +1,13 @@
 benchmarks:
   - ext2_seq_write_bw
   - ext2_seq_read_bw
+  - ext2_seq_write_bw_direct
+  - ext2_seq_read_bw_direct
   - ext2_seq_write_bw_no_iommu
   - ext2_seq_read_bw_no_iommu
+  - ext2_seq_write_bw_direct_no_iommu
+  - ext2_seq_read_bw_direct_no_iommu
+  - virtiofs_seq_write_bw
+  - virtiofs_seq_read_bw
+  - virtiofs_seq_write_bw_direct
+  - virtiofs_seq_read_bw_direct
