@@ -3,6 +3,7 @@
   enableBenchmarkTest ? false,
   enableConformanceTest ? false,
   enableRegressionTest ? false,
+  enableDrmTools ? false,
   conformanceTestSuite ? "ltp",
   conformanceTestWorkDir ? "/tmp",
   conformanceTestSelector ? "",
@@ -41,12 +42,14 @@ rec {
     testSelector = conformanceTestSelector;
   };
   regression = pkgs.callPackage ./regression { testPlatform = regressionTestPlatform; };
+  drmTools = pkgs.callPackage ./drm-tools.nix { };
 
   initramfs = pkgs.callPackage ./initramfs.nix {
     inherit busybox;
     benchmark = if enableBenchmarkTest then benchmark else null;
     conformance = if enableConformanceTest then conformance else null;
     regression = if enableRegressionTest then regression else null;
+    drmTools = if enableDrmTools then drmTools else null;
     dnsServer = dnsServer;
   };
   initramfs-image = pkgs.callPackage ./initramfs-image.nix {

@@ -82,6 +82,11 @@ XFSTESTS_DISK_SIZE ?= 12G
 ENABLE_REGRESSION_TEST ?= false
 # End of auto test features.
 
+# Development image options.
+# Include the DRM development utilities in the initramfs.
+ENABLE_DRM_TOOLS ?= false
+# End of development image options.
+
 # Network settings
 # NETDEV possible values are user,tap
 NETDEV ?= user
@@ -484,6 +489,7 @@ format:
 	@
 	@# Format the code using various tools
 	@./tools/format_all.sh
+	@$(MAKE) --no-print-directory -C tools/drm format
 	@./tools/nixfmt.sh flake.nix distro tools/dev_env/nix
 	@$(MAKE) --no-print-directory -C test/initramfs format
 	@$(MAKE) --no-print-directory -C test/nixos format
@@ -509,6 +515,7 @@ check: $(CARGO_OSDK)
 	@
 	@# Check formatting issues of the Rust code
 	@./tools/format_all.sh --check
+	@$(MAKE) --no-print-directory -C tools/drm check
 	@
 	@# Check compilation of the Rust code
 	@./tools/clippy_check.sh workspace

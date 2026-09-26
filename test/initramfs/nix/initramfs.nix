@@ -9,6 +9,7 @@
   benchmark,
   conformance,
   regression,
+  drmTools,
   dnsServer,
 }:
 let
@@ -38,6 +39,7 @@ let
   ++ lib.optionals (benchmark != null) [ benchmark.package ]
   ++ lib.optionals (conformance != null) [ conformance.package ]
   ++ lib.optionals (regression != null) [ regression.package ]
+  ++ lib.optionals (drmTools != null) [ drmTools ]
   ++ lib.optionals is_evtest_included [ pkgs.evtest ];
 in
 stdenvNoCC.mkDerivation {
@@ -64,6 +66,10 @@ stdenvNoCC.mkDerivation {
 
     ${lib.optionalString (regression != null) ''
       cp -r ${regression.package}/* $out/test/
+    ''}
+
+    ${lib.optionalString (drmTools != null) ''
+      cp ${drmTools}/bin/* $out/usr/bin/
     ''}
 
     ${lib.optionalString (benchmark != null) ''

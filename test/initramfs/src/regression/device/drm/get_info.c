@@ -13,30 +13,20 @@ END_SETUP()
 
 FN_TEST(version)
 {
-	struct drm_version version;
-	char name[DRM_FIELD_LEN];
-	char date[DRM_FIELD_LEN];
-	char desc[DRM_FIELD_LEN];
-	size_t copied_name_len;
-	size_t copied_date_len;
-	size_t copied_desc_len;
+	drmVersionPtr version = TEST_RES(drmGetVersion(card_fd), _ret != NULL);
 
-	TEST_SUCC(get_drm_version(card_fd, &version, name, date, desc,
-				  sizeof(name)));
-
-	copied_name_len = version.name_len < sizeof(name) ? version.name_len :
-							    sizeof(name);
-	copied_date_len = version.date_len < sizeof(date) ? version.date_len :
-							    sizeof(date);
-	copied_desc_len = version.desc_len < sizeof(desc) ? version.desc_len :
-							    sizeof(desc);
-
-	TEST_RES(strnlen(name, sizeof(name)),
-		 _ret > 0 && _ret == copied_name_len);
-	TEST_RES(strnlen(date, sizeof(date)),
-		 _ret > 0 && _ret == copied_date_len);
-	TEST_RES(strnlen(desc, sizeof(desc)),
-		 _ret > 0 && _ret == copied_desc_len);
+	if (version) {
+		TEST_RES(version->name_len,
+			 _ret > 0 && version->name &&
+				 strlen(version->name) == _ret);
+		TEST_RES(version->date_len,
+			 _ret > 0 && version->date &&
+				 strlen(version->date) == _ret);
+		TEST_RES(version->desc_len,
+			 _ret > 0 && version->desc &&
+				 strlen(version->desc) == _ret);
+		drmFreeVersion(version);
+	}
 }
 END_TEST()
 
@@ -48,22 +38,22 @@ FN_TEST(capabilities)
 	uint64_t syncobj_timeline = 0;
 	uint64_t invalid_cap = 0;
 
-	TEST_RES(get_drm_cap(card_fd, DRM_CAP_PRIME, &prime),
+	TEST_RES(drmGetCap(card_fd, DRM_CAP_PRIME, &prime),
 		 (prime & ~(DRM_PRIME_CAP_IMPORT | DRM_PRIME_CAP_EXPORT)) == 0);
 
-	TEST_RES(get_drm_cap(card_fd, DRM_CAP_TIMESTAMP_MONOTONIC,
-			     &timestamp_monotonic),
+	TEST_RES(drmGetCap(card_fd, DRM_CAP_TIMESTAMP_MONOTONIC,
+			   &timestamp_monotonic),
 		 timestamp_monotonic == 1);
 
-	TEST_RES(get_drm_cap(card_fd, DRM_CAP_SYNCOBJ, &syncobj),
+	TEST_RES(drmGetCap(card_fd, DRM_CAP_SYNCOBJ, &syncobj),
 		 is_boolean_drm_cap(syncobj));
 
-	TEST_RES(get_drm_cap(card_fd, DRM_CAP_SYNCOBJ_TIMELINE,
-			     &syncobj_timeline),
+	TEST_RES(drmGetCap(card_fd, DRM_CAP_SYNCOBJ_TIMELINE,
+			   &syncobj_timeline),
 		 is_boolean_drm_cap(syncobj_timeline) &&
 			 (!syncobj_timeline || syncobj));
 
-	TEST_ERRNO(get_drm_cap(card_fd, UINT64_MAX, &invalid_cap), EINVAL);
+	TEST_ERRNO(drmGetCap(card_fd, UINT64_MAX, &invalid_cap), EINVAL);
 }
 END_TEST()
 

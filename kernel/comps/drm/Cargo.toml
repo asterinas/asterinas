@@ -8,6 +8,7 @@ aster-core.workspace = true
 atomic-integer-wrapper.workspace = true
 bitflags.workspace = true
 device-id.workspace = true
+hashbrown.workspace = true
 int-to-c-enum.workspace = true
 ostd.workspace = true
 ostd-pod.workspace = true

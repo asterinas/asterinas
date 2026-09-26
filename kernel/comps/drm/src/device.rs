@@ -13,6 +13,8 @@ use aster_core::prelude::*;
 use ostd::sync::Mutex;
 use sparse_id_alloc::SparseIdAlloc;
 
+use crate::kms::DrmKmsDevice;
+
 static DRM_DEVICE_INDEX_ALLOCATOR: Mutex<SparseIdAlloc> = Mutex::new(SparseIdAlloc::new(0, 63));
 
 /// Defines the top-level contract of a DRM device instance.
@@ -27,6 +29,11 @@ pub trait DrmDevice: Debug + Send + Sync {
     fn features(&self) -> &DrmFeatures;
     fn has_features(&self, feature: DrmFeatures) -> bool {
         self.features().contains(feature)
+    }
+
+    /// Returns the KMS operations implemented by this device, if any.
+    fn kms_device(&self) -> Option<&dyn DrmKmsDevice> {
+        None
     }
 }
 
@@ -67,6 +74,16 @@ pub(super) struct RegisteredDrmDevice {
 
 impl RegisteredDrmDevice {
     pub(super) fn new(device: Arc<dyn DrmDevice>) -> Result<Self> {
+        let has_modeset = device.has_features(DrmFeatures::MODESET);
+        let has_kms_device = device.kms_device().is_some();
+
+        if has_modeset != has_kms_device {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the DRM modeset feature and KMS implementation are inconsistent"
+            );
+        }
+
         Ok(Self {
             index: DrmDeviceIndex::alloc()?,
             device,

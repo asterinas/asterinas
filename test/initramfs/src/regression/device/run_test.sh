@@ -6,6 +6,8 @@ set -e
 
 ./drm/device_node
 ./drm/get_info
+./drm/kms_resources
+./drm/kms_properties
 ./drm/master
 
 ./pty/close_pty
