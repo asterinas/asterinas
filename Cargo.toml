@@ -28,6 +28,7 @@ members = [
     "ostd/libs/padding-struct",
     "kernel",
     "kernel/comps/drm",
+    "kernel/comps/i8042",
     "kernel/comps/simpledrm",
     "kernel/comps/uart",
     "kernel/core",
@@ -35,7 +36,6 @@ members = [
     "kernel/core/comps/cmdline",
     "kernel/core/comps/console",
     "kernel/core/comps/framebuffer",
-    "kernel/core/comps/i8042",
     "kernel/core/comps/input",
     "kernel/core/comps/logger",
     "kernel/core/comps/mlsdisk",
@@ -82,6 +82,7 @@ default-members = [
     "ostd",
     "kernel",
     "kernel/comps/drm",
+    "kernel/comps/i8042",
     "kernel/comps/simpledrm",
     "kernel/comps/uart",
     "kernel/core",
@@ -89,7 +90,6 @@ default-members = [
     "kernel/core/comps/cmdline",
     "kernel/core/comps/console",
     "kernel/core/comps/framebuffer",
-    "kernel/core/comps/i8042",
     "kernel/core/comps/input",
     "kernel/core/comps/logger",
     "kernel/core/comps/mlsdisk",
@@ -167,6 +167,7 @@ aster-core = { path = "kernel/core", default-features = false }
 
 # Crates under kernel/comps
 aster-drm = { path = "kernel/comps/drm" }
+aster-i8042 = { path = "kernel/comps/i8042" }
 aster-simpledrm = { path = "kernel/comps/simpledrm" }
 aster-uart = { path = "kernel/comps/uart" }
 
@@ -175,7 +176,6 @@ aster-block = { path = "kernel/core/comps/block" }
 aster-cmdline = { path = "kernel/core/comps/cmdline" }
 aster-console = { path = "kernel/core/comps/console" }
 aster-framebuffer = { path = "kernel/core/comps/framebuffer" }
-aster-i8042 = { path = "kernel/core/comps/i8042" }
 aster-input = { path = "kernel/core/comps/input" }
 aster-logger = { path = "kernel/core/comps/logger" }
 aster-mlsdisk = { path = "kernel/core/comps/mlsdisk" }
