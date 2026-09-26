@@ -52,6 +52,13 @@ FN_TEST(capabilities)
 }
 END_TEST()
 
+FN_TEST(reject_client_cap_without_modesetting)
+{
+	TEST_ERRNO(drmSetClientCap(card_fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1),
+		   EOPNOTSUPP);
+}
+END_TEST()
+
 FN_SETUP(close_card)
 {
 	CHECK(close(card_fd));
