@@ -154,6 +154,14 @@ impl ProcFileOps for StatusFileOps {
                 .unwrap_or(0)
         )?;
 
+        write!(printer, "Groups:\t")?;
+        for (i, gid) in credentials.groups().iter().enumerate() {
+            let separator = if i == 0 { "" } else { " " };
+            write!(printer, "{}{}", separator, u32::from(*gid))?;
+        }
+        // Linux appends this space unconditionally, so an empty group list still prints one.
+        writeln!(printer, " ")?;
+
         if let Some(vmar_ref) = process.lock_vmar().as_ref() {
             let vsize = vmar_ref.get_mappings_total_size();
             let anon = vmar_ref.get_rss_counter(RssType::Anon) * (PAGE_SIZE / 1024);
