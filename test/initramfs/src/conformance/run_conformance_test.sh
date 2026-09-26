@@ -8,6 +8,7 @@ CONFORMANCE_TEST_SUITE=${CONFORMANCE_TEST_SUITE:-ltp}
 LTP_DIR=/opt/ltp
 GVISOR_DIR=/opt/gvisor
 KSELFTEST_DIR=/opt/kselftest
+PJDFSTEST_DIR=/opt/pjdfstest
 XFSTESTS_DIR=/opt/xfstests
 
 if [ "${CONFORMANCE_TEST_SUITE}" = "ltp" ]; then
@@ -28,6 +29,12 @@ elif [ "${CONFORMANCE_TEST_SUITE}" == "kselftest" ]; then
         echo "Error: Linux kernel selftest failed." >&2
         exit 3
     fi
+elif [ "${CONFORMANCE_TEST_SUITE}" = "pjdfstest" ]; then
+    echo "Running pjdfstest..."
+    if ! "${PJDFSTEST_DIR}/run_pjdfstest_test.sh"; then
+        echo "Error: pjdfstest failed." >&2
+        exit 4
+    fi
 elif [ "${CONFORMANCE_TEST_SUITE}" = "xfstests" ]; then
     echo "Running xfstests..."
     if [ -n "${XFSTESTS_RUNLIST}" ]; then
@@ -37,11 +44,11 @@ elif [ "${CONFORMANCE_TEST_SUITE}" = "xfstests" ]; then
     fi
     if ! "${XFSTESTS_DIR}/run_xfstests.sh" "$@"; then
         echo "Error: xfstests failed." >&2
-        exit 4
+        exit 5
     fi
 else
     echo "Error: Unknown test suite '${CONFORMANCE_TEST_SUITE}'." >&2
-    exit 5
+    exit 6
 fi
 
 echo "All conformance tests passed."
