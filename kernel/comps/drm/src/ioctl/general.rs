@@ -10,9 +10,6 @@ use crate::{
     file::{DrmClientCaps, DrmFile},
 };
 
-const DRM_DEFAULT_CURSOR_WIDTH: u64 = 64;
-const DRM_DEFAULT_CURSOR_HEIGHT: u64 = 64;
-
 impl DrmFile {
     pub(super) fn drm_get_version(&self, cmd: DrmIoctlVersion) -> Result<i32> {
         let device = self.device();
@@ -113,38 +110,13 @@ impl DrmFile {
                 device.has_features(DrmFeatures::SYNCOBJ_TIMELINE) as u64
             }
             _ => {
-                if !device.has_features(DrmFeatures::MODESET) {
-                    return_errno_with_message!(
-                        Errno::EOPNOTSUPP,
-                        "the DRM device lacks modesetting"
-                    );
-                }
-
-                match cap {
-                    DrmGetCapability::DumbBuffer => {
-                        // TODO: Derive this capability from the optional dumb-buffer
-                        // operation once that interface is introduced.
-                        0
-                    }
-                    DrmGetCapability::VblankHighCrtc => 1,
-                    // TODO: Once KMS is integrated, obtain the mode config from the
-                    // registered DRM device and check that it exists before reporting
-                    // mode-config-dependent capabilities below.
-                    DrmGetCapability::DumbPreferredDepth
-                    | DrmGetCapability::DumbPreferShadow
-                    | DrmGetCapability::AsyncPageFlip
-                    | DrmGetCapability::Addfb2Modifiers
-                    | DrmGetCapability::AtomicAsyncPageFlip => 0,
-                    DrmGetCapability::CursorWidth => DRM_DEFAULT_CURSOR_WIDTH,
-                    DrmGetCapability::CursorHeight => DRM_DEFAULT_CURSOR_HEIGHT,
-                    DrmGetCapability::PageFlipTarget => {
-                        // TODO: Derive this capability from the CRTC operations once
-                        // the KMS interface is introduced.
-                        0
-                    }
-                    DrmGetCapability::CrtcInVblankEvent => 1,
-                    _ => 0,
-                }
+                // TODO: Restore KMS capability reporting when `DrmModesetOps` and
+                // `DrmDevice::as_modeset_ops` are introduced. The presence of the
+                // modeset operations should be the sole source of truth for KMS
+                // support, while individual values should come from the mode config
+                // and its CRTC operations. Dumb-buffer support should additionally
+                // be derived from the corresponding GEM operations.
+                return_errno_with_message!(Errno::EOPNOTSUPP, "the DRM device lacks modesetting")
             }
         };
 
@@ -170,7 +142,6 @@ impl DrmFile {
         }
 
         let args: DrmSetClientCap = cmd.read()?;
-        let device = self.device();
 
         let Ok(cap) = DrmSetCapability::try_from(args.capability) else {
             return_errno_with_message!(Errno::EINVAL, "the DRM client capability is unknown");
@@ -186,28 +157,14 @@ impl DrmFile {
                 parse_boolean_capability(args.value)?,
             ),
             DrmSetCapability::Atomic => {
-                if !device.has_features(DrmFeatures::ATOMIC) {
-                    return_errno_with_message!(
-                        Errno::EOPNOTSUPP,
-                        "the DRM device lacks atomic modesetting"
-                    );
-                }
-
-                match args.value {
-                    0..=2 => {
-                        let enabled = args.value >= 1;
-                        self.set_client_caps(
-                            DrmClientCaps::ATOMIC
-                                | DrmClientCaps::UNIVERSAL_PLANES
-                                | DrmClientCaps::ASPECT_RATIO,
-                            enabled,
-                        );
-                    }
-                    _ => return_errno_with_message!(
-                        Errno::EINVAL,
-                        "the atomic DRM client capability must be zero, one, or two"
-                    ),
-                }
+                // TODO: Enable this capability when `DrmAtomicOps` and
+                // `DrmDevice::as_atomic_ops` are introduced. The presence of the
+                // atomic operations should be the sole source of truth for atomic
+                // modesetting support.
+                return_errno_with_message!(
+                    Errno::EOPNOTSUPP,
+                    "the DRM device lacks atomic modesetting"
+                );
             }
             DrmSetCapability::AspectRatio => self.set_client_caps(
                 DrmClientCaps::ASPECT_RATIO,
@@ -227,12 +184,7 @@ impl DrmFile {
                 );
             }
             DrmSetCapability::CursorPlaneHotspot => {
-                if !device.has_features(DrmFeatures::CURSOR_HOTSPOT) {
-                    return_errno_with_message!(
-                        Errno::EOPNOTSUPP,
-                        "the DRM device lacks cursor hotspot support"
-                    );
-                }
+                self.check_ioctl_features(DrmFeatures::CURSOR_HOTSPOT)?;
 
                 if !self.has_client_caps(DrmClientCaps::ATOMIC) {
                     return_errno_with_message!(

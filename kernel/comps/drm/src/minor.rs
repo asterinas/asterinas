@@ -8,7 +8,10 @@ use alloc::{
 
 use aster_core::{
     device::{Device, DeviceType},
-    fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
+    fs::{
+        devtmpfs::DevtmpfsNodeMeta,
+        file::{MappedObject, PerOpenFileOps},
+    },
     prelude::*,
 };
 use device_id::{DeviceId, MajorId, MinorId};
@@ -16,6 +19,7 @@ use device_id::{DeviceId, MajorId, MinorId};
 use crate::{
     device::{DrmDevice, DrmMaster, RegisteredDrmDevice},
     file::DrmFile,
+    gem::object::DrmGemObject,
 };
 
 const DRM_MAJOR_ID: u16 = 226;
@@ -102,6 +106,21 @@ impl DrmMinor {
         }
 
         Ok(())
+    }
+
+    pub(super) fn ensure_gem_has_allocated_range(&self, object: &Arc<DrmGemObject>) -> Result<()> {
+        self.registered_device
+            .ensure_gem_has_allocated_range(object)
+    }
+
+    pub(super) fn create_gem_mapping(
+        &self,
+        client_id: u64,
+        offset: usize,
+        size: usize,
+    ) -> Result<Box<dyn MappedObject>> {
+        self.registered_device
+            .create_gem_mapping(client_id, offset, size)
     }
 }
 
