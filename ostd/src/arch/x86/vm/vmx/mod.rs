@@ -3,6 +3,7 @@
 //! Intel VMX platform lifecycle management.
 
 mod instructions;
+pub(crate) mod vmcs;
 
 use x86::msr::{
     IA32_FEATURE_CONTROL, IA32_VMX_BASIC, IA32_VMX_CR0_FIXED0, IA32_VMX_CR0_FIXED1,
@@ -81,7 +82,6 @@ impl VmxGuardState {
 static VMX_GUARD_STATE: Mutex<VmxGuardState> = Mutex::new(VmxGuardState::new());
 
 /// A guard that keeps VMX operation enabled.
-#[cfg_attr(not(ktest), expect(dead_code))]
 #[must_use]
 pub(crate) struct VmxGuard {
     _private: (),
@@ -130,7 +130,10 @@ impl VmxGuardState {
 
         VmxCpuState::prepare_vmxon_regions()?;
         if let Err(err) = self.run_on_all_cpus(VmxCpuState::enable_vmx) {
-            let is_rollback_completed = self.run_on_all_cpus(VmxCpuState::disable_vmx).is_ok();
+            // SAFETY: No `VmxGuard`s have been issued.
+            let is_rollback_completed = self
+                .run_on_all_cpus(|| unsafe { VmxCpuState::disable_vmx() })
+                .is_ok();
             VmxCpuState::cleanup_prepared_regions();
             if !is_rollback_completed {
                 self.is_poisoned = true;
@@ -143,14 +146,17 @@ impl VmxGuardState {
         Ok(())
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     fn drop_vmx(&mut self) {
         self.active_guards -= 1;
         if self.active_guards != 0 {
             return;
         }
 
-        if self.run_on_all_cpus(VmxCpuState::disable_vmx).is_err() {
+        // SAFETY: No `VmxGuard`s remain.
+        if self
+            .run_on_all_cpus(|| unsafe { VmxCpuState::disable_vmx() })
+            .is_err()
+        {
             self.is_poisoned = true;
         }
         VmxCpuState::cleanup_prepared_regions();
@@ -226,7 +232,12 @@ impl VmxCpuState {
         cpu_state.last_error = None;
     }
 
-    fn disable_vmx() {
+    /// Disables VMX on the current CPU.
+    ///
+    /// # Safety
+    ///
+    /// No VMX users may remain, and new users must be excluded throughout the call.
+    unsafe fn disable_vmx() {
         let irq_guard = crate::irq::disable_local();
         let cpu_state = VMX_CPU_STATE.get_with(&irq_guard);
         let mut cpu_state = cpu_state.lock();
@@ -238,7 +249,15 @@ impl VmxCpuState {
 
         // SAFETY:
         // 1. `cpu_state.is_enabled` means this CPU is in VMX operation.
-        // 2. This module never loads a VMCS, so there are no active VMCSs to clear.
+        // 2. The caller excludes concurrent VMX users.
+        if let Err(err) = unsafe { vmcs::LocalVmcsState::deactivate_all(&irq_guard) } {
+            cpu_state.last_error = Some(err);
+            return;
+        }
+
+        // SAFETY:
+        // 1. `cpu_state.is_enabled` means this CPU is in VMX operation.
+        // 2. `deactivate_all` cleared every active VMCS above.
         if let Err(err) = unsafe { instructions::vmxoff(&irq_guard) } {
             cpu_state.last_error = Some(err);
             return;
