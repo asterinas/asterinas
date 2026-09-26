@@ -113,6 +113,12 @@ echo "Start mount bind file test......"
 test_mount_bind_file
 echo "All mount bind file test passed."
 
+TEST_TMPDIR=/tmp TEST_DIRECT=0 ./empty_write/empty_write
+TEST_TMPDIR=/exfat TEST_DIRECT=0 ./empty_write/empty_write
+TEST_TMPDIR=/exfat TEST_DIRECT=1 ./empty_write/empty_write
+TEST_TMPDIR=/ext2 TEST_DIRECT=0 ./empty_write/empty_write
+TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
+
 ./getcwd/getcwd
 
 ./inotify/inotify_align

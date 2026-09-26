@@ -717,6 +717,10 @@ impl ExfatInode {
                 return_errno!(Errno::EISDIR)
             }
 
+            if write_len == 0 {
+                return Ok(0);
+            }
+
             let file_size = inner.size;
             let file_allocated_size = inner.size_allocated;
             let new_size = offset + write_len;
@@ -760,6 +764,9 @@ impl ExfatInode {
         let inner = self.inner.upread();
         if inner.inode_type.is_directory() {
             return_errno!(Errno::EISDIR)
+        }
+        if write_len == 0 {
+            return Ok(0);
         }
         if !is_block_aligned(offset) || !is_block_aligned(write_len) {
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
