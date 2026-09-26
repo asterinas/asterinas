@@ -4,8 +4,10 @@ use alloc::{boxed::Box, vec::Vec};
 use core::{
     fmt,
     ops::{Deref, DerefMut},
+    pin::Pin,
 };
 
+use acpi::madt::{Madt, MadtEntry};
 use ioapic::IoApic;
 use spin::Once;
 
@@ -161,8 +163,6 @@ impl Drop for MappedIrqLine {
 pub static IRQ_CHIP: Once<IrqChip> = Once::new();
 
 pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
-    use acpi::madt::{Madt, MadtEntry};
-
     // If there are no ACPI tables, or the ACPI tables do not provide us with information about
     // the I/O APIC, we may need to find another way to determine the I/O APIC address
     // correctly and reliably (e.g., by parsing the MultiProcessor Specification, which has
@@ -170,12 +170,7 @@ pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
     let acpi_tables = get_acpi_tables().unwrap();
     let madt_table = acpi_tables.find_table::<Madt>().unwrap();
 
-    // "A one indicates that the system also has a PC-AT-compatible dual-8259 setup. The 8259
-    // vectors must be disabled (that is, masked) when enabling the ACPI APIC operation"
-    const PCAT_COMPAT: u32 = 1;
-    if madt_table.get().flags & PCAT_COMPAT != 0 {
-        pic::init_and_disable();
-    }
+    init_and_disable_pic_if_present(madt_table.get());
 
     let mut io_apics: Vec<IoApic> = Vec::with_capacity(2);
     let mut isa_overrides = Vec::new();
@@ -279,4 +274,13 @@ pub(in crate::arch) fn init(io_mem_builder: &IoMemAllocatorBuilder) {
         overrides: isa_overrides.into_boxed_slice(),
     };
     IRQ_CHIP.call_once(|| irq_chip);
+}
+
+fn init_and_disable_pic_if_present(madt_table: Pin<&Madt>) {
+    // "A one indicates that the system also has a PC-AT-compatible dual-8259 setup. The 8259
+    // vectors must be disabled (that is, masked) when enabling the ACPI APIC operation."
+    const PCAT_COMPAT: u32 = 1;
+    if madt_table.flags & PCAT_COMPAT != 0 || pic::probe_legacy_pic() {
+        pic::init_and_disable();
+    }
 }
