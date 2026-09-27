@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{
+    boxed::Box,
     collections::BTreeMap,
     sync::{Arc, Weak},
 };
@@ -9,9 +10,11 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use aster_core::prelude::*;
+use aster_core::{fs::file::MappedObject, prelude::*};
 use ostd::sync::Mutex;
 use sparse_id_alloc::SparseIdAlloc;
+
+use crate::gem::{DrmGemOps, mmap_offset::DrmGemMmapOffsetSpace, object::DrmGemObject};
 
 static DRM_DEVICE_INDEX_ALLOCATOR: Mutex<SparseIdAlloc> = Mutex::new(SparseIdAlloc::new(0, 63));
 
@@ -28,6 +31,9 @@ pub trait DrmDevice: Debug + Send + Sync {
     fn has_features(&self, feature: DrmFeatures) -> bool {
         self.features().contains(feature)
     }
+
+    /// Returns the GEM operations implemented by this device, if any.
+    fn as_gem_ops(&self) -> Option<&dyn DrmGemOps>;
 }
 
 bitflags::bitflags! {
@@ -62,14 +68,21 @@ pub(super) struct RegisteredDrmDevice {
     /// Primary files retain their own `Arc<DrmMaster>`, so clearing this
     /// pointer on `DROP_MASTER` does not destroy the former master's context.
     master: Mutex<Option<Arc<DrmMaster>>>,
+    /// The device-wide fake mmap-offset space for GEM objects, if GEM is supported.
+    mmap_offset_space: Option<Mutex<DrmGemMmapOffsetSpace>>,
 }
 
 impl RegisteredDrmDevice {
     pub(super) fn new(device: Arc<dyn DrmDevice>) -> Result<Self> {
+        let mmap_offset_space = device
+            .as_gem_ops()
+            .map(|_| Mutex::new(DrmGemMmapOffsetSpace::default()));
+
         Ok(Self {
             index: DrmDeviceIndex::alloc()?,
             device,
             master: Mutex::new(None),
+            mmap_offset_space,
         })
     }
 
@@ -169,6 +182,34 @@ impl RegisteredDrmDevice {
         *master = None;
 
         Ok(())
+    }
+
+    pub(super) fn gem_mmap_offset(&self, object: &Arc<DrmGemObject>) -> Result<u64> {
+        self.mmap_offset_space()?
+            .lock()
+            .get_or_allocate_offset(object)
+    }
+
+    pub(super) fn create_gem_mapped_object(
+        &self,
+        client_id: u64,
+        offset: usize,
+        size: usize,
+    ) -> Result<Box<dyn MappedObject>> {
+        self.mmap_offset_space()?
+            .lock()
+            .create_mapped_object(client_id, offset, size)
+    }
+
+    fn mmap_offset_space(&self) -> Result<&Mutex<DrmGemMmapOffsetSpace>> {
+        if self.device.as_gem_ops().is_none() {
+            return_errno_with_message!(Errno::EOPNOTSUPP, "the DRM device does not support GEM");
+        }
+
+        Ok(self
+            .mmap_offset_space
+            .as_ref()
+            .expect("a GEM-capable DRM device must have an mmap-offset space"))
     }
 }
 
