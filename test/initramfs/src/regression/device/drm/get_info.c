@@ -52,10 +52,9 @@ FN_TEST(capabilities)
 }
 END_TEST()
 
-FN_TEST(reject_client_cap_without_modesetting)
+FN_TEST(enable_universal_planes_capability)
 {
-	TEST_ERRNO(drmSetClientCap(card_fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1),
-		   EOPNOTSUPP);
+	TEST_SUCC(drmSetClientCap(card_fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1));
 }
 END_TEST()
 
