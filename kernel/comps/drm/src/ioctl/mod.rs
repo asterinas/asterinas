@@ -1,45 +1,46 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod general;
+
 use aster_core::{dispatch_ioctl, prelude::*, util::ioctl::RawIoctl};
 use ioctl_defs::*;
 
-use crate::{device::DrmFeatures, file::DrmFile, has_current_sys_admin, minor::DrmMinorType};
+use crate::{file::DrmFile, has_current_sys_admin, minor::DrmMinorType};
 
 impl DrmFile {
     pub(super) fn dispatch_ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         dispatch_ioctl!(match raw_ioctl {
             // General ioctl cmds.
             cmd @ DrmIoctlVersion => {
-                self.check_ioctl_requirements(DrmIoctlAccess::RENDER_ALLOW, DrmFeatures::empty())?;
+                self.check_ioctl_access(DrmIoctlAccess::RENDER_ALLOW)?;
                 self.drm_get_version(cmd)
             }
             cmd @ DrmIoctlGetUnique => {
-                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::empty())?;
+                self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_get_unique(cmd)
             }
             cmd @ DrmIoctlGetMagic => {
-                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::empty())?;
+                self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_get_magic(cmd)
             }
             cmd @ DrmIoctlGetCap => {
-                self.check_ioctl_requirements(DrmIoctlAccess::RENDER_ALLOW, DrmFeatures::empty())?;
+                self.check_ioctl_access(DrmIoctlAccess::RENDER_ALLOW)?;
                 self.drm_get_cap(cmd)
             }
             cmd @ DrmIoctlSetClientCap => {
-                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::MODESET)?;
+                self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_set_client_cap(cmd)
             }
             cmd @ DrmIoctlAuthMagic => {
-                self.check_ioctl_requirements(DrmIoctlAccess::MASTER, DrmFeatures::empty())?;
+                self.check_ioctl_access(DrmIoctlAccess::MASTER)?;
                 self.drm_auth_magic(cmd)
             }
             cmd @ DrmIoctlSetMaster => {
-                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::empty())?;
+                self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_set_master(cmd)
             }
             cmd @ DrmIoctlDropMaster => {
-                self.check_ioctl_requirements(DrmIoctlAccess::empty(), DrmFeatures::empty())?;
+                self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_drop_master(cmd)
             }
             _ => {
@@ -53,21 +54,10 @@ impl DrmFile {
         })
     }
 
-    fn check_ioctl_requirements(
-        &self,
-        required_flags: DrmIoctlAccess,
-        required_features: DrmFeatures,
-    ) -> Result<()> {
-        if !self.has_features(required_features) {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
-                "the DRM device lacks a feature required by the ioctl"
-            );
-        }
-
+    fn check_ioctl_access(&self, required_access: DrmIoctlAccess) -> Result<()> {
         match self.minor_type() {
             DrmMinorType::Primary => {
-                if required_flags.contains(DrmIoctlAccess::AUTH) && !self.is_authenticated() {
+                if required_access.contains(DrmIoctlAccess::AUTH) && !self.is_authenticated() {
                     return_errno_with_message!(
                         Errno::EACCES,
                         "the DRM ioctl requires an authenticated primary client"
@@ -75,7 +65,7 @@ impl DrmFile {
                 }
             }
             DrmMinorType::Render => {
-                if !required_flags.contains(DrmIoctlAccess::RENDER_ALLOW) {
+                if !required_access.contains(DrmIoctlAccess::RENDER_ALLOW) {
                     return_errno_with_message!(
                         Errno::EACCES,
                         "the DRM ioctl is not allowed on a render node"
@@ -84,10 +74,10 @@ impl DrmFile {
             }
         }
 
-        if required_flags.contains(DrmIoctlAccess::ROOT_ONLY) && !has_current_sys_admin() {
+        if required_access.contains(DrmIoctlAccess::ROOT_ONLY) && !has_current_sys_admin() {
             return_errno_with_message!(Errno::EACCES, "the DRM ioctl requires CAP_SYS_ADMIN");
         }
-        if required_flags.contains(DrmIoctlAccess::MASTER) && !self.is_master() {
+        if required_access.contains(DrmIoctlAccess::MASTER) && !self.is_master() {
             return_errno_with_message!(Errno::EACCES, "the DRM client is not the current master");
         }
 

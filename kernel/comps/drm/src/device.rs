@@ -38,18 +38,17 @@ bitflags::bitflags! {
     pub struct DrmFeatures: u32 {
         /// Supports creation of a render device node.
         const RENDER           = 1 << 0;
-        /// Supports kernel mode-setting (KMS) operations.
-        const MODESET          = 1 << 1;
-        /// Supports atomic mode-setting operations.
-        const ATOMIC           = 1 << 2;
-        /// Supports graphics execution manager (GEM) operations.
-        const GEM              = 1 << 3;
         /// Supports DRM synchronization objects.
-        const SYNCOBJ          = 1 << 4;
+        const SYNCOBJ          = 1 << 1;
         /// Supports timeline synchronization objects.
-        const SYNCOBJ_TIMELINE = 1 << 5;
+        const SYNCOBJ_TIMELINE = 1 << 2;
         /// Requires userspace-aware cursor hotspot handling.
-        const CURSOR_HOTSPOT   = 1 << 6;
+        const CURSOR_HOTSPOT   = 1 << 3;
+        /// Supports kernel mode-setting (KMS) operations.
+        ///
+        /// TODO: Replace this temporary gate with `DrmDevice::as_modeset_ops`
+        /// once the KMS operations interface is introduced.
+        const MODESET          = 1 << 4;
     }
 }
 
