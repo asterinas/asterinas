@@ -84,6 +84,17 @@ bitflags::bitflags! {
     }
 }
 
+// T-Head MAE encodes the memory type in PTE bits 59..63. These values
+// are mutually exclusive field encodings rather than independent flags.
+#[cfg(feature = "riscv_thead_mae")]
+const THEAD_MT_PMA: usize = 0x7000_0000_0000_0000;
+
+#[cfg(feature = "riscv_thead_mae")]
+const THEAD_MT_IO: usize = 0x9000_0000_0000_0000;
+
+#[cfg(feature = "riscv_thead_mae")]
+const THEAD_MT_MASK: usize = 0xf800_0000_0000_0000;
+
 const SHARED_ASID: usize = 0;
 
 pub(crate) fn tlb_flush_addr(vaddr: Vaddr) {
@@ -229,10 +240,24 @@ impl PageTableEntry {
             | parse_flags!(self.0, PteFlags::GLOBAL, PrivFlags::GLOBAL)
             | parse_flags!(self.0, PteFlags::RSV1, PrivFlags::AVAIL1);
 
-        let cache = if self.0 & PteFlags::PBMT_IO.bits() != 0 {
-            CachePolicy::Uncacheable
-        } else {
-            CachePolicy::Writeback
+        let cache = {
+            #[cfg(feature = "riscv_thead_mae")]
+            {
+                match self.0 & THEAD_MT_MASK {
+                    THEAD_MT_PMA => CachePolicy::Writeback,
+                    THEAD_MT_IO => CachePolicy::Uncacheable,
+                    _ => CachePolicy::Uncacheable,
+                }
+            }
+
+            #[cfg(not(feature = "riscv_thead_mae"))]
+            {
+                if self.0 & PteFlags::PBMT_IO.bits() != 0 {
+                    CachePolicy::Uncacheable
+                } else {
+                    CachePolicy::Writeback
+                }
+            }
         };
 
         PageProperty {
@@ -269,13 +294,25 @@ impl PageTableEntry {
         }
 
         match prop.cache {
-            CachePolicy::Writeback => (),
+            CachePolicy::Writeback => {
+                #[cfg(feature = "riscv_thead_mae")]
+                {
+                    flags |= THEAD_MT_PMA;
+                }
+            }
             CachePolicy::Uncacheable => {
-                // TODO: Currently Asterinas uses `Uncacheable` only for I/O
-                // memory. Normal memory can also be `Noncacheable`, where the
-                // PBMT should be set to `PBMT_NC`.
-                if has_extensions(IsaExtensions::SVPBMT) {
-                    flags |= PteFlags::PBMT_IO.bits()
+                #[cfg(feature = "riscv_thead_mae")]
+                {
+                    flags |= THEAD_MT_IO;
+                }
+                #[cfg(not(feature = "riscv_thead_mae"))]
+                {
+                    // TODO: Currently Asterinas uses `Uncacheable` only for I/O
+                    // memory. Normal memory can also be `Noncacheable`, where the
+                    // PBMT should be set to `PBMT_NC`.
+                    if has_extensions(IsaExtensions::SVPBMT) {
+                        flags |= PteFlags::PBMT_IO.bits();
+                    }
                 }
             }
             _ => panic!("unsupported cache policy"),
