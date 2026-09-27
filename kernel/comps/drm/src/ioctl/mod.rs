@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod gem;
 mod general;
 
 use aster_core::{dispatch_ioctl, prelude::*, util::ioctl::RawIoctl};
@@ -43,6 +44,23 @@ impl DrmFile {
                 self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_drop_master(cmd)
             }
+            // GEM ioctl cmds.
+            cmd @ DrmIoctlGemClose => {
+                self.check_gem_ioctl_access(DrmIoctlAccess::RENDER_ALLOW)?;
+                self.drm_gem_close(cmd)
+            }
+            cmd @ DrmIoctlModeCreateDumb => {
+                self.check_gem_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_create_dumb(cmd)
+            }
+            cmd @ DrmIoctlModeMapDumb => {
+                self.check_gem_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_map_dumb(cmd)
+            }
+            cmd @ DrmIoctlModeDestroyDumb => {
+                self.check_gem_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_destroy_dumb(cmd)
+            }
             _ => {
                 ostd::warn!(
                     "unknown ioctl minor={:?} cmd={:#x}",
@@ -52,6 +70,14 @@ impl DrmFile {
                 return_errno_with_message!(Errno::ENOTTY, "the DRM ioctl command is unknown")
             }
         })
+    }
+
+    fn check_gem_ioctl_access(&self, required_access: DrmIoctlAccess) -> Result<()> {
+        if self.device().as_gem_ops().is_none() {
+            return_errno_with_message!(Errno::EOPNOTSUPP, "the DRM device does not support GEM");
+        }
+
+        self.check_ioctl_access(required_access)
     }
 
     fn check_ioctl_access(&self, required_access: DrmIoctlAccess) -> Result<()> {
@@ -104,7 +130,10 @@ mod ioctl_defs {
         util::ioctl::{InData, InOutData, NoData, OutData},
     };
 
-    use super::general::{DrmAuth, DrmGetCap, DrmSetClientCap, DrmUnique, DrmVersion};
+    use super::{
+        gem::{DrmGemClose, DrmModeCreateDumb, DrmModeDestroyDumb, DrmModeMapDumb},
+        general::{DrmAuth, DrmGetCap, DrmSetClientCap, DrmUnique, DrmVersion},
+    };
 
     pub(super) type DrmIoctlVersion =
         ioc!(DRM_IOCTL_VERSION, b'd', 0x00, InOutData<DrmVersion>);
@@ -112,6 +141,12 @@ mod ioctl_defs {
         ioc!(DRM_IOCTL_GET_UNIQUE, b'd', 0x01, InOutData<DrmUnique>);
     pub(super) type DrmIoctlGetMagic =
         ioc!(DRM_IOCTL_GET_MAGIC, b'd', 0x02, OutData<DrmAuth>);
+    pub(super) type DrmIoctlGemClose = ioc!(
+        DRM_IOCTL_GEM_CLOSE,
+        b'd',
+        0x09,
+        InData<DrmGemClose>
+    );
     pub(super) type DrmIoctlGetCap =
         ioc!(DRM_IOCTL_GET_CAP, b'd', 0x0c, InOutData<DrmGetCap>);
     pub(super) type DrmIoctlSetClientCap =
@@ -120,4 +155,22 @@ mod ioctl_defs {
         ioc!(DRM_IOCTL_AUTH_MAGIC, b'd', 0x11, InData<DrmAuth>);
     pub(super) type DrmIoctlSetMaster = ioc!(DRM_IOCTL_SET_MASTER, b'd', 0x1e, NoData);
     pub(super) type DrmIoctlDropMaster = ioc!(DRM_IOCTL_DROP_MASTER, b'd', 0x1f, NoData);
+    pub(super) type DrmIoctlModeCreateDumb = ioc!(
+        DRM_IOCTL_MODE_CREATE_DUMB,
+        b'd',
+        0xb2,
+        InOutData<DrmModeCreateDumb>
+    );
+    pub(super) type DrmIoctlModeMapDumb = ioc!(
+        DRM_IOCTL_MODE_MAP_DUMB,
+        b'd',
+        0xb3,
+        InOutData<DrmModeMapDumb>
+    );
+    pub(super) type DrmIoctlModeDestroyDumb = ioc!(
+        DRM_IOCTL_MODE_DESTROY_DUMB,
+        b'd',
+        0xb4,
+        InOutData<DrmModeDestroyDumb>
+    );
 }

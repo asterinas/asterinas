@@ -21,7 +21,10 @@ use alloc::sync::Arc;
 use core::fmt::Debug;
 
 use aster_core::prelude::*;
-use aster_drm::device::{DrmDevice, DrmFeatures};
+use aster_drm::{
+    device::{DrmDevice, DrmFeatures},
+    gem::{DrmGemOps, object::DrmGemObject, shmem::DrmGemShmemBackend},
+};
 use aster_framebuffer::framebuffer;
 use component::{ComponentInitError, init_component};
 
@@ -74,5 +77,15 @@ impl DrmDevice for SimpleDrmDevice {
 
     fn features(&self) -> &DrmFeatures {
         &self.features
+    }
+
+    fn as_gem_ops(&self) -> Option<&dyn DrmGemOps> {
+        Some(self)
+    }
+}
+
+impl DrmGemOps for SimpleDrmDevice {
+    fn create_dumb(&self, size: usize) -> Result<Arc<DrmGemObject>> {
+        DrmGemShmemBackend::new_object(size)
     }
 }
