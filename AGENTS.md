@@ -24,7 +24,7 @@ All development is done inside the project Docker container:
 ```bash
 docker run -it --privileged --network=host -v /dev:/dev \
   -v $(pwd)/asterinas:/root/asterinas \
-  asterinas/dev:0.18.1-20260918
+  asterinas/dev:0.18.1-20260926
 ```
 
 Key Makefile targets:
