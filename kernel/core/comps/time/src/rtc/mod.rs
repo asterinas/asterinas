@@ -15,6 +15,11 @@ pub(crate) trait Driver {
 
     /// Reads RTC.
     fn read_rtc(&self) -> SystemTime;
+
+    /// Returns the NVRAM backend, if this RTC provides one.
+    fn nvram(&self) -> Option<&dyn crate::nvram::Backend> {
+        None
+    }
 }
 
 macro_rules! declare_rtc_drivers {
