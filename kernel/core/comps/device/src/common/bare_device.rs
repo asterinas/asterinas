@@ -20,11 +20,13 @@ pub struct BareDevice {
 impl BareDevice {
     /// Creates a bare device at the top of `/sys/devices`.
     ///
-    /// It is not registered until [`add_device`](crate::add_device) is called.
+    /// It is not registered until [`add_device`] is called.
     ///
     /// # Panics
     ///
     /// Panics if `name` is not a valid `SysTree` node name.
+    ///
+    /// [`add_device`]: crate::add_device
     pub fn new_root(name: impl Into<SysStr>) -> Arc<Self> {
         Self::new(name, None)
     }

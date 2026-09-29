@@ -18,7 +18,8 @@ pub enum SubsystemKind {
 }
 
 /// The subsystem that owns a device.
-/// A device has exactly one.
+///
+/// A device belongs to exactly one subsystem.
 #[derive(Clone)]
 pub struct Subsystem {
     kind: SubsystemKind,
@@ -83,7 +84,8 @@ impl Subsystem {
         self.ops.as_ref().map(|ops| ops.dir())
     }
 
-    /// Returns the directory that lists the device: `/sys/bus/<bus>/devices` or `/sys/class/<class>`.
+    /// Returns the directory that lists the device: `/sys/bus/<bus>/devices` or
+    /// `/sys/class/<class>`.
     pub(crate) fn index_dir(&self) -> Option<Arc<Dir>> {
         self.ops.as_ref().map(|ops| ops.index_dir())
     }
@@ -105,9 +107,12 @@ impl core::fmt::Debug for Subsystem {
 
 /// What the registration sequence needs from a bus or class handle.
 ///
-/// Implemented by [`BusHandle`](crate::bus::BusHandle) and [`ClassHandle`](crate::class::ClassHandle),
+/// Implemented by [`BusHandle`] and [`ClassHandle`],
 /// and reachable only through [`Subsystem`], whose field is private,
 /// so that the callbacks cannot be invoked from outside the crate.
+///
+/// [`BusHandle`]: crate::bus::BusHandle
+/// [`ClassHandle`]: crate::class::ClassHandle
 pub(crate) trait SubsystemOps: Send + Sync + 'static {
     /// Returns the bus or class name.
     fn name(&self) -> &'static str;

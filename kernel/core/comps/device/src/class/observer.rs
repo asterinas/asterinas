@@ -9,7 +9,7 @@ use super::{Class, ClassDevice};
 /// An observer of devices joining or leaving a class.
 ///
 /// An observer is notified when devices join or leave the class
-/// through [`on_device_added`](Self::on_device_added) and [`on_device_removed`](Self::on_device_removed), respectively.
+/// through [`on_device_added`] and [`on_device_removed`], respectively.
 /// When the observer is registered or unregistered,
 /// the corresponding callback is also called for every device currently in the class.
 /// Each device is announced once, regardless of whether it or the observer is registered first.
@@ -26,6 +26,9 @@ use super::{Class, ClassDevice};
 ///   An observer of the `block` class can schedule disk scans and registration of partition devices.
 /// - **Console selection.**
 ///   An observer of the `tty` class can track available terminals for console selection.
+///
+/// [`on_device_added`]: `Self::on_device_added`
+/// [`on_device_removed`]: `Self::on_device_removed`
 pub trait ClassObserver<C: Class>: Send + Sync + 'static {
     /// Handles a device joining the class or being announced when this observer is registered.
     fn on_device_added(&self, dev: &Arc<ClassDevice<C>>);

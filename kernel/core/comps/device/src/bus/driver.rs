@@ -30,15 +30,20 @@ use crate::{
 ///
 /// # Concurrency
 ///
-/// For each device, [`on_probe`](Self::on_probe), [`on_release`](Self::on_release),
-/// and the attribute callbacks returned by [`dev_attrs`](Self::dev_attrs) run serially.
-/// To avoid deadlocks, these callbacks must not synchronously perform any of the following operations:
+/// For each device, [`on_probe`], [`on_release`],
+/// and the attribute callbacks returned by [`dev_attrs`] run serially.
+/// To avoid deadlocks,
+/// these callbacks must not synchronously perform any of the following operations:
 ///
 /// - bind, unbind, or remove this device;
 /// - unregister this driver;
 /// - invoke a driver attribute callback on this device.
 ///
 /// Registering and removing child devices is allowed.
+///
+/// [`on_probe`]: Self::on_probe
+/// [`on_release`]: Self::on_release
+/// [`dev_attrs`]: Self::dev_attrs
 pub trait Driver<B: Bus>: Send + Sync + 'static {
     /// The driver name: the directory under `/sys/bus/<bus>/drivers`.
     ///
@@ -50,7 +55,7 @@ pub trait Driver<B: Bus>: Send + Sync + 'static {
 
     /// Initializes a device accepted by [`Bus::matches`].
     ///
-    /// Called during [`add_device`](crate::add_device) or [`BusHandle::register_driver`]
+    /// Called during [`add_device`] or [`BusHandle::register_driver`]
     /// when automatic probing is enabled,
     /// or when user space requests probing or binding through sysfs.
     ///
@@ -61,20 +66,25 @@ pub trait Driver<B: Bus>: Send + Sync + 'static {
     ///
     /// # Post-conditions
     ///
-    /// If the callback returns `Ok(())`, the device model installs [`dev_attrs`](Self::dev_attrs)
+    /// If the callback returns `Ok(())`, the device model installs [`dev_attrs`]
     /// and completes the binding.
-    /// If a subsequent binding step fails, it calls [`on_release`](Self::on_release) to undo the initialization.
+    /// If a subsequent binding step fails, it calls [`on_release`] to undo the initialization.
     ///
     /// If the callback returns `Err(_)`, the device model removes the driver links
-    /// without calling [`on_release`](Self::on_release).
-    /// The callback must release its resources and remove any child devices it created before returning the error.
+    /// without calling [`on_release`].
+    /// The callback must release its resources and remove any child devices it created
+    /// before returning the error.
+    ///
+    /// [`add_device`]: crate::add_device
+    /// [`dev_attrs`]: Self::dev_attrs
+    /// [`on_release`]: Self::on_release
     fn on_probe(&self, dev: &Arc<BusDevice<B>>) -> Result<()>;
 
     /// Releases the resources held by this driver for the device.
     ///
-    /// Called during [`BusHandle::unbind`], [`BusHandle::unregister_driver`], or [`remove_device`](crate::remove_device),
+    /// Called during [`BusHandle::unbind`], [`BusHandle::unregister_driver`], or [`remove_device`],
     /// when user space requests unbinding through sysfs,
-    /// or when binding fails after [`on_probe`](Self::on_probe) succeeds.
+    /// or when binding fails after [`on_probe`] succeeds.
     ///
     /// # Pre-conditions
     ///
@@ -87,6 +97,9 @@ pub trait Driver<B: Bus>: Send + Sync + 'static {
     /// When the callback returns, the device model clears the binding if the device is bound.
     /// The callback must release the driver's resources for the device
     /// and remove any child devices created by the driver before returning.
+    ///
+    /// [`remove_device`]: crate::remove_device
+    /// [`on_probe`]: Self::on_probe
     fn on_release(&self, _dev: &Arc<BusDevice<B>>) {}
 
     /// Returns the attributes exposed by devices while bound to this driver.
@@ -94,6 +107,7 @@ pub trait Driver<B: Bus>: Send + Sync + 'static {
 }
 
 /// A registered driver.
+///
 /// Dereferences to the driver itself.
 pub struct DriverHandle<B: Bus> {
     driver: Arc<dyn Driver<B>>,
