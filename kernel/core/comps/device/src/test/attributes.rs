@@ -90,7 +90,8 @@ fn attribute_ids_survive_bind_and_unbind() {
 
 /// Registration hands the core, subsystem, device type, and own attributes over as one batch,
 /// so a layer that reuses a name the core already took must be rejected there.
-/// Otherwise its callback would quietly replace the core's while sysfs went on showing the core's entry.
+/// Otherwise its callback would quietly replace the core's while sysfs went on showing the core's
+/// entry.
 #[ktest]
 fn an_attribute_may_not_shadow_a_core_one() {
     // 1. Define an attribute that conflicts with the core device-number attribute.

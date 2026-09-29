@@ -11,17 +11,21 @@
 //!
 //! To add a new bus, implement [`Bus`] and pass it to [`register`].
 //! For each discovered device, use [`BusDevice::builder`] with the returned handle,
-//! then register the device with [`add_device`](crate::add_device).
+//! then register the device with [`add_device`].
 //!
 //! To write a driver, implement [`Driver<B>`] for the target bus
 //! and register it through [`BusHandle::register_driver`].
-//! [`Driver::on_probe`] initializes a matched device, and [`Driver::on_release`] releases its resources.
+//! [`Driver::on_probe`] initializes a matched device, and
+//! [`Driver::on_release`] releases its resources.
 //! Driver attributes are declared with [`Attr`] through [`Driver::dev_attrs`].
 //!
 //! Binding is symmetric: a new device is offered to every registered driver,
 //! and a new driver to every unbound device.
-//! The first driver whose [`on_probe`](Driver::on_probe) succeeds wins.
+//! The first driver whose [`on_probe`] succeeds wins.
 //! Automatic probing can be disabled through `/sys/bus/<name>/drivers_autoprobe`.
+//!
+//! [`add_device`]: crate::add_device
+//! [`on_probe`]: Driver::on_probe
 
 mod device;
 mod driver;
@@ -174,11 +178,14 @@ impl<B: Bus> BusHandle<B> {
 
     /// Unbinds the device from its driver.
     ///
-    /// Removes the driver's attributes and links, calls its [`on_release`](Driver::on_release) callback,
-    /// and clears the binding.
+    /// Removes the driver's attributes and links, calls its [`on_release`]
+    /// callback, and clears the binding.
     ///
-    /// Use this before [`remove_device`](crate::remove_device)
+    /// Use this before [`remove_device`]
     /// when this device has child devices created by the driver.
+    ///
+    /// [`remove_device`]: crate::remove_device
+    /// [`on_release`]: Driver::on_release
     pub fn unbind(&self, dev: &Arc<BusDevice<B>>) -> Result<()> {
         self.unbind_inner(dev, None)
     }

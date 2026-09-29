@@ -12,7 +12,7 @@
 //! To define a class, implement [`Class`] and pass it to [`register`].
 //! Create its devices with [`ClassDevice::builder`] using the returned handle,
 //! set a device number when a `/dev` node is needed,
-//! then register each device with [`add_device`](crate::add_device).
+//! then register each device with [`add_device`].
 //! [`Class::dev_attrs`] defines attributes shared by the class's devices,
 //! and [`Class::devnode`] customizes their `/dev` paths and permissions.
 //!
@@ -20,6 +20,8 @@
 //! and register it through [`ClassHandle::register_observer`].
 //! It is notified about existing members as well as later additions and removals.
 //! Follow the callback restrictions documented on [`ClassObserver`].
+//!
+//! [`add_device`]: crate::add_device
 
 mod device;
 mod observer;
@@ -95,9 +97,11 @@ pub struct ClassHandle<C: Class> {
 
 impl<C: Class> ClassHandle<C> {
     /// Registers an observer and announces the current members
-    /// through [`on_device_added`](ClassObserver::on_device_added).
+    /// through [`on_device_added`].
     ///
     /// The callback restrictions in [`ClassObserver`] apply to these notifications.
+    ///
+    /// [`on_device_added`]: ClassObserver::on_device_added
     pub fn register_observer(&self, observer: Arc<dyn ClassObserver<C>>) -> Result<()> {
         let _guard = self.membership.lock();
         {
@@ -114,9 +118,11 @@ impl<C: Class> ClassHandle<C> {
     }
 
     /// Unregisters an observer and announces the current members
-    /// through [`on_device_removed`](ClassObserver::on_device_removed).
+    /// through [`on_device_removed`].
     ///
     /// The callback restrictions in [`ClassObserver`] apply to these notifications.
+    ///
+    /// [`on_device_removed`]: ClassObserver::on_device_removed
     pub fn unregister_observer(&self, observer: &Arc<dyn ClassObserver<C>>) -> Result<()> {
         let _guard = self.membership.lock();
         let removed = {

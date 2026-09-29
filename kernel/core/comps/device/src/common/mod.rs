@@ -2,11 +2,10 @@
 
 //! Shared device types and attributes.
 //!
-//! Build a device through [`BusDevice::builder`](crate::bus::BusDevice::builder)
-//! or [`ClassDevice::builder`](crate::class::ClassDevice::builder),
-//! then call [`add_device`](crate::add_device) to register it.
+//! Build a device through [`BusDevice::builder`] or [`ClassDevice::builder`],
+//! then call [`add_device`] to register it.
 //! Use [`BareDevice`] for a parent that belongs to neither a bus nor a class.
-//! Remove child devices before calling [`remove_device`](crate::remove_device) on their parent.
+//! Remove child devices before calling [`remove_device`] on their parent.
 //!
 //! [`AnyDevice`] provides a common interface for working with devices
 //! without knowing their concrete types.
@@ -15,8 +14,14 @@
 //!
 //! Use [`Attr`] to define sysfs attributes and [`DeviceType`] to share attributes
 //! and a device-node policy among devices of the same device type.
-//! A [`DevNum`] identifies a character or block device and requests a `/dev` node during registration.
+//! A [`DevNum`] identifies a character or block device and requests a `/dev` node during
+//! registration.
 //! [`DevNode`] lets a device type or class override the node's path or permissions.
+//!
+//! [`BusDevice::builder`]: crate::bus::BusDevice::builder
+//! [`ClassDevice::builder`]: crate::class::ClassDevice::builder
+//! [`add_device`]: crate::add_device
+//! [`remove_device`]: crate::remove_device
 
 pub(crate) mod attr;
 mod bare_device;
@@ -57,11 +62,15 @@ pub type SysStr = aster_systree::SysStr;
 /// Use `dyn AnyDevice` to inspect devices without knowing their concrete bus or class type.
 /// [`SysBranchNode`] provides access to its sysfs attributes and child nodes.
 /// Creating or removing children through [`SysBranchNode`] is unsupported;
-/// use [`add_device`](crate::add_device) and [`remove_device`](crate::remove_device) to manage devices.
+/// use [`add_device`] and [`remove_device`] to manage devices.
 ///
-/// Implemented by [`BusDevice`](crate::bus::BusDevice),
-/// [`ClassDevice`](crate::class::ClassDevice), and [`BareDevice`].
+/// Implemented by [`BusDevice`], [`ClassDevice`], and [`BareDevice`].
 /// This trait cannot be implemented outside this crate.
+///
+/// [`add_device`]: crate::add_device
+/// [`remove_device`]: crate::remove_device
+/// [`BusDevice`]: crate::bus::BusDevice
+/// [`ClassDevice`]: crate::class::ClassDevice
 pub trait AnyDevice: SysBranchNode + DeviceInternals {
     /// Returns the device number, if user space can open this device.
     fn devnum(&self) -> Option<DevNum> {
@@ -128,7 +137,8 @@ impl<D: AnyDevice> DeclaredParts<D> {
         self.dev_type.map(|t| t.name)
     }
 
-    /// Collects type-erased attributes from the subsystem, the device type, and the device, in that order.
+    /// Collects type-erased attributes from the subsystem, the device type, and the device, in that
+    /// order.
     pub(crate) fn attr_groups(&self, subsystem_attrs: &[Attr<D>]) -> Vec<TyErasedAttr> {
         let mut attrs = TyErasedAttr::from_typed_slice(subsystem_attrs);
         if let Some(t) = self.dev_type {
@@ -213,11 +223,21 @@ macro_rules! impl_device_node {
             }
 
             fn cast_to_node(&self) -> Option<::alloc::sync::Arc<dyn ::aster_systree::SysNode>> {
-                self.base().fields().weak_self().upgrade().map(|d| d as ::alloc::sync::Arc<dyn ::aster_systree::SysNode>)
+                self.base()
+                    .fields()
+                    .weak_self()
+                    .upgrade()
+                    .map(|d| d as ::alloc::sync::Arc<dyn ::aster_systree::SysNode>)
             }
 
-            fn cast_to_branch(&self) -> Option<::alloc::sync::Arc<dyn ::aster_systree::SysBranchNode>> {
-                self.base().fields().weak_self().upgrade().map(|d| d as ::alloc::sync::Arc<dyn ::aster_systree::SysBranchNode>)
+            fn cast_to_branch(
+                &self
+            ) -> Option<::alloc::sync::Arc<dyn ::aster_systree::SysBranchNode>> {
+                self.base()
+                    .fields()
+                    .weak_self()
+                    .upgrade()
+                    .map(|d| d as ::alloc::sync::Arc<dyn ::aster_systree::SysBranchNode>)
             }
 
             fn id(&self) -> &::aster_systree::SysNodeId {
@@ -250,7 +270,11 @@ macro_rules! impl_device_node {
                 false
             }
 
-            fn read_attr(&self, name: &str, writer: &mut ::ostd::mm::VmWriter) -> aster_systree::Result<usize> {
+            fn read_attr(
+                &self,
+                name: &str,
+                writer: &mut ::ostd::mm::VmWriter
+            ) -> aster_systree::Result<usize> {
                 self.read_attr_at(name, 0, writer)
             }
 
@@ -263,7 +287,11 @@ macro_rules! impl_device_node {
                 self.write_attr(name, reader)
             }
 
-            fn write_attr(&self, name: &str, reader: &mut ::ostd::mm::VmReader) -> aster_systree::Result<usize> {
+            fn write_attr(
+                &self,
+                name: &str,
+                reader: &mut ::ostd::mm::VmReader
+            ) -> aster_systree::Result<usize> {
                 if !self.base().is_added() {
                     return Err(aster_systree::Error::IsDead);
                 }
@@ -288,7 +316,11 @@ macro_rules! impl_device_node {
         }
 
         impl$(<$p: $bound>)? ::aster_systree::SysBranchNode for $ty$(<$p>)? {
-            fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&::alloc::sync::Arc<dyn ::aster_systree::SysObj>>)) {
+            fn visit_child_with(
+                &self,
+                name: &str,
+                f: &mut dyn FnMut(Option<&::alloc::sync::Arc<dyn ::aster_systree::SysObj>>)
+            ) {
                 let children = self.base().children().read();
                 f(children.get(name))
             }
@@ -296,7 +328,9 @@ macro_rules! impl_device_node {
             fn visit_children_with(
                 &self,
                 min_id: u64,
-                f: &mut dyn for<'a> FnMut(&'a ::alloc::sync::Arc<dyn ::aster_systree::SysObj>) -> Option<()>,
+                f: &mut dyn for<'a> FnMut(
+                    &'a ::alloc::sync::Arc<dyn ::aster_systree::SysObj>
+                ) -> Option<()>,
             ) {
                 let children = self.base().children().read();
                 for child in children.values() {

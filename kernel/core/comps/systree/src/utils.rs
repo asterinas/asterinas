@@ -462,11 +462,12 @@ pub trait _InheritSysLeafNode<T: SysNode> {
 /// method with the same name from the target `field` or, in the absence of a method with the same
 /// name, the default implementation provided by the trait.
 ///
-/// Note that for the `SysNode` trait, `read_attr` can be automatically implemented in terms of `read_attr_at`,
-/// and `write_attr_at` can be automatically implemented in terms of `write_attr` since most
-/// sysfs attributes do not support partial writes and will ignore the `offset`. Therefore, it is **recommended**
-/// to override the `read_attr_at` and `write_attr` methods. In addition, users can use
-/// [`aster_util::printer::VmPrinter`] to easily handle the `offset` when overriding the `read_attr_at` method.
+/// Note that for the `SysNode` trait, `read_attr` can be automatically implemented in terms of
+/// `read_attr_at`, and `write_attr_at` can be automatically implemented in terms of `write_attr`
+/// since most sysfs attributes do not support partial writes and will ignore the `offset`.
+/// Therefore, it is **recommended** to override the `read_attr_at` and `write_attr` methods. In
+/// addition, users can use [`aster_util::printer::VmPrinter`] to easily handle the `offset` when
+/// overriding the `read_attr_at` method.
 ///
 /// ## Examples
 ///
@@ -535,7 +536,11 @@ macro_rules! inherit_sys_leaf_node {
             }
         }
 
-        $crate::_inner_impl_sys_node!($struct_name, $field, $crate::_InheritSysLeafNode<$struct_name>);
+        $crate::_inner_impl_sys_node!(
+            $struct_name,
+            $field,
+            $crate::_InheritSysLeafNode<$struct_name>
+        );
     };
 }
 
@@ -586,8 +591,9 @@ pub trait _InheritSysBranchNode<T: SysBranchNode> {
 /// Users must ensures the target field is a [`BranchNodeFields`] type or a
 /// [`AttrLessBranchNodeFields`] type.
 ///
-/// The parameters and requirements of this macro are the same to those of [`inherit_sys_leaf_node`].
-/// Here lists the additional override rules for the [`SysBranchNode`] trait methods:
+/// The parameters and requirements of this macro are the same to those of
+/// [`inherit_sys_leaf_node`]. Here lists the additional override rules for the [`SysBranchNode`]
+/// trait methods:
 ///
 /// - No method is required to be implemented by users.
 /// - Methods with default implementations that users can override:
@@ -672,10 +678,18 @@ macro_rules! inherit_sys_branch_node {
             }
         }
 
-        $crate::_inner_impl_sys_node!($struct_name, $field, $crate::_InheritSysBranchNode<$struct_name>);
+        $crate::_inner_impl_sys_node!(
+            $struct_name,
+            $field,
+            $crate::_InheritSysBranchNode<$struct_name>
+        );
 
         impl $crate::SysBranchNode for $struct_name {
-            fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&alloc::sync::Arc<dyn $crate::SysObj>>)) {
+            fn visit_child_with(
+                &self,
+                name: &str,
+                f: &mut dyn FnMut(Option<&alloc::sync::Arc<dyn $crate::SysObj>>)
+            ) {
                 let children_guard = self.$field.children_ref().read();
                 let child = children_guard
                     .get(name)
@@ -708,11 +722,17 @@ macro_rules! inherit_sys_branch_node {
                     .map(|child| child as Arc<dyn $crate::SysObj>)
             }
 
-            fn create_child(&self, name: &str) -> $crate::Result<alloc::sync::Arc<dyn $crate::SysObj>> {
+            fn create_child(
+                &self,
+                name: &str
+            ) -> $crate::Result<alloc::sync::Arc<dyn $crate::SysObj>> {
                 <_ as $crate::_InheritSysBranchNode<Self>>::create_child(self, name)
             }
 
-            fn remove_child(&self, name: &str) -> $crate::Result<alloc::sync::Arc<dyn $crate::SysObj>> {
+            fn remove_child(
+                &self,
+                name: &str
+            ) -> $crate::Result<alloc::sync::Arc<dyn $crate::SysObj>> {
                 self.$field
                     .remove_child(name)
                     .map(|child| child as Arc<dyn $crate::SysObj>)

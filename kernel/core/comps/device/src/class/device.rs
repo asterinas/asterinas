@@ -61,11 +61,14 @@ impl<C: Class> ClassDevice<C> {
 
 impl<C: Class> ClassDeviceBuilder<C> {
     /// Builds the device.
-    /// It is not registered until [`add_device`](crate::add_device) is called.
+    ///
+    /// The device is not registered until [`add_device`] is called.
     ///
     /// # Panics
     ///
     /// Panics if the device name is not a valid `SysTree` node name.
+    ///
+    /// [`add_device`]: crate::add_device
     pub fn build(self) -> Arc<ClassDevice<C>> {
         let declared = self.declared_parts();
         Arc::new_cyclic(|weak: &Weak<ClassDevice<C>>| {

@@ -238,6 +238,7 @@ impl AttrTable {
     }
 
     /// Adds attributes.
+    ///
     /// Fails if any name is invalid, is already present, or is repeated within `attrs`,
     /// or if the ID space is exhausted; in every case none of the attributes is added.
     pub(crate) fn add(&self, attrs: Vec<TyErasedAttr>) -> Result<()> {
@@ -264,6 +265,7 @@ impl AttrTable {
     }
 
     /// Removes attributes by name.
+    ///
     /// Names that are absent are ignored.
     pub(crate) fn remove(&self, names: &[&'static str]) {
         let mut inner = self.inner.write();

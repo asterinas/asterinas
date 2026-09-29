@@ -58,11 +58,14 @@ pub fn remove<D: AnyDevice + ?Sized>(dev: &Arc<D>) -> Result<()> {
 
 /// A builder for a bus or class device.
 ///
-/// Obtained from [`BusDevice::builder`](crate::bus::BusDevice::builder)
-/// or [`ClassDevice::builder`](crate::class::ClassDevice::builder).
-/// The built device is not in the tree until [`add_device`](crate::add_device) is called.
+/// Obtained from [`BusDevice::builder`] or [`ClassDevice::builder`].
+/// The built device is not in the tree until [`add_device`] is called.
 ///
 /// `H` is the subsystem handle, `P` the payload, and `D` the concrete Rust type of the device.
+///
+/// [`BusDevice::builder`]: crate::bus::BusDevice::builder
+/// [`ClassDevice::builder`]: crate::class::ClassDevice::builder
+/// [`add_device`]: crate::add_device
 pub struct DeviceBuilder<H, P, D: 'static> {
     pub(crate) handle: H,
     pub(crate) payload: P,
@@ -87,8 +90,10 @@ impl<H, P, D: 'static> DeviceBuilder<H, P, D> {
     /// For example, `cciss!c0d0` becomes `/dev/cciss/c0d0`.
     ///
     /// [`DeviceType::devnode`] can override the path.
-    /// For class devices, [`Class::devnode`](crate::class::Class::devnode) can provide a path
+    /// For class devices, [`Class::devnode`] can provide a path
     /// if the device type does not provide one.
+    ///
+    /// [`Class::devnode`]: crate::class::Class::devnode
     pub fn devnum(mut self, devnum: DevNum) -> Self {
         self.devnum = Some(devnum);
         self

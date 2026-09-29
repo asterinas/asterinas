@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! The `SysTree` node types the device model owns besides devices:
-//! plain directories (roots, index directories, glue directories, driver directories) and symbolic links,
-//! and the crate-private view through which the registration sequence edits the tree.
+//! The `SysTree` node types the device model owns besides devices.
+//!
+//! This module contains the following types:
+//!
+//!  - plain directories (roots, index directories, glue directories, driver directories),
+//!  - symbolic links, and
+//!  - the crate-private view through which the registration sequence edits the tree.
 
 use alloc::{
     boxed::Box,
@@ -27,10 +31,13 @@ use crate::common::{Error, Result, SysStr, attr::read_text};
 
 /// The crate-private editing view of a container.
 ///
-/// Implemented by [`Dir`] and by [`DeviceBase`](crate::common::DeviceBase), never by a device struct itself,
+/// Implemented by [`Dir`] and by [`DeviceBase`], never by a device struct itself,
 /// so that a `dyn AnyDevice` or a `dyn SysBranchNode` cannot reach these operations.
+///
+/// [`DeviceBase`]: crate::common::DeviceBase
 pub(crate) trait SysTreeEdit: Send + Sync {
     /// Adds a child.
+    ///
     /// Fails with [`Error::NameConflict`] if the name is taken.
     fn attach_child(&self, child: Arc<dyn SysObj>) -> Result<()>;
 
@@ -155,7 +162,7 @@ impl Dir {
     /// A directory's attributes are fixed when it is created,
     /// so that its attribute set, like every other in the tree, never changes after it is built.
     /// Only a device's attributes come and go,
-    /// and a device keeps them in an [`AttrTable`](crate::common::attr::AttrTable) rather than here.
+    /// and a device keeps them in an [`AttrTable`] rather than here.
     ///
     /// The callbacks that serve the files are installed separately, by [`Self::set_ops`],
     /// because they usually belong to an object that needs this directory to exist first.
@@ -164,6 +171,8 @@ impl Dir {
     /// # Panics
     ///
     /// Panics if `name` is not a valid `SysTree` node name.
+    ///
+    /// [`AttrTable`]: crate::common::attr::AttrTable
     pub(crate) fn with_attrs(
         name: SysStr,
         attrs: &[(&'static str, SysPerms)],
