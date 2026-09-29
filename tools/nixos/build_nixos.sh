@@ -11,6 +11,7 @@ CONFIG_FILE_NAME=${1:-"configuration.nix"}
 SCRIPT_DIR=$(cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd)
 ASTERINAS_DIR=$(realpath ${SCRIPT_DIR}/../..)
 ASTER_IMAGE_PATH=${ASTERINAS_DIR}/target/nixos/asterinas.img
+NIXOS_DISK_SIZE_IN_MB=${NIXOS_DISK_SIZE_IN_MB:-16384}
 DISTRO_DIR=$(realpath ${ASTERINAS_DIR}/distro)
 CONFIG_PATH=${DISTRO_DIR}/etc_nixos/${CONFIG_FILE_NAME}
 
@@ -28,6 +29,13 @@ nix-build aster_nixos_installer/default.nix \
 popd
 
 mkdir -p ${ASTERINAS_DIR}/target/nixos
+# The installer skips partitioning and mkfs on an existing image,
+# so a new size takes effect only on a new image.
+if [ -e ${ASTER_IMAGE_PATH} ] \
+    && [ "$(stat -c %s ${ASTER_IMAGE_PATH})" -ne $((NIXOS_DISK_SIZE_IN_MB * 1024 * 1024)) ]; then
+    echo "Removing ${ASTER_IMAGE_PATH}, because its size is not ${NIXOS_DISK_SIZE_IN_MB}MB......"
+    rm ${ASTER_IMAGE_PATH}
+fi
 if [ ! -e ${ASTER_IMAGE_PATH} ]; then
     echo "Creating image at ${ASTER_IMAGE_PATH} of size ${NIXOS_DISK_SIZE_IN_MB}MB......"
     fallocate -l ${NIXOS_DISK_SIZE_IN_MB}M ${ASTER_IMAGE_PATH}
