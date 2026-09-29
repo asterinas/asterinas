@@ -41,7 +41,7 @@
 use core::{mem::offset_of, time::Duration};
 
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use device_id::{DeviceId, MinorId};
+use device_id::{MajorIdOwner, MinorId};
 use ostd::{
     const_assert,
     mm::{FrameAllocOptions, HasPaddr, HasSize, USegment, VmIo, dma::DmaCoherent},
@@ -71,17 +71,11 @@ const TDX_GUEST_MINOR: u32 = 0x7b;
 
 /// The `/dev/tdx_guest` device.
 #[derive(Debug)]
-pub(crate) struct TdxGuest {
-    id: DeviceId,
-}
+pub(crate) struct TdxGuest;
 
 impl TdxGuest {
     pub(crate) fn new() -> Arc<Self> {
-        let major = super::MISC_MAJOR.get().unwrap().get();
-        let minor = MinorId::new(TDX_GUEST_MINOR);
-
-        let id = DeviceId::new(major, minor);
-        Arc::new(Self { id })
+        Arc::new(Self)
     }
 }
 
@@ -90,8 +84,11 @@ impl Device for TdxGuest {
         DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        self.id
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        (
+            super::MISC_MAJOR.get().unwrap(),
+            MinorId::new(TDX_GUEST_MINOR),
+        )
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {

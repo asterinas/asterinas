@@ -47,7 +47,8 @@ mod partition;
 mod prelude;
 pub mod request_queue;
 
-use ::device_id::DeviceId;
+pub use ::device_id::MajorIdOwner;
+use ::device_id::{DeviceId, MinorId};
 use component::{ComponentInitError, init_component};
 use ostd::sync::Mutex;
 
@@ -56,7 +57,7 @@ use self::{
     prelude::*,
 };
 pub use self::{
-    device_id::{MAX_MAJOR, MajorIdOwner, acquire_major, allocate_major},
+    device_id::{MAX_MAJOR, acquire_major, allocate_major, collect_major_devices},
     partition::PartitionManager,
 };
 
@@ -80,8 +81,11 @@ pub trait BlockDevice: Send + Sync + Any + Debug {
     /// Returns the name of the block device.
     fn name(&self) -> &str;
 
-    /// Returns the device ID of the block device.
-    fn id(&self) -> DeviceId;
+    /// Returns the owned major ID and the minor ID of the block device.
+    ///
+    /// Every block device must hold the ownership of its major ID via a [`MajorIdOwner`],
+    /// ensuring that the major ID has been properly acquired from the device registry.
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId);
 
     /// Returns whether the block device is a partition.
     fn is_partition(&self) -> bool {
@@ -109,6 +113,12 @@ pub struct BlockDeviceMeta {
 }
 
 impl dyn BlockDevice {
+    /// Returns the device ID of the block device.
+    pub fn id(&self) -> DeviceId {
+        let (major_owner, minor) = self.owned_id();
+        DeviceId::new(major_owner.get(), minor)
+    }
+
     pub fn downcast_ref<T: BlockDevice>(&self) -> Option<&T> {
         (self as &dyn Any).downcast_ref::<T>()
     }

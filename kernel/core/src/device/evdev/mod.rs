@@ -20,7 +20,7 @@ use aster_input::{
     input_dev::{InputDevice, InputEvent},
     input_handler::{ConnectError, InputHandler, InputHandlerClass},
 };
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{DeviceId, MajorId, MajorIdOwner, MinorId};
 use file::{
     EVDEV_BUFFER_SIZE, EvdevEvent, EvdevFile, EvdevFileInner, is_syn_dropped_event,
     is_syn_report_event,
@@ -29,7 +29,7 @@ use spin::Once;
 
 use super::{
     Device, DeviceType,
-    registry::char::{MajorIdOwner, acquire_major, register, unregister},
+    registry::char::{acquire_major, register, unregister},
 };
 use crate::{
     fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
@@ -39,6 +39,9 @@ use crate::{
 
 /// Major device number for evdev devices.
 const EVDEV_MAJOR_ID: u16 = 13;
+
+/// The owned major ID shared by all evdev devices.
+static EVDEV_MAJOR: Once<MajorIdOwner> = Once::new();
 
 /// Global minor number allocator for evdev devices.
 static EVDEV_MINOR_COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -57,15 +60,15 @@ struct EvdevDevice {
     /// We must make sure that this lock is taken with the local IRQs disabled.
     /// Otherwise, we would be vulnerable to deadlock.
     opened_files: SpinLock<Vec<(Arc<EvdevFileInner>, RbProducer<EvdevEvent>)>>,
-    /// Device ID.
-    id: DeviceId,
+    /// Minor ID.
+    minor: MinorId,
 }
 
 impl Debug for EvdevDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         let device_name = self.device.name();
         let opened_count = self.opened_files.disable_irq().lock().len();
-        let id_minor = self.id.minor();
+        let id_minor = self.minor;
         f.debug_struct("EvdevDevice")
             .field("device_name", &device_name)
             .field("opened_count", &opened_count)
@@ -76,13 +79,10 @@ impl Debug for EvdevDevice {
 
 impl EvdevDevice {
     pub(self) fn new(minor: u32, device: Arc<dyn InputDevice>) -> Self {
-        let major = MajorId::new(EVDEV_MAJOR_ID);
-        let minor_id = MinorId::new(minor);
-
         Self {
             device,
             opened_files: SpinLock::new(Vec::new()),
-            id: DeviceId::new(major, minor_id),
+            minor: MinorId::new(minor),
         }
     }
 
@@ -196,18 +196,18 @@ impl Device for EvdevDevice {
         DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        self.id
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        (EVDEV_MAJOR.get().unwrap(), self.minor)
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
-        Some(DevtmpfsNodeMeta::new(format!("input/event{}", self.id.minor().get())).unwrap())
+        Some(DevtmpfsNodeMeta::new(format!("input/event{}", self.minor.get())).unwrap())
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         // Get the device from the registry.
         let devices = EVDEV_DEVICES.lock();
-        let Some(evdev) = devices.get(&self.id.minor()) else {
+        let Some(evdev) = devices.get(&self.minor) else {
             return_errno_with_message!(
                 Errno::ENODEV,
                 "the evdev device does not exist in the registry"
@@ -268,8 +268,8 @@ impl InputHandlerClass for EvdevHandlerClass {
             return;
         };
 
-        let evdev = devices.remove(&minor).unwrap();
-        let device_id = evdev.id();
+        devices.remove(&minor).unwrap();
+        let device_id = DeviceId::new(EVDEV_MAJOR.get().unwrap().get(), minor);
 
         // Unregister from the char device subsystem.
         if let Err(err) = unregister(device_id) {
@@ -294,8 +294,7 @@ impl InputHandlerClass for EvdevHandlerClass {
 pub(super) fn init_in_first_kthread() {
     use aster_input::input_handler::RegisteredInputHandlerClass;
 
-    static EVDEV_MAJOR: Once<MajorIdOwner> = Once::new();
-    EVDEV_MAJOR.call_once(|| acquire_major(MajorId::new(EVDEV_MAJOR_ID)).unwrap());
+    EVDEV_MAJOR.call_once(|| acquire_major(MajorId::new(EVDEV_MAJOR_ID), "input").unwrap());
 
     static REGISTERED_EVDDEV_CLASS: Once<RegisteredInputHandlerClass> = Once::new();
     let handler_class = Arc::new(EvdevHandlerClass);

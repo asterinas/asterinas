@@ -4,8 +4,9 @@ use aster_framebuffer::{
     framebuffer::{ColorMapEntry, FRAMEBUFFER, FrameBuffer, MAX_CMAP_SIZE},
     pixel::PixelFormat,
 };
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{MajorId, MajorIdOwner, MinorId};
 use ostd::mm::{HasPaddr, HasSize, VmIo};
+use spin::Once;
 
 use super::{Device, DeviceType, registry::char};
 use crate::{
@@ -228,9 +229,9 @@ impl Device for Fb {
         DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        // Same value with Linux: major 29, minor 0
-        DeviceId::new(MajorId::new(29), MinorId::new(0))
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        // Same major ID as Linux: major 29, minor 0
+        (FB_MAJOR.get().unwrap(), MinorId::new(0))
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
@@ -582,10 +583,13 @@ impl MappedObject for FbMapHandle {
     }
 }
 
+static FB_MAJOR: Once<MajorIdOwner> = Once::new();
+
 pub(super) fn init_in_first_kthread() {
     if FRAMEBUFFER.get().is_none() {
         return;
     }
 
+    FB_MAJOR.call_once(|| char::acquire_major(MajorId::new(29), "fb").unwrap());
     char::register(Arc::new(Fb)).expect("failed to register framebuffer char device");
 }

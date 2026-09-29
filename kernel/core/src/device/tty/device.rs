@@ -6,9 +6,10 @@
 //!
 //! Reference: <https://www.kernel.org/doc/html/latest/admin-guide/devices.html>
 
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{DeviceId, MajorId, MajorIdOwner, MinorId};
 use spin::Once;
 
+use super::{tty_aux_major_id_owner, tty_major_id_owner};
 use crate::{
     device::{
         Device, DeviceType,
@@ -31,8 +32,8 @@ impl Device for Tty0Device {
         DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        DeviceId::new(MajorId::new(4), MinorId::new(0))
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        (tty_major_id_owner(), MinorId::new(0))
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
@@ -53,8 +54,8 @@ impl Device for TtyDevice {
         DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        DeviceId::new(MajorId::new(5), MinorId::new(0))
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        (tty_aux_major_id_owner(), MinorId::new(0))
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
@@ -119,8 +120,13 @@ impl Device for SystemConsole {
         DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        CONSOLE_DEVICE_ID
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        // `/dev/console` shares major 5 with `/dev/tty` and `/dev/ptmx`,
+        // registering its own name under that major.
+        static CONSOLE_MAJOR: Once<MajorIdOwner> = Once::new();
+        let owner = CONSOLE_MAJOR
+            .call_once(|| char::acquire_major(MajorId::new(5), "/dev/console").unwrap());
+        (owner, MinorId::new(1))
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {

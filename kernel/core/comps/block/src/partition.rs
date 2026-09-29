@@ -2,7 +2,7 @@
 
 use alloc::format;
 
-use device_id::{DeviceId, MinorId};
+use device_id::{MajorIdOwner, MinorId};
 use ostd::{mm::VmIo, sync::Mutex};
 use ostd_pod::Pod;
 
@@ -247,7 +247,9 @@ fn parse_gpt(device: &Arc<dyn BlockDevice>) -> Vec<Option<PartitionInfo>> {
 
 #[derive(Debug)]
 struct PartitionNode {
-    id: DeviceId,
+    minor: MinorId,
+    /// The owned extended major ID, if the partition does not share the disk's major ID.
+    extended_major: Option<&'static MajorIdOwner>,
     name: String,
     device: Arc<dyn BlockDevice>,
     info: PartitionInfo,
@@ -269,8 +271,11 @@ impl BlockDevice for PartitionNode {
         &self.name
     }
 
-    fn id(&self) -> DeviceId {
-        self.id
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        match self.extended_major {
+            Some(owner) => (owner, self.minor),
+            None => (self.device.owned_id().0, self.minor),
+        }
     }
 
     fn is_partition(&self) -> bool {
@@ -279,9 +284,16 @@ impl BlockDevice for PartitionNode {
 }
 
 impl PartitionNode {
-    fn new(id: DeviceId, name: String, device: Arc<dyn BlockDevice>, info: PartitionInfo) -> Self {
+    fn new(
+        minor: MinorId,
+        extended_major: Option<&'static MajorIdOwner>,
+        name: String,
+        device: Arc<dyn BlockDevice>,
+        info: PartitionInfo,
+    ) -> Self {
         Self {
-            id,
+            minor,
+            extended_major,
             name,
             device,
             info,
@@ -320,7 +332,7 @@ impl PartitionManager {
 
         if let Some(old_partitions) = partitions.take() {
             for partition in old_partitions {
-                let _ = unregister(partition.id());
+                let _ = unregister((partition.as_ref() as &dyn BlockDevice).id());
             }
         }
 
@@ -331,17 +343,21 @@ impl PartitionManager {
             };
 
             let index = index as u32 + 1;
-            let id = if index < DEVICE_MINORS {
-                let device_id = device.id();
-                DeviceId::new(
-                    device_id.major(),
-                    MinorId::new(device_id.minor().get() + index),
-                )
+            let (minor, extended_major) = if index < DEVICE_MINORS {
+                let device_minor = device.id().minor();
+                (MinorId::new(device_minor.get() + index), None)
             } else {
-                EXTENDED_DEVICE_ID_ALLOCATOR.get().unwrap().allocate()
+                let allocator = EXTENDED_DEVICE_ID_ALLOCATOR.get().unwrap();
+                (allocator.allocate_minor(), Some(allocator.major_owner()))
             };
             let name = partition_name(device.name(), index);
-            let partition = Arc::new(PartitionNode::new(id, name, device.clone(), *info));
+            let partition = Arc::new(PartitionNode::new(
+                minor,
+                extended_major,
+                name,
+                device.clone(),
+                *info,
+            ));
             new_partitions.push(partition);
         }
 

@@ -26,7 +26,7 @@ use aster_block::{
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
 use aster_util::safe_ptr::SafePtr;
-use device_id::{DeviceId, MinorId};
+use device_id::{MajorIdOwner, MinorId};
 use ostd::{
     debug, error, info,
     mm::{HasDaddr, HasSize, PAGE_SIZE, dma::DmaStream},
@@ -65,7 +65,7 @@ pub struct NvmeBlockDevice {
     device: NvmeDeviceInner,
     queue: BioRequestSingleQueue,
     name: String,
-    id: DeviceId,
+    minor: MinorId,
     partition_manager: PartitionManager,
 }
 
@@ -77,17 +77,13 @@ impl NvmeBlockDevice {
 
         let index = NR_NVME_DEVICE.fetch_add(1, Ordering::Relaxed);
         let name = formatted_device_name(index, device.namespace.id);
-        let id = {
-            // Use the allocated major ID for the NVMe device
-            let major_id = NVME_BLOCK_MAJOR_ID.get().unwrap().get();
-            DeviceId::new(major_id, MinorId::new(index * aster_block::DEVICE_MINORS))
-        };
+        let minor = MinorId::new(index * aster_block::DEVICE_MINORS);
 
         let block_device = Arc::new(Self {
             device,
             queue: BioRequestSingleQueue::new(),
             name,
-            id,
+            minor,
             partition_manager: PartitionManager::new(),
         });
 
@@ -134,8 +130,8 @@ impl aster_block::BlockDevice for NvmeBlockDevice {
         &self.name
     }
 
-    fn id(&self) -> DeviceId {
-        self.id
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        (NVME_BLOCK_MAJOR_ID.get().unwrap(), self.minor)
     }
 
     fn partition_manager(&self) -> Option<&PartitionManager> {

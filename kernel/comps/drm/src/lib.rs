@@ -61,7 +61,7 @@ pub fn register_device(device: Arc<dyn DrmDevice>) -> Result<()> {
 
     if let Err(error) = char::register(primary_minor) {
         if let Some(render_minor) = render_minor {
-            let _ = char::unregister(render_minor.id());
+            let _ = char::unregister((render_minor.as_ref() as &dyn Device).id());
         }
         return Err(error);
     }

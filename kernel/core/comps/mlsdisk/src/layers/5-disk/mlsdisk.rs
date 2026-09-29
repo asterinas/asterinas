@@ -15,9 +15,10 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use device_id::DeviceId;
+use device_id::{MajorIdOwner, MinorId};
 use ostd::mm::{HasSize, VmIo};
 use ostd_pod::{FromZeros, Pod};
+use spin::Once;
 
 use super::{
     bio::{BioReq, BioReqQueue, BioResp, BioType},
@@ -160,11 +161,17 @@ impl<D: BlockSet + 'static> aster_block::BlockDevice for MlsDisk<D> {
     }
 
     fn name(&self) -> &str {
-        todo!()
+        "mlsdisk"
     }
 
-    fn id(&self) -> DeviceId {
-        todo!()
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        static MAJOR_ID_OWNER: Once<MajorIdOwner> = Once::new();
+
+        let owner = MAJOR_ID_OWNER.call_once(|| {
+            aster_block::allocate_major("mlsdisk")
+                .expect("failed to allocate a major ID for MlsDisk")
+        });
+        (owner, MinorId::new(0))
     }
 }
 

@@ -10,7 +10,7 @@ use aster_block::{
     bio::{Bio, BioCompleteFn, BioEnqueueError, BioSegment, BioStatus, BioType, SubmittedBio},
     id::Sid,
 };
-use device_id::DeviceId;
+use device_id::{MajorIdOwner, MinorId};
 use io_util::batch::IoBatch;
 use ostd::mm::VmIo;
 
@@ -143,6 +143,7 @@ impl MockBackendState {
 pub(super) struct MockPageCacheBackend {
     state: SpinLock<MockBackendState>,
     num_pages: usize,
+    major: MajorIdOwner,
 }
 
 impl MockPageCacheBackend {
@@ -151,6 +152,7 @@ impl MockPageCacheBackend {
         Arc::new(Self {
             state: SpinLock::new(MockBackendState::new(num_pages)),
             num_pages,
+            major: aster_block::allocate_major("mock-page-cache").unwrap(),
         })
     }
 
@@ -323,8 +325,8 @@ impl BlockDevice for MockPageCacheBackend {
         "mock-page-cache"
     }
 
-    fn id(&self) -> DeviceId {
-        DeviceId::null()
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        (&self.major, MinorId::new(0))
     }
 }
 

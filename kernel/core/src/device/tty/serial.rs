@@ -3,6 +3,7 @@
 use alloc::format;
 
 use aster_console::AnyConsoleDevice;
+use device_id::{MajorId, MajorIdOwner};
 use ostd::mm::Infallible;
 use spin::Once;
 
@@ -27,8 +28,12 @@ impl SerialDriver {
 }
 
 impl TtyDriver for SerialDriver {
-    // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
-    const DEVICE_MAJOR_ID: u32 = 4;
+    fn major_id_owner() -> &'static MajorIdOwner {
+        static SERIAL_MAJOR: Once<MajorIdOwner> = Once::new();
+        // The serial driver shares major 4 with the `tty` and `/dev/vc/0`
+        // drivers, registering its own name `ttyS`.
+        SERIAL_MAJOR.call_once(|| char::acquire_major(MajorId::new(4), "ttyS").unwrap())
+    }
 
     fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsNodeMeta> {
         Some(DevtmpfsNodeMeta::new(format!("ttyS{}", index - Self::MINOR_ID_BASE)).unwrap())

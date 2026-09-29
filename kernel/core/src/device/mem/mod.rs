@@ -30,14 +30,14 @@ use aster_device::{
     class::{self, Class, ClassDevice, ClassHandle},
     common::{AnyDevice, Attr, DevNode, DevNum},
 };
-use device_id::{DeviceId, MajorId, MinorId};
+use device_id::{DeviceId, MajorId, MajorIdOwner, MinorId};
 use file::MemFile;
 pub(crate) use file::{getrandom, geturandom};
 use spin::Once;
 
 use super::{
     Device, DeviceType,
-    registry::char::{self, MajorIdOwner},
+    registry::char::{self},
 };
 use crate::{
     fs::{
@@ -48,7 +48,7 @@ use crate::{
 };
 
 pub(super) fn init_in_first_kthread() {
-    MEM_MAJOR.call_once(|| char::acquire_major(MajorId::new(1)).unwrap());
+    MEM_MAJOR.call_once(|| char::acquire_major(MajorId::new(1), "mem").unwrap());
     MEM_CLASS.call_once(|| class::register(MemClass).unwrap());
 
     add_device(MemFile::Full).unwrap();
@@ -93,10 +93,12 @@ impl Device for MemDevice {
         DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        self.devnum()
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        let id = self
+            .devnum()
             .expect("memory devices always have a device number")
-            .id()
+            .id();
+        (MEM_MAJOR.get().unwrap(), id.minor())
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {

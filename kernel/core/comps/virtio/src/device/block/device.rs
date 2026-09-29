@@ -12,7 +12,7 @@ use aster_block::{
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
 use aster_util::mem_obj_slice::Slice;
-use device_id::{DeviceId, MinorId};
+use device_id::{MajorIdOwner, MinorId};
 use ostd::{
     arch::trap::TrapFrame,
     debug, info,
@@ -41,7 +41,7 @@ pub struct BlockDevice {
     device: Arc<DeviceInner>,
     /// The software staging queue.
     queue: BioRequestSingleQueue,
-    id: DeviceId,
+    minor: MinorId,
     name: String,
     partition_manager: PartitionManager,
 }
@@ -74,10 +74,7 @@ impl BlockDevice {
         let device = DeviceInner::init(device_transport)?;
 
         let index = NR_BLOCK_DEVICE.fetch_add(1, Ordering::Relaxed);
-        let id = DeviceId::new(
-            VIRTIO_BLOCK_MAJOR_ID.get().unwrap().get(),
-            MinorId::new(index * aster_block::DEVICE_MINORS),
-        );
+        let minor = MinorId::new(index * aster_block::DEVICE_MINORS);
         let name = Self::formatted_device_name(index);
 
         let block_device = Arc::new(BlockDevice {
@@ -87,7 +84,7 @@ impl BlockDevice {
             queue: BioRequestSingleQueue::with_max_nr_segments_per_bio(
                 (DeviceInner::QUEUE_SIZE - 2) as usize,
             ),
-            id,
+            minor,
             name,
             partition_manager: PartitionManager::new(),
         });
@@ -132,8 +129,8 @@ impl aster_block::BlockDevice for BlockDevice {
         &self.name
     }
 
-    fn id(&self) -> DeviceId {
-        self.id
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        (VIRTIO_BLOCK_MAJOR_ID.get().unwrap(), self.minor)
     }
 
     fn partition_manager(&self) -> Option<&PartitionManager> {

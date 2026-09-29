@@ -5,7 +5,7 @@ use alloc::borrow::ToOwned;
 use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE, bio::BioStatus};
 use aster_nvme::NvmeBlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
-use device_id::DeviceId;
+use device_id::{DeviceId, MajorIdOwner, MinorId};
 use ostd::mm::VmIo;
 
 use crate::{
@@ -118,8 +118,8 @@ impl Device for BlockFile {
         DeviceType::Block
     }
 
-    fn id(&self) -> DeviceId {
-        self.0.id()
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        self.0.owned_id()
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {

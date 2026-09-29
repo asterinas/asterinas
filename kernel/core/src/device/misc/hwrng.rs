@@ -6,7 +6,7 @@
 //! currently selected [`EntropyDevice`] backend.
 
 use aster_virtio::device::entropy::{self, device::EntropyDevice};
-use device_id::{DeviceId, MinorId};
+use device_id::{MajorIdOwner, MinorId};
 
 use crate::{
     device::{Device, DeviceType, registry::char},
@@ -30,17 +30,11 @@ static RNG_CURRENT: Mutex<Option<Arc<EntropyDevice>>> = Mutex::new(None);
 
 /// The `/dev/hwrng` device.
 #[derive(Debug)]
-struct HwRngDevice {
-    id: DeviceId,
-}
+struct HwRngDevice;
 
 impl HwRngDevice {
     fn new() -> Arc<Self> {
-        let major = super::MISC_MAJOR.get().unwrap().get();
-        let minor = MinorId::new(HWRNG_MINOR);
-
-        let id = DeviceId::new(major, minor);
-        Arc::new(Self { id })
+        Arc::new(Self)
     }
 }
 
@@ -49,8 +43,8 @@ impl Device for HwRngDevice {
         DeviceType::Char
     }
 
-    fn id(&self) -> DeviceId {
-        self.id
+    fn owned_id(&self) -> (&MajorIdOwner, MinorId) {
+        (super::MISC_MAJOR.get().unwrap(), MinorId::new(HWRNG_MINOR))
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
