@@ -346,6 +346,14 @@ impl SeccompState {
     pub fn iter(&self) -> SeccompFilterIter<'_> {
         self.into_iter()
     }
+
+    pub fn mode(&self) -> SeccompMode {
+        self.mode
+    }
+
+    pub fn leaf_filter(&self) -> Option<&SeccompFilterLeaf> {
+        self.leaf_filter.as_deref()
+    }
 }
 
 /// Abstracts over the fields of a single cBPF instruction so that

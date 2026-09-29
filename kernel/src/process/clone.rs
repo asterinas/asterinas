@@ -458,7 +458,8 @@ fn clone_child_task(
         .user_ns(child_user_ns)
         .ns_proxy(child_ns_proxy)
         .default_timer_slack_ns(default_timer_slack_ns)
-        .seccomp(ctx.posix_thread.seccomp_state());
+        .seccomp(posix_thread.seccomp_state())
+        .no_new_privs(posix_thread.no_new_privs());
         #[cfg(target_arch = "x86_64")]
         {
             thread_builder = thread_builder.fs_base(child_fs_base).gs_base(child_gs_base);
@@ -594,7 +595,8 @@ fn clone_child_process(
             .user_ns(child_user_ns.clone())
             .ns_proxy(child_ns_proxy)
             .default_timer_slack_ns(default_timer_slack_ns)
-            .seccomp(ctx.posix_thread.seccomp_state())
+            .seccomp(posix_thread.seccomp_state())
+            .no_new_privs(posix_thread.no_new_privs())
         };
         #[cfg(target_arch = "x86_64")]
         {

@@ -6,7 +6,7 @@ use crate::{
     process::{
         credentials::capabilities::CapSet,
         posix_thread::{
-            PosixThread,
+            AsPosixThread, PosixThread,
             cbpf::{
                 self, ClassicBPFilter, NetFilterProg, RawFilterBlock, SeccompContext,
                 SeccompFilterLeaf, SeccompFilterProg,
@@ -34,7 +34,7 @@ fn do_seccomp(op: SeccompOp, flags: u32, uargs: Vaddr, ctx: &Context) -> Result<
             if flags != 0 || uargs != 0 {
                 return Err(Error::new(Errno::EINVAL));
             }
-            seccomp_set_mode_strict(ctx.posix_thread)
+            ctx.posix_thread.set_seccomp_strict()
         }
         SeccompOp::SetModeFilter => seccomp_set_mode_filter(flags, uargs, ctx),
     }?;
@@ -42,16 +42,74 @@ fn do_seccomp(op: SeccompOp, flags: u32, uargs: Vaddr, ctx: &Context) -> Result<
     Ok(SyscallReturn::Return(res as _))
 }
 
-fn seccomp_set_mode_strict(posix_thread: &PosixThread) -> Result<i64> {
-    // Linux does mitigations here
-    // filter to strict should be allowed, but we will need to drop the Arc reference so there's no memory leak
+fn is_ancestor(
+    mut caller_leaf: Option<&SeccompFilterLeaf>,
+    target_leaf: Option<&SeccompFilterLeaf>,
+) -> bool {
+    let Some(target) = target_leaf else {
+        // If target has no filter, an empty filter chain is trivially an ancestor
+        return true;
+    };
 
-    seccomp_assign_mode(posix_thread, SeccompMode::Strict, 0)
+    // Target has a filter; walk caller's ancestors to see if target's root matches
+    while let Some(caller) = caller_leaf {
+        if core::ptr::eq(caller, target) {
+            return true;
+        }
+        caller_leaf = caller.prev.as_deref();
+    }
+
+    false
 }
 
-fn seccomp_assign_mode(current: &PosixThread, mode: SeccompMode, _flags: u64) -> Result<i64> {
-    // Linux does additional mitigations here (signal handling, no_new_privs, etc.).
-    current.set_seccomp_mode(mode)
+fn seccomp_sync_threads(
+    ctx: &Context,
+    tsync_esrch: bool,
+    new_filter: SeccompFilterProg,
+) -> Result<i64> {
+    let tasks_guard = ctx.process.tasks().lock();
+    let current_thread = ctx.posix_thread;
+    let current_state = current_thread.seccomp_state();
+
+    // Phase 1: Validation
+    for task in tasks_guard.as_slice() {
+        let Some(posix_thread) = task.as_posix_thread() else {
+            continue;
+        };
+        if core::ptr::eq(posix_thread, current_thread) {
+            continue;
+        }
+
+        let other_state = posix_thread.seccomp_state();
+        let can_sync = match other_state.mode() {
+            SeccompMode::Disabled => true,
+            SeccompMode::Filter => {
+                is_ancestor(current_state.leaf_filter(), other_state.leaf_filter())
+            }
+            SeccompMode::Strict => false,
+        };
+
+        if !can_sync {
+            if tsync_esrch {
+                return Err(Error::new(Errno::ESRCH));
+            } else {
+                // Linux returns the TID of the first thread that failed synchronization
+                return Ok(posix_thread.tid() as i64);
+            }
+        }
+    }
+
+    let new_state = current_thread.set_n_push_seccomp_filter(new_filter);
+
+    // Update all sibling threads
+    for task in tasks_guard.as_slice() {
+        let Some(posix_thread) = task.as_posix_thread() else {
+            continue;
+        };
+        posix_thread.set_seccomp_state(new_state.clone());
+    }
+
+    Ok(0)
 }
 
 // Pointer to the filter program in user space.
@@ -61,11 +119,32 @@ struct UserspaceFilterMeta {
     user_buf_len: usize,
 }
 
-/// TODO check flags
-fn seccomp_set_mode_filter(flags: u32, uargs: Vaddr, ctx: &Context) -> Result<i64> {
-    if flags != 0 {
-        // TODO: flags here are related to features not yet implemented
-        return Err(Error::new(Errno::EINVAL));
+bitflags! {
+    /// Flags for `SeccompOp::SetModeFilter`.
+    pub struct SeccompFilterFlags: u32 {
+        /// Synchronize all other threads to the same filter tree.
+        const TSYNC = 1 << 0;
+        /// All filter returns except `ALLOW` should be logged.
+        const LOG = 1 << 1;
+        /// Disable Speculative Store Bypass mitigations.
+        const SPEC_ALLOW = 1 << 2;
+        /// Return a new user-space listener file descriptor.
+        const NEW_LISTENER = 1 << 3;
+        /// Return -ESRCH when TSYNC fails instead of thread ID.
+        const TSYNC_ESRCH = 1 << 4;
+        /// Allow killable wait for user notifications.
+        const WAIT_KILLABLE_RECV = 1 << 5;
+    }
+}
+fn seccomp_set_mode_filter(flags_raw: u32, uargs: Vaddr, ctx: &Context) -> Result<i64> {
+    let flags = SeccompFilterFlags::from_bits(flags_raw)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown seccomp filter flags"))?;
+
+    // TODO implement the rest, remove this check
+    const SUPPORTED: SeccompFilterFlags =
+        SeccompFilterFlags::TSYNC.union(SeccompFilterFlags::TSYNC_ESRCH);
+    if !SUPPORTED.contains(flags) {
+        return_errno_with_message!(Errno::EINVAL, "unsupported seccomp filter flags");
     }
 
     let thread = ctx.posix_thread;
@@ -76,6 +155,12 @@ fn seccomp_set_mode_filter(flags: u32, uargs: Vaddr, ctx: &Context) -> Result<i6
         .contains(CapSet::SYS_ADMIN)
     {
         return Err(Error::new(Errno::EPERM));
+    }
+
+    if flags.contains(SeccompFilterFlags::TSYNC_ESRCH) && !flags.contains(SeccompFilterFlags::TSYNC)
+    {
+        // TSYNC_ESRCH requires TSYNC
+        return Err(Error::new(Errno::EINVAL));
     }
 
     let filter_meta: UserspaceFilterMeta = ctx
@@ -105,13 +190,14 @@ fn seccomp_set_mode_filter(flags: u32, uargs: Vaddr, ctx: &Context) -> Result<i6
     let netfilter = NetFilterProg::from_unverified(insns)?;
     let seccompfilter = SeccompFilterProg::from_netfilter(netfilter)?;
 
-    thread.set_seccomp_filter(Arc::new(SeccompFilterLeaf {
-        ins: seccompfilter,
-        prev: thread.seccomp_filter(),
-    }));
-
-    if thread.seccomp_mode() != SeccompMode::Filter {
-        return seccomp_assign_mode(thread, SeccompMode::Filter, 0);
+    if flags.contains(SeccompFilterFlags::TSYNC) {
+        seccomp_sync_threads(
+            ctx,
+            flags.contains(SeccompFilterFlags::TSYNC_ESRCH),
+            seccompfilter,
+        )?;
+    } else {
+        thread.set_n_push_seccomp_filter(seccompfilter);
     }
 
     Ok(0)

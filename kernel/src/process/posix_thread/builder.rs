@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, AtomicU64};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 #[cfg(target_arch = "x86_64")]
 use ostd::arch::cpu::context::{FsBase, GsBase};
@@ -50,6 +50,7 @@ pub struct PosixThreadBuilder {
     ns_proxy: Option<Arc<NsProxy>>,
     default_timer_slack_ns: u64,
     seccomp: Option<Arc<SeccompState>>,
+    no_new_privs: AtomicBool,
 }
 
 impl PosixThreadBuilder {
@@ -79,6 +80,7 @@ impl PosixThreadBuilder {
             ns_proxy: None,
             default_timer_slack_ns: 50_000, // 50 usec default slack
             seccomp: None,
+            no_new_privs: AtomicBool::new(false),
         }
     }
 
@@ -155,6 +157,11 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn no_new_privs(mut self, no_new_privs: bool) -> Self {
+        self.no_new_privs = AtomicBool::new(no_new_privs);
+        self
+    }
+
     pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
@@ -175,6 +182,7 @@ impl PosixThreadBuilder {
             ns_proxy,
             default_timer_slack_ns,
             seccomp,
+            no_new_privs,
         } = self;
 
         let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new()));
@@ -187,6 +195,7 @@ impl PosixThreadBuilder {
             .unwrap_or_else(|| Arc::new(ThreadFsInfo::new(ns_proxy.mnt_ns().new_path_resolver())));
 
         let seccomp = seccomp.unwrap_or_else(|| Arc::new(SeccompState::new()));
+        let no_new_privs = no_new_privs.load(Ordering::Relaxed);
 
         Arc::new_cyclic(|weak_task| {
             let posix_thread = {
@@ -217,6 +226,7 @@ impl PosixThreadBuilder {
                     exit_code: AtomicU32::new(0),
                     personality: AtomicU32::new(0),
                     seccomp: Rcu::new(seccomp),
+                    no_new_privs: AtomicBool::new(no_new_privs),
                 }
             };
 

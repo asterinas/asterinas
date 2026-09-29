@@ -134,6 +134,14 @@ pub fn sys_prctl(
             };
             return Ok(ret);
         }
+        PrctlCmd::PR_SET_NO_NEW_PRIVS(is_set) => {
+            ctx.posix_thread.set_no_new_privs(is_set);
+        }
+        PrctlCmd::PR_GET_NO_NEW_PRIVS => {
+            return Ok(SyscallReturn::Return(
+                ctx.posix_thread.no_new_privs() as isize
+            ));
+        }
     }
 
     Ok(SyscallReturn::Return(0))
@@ -157,6 +165,8 @@ const PR_SET_TIMERSLACK: i32 = 29;
 const PR_GET_TIMERSLACK: i32 = 30;
 const PR_SET_CHILD_SUBREAPER: i32 = 36;
 const PR_GET_CHILD_SUBREAPER: i32 = 37;
+const PR_SET_NO_NEW_PRIVS: i32 = 38;
+const PR_GET_NO_NEW_PRIVS: i32 = 39;
 
 #[expect(non_camel_case_types)]
 #[derive(Clone, Copy, Debug)]
@@ -179,6 +189,8 @@ pub enum PrctlCmd {
     PR_GET_TIMERSLACK,
     PR_SET_CHILD_SUBREAPER(bool),
     PR_GET_CHILD_SUBREAPER(Vaddr),
+    PR_SET_NO_NEW_PRIVS(bool),
+    PR_GET_NO_NEW_PRIVS(),
 }
 
 #[repr(u64)]
@@ -215,6 +227,8 @@ impl PrctlCmd {
             PR_GET_TIMERSLACK => Ok(PrctlCmd::PR_GET_TIMERSLACK),
             PR_SET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_SET_CHILD_SUBREAPER(arg2 > 0)),
             PR_GET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_GET_CHILD_SUBREAPER(arg2 as _)),
+            PR_SET_NO_NEW_PRIVS => Ok(PrctlCmd::PR_SET_NO_NEW_PRIVS(arg2 == 1)),
+            PR_GET_NO_NEW_PRIVS => Ok(PrctlCmd::PR_GET_NO_NEW_PRIVS()),
             _ => {
                 debug!("prctl cmd number: {}", option);
                 return_errno_with_message!(Errno::EINVAL, "unsupported prctl command");

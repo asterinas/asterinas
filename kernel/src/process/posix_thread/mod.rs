@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use aster_rights::{ReadDupOp, ReadOp, ReadWriteOp};
 use cbpf::{SeccompFilterLeaf, SeccompMode, SeccompState};
@@ -21,7 +21,7 @@ use crate::{
     process::{
         ExitCode, Pid,
         namespace::nsproxy::NsProxy,
-        posix_thread::ptrace::TraceeStatus,
+        posix_thread::{cbpf::SeccompFilterProg, ptrace::TraceeStatus},
         signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
     thread::{Thread, Tid},
@@ -112,6 +112,9 @@ pub struct PosixThread {
 
     /// The seccomp policy state of this thread. Always present; starts as [`SeccompMode::Disabled`].
     seccomp: Rcu<Arc<SeccompState>>,
+
+    /// Whether the thread is allowed to create new privilege (via execve etc.)
+    no_new_privs: AtomicBool,
 }
 
 impl PosixThread {
@@ -365,6 +368,9 @@ impl PosixThread {
     /// immediately, so preemption is re-enabled before this function returns.
     /// The caller can then walk the full filter chain via
     /// [`SeccompFilterLeaf::prev`] without holding any lock or disabling preemption.
+    ///
+    /// Not used at this point, might be removed in future.
+    #[expect(dead_code)]
     pub fn seccomp_filter(&self) -> Option<Arc<SeccompFilterLeaf>> {
         self.seccomp.read().get().leaf_filter.clone()
     }
@@ -376,54 +382,83 @@ impl PosixThread {
         self.seccomp.read().get().clone()
     }
 
-    /// Sets the seccomp mode for this thread.
+    /// Sets the seccomp mode to [`Strict`] for this thread.
     ///
     /// Seccomp mode can be changed only if it is [`Disabled`].
-    ///
-    /// Uses the RCU clone-and-replace pattern: the current [`SeccompState`] is
-    /// cloned, its `mode` field is updated, and the new value is swapped in
-    /// atomically via compare-and-exchange. The loop retries if another writer
-    /// races between the read and the exchange.
-    pub fn set_seccomp_mode(&self, mode: SeccompMode) -> Result<i64> {
+    pub fn set_seccomp_strict(&self) -> Result<i64> {
         loop {
             let guard = self.seccomp.read();
             let current_state = guard.get();
+
+            // should we guard against internel kernel logic bugs?
+            // if current_state.mode != SeccompMode::Disabled {
+            //     return Err::new(Errno::EACCES);
+            // }
             debug_assert!(
-                current_state.mode != SeccompMode::Strict,
-                "Should be unreachable from Strict, as it disables seccomp syscall"
+                current_state.mode == SeccompMode::Disabled,
+                "Should be reacheble only if seccomp is disabled"
             );
 
-            match (current_state.mode, mode) {
-                (cur, target) if cur == target => return Ok(0),
-                (SeccompMode::Disabled, _) => (),
-                _ => return Err(Error::new(Errno::EINVAL)),
-            };
-
-            let mut new_state = (**current_state).clone();
-            new_state.mode = mode;
-            match guard.compare_exchange(Arc::new(new_state)) {
+            match guard.compare_exchange(Arc::new(SeccompState {
+                mode: SeccompMode::Strict,
+                leaf_filter: None,
+            })) {
                 Ok(()) => return Ok(0),
                 Err(_) => continue,
             }
         }
     }
 
-    /// Sets the leaf BPF filter program for this thread.
-    ///
-    /// Uses the RCU clone-and-replace pattern: the current [`SeccompState`] is
-    /// cloned, its `leaf_filter` field is updated, and the new value is swapped
-    /// in atomically via compare-and-exchange. The loop retries if another
-    /// writer races between the read and the exchange.
-    pub fn set_seccomp_filter(&self, filter: Arc<SeccompFilterLeaf>) {
+    /// Pushes a new leaf BPF filter program onto this thread's seccomp filter chain and sets the mode to [`Filter`].
+    pub fn set_n_push_seccomp_filter(&self, filter: SeccompFilterProg) -> Arc<SeccompState> {
         loop {
             let guard = self.seccomp.read();
-            let mut new_state = (**guard.get()).clone();
-            new_state.leaf_filter = Some(filter.clone());
-            match guard.compare_exchange(Arc::new(new_state)) {
+            let current_state = guard.get();
+
+            // should we guard against internel kernel logic bugs?
+            // if current_state.mode == SeccompMode::Strict {
+            //     return Err::new(Errno::EACCES);
+            // }
+            debug_assert!(
+                current_state.mode != SeccompMode::Strict,
+                "Should be unreachable from Strict, as it disables seccomp syscall"
+            );
+
+            let new_leaf = Arc::new(SeccompFilterLeaf {
+                ins: filter.clone(),
+                prev: current_state.leaf_filter.clone(),
+            });
+            let new_state = Arc::new(SeccompState {
+                mode: SeccompMode::Filter,
+                leaf_filter: Some(new_leaf),
+            });
+
+            match guard.compare_exchange(new_state.clone()) {
+                Ok(()) => return new_state,
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Sets the seccomp state for this thread.
+    ///
+    /// Used when syncronizing seccomp state between threads, e.g. with [`SeccompFilterFlags::TSYNC`].
+    pub fn set_seccomp_state(&self, state: Arc<SeccompState>) {
+        loop {
+            let guard = self.seccomp.read();
+            match guard.compare_exchange(state.clone()) {
                 Ok(()) => return,
                 Err(_) => continue,
             }
         }
+    }
+
+    pub fn no_new_privs(&self) -> bool {
+        self.no_new_privs.load(Ordering::Relaxed)
+    }
+
+    pub fn set_no_new_privs(&self, no_new_privs: bool) {
+        self.no_new_privs.store(no_new_privs, Ordering::Relaxed)
     }
 }
 
