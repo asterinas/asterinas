@@ -27,7 +27,7 @@ static DRM_DEVICE_INDEX_ALLOCATOR: Mutex<SparseIdAlloc> = Mutex::new(SparseIdAll
 pub trait DrmDevice: Debug + Send + Sync {
     fn name(&self) -> &str;
     fn desc(&self) -> &str;
-    fn features(&self) -> &DrmFeatures;
+    fn features(&self) -> DrmFeatures;
     fn has_features(&self, feature: DrmFeatures) -> bool {
         self.features().contains(feature)
     }

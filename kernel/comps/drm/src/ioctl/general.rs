@@ -4,14 +4,14 @@ use aster_core::prelude::*;
 use int_to_c_enum::TryFromInt;
 use ostd::mm::VmIo;
 
-use super::ioctl_defs::*;
 use crate::{
     device::DrmFeatures,
     file::{DrmClientCaps, DrmFile},
+    ioctl::ioctl_defs,
 };
 
 impl DrmFile {
-    pub(super) fn drm_get_version(&self, cmd: DrmIoctlVersion) -> Result<i32> {
+    pub(super) fn drm_get_version(&self, cmd: ioctl_defs::Version) -> Result<i32> {
         let device = self.device();
         let name = device.name();
         let desc = device.desc();
@@ -47,7 +47,7 @@ impl DrmFile {
         Ok(0)
     }
 
-    pub(super) fn drm_get_unique(&self, cmd: DrmIoctlGetUnique) -> Result<i32> {
+    pub(super) fn drm_get_unique(&self, cmd: ioctl_defs::GetUnique) -> Result<i32> {
         let mut args: DrmUnique = cmd.read()?;
 
         // Linux keeps this empty until `DRM_IOCTL_SET_VERSION` has
@@ -59,7 +59,7 @@ impl DrmFile {
         Ok(0)
     }
 
-    pub(super) fn drm_get_magic(&self, cmd: DrmIoctlGetMagic) -> Result<i32> {
+    pub(super) fn drm_get_magic(&self, cmd: ioctl_defs::GetMagic) -> Result<i32> {
         let args = DrmAuth {
             magic: self.get_or_allocate_magic()?,
         };
@@ -67,7 +67,7 @@ impl DrmFile {
         Ok(0)
     }
 
-    pub(super) fn drm_get_cap(&self, cmd: DrmIoctlGetCap) -> Result<i32> {
+    pub(super) fn drm_get_cap(&self, cmd: ioctl_defs::GetCap) -> Result<i32> {
         /// DRM device capabilities accepted by `DRM_IOCTL_GET_CAP`.
         ///
         /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L628>.
@@ -126,7 +126,7 @@ impl DrmFile {
         Ok(0)
     }
 
-    pub(super) fn drm_set_client_cap(&self, cmd: DrmIoctlSetClientCap) -> Result<i32> {
+    pub(super) fn drm_set_client_cap(&self, cmd: ioctl_defs::SetClientCap) -> Result<i32> {
         /// DRM client capabilities accepted by `DRM_IOCTL_SET_CLIENT_CAP`.
         ///
         /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L791>.
@@ -212,18 +212,18 @@ impl DrmFile {
         Ok(0)
     }
 
-    pub(super) fn drm_auth_magic(&self, cmd: DrmIoctlAuthMagic) -> Result<i32> {
+    pub(super) fn drm_auth_magic(&self, cmd: ioctl_defs::AuthMagic) -> Result<i32> {
         let args: DrmAuth = cmd.read()?;
         self.authenticate_magic(args.magic)?;
         Ok(0)
     }
 
-    pub(super) fn drm_set_master(&self, _cmd: DrmIoctlSetMaster) -> Result<i32> {
+    pub(super) fn drm_set_master(&self, _cmd: ioctl_defs::SetMaster) -> Result<i32> {
         self.set_master()?;
         Ok(0)
     }
 
-    pub(super) fn drm_drop_master(&self, _cmd: DrmIoctlDropMaster) -> Result<i32> {
+    pub(super) fn drm_drop_master(&self, _cmd: ioctl_defs::DropMaster) -> Result<i32> {
         self.drop_master()?;
         Ok(0)
     }

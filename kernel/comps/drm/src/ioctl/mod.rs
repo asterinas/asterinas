@@ -4,60 +4,61 @@ mod gem;
 mod general;
 
 use aster_core::{dispatch_ioctl, prelude::*, util::ioctl::RawIoctl};
-use ioctl_defs::*;
 
 use crate::{file::DrmFile, has_current_sys_admin, minor::DrmMinorType};
 
 impl DrmFile {
     pub(super) fn dispatch_ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        use ioctl_defs::*;
+
         dispatch_ioctl!(match raw_ioctl {
             // General ioctl cmds.
-            cmd @ DrmIoctlVersion => {
+            cmd @ Version => {
                 self.check_ioctl_access(DrmIoctlAccess::RENDER_ALLOW)?;
                 self.drm_get_version(cmd)
             }
-            cmd @ DrmIoctlGetUnique => {
+            cmd @ GetUnique => {
                 self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_get_unique(cmd)
             }
-            cmd @ DrmIoctlGetMagic => {
+            cmd @ GetMagic => {
                 self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_get_magic(cmd)
             }
-            cmd @ DrmIoctlGetCap => {
+            cmd @ GetCap => {
                 self.check_ioctl_access(DrmIoctlAccess::RENDER_ALLOW)?;
                 self.drm_get_cap(cmd)
             }
-            cmd @ DrmIoctlSetClientCap => {
+            cmd @ SetClientCap => {
                 self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_set_client_cap(cmd)
             }
-            cmd @ DrmIoctlAuthMagic => {
+            cmd @ AuthMagic => {
                 self.check_ioctl_access(DrmIoctlAccess::MASTER)?;
                 self.drm_auth_magic(cmd)
             }
-            cmd @ DrmIoctlSetMaster => {
+            cmd @ SetMaster => {
                 self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_set_master(cmd)
             }
-            cmd @ DrmIoctlDropMaster => {
+            cmd @ DropMaster => {
                 self.check_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_drop_master(cmd)
             }
             // GEM ioctl cmds.
-            cmd @ DrmIoctlGemClose => {
+            cmd @ GemClose => {
                 self.check_gem_ioctl_access(DrmIoctlAccess::RENDER_ALLOW)?;
                 self.drm_gem_close(cmd)
             }
-            cmd @ DrmIoctlModeCreateDumb => {
+            cmd @ ModeCreateDumb => {
                 self.check_gem_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_mode_create_dumb(cmd)
             }
-            cmd @ DrmIoctlModeMapDumb => {
+            cmd @ ModeMapDumb => {
                 self.check_gem_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_mode_map_dumb(cmd)
             }
-            cmd @ DrmIoctlModeDestroyDumb => {
+            cmd @ ModeDestroyDumb => {
                 self.check_gem_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_mode_destroy_dumb(cmd)
             }
@@ -130,47 +131,22 @@ mod ioctl_defs {
         util::ioctl::{InData, InOutData, NoData, OutData},
     };
 
-    use super::{
+    use crate::ioctl::{
         gem::{DrmGemClose, DrmModeCreateDumb, DrmModeDestroyDumb, DrmModeMapDumb},
         general::{DrmAuth, DrmGetCap, DrmSetClientCap, DrmUnique, DrmVersion},
     };
 
-    pub(super) type DrmIoctlVersion =
-        ioc!(DRM_IOCTL_VERSION, b'd', 0x00, InOutData<DrmVersion>);
-    pub(super) type DrmIoctlGetUnique =
-        ioc!(DRM_IOCTL_GET_UNIQUE, b'd', 0x01, InOutData<DrmUnique>);
-    pub(super) type DrmIoctlGetMagic =
-        ioc!(DRM_IOCTL_GET_MAGIC, b'd', 0x02, OutData<DrmAuth>);
-    pub(super) type DrmIoctlGemClose = ioc!(
-        DRM_IOCTL_GEM_CLOSE,
-        b'd',
-        0x09,
-        InData<DrmGemClose>
-    );
-    pub(super) type DrmIoctlGetCap =
-        ioc!(DRM_IOCTL_GET_CAP, b'd', 0x0c, InOutData<DrmGetCap>);
-    pub(super) type DrmIoctlSetClientCap =
-        ioc!(DRM_IOCTL_SET_CLIENT_CAP, b'd', 0x0d, InData<DrmSetClientCap>);
-    pub(super) type DrmIoctlAuthMagic =
-        ioc!(DRM_IOCTL_AUTH_MAGIC, b'd', 0x11, InData<DrmAuth>);
-    pub(super) type DrmIoctlSetMaster = ioc!(DRM_IOCTL_SET_MASTER, b'd', 0x1e, NoData);
-    pub(super) type DrmIoctlDropMaster = ioc!(DRM_IOCTL_DROP_MASTER, b'd', 0x1f, NoData);
-    pub(super) type DrmIoctlModeCreateDumb = ioc!(
-        DRM_IOCTL_MODE_CREATE_DUMB,
-        b'd',
-        0xb2,
-        InOutData<DrmModeCreateDumb>
-    );
-    pub(super) type DrmIoctlModeMapDumb = ioc!(
-        DRM_IOCTL_MODE_MAP_DUMB,
-        b'd',
-        0xb3,
-        InOutData<DrmModeMapDumb>
-    );
-    pub(super) type DrmIoctlModeDestroyDumb = ioc!(
-        DRM_IOCTL_MODE_DESTROY_DUMB,
-        b'd',
-        0xb4,
-        InOutData<DrmModeDestroyDumb>
-    );
+    // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h>
+    pub(super) type Version                 = ioc!(DRM_IOCTL_VERSION,                   b'd', 0x00, InOutData<DrmVersion>);
+    pub(super) type GetUnique               = ioc!(DRM_IOCTL_GET_UNIQUE,                b'd', 0x01, InOutData<DrmUnique>);
+    pub(super) type GetMagic                = ioc!(DRM_IOCTL_GET_MAGIC,                 b'd', 0x02, OutData<DrmAuth>);
+    pub(super) type GemClose                = ioc!(DRM_IOCTL_GEM_CLOSE,                 b'd', 0x09, InData<DrmGemClose>);
+    pub(super) type GetCap                  = ioc!(DRM_IOCTL_GET_CAP,                   b'd', 0x0c, InOutData<DrmGetCap>);
+    pub(super) type SetClientCap            = ioc!(DRM_IOCTL_SET_CLIENT_CAP,            b'd', 0x0d, InData<DrmSetClientCap>);
+    pub(super) type AuthMagic               = ioc!(DRM_IOCTL_AUTH_MAGIC,                b'd', 0x11, InData<DrmAuth>);
+    pub(super) type SetMaster               = ioc!(DRM_IOCTL_SET_MASTER,                b'd', 0x1e, NoData);
+    pub(super) type DropMaster              = ioc!(DRM_IOCTL_DROP_MASTER,               b'd', 0x1f, NoData);
+    pub(super) type ModeCreateDumb          = ioc!(DRM_IOCTL_MODE_CREATE_DUMB,          b'd', 0xb2, InOutData<DrmModeCreateDumb>);
+    pub(super) type ModeMapDumb             = ioc!(DRM_IOCTL_MODE_MAP_DUMB,             b'd', 0xb3, InOutData<DrmModeMapDumb>);
+    pub(super) type ModeDestroyDumb         = ioc!(DRM_IOCTL_MODE_DESTROY_DUMB,         b'd', 0xb4, InOutData<DrmModeDestroyDumb>);
 }

@@ -75,8 +75,8 @@ impl DrmDevice for SimpleDrmDevice {
         SIMPLEDRM_DESC
     }
 
-    fn features(&self) -> &DrmFeatures {
-        &self.features
+    fn features(&self) -> DrmFeatures {
+        self.features
     }
 
     fn as_gem_ops(&self) -> Option<&dyn DrmGemOps> {
