@@ -86,11 +86,7 @@ impl HookSlot {
     /// Calling this a second time has no effect.
     pub(crate) fn install(&self, hooks: &'static dyn KernelHooks) {
         let mut pending = self.pending.lock();
-        self.hooks.call_once(|| hooks);
-        let installed = self
-            .hooks
-            .get()
-            .expect("the hooks were just installed here");
+        let installed = self.hooks.call_once(|| hooks);
         for request in core::mem::take(&mut *pending) {
             // A failure here cannot be reported to the caller that queued
             // the request long ago; the node is simply absent.
