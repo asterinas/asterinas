@@ -758,3 +758,56 @@ fn cached_attr_lookup_observes_permission_changes() {
     assert!(!Arc::ptr_eq(&attr, &updated));
     assert_eq!(updated.inode().mode().unwrap(), mkmod!(u+rw, a+r));
 }
+
+#[ktest]
+fn module_parameters_sysfs_lookup_and_read() {
+    time_init_for_ktest();
+    init_for_ktest();
+
+    let _ = aster_systree::register_module_params(
+        "ktest_sysfs_mod",
+        [
+            ("bool_param", aster_systree::SysParamValue::Bool(false)),
+            ("int_param", aster_systree::SysParamValue::Int(42)),
+        ],
+    );
+
+    let sysfs = SysFs::new_for_ktest();
+    let root_inode = sysfs.root_inode();
+
+    let module_inode = root_inode.lookup("module").expect("Lookup module failed");
+    assert_eq!(module_inode.type_(), InodeType::Dir);
+
+    let test_mod_inode = module_inode
+        .lookup("ktest_sysfs_mod")
+        .expect("Lookup ktest_sysfs_mod failed");
+    assert_eq!(test_mod_inode.type_(), InodeType::Dir);
+
+    let params_inode = test_mod_inode
+        .lookup("parameters")
+        .expect("Lookup parameters failed");
+    assert_eq!(params_inode.type_(), InodeType::Dir);
+
+    let bool_attr_inode = params_inode
+        .lookup("bool_param")
+        .expect("Lookup bool_param failed");
+    assert_eq!(bool_attr_inode.type_(), InodeType::File);
+
+    let mut buf = [0u8; 16];
+    let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
+    let bytes_read = bool_attr_inode
+        .read_at(0, &mut writer, StatusFlags::empty())
+        .expect("read_at bool_param failed");
+    let content = core::str::from_utf8(&buf[..bytes_read]).unwrap();
+    assert_eq!(content, "N\n");
+
+    let int_attr_inode = params_inode
+        .lookup("int_param")
+        .expect("Lookup int_param failed");
+    let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
+    let bytes_read = int_attr_inode
+        .read_at(0, &mut writer, StatusFlags::empty())
+        .expect("read_at int_param failed");
+    let content = core::str::from_utf8(&buf[..bytes_read]).unwrap();
+    assert_eq!(content, "42\n");
+}

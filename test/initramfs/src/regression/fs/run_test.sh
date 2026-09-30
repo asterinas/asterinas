@@ -142,6 +142,7 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 ./overlayfs/readdir_small_buffer
 ./overlayfs/rmdir_lower_only_nonempty
 ./overlayfs/sparse_copyup_consistency
+./overlayfs/sysfs_parameters
 ./overlayfs/xino_dino_identity
 
 ./procfs/dentry_cache

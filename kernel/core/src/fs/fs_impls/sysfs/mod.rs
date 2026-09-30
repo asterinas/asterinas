@@ -7,7 +7,7 @@ mod kernel;
 mod test;
 
 use aster_systree::SysNode;
-pub(crate) use aster_systree::primary_tree as systree_singleton;
+pub(crate) use aster_systree::{primary_tree as systree_singleton, register_module_params};
 use fs::SysFsType;
 
 use crate::{fs::vfs::registry, prelude::*};

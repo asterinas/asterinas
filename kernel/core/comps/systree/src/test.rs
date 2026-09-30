@@ -354,3 +354,48 @@ fn rebuilding_attributes_preserves_survivors_and_reuses_free_ids() {
     assert!(!old.contains("fourth"));
     assert!(!new.contains("second"));
 }
+
+#[ktest]
+fn param_value_formatting() {
+    use crate::SysParamValue;
+
+    assert_eq!(SysParamValue::Bool(true).format(), "Y\n");
+    assert_eq!(SysParamValue::Bool(false).format(), "N\n");
+    assert_eq!(SysParamValue::Int(-42).format(), "-42\n");
+    assert_eq!(SysParamValue::Uint(100).format(), "100\n");
+    assert_eq!(SysParamValue::Str("foo".into()).format(), "foo\n");
+}
+
+#[ktest]
+fn register_module_params_creates_hierarchy_and_reads() {
+    use crate::{SysParamValue, register_module_params};
+
+    let mod_node = register_module_params(
+        "test_module",
+        [
+            ("bool_param", SysParamValue::Bool(true)),
+            ("int_param", SysParamValue::Int(12345)),
+            ("str_param", SysParamValue::Str("hello".into())),
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(mod_node.name(), "test_module");
+    let param_obj = mod_node
+        .child("parameters")
+        .expect("parameters node must exist");
+    let param_node = param_obj.cast_to_node().expect("cast to node");
+
+    assert_eq!(param_node.show_attr("bool_param").unwrap(), "Y\n");
+    assert_eq!(param_node.show_attr("int_param").unwrap(), "12345\n");
+    assert_eq!(param_node.show_attr("str_param").unwrap(), "hello\n");
+}
+
+#[ktest]
+fn register_module_params_duplicate_fails() {
+    use crate::{Error, SysParamValue, register_module_params};
+
+    let _ = register_module_params("dup_module", [("first", SysParamValue::Bool(true))]).unwrap();
+    let res = register_module_params("dup_module", [("second", SysParamValue::Bool(false))]);
+    assert!(matches!(res, Err(Error::AlreadyExists)));
+}

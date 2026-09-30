@@ -26,6 +26,7 @@ extern crate alloc;
 
 mod attr;
 mod node;
+pub mod param;
 #[cfg(ktest)]
 mod test;
 mod tree;
@@ -42,6 +43,7 @@ pub use self::{
     node::{
         MAX_ATTR_SIZE, SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysPerms, SysSymlink,
     },
+    param::{ModuleNode, SysParam, SysParamValue, register_module_params},
     tree::SysTree,
     utils::{
         _InheritSysBranchNode, _InheritSysLeafNode, _InheritSysSymlinkNode,
@@ -56,12 +58,14 @@ static SINGLETON: Once<Arc<SysTree<RootNode>>> = Once::new();
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
     SINGLETON.call_once(|| Arc::new(SysTree::new()));
+    let _ = param::module_registry();
     Ok(())
 }
 
 #[cfg(ktest)]
 pub fn init_for_ktest() {
     SINGLETON.call_once(|| Arc::new(SysTree::new()));
+    let _ = param::module_registry();
 }
 
 /// Returns a reference to the primary `SysTree` instance.
