@@ -46,6 +46,44 @@ struct PvclockVcpuTimeInfo {
     _pad: [u8; 2],
 }
 
+/// Shared version-based protocol for reading KVM pvclock data consistently.
+///
+/// An odd `version` means the host is still writing the pvclock fields.
+/// A read is consistent only when the version observed before and after
+/// reading the fields is the same even value.
+/// Reference: <https://elixir.bootlin.com/linux/v7.0/source/Documentation/virt/kvm/x86/msr.rst#L86-L90>.
+///
+/// FIXME: All synchronization in this protocol is based on the assumption that
+/// we are performing atomic operations under the same memory model as the KVM
+/// side. However:
+/// 1. The Linux memory model is incompatible with Rust's.
+/// 2. We use non-atomic volatile operations to safely communicate with
+///    untrusted parties. But these operations cannot establish synchronization.
+trait PvclockVersion {
+    /// Returns the current pvclock `version` value.
+    fn read_version(&self) -> u32;
+
+    /// Begins a consistent read and returns the version to compare against.
+    fn read_begin(&self) -> u32 {
+        // Masking the odd bit makes `is_version_changed` reject both reads that begin
+        // during an update and reads that race with a completed update.
+        let version = self.read_version() & !1;
+
+        // Synchronize with the (even) version update so that we can see the data written before
+        // the version is written.
+        fence(Ordering::Acquire);
+        version
+    }
+
+    /// Returns whether the pvclock `version` changed since the read was begun.
+    fn is_version_changed(&self, version: u32) -> bool {
+        // Synchronize with the data update so that we can see the (odd) version update
+        // before the data is written (if the data is changed concurrently).
+        fence(Ordering::Acquire);
+        self.read_version() != version
+    }
+}
+
 /// A handle to the KVM pvclock page shared with the hypervisor.
 struct PvclockPage(Frame<PvclockPageMeta>);
 
@@ -84,34 +122,10 @@ impl PvclockPage {
         const MAX_RETRIES: usize = 1_000_000;
 
         for _ in 0..MAX_RETRIES {
-            // KVM marks an in-progress pvclock update with an odd `version`.
-            // Accept fields only when `version` is even and unchanged across the read.
-            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/Documentation/virt/kvm/x86/msr.rst#L86-L90>.
-            let version_before = self.read_version();
-            if version_before & 1 != 0 {
-                core::hint::spin_loop();
-                continue;
-            }
-
-            // FIXME: All synchronization below is based on the assumption that we are performing
-            // atomic operations under the same memory model as the KVM side. However:
-            // 1. The Linux memory model is incompatible with Rust's.
-            // 2. We use non-atomic volatile operations to safely communicate with untrusted
-            //    parties. But these operations cannot establish synchronization.
-
-            // Synchronize with the (even) version update so that we can see the data written before
-            // the version is written.
-            fence(Ordering::Acquire);
-
+            let version = self.read_begin();
             let tsc_to_system_mul = self.read_tsc_to_system_mul();
             let tsc_shift = self.read_tsc_shift();
-
-            // Synchronize with the data update so that we can see the (odd) version update before
-            // the data is written (if the data is changed concurrently).
-            fence(Ordering::Acquire);
-
-            let version_after = self.read_version();
-            if version_before == version_after && tsc_to_system_mul != 0 {
+            if !self.is_version_changed(version) && tsc_to_system_mul != 0 {
                 return Some(PvclockTimeSnapshot {
                     tsc_to_system_mul,
                     tsc_shift,
@@ -122,11 +136,6 @@ impl PvclockPage {
         }
 
         None
-    }
-
-    fn read_version(&self) -> u32 {
-        // SAFETY: `self.as_ptr()` points to a live KVM pvclock page.
-        unsafe { read_once(core::ptr::addr_of!((*self.as_ptr()).version)) }
     }
 
     fn read_tsc_to_system_mul(&self) -> u32 {
@@ -142,6 +151,13 @@ impl PvclockPage {
     /// Returns a pointer that points to the pvclock page.
     fn as_ptr(&self) -> *const PvclockVcpuTimeInfo {
         mm::paddr_to_vaddr(self.0.paddr()) as *const PvclockVcpuTimeInfo
+    }
+}
+
+impl PvclockVersion for PvclockPage {
+    fn read_version(&self) -> u32 {
+        // SAFETY: `self.as_ptr()` points to a live KVM pvclock page.
+        unsafe { read_once(core::ptr::addr_of!((*self.as_ptr()).version)) }
     }
 }
 
