@@ -49,7 +49,11 @@ pub struct SystemTime {
     pub nanos: u64,
 }
 
-#[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
+#[cfg(any(
+    target_arch = "riscv64",
+    target_arch = "aarch64",
+    target_arch = "x86_64"
+))]
 impl From<chrono::NaiveDateTime> for SystemTime {
     fn from(time: chrono::NaiveDateTime) -> Self {
         use chrono::{Datelike, Timelike};
