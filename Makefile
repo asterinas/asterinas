@@ -261,7 +261,7 @@ endif
 ifeq ($(INITRAMFS),on)
 CARGO_OSDK_COMMON_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
 endif
-CARGO_OSDK_VIRTIOFSD := ./tools/run_virtiofsd.sh --cache-mode $(VIRTIOFS_CACHE) --work-dir
+CARGO_OSDK_VIRTIOFSD := $(abspath tools/run_virtiofsd.sh) --cache-mode $(VIRTIOFS_CACHE) --work-dir
 ifeq ($(VIRTIOFS),on)
 # Each Make invocation gets an isolated virtio-fs work directory under /tmp.
 VIRTIOFS_WORK_DIR := $(shell mktemp -d -p /tmp asterinas-virtiofs-XXXXXX)

@@ -12,6 +12,3 @@ result_extraction:
 runtime_config:
   aster_scheme: 'null'
   virtiofs: 'on'
-  virtiofs_tag: aster-virtiofs
-  virtiofs_socket: /tmp/vhostqemu/benchmark-vfs.sock
-  virtiofs_shared_dir: test/initramfs/build/virtiofs-benchmark
