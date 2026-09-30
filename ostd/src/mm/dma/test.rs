@@ -256,4 +256,32 @@ mod dma_stream {
         dma_stream.read_bytes(0, &mut buf_read).unwrap();
         assert_eq!(buf_write, buf_read);
     }
+
+    #[ktest]
+    fn sync_invalid_ranges() {
+        let dma_stream = DmaStream::<FromAndToDevice>::alloc(2, false).unwrap();
+        assert_eq!(dma_stream.size(), 2 * PAGE_SIZE);
+
+        #[expect(clippy::reversed_empty_ranges)]
+        const INVALID_RANGES: [core::ops::Range<usize>; 5] = [
+            // Reversed ranges:
+            PAGE_SIZE..0,
+            2 * PAGE_SIZE..PAGE_SIZE,
+            // Out-of-bounds ranges:
+            PAGE_SIZE..4 * PAGE_SIZE,
+            2 * PAGE_SIZE..4 * PAGE_SIZE,
+            3 * PAGE_SIZE..4 * PAGE_SIZE,
+        ];
+
+        for invalid_range in INVALID_RANGES {
+            assert_eq!(
+                dma_stream.sync_from_device(invalid_range.clone()),
+                Err(crate::Error::InvalidArgs)
+            );
+            assert_eq!(
+                dma_stream.sync_to_device(invalid_range),
+                Err(crate::Error::InvalidArgs)
+            );
+        }
+    }
 }

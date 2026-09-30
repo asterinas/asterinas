@@ -252,7 +252,7 @@ impl<D: DmaDirection> DmaSegment<D> {
     }
 
     pub fn sync_from_device(&self, byte_range: Range<usize>) -> Result<(), ostd::Error> {
-        if byte_range.start > byte_range.end || byte_range.start > self.page.segment_size {
+        if byte_range.start > byte_range.end || byte_range.end > self.page.segment_size {
             return Err(ostd::Error::InvalidArgs);
         }
         self.page
@@ -263,7 +263,7 @@ impl<D: DmaDirection> DmaSegment<D> {
     }
 
     pub fn sync_to_device(&self, byte_range: Range<usize>) -> Result<(), ostd::Error> {
-        if byte_range.start > byte_range.end || byte_range.start > self.page.segment_size {
+        if byte_range.start > byte_range.end || byte_range.end > self.page.segment_size {
             return Err(ostd::Error::InvalidArgs);
         }
         self.page
