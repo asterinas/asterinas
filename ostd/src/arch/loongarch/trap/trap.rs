@@ -84,12 +84,19 @@ impl Default for RawUserContext {
 impl RawUserContext {
     /// Goes to user space with the context, and comes back when a trap occurs.
     ///
+    /// The IRQ guard ensures that local IRQs are disabled on entry.
+    /// They remain disabled throughout the _kernel-side_ execution of this method.
+    /// However, the _user-space_ execution part is still interruptible,
+    /// even while the IRQ guard is alive.
+    /// The underlying mechanism depends on the CPU architecture.
+    /// On LoongArch, `ertn` restores the saved user Interrupt Enable (IE) bit,
+    /// which is always set.
+    ///
     /// On return, the context will be reset to the status before the trap.
     /// Trap reason will be placed at `estat`.
-    pub(in crate::arch) fn run(&mut self, guard: DisabledLocalIrqGuard) {
+    pub(in crate::arch) fn run(&mut self, _guard: &DisabledLocalIrqGuard) {
         // Return to userspace with interrupts disabled. Otherwise, interrupts
         // after switching `SAVE_SCRATCH` will mess up the CPU state.
-        core::mem::forget(guard);
 
         unsafe { run_user(self) };
     }
