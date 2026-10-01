@@ -67,6 +67,10 @@ jobs:
           - fio/virtiofs_seq_read_bw
           - fio/virtiofs_seq_write_bw_direct
           - fio/virtiofs_seq_read_bw_direct
+          - fio/nvme_seq_write_bw_direct
+          - fio/nvme_seq_read_bw_direct
+          - fio/nvme_seq_write_bw_direct_no_iommu
+          - fio/nvme_seq_read_bw_direct_no_iommu
           # Loopback-related network benchmarks
           - lmbench/tcp_loopback_bw_128
           - lmbench/tcp_loopback_bw_4k
