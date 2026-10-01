@@ -88,6 +88,14 @@ unsafe extern "C" {
 impl RawUserContext {
     /// Goes to user space with the context, and comes back when a trap occurs.
     ///
+    /// The IRQ guard ensures that local IRQs are disabled on entry.
+    /// They remain disabled throughout the _kernel-side_ execution of this method.
+    /// However, the _user-space_ execution part is still interruptible,
+    /// even while the IRQ guard is alive.
+    /// The underlying mechanism depends on the CPU architecture.
+    /// On x86, `iret` or `sysret` restores the saved user RFLAGS,
+    /// whose interrupt flag (IF) is always set.
+    ///
     /// On return, the context will be reset to the status before the trap.
     /// Trap reason and error code will be placed at `trap_num` and `error_code`.
     ///
@@ -95,10 +103,9 @@ impl RawUserContext {
     ///
     /// If `trap_num` is `0x100`, it will go user by `sysret` (`rcx` and `r11` are dropped),
     /// otherwise it will use `iret`.
-    pub(in crate::arch) fn run(&mut self, guard: DisabledLocalIrqGuard) {
+    pub(in crate::arch) fn run(&mut self, _guard: &DisabledLocalIrqGuard) {
         // Return to userspace with interrupts disabled. Otherwise, interrupts
         // after executing `swapgs` will mess up the CPU state.
-        core::mem::forget(guard);
 
         unsafe { syscall_return(self) };
     }

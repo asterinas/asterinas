@@ -106,12 +106,19 @@ impl TrapFrameApi for TrapFrame {
 impl RawUserContext {
     /// Goes to user space with the context, and comes back when a trap occurs.
     ///
+    /// The IRQ guard ensures that local IRQs are disabled on entry.
+    /// They remain disabled throughout the _kernel-side_ execution of this method.
+    /// However, the _user-space_ execution part is still interruptible,
+    /// even while the IRQ guard is alive.
+    /// The underlying mechanism depends on the CPU architecture.
+    /// On ARM, `eret` restores the saved user Process State (PSTATE),
+    /// whose IRQ mask (I bit) is always cleared.
+    ///
     /// On return, the context will be reset to the status before the trap.
     /// Trap reason and error code will be placed at `trap_num`.
-    pub(in crate::arch) fn run(&mut self, guard: DisabledLocalIrqGuard) {
+    pub(in crate::arch) fn run(&mut self, _guard: &DisabledLocalIrqGuard) {
         // Return to userspace with interrupts disabled. Otherwise, interrupts
         // after switching `sp` will mess up the CPU state.
-        core::mem::forget(guard);
 
         unsafe { run_user(self) };
     }

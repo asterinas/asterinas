@@ -67,7 +67,7 @@ pub struct GeneralRegs {
     pub t6: usize,
 }
 
-/// RISC-V CPU exceptions
+/// RISC-V CPU exceptions.
 ///
 /// Every enum variant corresponds to one exception defined by the RISC-V
 /// architecture. Variants that naturally carry an error code (in stval
@@ -181,9 +181,9 @@ impl UserContextApiInternal for UserContext {
         loop {
             crate::task::scheduler::might_preempt();
 
-            let guard = crate::irq::disable_local();
-            hooks.pre_user_run(&guard);
-            self.user_context.run(guard);
+            let irq_guard = crate::irq::disable_local();
+            hooks.pre_user_run(&irq_guard);
+            self.user_context.run(&irq_guard);
 
             let scause = riscv::register::scause::read();
             let Ok(cause) = Trap::<Interrupt, Exception>::try_from(scause.cause()) else {
@@ -205,17 +205,16 @@ impl UserContextApiInternal for UserContext {
             match cause {
                 Trap::Interrupt(interrupt) => {
                     handle_irq(&self.as_trap_frame(), interrupt, PrivilegeLevel::User);
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                 }
                 Trap::Exception(Exception::UserEnvCall) => {
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                     self.user_context.sepc += 4;
                     break ReturnReason::UserSyscall;
                 }
                 Trap::Exception(raw_exception) => {
                     let stval = riscv::register::stval::read();
-                    crate::arch::irq::enable_local();
-
+                    drop(irq_guard);
                     let exception = CpuException::new(raw_exception, stval);
                     self.exception = Some(exception);
                     break ReturnReason::UserException;

@@ -367,9 +367,9 @@ impl UserContextApiInternal for UserContext {
         loop {
             crate::task::scheduler::might_preempt();
 
-            let guard = crate::irq::disable_local();
-            hooks.pre_user_run(&guard);
-            self.user_context.run(guard);
+            let irq_guard = crate::irq::disable_local();
+            hooks.pre_user_run(&irq_guard);
+            self.user_context.run(&irq_guard);
 
             let exception =
                 CpuException::new(self.user_context.trap_num, self.user_context.error_code);
@@ -379,11 +379,11 @@ impl UserContextApiInternal for UserContext {
                     let ve_handler = VirtualizationExceptionHandler::new();
                     // Check out the doc of `VirtualizationExceptionHandler::new` to
                     // see why IRQs must enabled _after_ instantiating a `VirtualizationExceptionHandler`.
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                     ve_handler.handle(self);
                 }
                 Some(exception) if exception.type_().is_fault_or_trap() => {
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                     self.exception = Some(exception);
                     return ReturnReason::UserException;
                 }
@@ -395,7 +395,7 @@ impl UserContextApiInternal for UserContext {
                     );
                 }
                 None if self.user_context.trap_num == SYSCALL_TRAPNUM => {
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                     return ReturnReason::UserSyscall;
                 }
                 None => {
@@ -404,7 +404,7 @@ impl UserContextApiInternal for UserContext {
                         &HwIrqLine::new(self.as_trap_frame().trap_num as u8),
                         PrivilegeLevel::User,
                     );
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                 }
             }
 

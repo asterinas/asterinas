@@ -144,12 +144,12 @@ impl UserContext {
 
 impl UserContextApiInternal for UserContext {
     fn execute<T: UserModeHooks>(&mut self, hooks: &T) -> ReturnReason {
-        let ret = loop {
+        loop {
             crate::task::scheduler::might_preempt();
 
-            let guard = crate::irq::disable_local();
-            hooks.pre_user_run(&guard);
-            self.user_context.run(guard);
+            let irq_guard = crate::irq::disable_local();
+            hooks.pre_user_run(&irq_guard);
+            self.user_context.run(&irq_guard);
 
             let cause = loongArch64::register::estat::read().cause();
             let badv = loongArch64::register::badv::read().raw();
@@ -238,13 +238,12 @@ impl UserContextApiInternal for UserContext {
                 }
             }
 
+            drop(irq_guard);
+
             if hooks.has_kernel_event() {
                 break ReturnReason::KernelEvent;
             }
-        };
-
-        crate::arch::irq::enable_local();
-        ret
+        }
     }
 
     fn as_trap_frame(&self) -> TrapFrame {
