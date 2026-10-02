@@ -75,7 +75,9 @@ behavior being verified, such as `coreutils_cat` or `findutils_xargs`.
 
 If a test suite verifies applications that are documented in Asterinas Book, keep the test suite and the corresponding "Verified Usage" section in sync. Whenever you add, remove, or change covered behavior in `test/nixos/tests/<suite>/`, review the matching documentation under `book/src/distro/popular-applications` and update it if needed.
 
-**Note**: `book/src/distro/popular-applications/desktop-environments-and-display/` intentionally has no counterpart under `test/nixos/tests/` and does not appear in the NixOS test matrix. GUI and display validation are out of scope for the current headless NixOS test runner.
+**Note**: `test/nixos/tests/drm/` is a kernel-feature smoke test rather than a
+counterpart to an application chapter. It verifies the DRM → Xorg → Mesa
+startup path, but does not validate graphical output or desktop interaction.
 
 ### Step 4: (Optional) Configure NixOS
 
