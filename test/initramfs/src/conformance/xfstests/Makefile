@@ -11,4 +11,4 @@ all: $(XFSTESTS_DIR)
 
 $(XFSTESTS_DIR):
 	@mkdir -p $@/{test,scratch}
-	@cp -r $(XFSTESTS_PREBUILT_DIR)/xfstests/* $@/
+	@cp -rL $(XFSTESTS_PREBUILT_DIR)/xfstests/* $@/

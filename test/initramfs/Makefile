@@ -139,6 +139,7 @@ x86_64_pkgs:
 		-A benchmark.sysbench \
 		-A conformance.ltp \
 		-A conformance.kselftest \
+		-A conformance.xfstests \
 		-A regression.package
 
 # Prebuild riscv64 packages
