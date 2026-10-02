@@ -54,9 +54,6 @@ stdenvNoCC.mkDerivation {
 
   buildCommand = ''
     mkdir -p $out/xfstests
-    cp -r ${xfstests}/lib/xfstests/* $out/xfstests/
-    # Allow tmpfs/prepare.sh to patch the read-only common/config at runtime.
-    chmod -R u+w $out/xfstests
 
     cp ${conformanceSrc}/xfstests/run_xfstests.sh $out/xfstests/
     sed -i "s|__RUNTIME_PATH__|${runtimePath}|" $out/xfstests/run_xfstests.sh
@@ -66,5 +63,8 @@ stdenvNoCC.mkDerivation {
         cp -r "$fs_dir" $out/xfstests/
       fi
     done
+
+    # The links keep the compiled suite alive during GC
+    ln -s ${xfstests}/lib/xfstests/* $out/xfstests/
   '';
 }
