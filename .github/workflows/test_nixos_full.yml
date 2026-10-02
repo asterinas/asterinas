@@ -95,6 +95,7 @@ jobs:
           FULL_TEST_MATRIX: >-
             [
               { "name": "system-core", "disk_size": 10240, "timeout_minutes": 45 },
+              { "name": "drm", "disk_size": 8192, "timeout_minutes": 45 },
               { "name": "nix-and-nixos-tools", "disk_size": 8192, "timeout_minutes": 60, "test_timeout_minutes": 30 },
               { "name": "containerization-and-virtualization", "disk_size": 10240, "timeout_minutes": 45 },
               { "name": "networking", "disk_size": 10240, "timeout_minutes": 45 },
@@ -156,6 +157,16 @@ jobs:
                 jq -c \
                   --arg suite_name "$SMOKE_TEST_NAME" \
                   '[.[] | select(.name == $suite_name)]' <<< "$FULL_TEST_MATRIX"
+              )"
+            fi
+
+            # Desktop changes need DRM coverage even when another suite is selected.
+            if grep -qE '^distro/etc_nixos/(modules/xfce|overlays/desktop)/' /tmp/changed; then
+              matrix="$(
+                jq -c \
+                  --argjson full_matrix "$FULL_TEST_MATRIX" \
+                  '. + [$full_matrix[] | select(.name == "drm")] | unique_by(.name)' \
+                  <<< "$matrix"
               )"
             fi
           fi
