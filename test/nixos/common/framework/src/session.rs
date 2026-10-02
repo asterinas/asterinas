@@ -486,7 +486,7 @@ impl Session {
         )
     }
 
-    fn wait_until_check_matches(
+    pub fn wait_until_check_matches(
         &mut self,
         command_check: &CommandCheck,
         timeout: Duration,
