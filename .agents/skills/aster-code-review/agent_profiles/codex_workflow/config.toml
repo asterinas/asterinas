@@ -15,8 +15,9 @@
 # `model_provider` selects it.
 #
 # `model` is PINNED for reproducibility;
-# gpt-5.5 is served by the API key.
-model = "gpt-5.5"
+# gpt-6.1-sol is served by the API key
+# (with Codex >= 0.159.0; see the "Install Codex" step of the workflow).
+model = "gpt-6.1-sol"
 model_reasoning_effort = "high"
 model_provider = "openai_apikey"
 
