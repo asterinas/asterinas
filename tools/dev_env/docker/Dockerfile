@@ -26,7 +26,7 @@ RUN curl -fsSL https://claude.ai/install.sh | bash -s -- ${CLAUDE_CODE_RELEASE} 
     && claude --version
 
 # Install Codex.
-ENV CODEX_RELEASE=0.147.0
+ENV CODEX_RELEASE=0.160.0
 ENV CODEX_NON_INTERACTIVE=yes
 RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh \
     && codex --version
