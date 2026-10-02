@@ -294,8 +294,8 @@ the shared launcher [`scripts/run_agent.sh`](../scripts/run_agent.sh) is the one
 and the headless CLI ([`aster_code_review.sh`](../aster_code_review.sh)) and the PR-review CI use the very same profiles and launcher (see [`interface.md`](interface.md)).
 Three ship, all verified end-to-end (see *Harness flow*):
 **`claude`** (the reference config — Claude Code, Opus, high effort),
-**`codex`** (Codex, `gpt-5.5`, high effort),
-and **`codex_workflow`** (Codex, `gpt-5.5`, high effort, API-key auth — what the PR-review CI runs).
+**`codex`** (Codex, `gpt-6.1-sol`, high effort),
+and **`codex_workflow`** (Codex, `gpt-6.1-sol`, high effort, API-key auth — what the PR-review CI runs).
 
 ```
 agent_profiles/
@@ -308,7 +308,7 @@ agent_profiles/
 │   └── config.smoke.toml     # smoke overlay: model_reasoning_effort -> low
 └── codex_workflow/           # the PR-review CI profile
     ├── profile.json          # no `inherit` — auth is the OPENAI_API_KEY secret
-    └── config.toml           # gpt-5.5, high, danger-full-access (container is the sandbox)
+    └── config.toml           # gpt-6.1-sol, high, danger-full-access (container is the sandbox)
 ```
 
 `profile.json` is a small manifest,
@@ -346,8 +346,9 @@ Each agent propagates through its *own* native mechanism
   (Relocating `CODEX_HOME` is exactly why `inherit` exists — codex keeps its login token in `CODEX_HOME/auth.json`, so the profile copies the real one in.)
 
 Pinning has one caveat worth stating:
-model *availability* is account-specific (a ChatGPT-account login serves `gpt-5.5`; an API key may serve `gpt-5-codex`),
-so a shipped profile's `model` may need adjusting for another account
+model *availability* is account-specific (a ChatGPT-account login serves `gpt-6.1-sol`; an API key may serve `gpt-5-codex`)
+and version-specific (`gpt-6.1-sol` needs Codex ≥ 0.159.0),
+so a shipped profile's `model` may need adjusting for another account or an older Codex
 — that's the profile doing its job of naming an exact config, not a bug.
 
 ### Benchmark vs. smoke

@@ -7,10 +7,11 @@
 # — a profile documents one exact, known-good configuration.
 # It must be a model your Codex account can serve
 # (model availability differs by account:
-# e.g. a ChatGPT-account login exposes "gpt-5.5",
-# an API key may expose "gpt-5-codex").
+# e.g. a ChatGPT-account login exposes "gpt-6.1-sol",
+# an API key may expose "gpt-5-codex")
+# and by Codex version (gpt-6.1-sol needs Codex >= 0.159.0).
 # Change it to pin a different config.
-model = "gpt-5.5"
+model = "gpt-6.1-sol"
 model_reasoning_effort = "high"
 
 # Least privilege the review still needs:

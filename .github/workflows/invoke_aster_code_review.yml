@@ -250,6 +250,22 @@ jobs:
       - name: Trust the checked-out workspace (container git)
         run: git config --global --add safe.directory '*'
 
+      # The image's Codex is too old for the profile's model: gpt-6.1-sol needs
+      # Codex >= 0.159.0 (older CLIs get a 400 "model is not supported").
+      # Install a pinned, newer release ahead of it on PATH until the next dev image
+      # ships one (see CODEX_RELEASE in tools/dev_env/docker/Dockerfile); then drop
+      # this step. The install dir is explicit because container jobs run with
+      # HOME=/github/home, not the image's /root.
+      - name: Install Codex
+        env:
+          CODEX_RELEASE: 0.160.0
+          CODEX_NON_INTERACTIVE: yes
+          CODEX_INSTALL_DIR: ${{ runner.temp }}/codex/bin
+        run: |
+          curl -fsSL https://chatgpt.com/codex/install.sh | sh
+          "$CODEX_INSTALL_DIR/codex" --version
+          echo "$CODEX_INSTALL_DIR" >> "$GITHUB_PATH"
+
       # For fork PRs the base branch tip may not be in the fork's history; fetch
       # it so `diff <base>` (and the benchmark) can find merge-bases.
       - name: Fetch base ref for fork PRs
