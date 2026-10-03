@@ -10,7 +10,7 @@ use ostd::timer::Jiffies;
 use self::timer_manager::PosixTimerManager;
 use super::{
     pid_table::{self, PidTable},
-    posix_thread::{AsPosixThread, FIRST_POSIX_TID},
+    posix_thread::AsPosixThread,
     process_vm::ProcessVmarGuard,
     rlimit::ResourceLimits,
     signal::{
@@ -58,7 +58,7 @@ pub(crate) use terminal::Terminal;
 pub(crate) type Pid = u32;
 
 /// The PID of the init process.
-pub(crate) const INIT_PROCESS_PID: Pid = FIRST_POSIX_TID;
+pub(crate) const INIT_PROCESS_PID: Pid = 1;
 
 define_atomic_version_of_integer_like_type!(Pid, {
     /// Atomic [`Pid`].

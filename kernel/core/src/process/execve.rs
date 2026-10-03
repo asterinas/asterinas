@@ -300,7 +300,8 @@ fn make_current_main_thread(ctx: &Context) {
     assert!(core::ptr::eq(ctx.task, tasks.as_slice()[1].as_ref()));
 
     tasks.swap_main();
-    ctx.posix_thread.set_main(pid);
+    let main_pid_entry = pid_table.get_entry(pid).unwrap();
+    ctx.posix_thread.set_main(main_pid_entry);
 
     if let Some(tracer_tracees) = tracer_tracees.as_mut()
         && let Some(tracee) = tracer_tracees.remove(&old_tid)

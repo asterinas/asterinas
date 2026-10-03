@@ -14,7 +14,7 @@ use crate::{
         vfs::inode::Inode,
     },
     prelude::*,
-    process::posix_thread,
+    process::pid_table,
     sched::{self, loadavg::get_loadavg},
 };
 
@@ -44,7 +44,7 @@ impl ProcFileOps for LoadAvgFileOps {
             avg[2],
             nr_running,
             nr_queued,
-            posix_thread::last_tid(),
+            pid_table::last_tid(),
         )?;
 
         Ok(printer.bytes_written())

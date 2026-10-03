@@ -18,11 +18,12 @@ use crate::{
     prelude::*,
     process::{
         Credentials, NsProxy, Process, UserNamespace,
+        pid_table::PidEntry,
         posix_thread::{ThreadName, thread_local::SuppUserContext},
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
     sched::{Nice, SchedPolicy},
-    thread::{Thread, Tid, task},
+    thread::{Thread, task},
     time::{TimerManager, clocks::ProfClock},
     vm::vmar::VmarHandle,
 };
@@ -30,7 +31,7 @@ use crate::{
 /// The builder to build a POSIX thread
 pub(crate) struct PosixThreadBuilder {
     // The essential part
-    tid: Tid,
+    pid_entry: Arc<PidEntry>,
     thread_name: ThreadName,
     user_ctx: Box<UserContext>,
     process: Weak<Process>,
@@ -53,14 +54,14 @@ pub(crate) struct PosixThreadBuilder {
 
 impl PosixThreadBuilder {
     pub(crate) fn new(
-        tid: Tid,
+        pid_entry: Arc<PidEntry>,
         thread_name: ThreadName,
         user_ctx: Box<UserContext>,
         credentials: Credentials,
         vmar: VmarHandle,
     ) -> Self {
         Self {
-            tid,
+            pid_entry,
             thread_name,
             user_ctx,
             process: Weak::new(),
@@ -150,7 +151,7 @@ impl PosixThreadBuilder {
 
     pub(crate) fn build(self) -> Arc<Task> {
         let Self {
-            tid,
+            pid_entry,
             user_ctx,
             process,
             credentials,
@@ -187,7 +188,8 @@ impl PosixThreadBuilder {
                 PosixThread {
                     process,
                     task: weak_task.clone(),
-                    tid: AtomicU32::new(tid),
+                    tid: AtomicU32::new(pid_entry.id()),
+                    pid_entry: Mutex::new(pid_entry),
                     name: Mutex::new(thread_name),
                     credentials,
                     fs: RwMutex::new(fs.clone()),
