@@ -14,7 +14,6 @@ use crate::{
     },
     mm::{
         PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
-        dma::DmaDirection,
         page_prop::{
             CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
         },
@@ -121,7 +120,7 @@ pub(crate) fn can_sync_dma() -> bool {
 ///  - the virtual address range and DMA direction correspond correctly to a
 ///    DMA region;
 ///  - `can_sync_dma()` is `true`.
-pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(mut range: Range<Vaddr>) {
+pub(crate) unsafe fn sync_dma_range(mut range: Range<Vaddr>, is_from_device: bool) {
     debug_assert!(can_sync_dma());
 
     static CMO_MANAGEMENT_BLOCK_SIZE: Once<usize> = Once::new();
@@ -151,11 +150,10 @@ pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(mut range: Range<Vaddr>) {
         // to a DMA region. So the underlying memory is untyped and the operations
         // are safe to perform.
         unsafe {
-            match (D::CAN_READ_FROM_DEVICE, D::CAN_WRITE_TO_DEVICE) {
-                (false, true) => core::arch::asm!("cbo.clean ({})", in(reg) addr, options(nostack)),
-                (true, false) => core::arch::asm!("cbo.inval ({})", in(reg) addr, options(nostack)),
-                (true, true) => core::arch::asm!("cbo.flush ({})", in(reg) addr, options(nostack)),
-                _ => unreachable!(),
+            if is_from_device {
+                core::arch::asm!("cbo.inval ({})", in(reg) addr, options(nostack))
+            } else {
+                core::arch::asm!("cbo.clean ({})", in(reg) addr, options(nostack))
             }
         }
     }
