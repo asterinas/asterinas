@@ -39,10 +39,15 @@ macro_rules! declare_rtc_drivers {
 mod cmos;
 #[cfg(target_arch = "riscv64")]
 mod goldfish;
+#[cfg(target_arch = "x86_64")]
+mod kvmclock;
 #[cfg(target_arch = "loongarch64")]
 mod loongson;
 
 declare_rtc_drivers! {
+    // Prefers the KVM wall clock over CMOS on x86_64. This matches Linux.
+    // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/x86/kernel/kvmclock.c#L326>.
+    #[cfg(target_arch = "x86_64")] kvmclock::RtcKvmClock,
     #[cfg(target_arch = "x86_64")] cmos::RtcCmos,
     #[cfg(target_arch = "riscv64")] goldfish::RtcGoldfish,
     #[cfg(target_arch = "loongarch64")] loongson::RtcLoongson,
