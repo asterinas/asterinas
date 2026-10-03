@@ -8,7 +8,6 @@ pub(crate) use util::{
 
 use crate::mm::{
     PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
-    dma::DmaDirection,
     page_prop::{
         CachePolicy, PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags,
     },
@@ -128,8 +127,7 @@ pub(crate) fn can_sync_dma() -> bool {
 ///  - the virtual address range and DMA direction correspond correctly to a
 ///    DMA region;
 ///  - `can_sync_dma()` is `true`.
-#[expect(clippy::extra_unused_type_parameters)]
-pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(_range: Range<Vaddr>) {
+pub(crate) unsafe fn sync_dma_range(_range: Range<Vaddr>, _is_from_device: bool) {
     unreachable!("`can_sync_dma()` never returns `true`");
 }
 
