@@ -3,6 +3,7 @@
 use alloc::{
     boxed::Box,
     sync::{Arc, Weak},
+    vec::Vec,
 };
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
@@ -30,9 +31,10 @@ use ostd::{
 use sparse_id_alloc::SparseIdAlloc;
 
 use crate::{
-    device::{DrmDevice, DrmFeatures, DrmMaster},
+    device::{DrmDevice, DrmMaster},
     gem::object::DrmGemObject,
     has_current_sys_admin,
+    kms::objects::{KmsObjectId, framebuffer::DrmFramebuffer},
     minor::{DrmMinor, DrmMinorType},
 };
 
@@ -51,6 +53,8 @@ pub(super) struct DrmFile {
     minor: Arc<DrmMinor>,
 
     gem_handles: Mutex<DrmGemHandleTable>,
+    /// Framebuffers created through this open file.
+    framebuffers: Mutex<Vec<Arc<DrmFramebuffer>>>,
 }
 
 impl DrmFile {
@@ -60,10 +64,6 @@ impl DrmFile {
 
     pub(super) fn minor_type(&self) -> DrmMinorType {
         self.minor.type_()
-    }
-
-    pub(super) fn has_features(&self, feature: DrmFeatures) -> bool {
-        self.device().has_features(feature)
     }
 
     pub(super) fn has_client_caps(&self, cap: DrmClientCaps) -> bool {
@@ -93,6 +93,7 @@ impl DrmFile {
             minor,
 
             gem_handles: Mutex::new(DrmGemHandleTable::new()),
+            framebuffers: Mutex::new(Vec::new()),
         }
     }
 
@@ -163,7 +164,7 @@ impl DrmFile {
         Ok(handle)
     }
 
-    fn lookup_gem_object(&self, handle: u32) -> Result<Arc<DrmGemObject>> {
+    pub(super) fn lookup_gem_object(&self, handle: u32) -> Result<Arc<DrmGemObject>> {
         self.gem_handles
             .lock()
             .objects
@@ -186,6 +187,35 @@ impl DrmFile {
 
         gem_object.revoke_mmap(self.client_id);
         Ok(())
+    }
+
+    pub(super) fn add_framebuffer(&self, framebuffer: Arc<DrmFramebuffer>) {
+        let mut framebuffers = self.framebuffers.lock();
+        framebuffers.push(framebuffer);
+    }
+
+    pub(super) fn lookup_framebuffer(&self, id: KmsObjectId) -> Option<Arc<DrmFramebuffer>> {
+        self.framebuffers
+            .lock()
+            .iter()
+            .find(|framebuffer| framebuffer.id() == id)
+            .cloned()
+    }
+
+    pub(super) fn framebuffer_ids(&self) -> Vec<KmsObjectId> {
+        self.framebuffers
+            .lock()
+            .iter()
+            .map(|framebuffer| framebuffer.id())
+            .collect()
+    }
+
+    pub(super) fn remove_framebuffer(&self, id: KmsObjectId) -> Option<Arc<DrmFramebuffer>> {
+        let mut framebuffers = self.framebuffers.lock();
+        let position = framebuffers
+            .iter()
+            .position(|framebuffer| framebuffer.id() == id)?;
+        Some(framebuffers.swap_remove(position))
     }
 
     /// Keeps tracking the ioctl caller while this file has never been master,
@@ -311,6 +341,14 @@ impl Pollable for DrmFile {
 
 impl Drop for DrmFile {
     fn drop(&mut self) {
+        let device = self.minor.device().clone();
+        if let Some(kms_ops) = device.as_kms_ops() {
+            let mut object_store = kms_ops.mode_config().object_store().lock();
+            for framebuffer in self.framebuffers.get_mut().drain(..) {
+                object_store.free_object_id(framebuffer.id());
+            }
+        }
+
         for gem_object in self.gem_handles.get_mut().drain() {
             gem_object.revoke_mmap(self.client_id);
         }

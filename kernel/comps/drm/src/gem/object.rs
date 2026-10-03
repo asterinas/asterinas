@@ -41,6 +41,16 @@ impl DrmGemObject {
         self.size
     }
 
+    /// Reads bytes from the object's backing storage.
+    pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+        let end = offset.checked_add(buf.len()).ok_or(Errno::EOVERFLOW)?;
+        if end > self.size {
+            return_errno_with_message!(Errno::EINVAL, "the GEM read exceeds the object");
+        }
+
+        self.backend.read_by_cpu(offset, buf)
+    }
+
     /// Returns the userspace mmap offset, if allocated.
     pub(super) fn mmap_offset(&self) -> Option<DrmMmapOffset> {
         self.mmap_offset.get().copied()
@@ -89,6 +99,19 @@ impl DrmGemObject {
 
 /// The device-provided memory backend of a GEM object.
 pub trait DrmGemObjectBackend: Debug + Send + Sync {
+    /// Reads object data into a kernel buffer using CPU access.
+    ///
+    /// Backends only need to implement this method when their object contents must
+    /// be read directly by kernel code.
+    ///
+    /// Backends without CPU-readable storage may retain the default implementation.
+    fn read_by_cpu(&self, _offset: usize, _buf: &mut [u8]) -> Result<()> {
+        return_errno_with_message!(
+            Errno::EOPNOTSUPP,
+            "the GEM backend does not support CPU reads"
+        );
+    }
+
     /// Creates a VM-facing mapped object for an object-relative byte range.
     ///
     /// The returned mapped object must retain every backing resource that it needs
