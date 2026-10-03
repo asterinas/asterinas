@@ -27,9 +27,10 @@ TODO: upgrade mdbook to enable admonition blocks like the one below:
 #### Verified Backends
 
 * Display server:
-  * Xorg display server
-* Graphics drivers:
-  * Standard UEFI VGA framebuffer
+  * Xorg display server with the `modesetting` driver over DRM/KMS
+* Graphics stack:
+  * `simpledrm` over the standard UEFI framebuffer
+  * Mesa software rendering through GLX
 
 #### Verified Functionality
 

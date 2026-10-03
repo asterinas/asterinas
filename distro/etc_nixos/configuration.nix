@@ -23,7 +23,8 @@
     nameserver 8.8.8.8
   '';
 
-  # Uncomment the two options below to enable the X11 (X.Org) desktop (XFCE).
+  # Uncomment the three options below to enable the X11 (X.Org) desktop (XFCE).
+  # hardware.graphics.enable = true;
   # services.xserver.enable = true;
   # services.xserver.desktopManager.xfce.enable = true;
 
