@@ -13,6 +13,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <xf86drm.h>
+#include <xf86drmMode.h>
 
 #define DRM_CARD_DEVICE "/dev/dri/card0"
 #define DRM_RENDER_DEVICE "/dev/dri/renderD128"
@@ -75,6 +76,38 @@ static inline int open_optional_drm_node(const char *path)
 static inline int is_boolean_drm_cap(uint64_t value)
 {
 	return value == 0 || value == 1;
+}
+
+static inline int drm_id_in_array(const uint32_t *ids, uint32_t count,
+				  uint32_t id)
+{
+	for (uint32_t i = 0; i < count; i++) {
+		if (ids[i] == id) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static inline drmModeResPtr get_kms_resources_or_skip(int fd)
+{
+	drmModeResPtr resources = drmModeGetResources(fd);
+
+	if (resources) {
+		return resources;
+	}
+	if (errno == EOPNOTSUPP) {
+		fprintf(stderr,
+			"KMS tests skipped: device has no modesetting\n");
+		close(fd);
+		exit(EXIT_SUCCESS);
+	}
+
+	fprintf(stderr, "fatal error: DRM_IOCTL_MODE_GETRESOURCES failed: %s\n",
+		strerror(errno));
+	close(fd);
+	exit(EXIT_FAILURE);
 }
 
 #endif /* DRM_TEST_COMMON_H */

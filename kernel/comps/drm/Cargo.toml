@@ -5,7 +5,9 @@ edition.workspace = true
 
 [dependencies]
 aster-core.workspace = true
+aster-util.workspace = true
 atomic-integer-wrapper.workspace = true
+bitvec.workspace = true
 bitflags.workspace = true
 device-id.workspace = true
 hashbrown.workspace = true

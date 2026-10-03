@@ -3,22 +3,17 @@
 use aster_core::prelude::*;
 use ostd::mm::PAGE_SIZE;
 
-use crate::{
-    file::DrmFile,
-    ioctl::{
-        DrmIoctlGemClose, DrmIoctlModeCreateDumb, DrmIoctlModeDestroyDumb, DrmIoctlModeMapDumb,
-    },
-};
+use crate::{file::DrmFile, ioctl::ioctl_defs};
 
 impl DrmFile {
-    pub(super) fn drm_gem_close(&self, cmd: DrmIoctlGemClose) -> Result<i32> {
+    pub(super) fn drm_gem_close(&self, cmd: ioctl_defs::GemClose) -> Result<i32> {
         let args = cmd.read()?;
         self.remove_gem_object(args.handle)?;
 
         Ok(0)
     }
 
-    pub(super) fn drm_mode_create_dumb(&self, cmd: DrmIoctlModeCreateDumb) -> Result<i32> {
+    pub(super) fn drm_mode_create_dumb(&self, cmd: ioctl_defs::ModeCreateDumb) -> Result<i32> {
         let mut args = cmd.read()?;
 
         if args.width == 0 || args.height == 0 || args.bpp == 0 {
@@ -60,7 +55,7 @@ impl DrmFile {
         Ok(0)
     }
 
-    pub(super) fn drm_mode_map_dumb(&self, cmd: DrmIoctlModeMapDumb) -> Result<i32> {
+    pub(super) fn drm_mode_map_dumb(&self, cmd: ioctl_defs::ModeMapDumb) -> Result<i32> {
         let mut args = cmd.read()?;
         args.offset = self.map_gem_handle(args.handle)?;
         cmd.write(&args)?;
@@ -68,7 +63,7 @@ impl DrmFile {
         Ok(0)
     }
 
-    pub(super) fn drm_mode_destroy_dumb(&self, cmd: DrmIoctlModeDestroyDumb) -> Result<i32> {
+    pub(super) fn drm_mode_destroy_dumb(&self, cmd: ioctl_defs::ModeDestroyDumb) -> Result<i32> {
         let args = cmd.read()?;
         self.remove_gem_object(args.handle)?;
 
