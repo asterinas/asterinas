@@ -12,7 +12,7 @@ final: prev: {
     ];
     postInstall = (oldAttrs.postInstall or "") + ''
       mkdir -p $out/share/X11/xorg.conf.d
-      cp ${./patches/xorgServer/10-fbdev.conf} $out/share/X11/xorg.conf.d/10-fbdev.conf
+      cp ${./patches/xorgServer/10-modesetting.conf} $out/share/X11/xorg.conf.d/10-modesetting.conf
     '';
   });
 
