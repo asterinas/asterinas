@@ -161,6 +161,9 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 ./pseudofs/pseudo_inode
 ./pseudofs/pseudo_mount
 
+./read_eof/read_eof
+./read_truncate_race/read_truncate_race
+
 ./rename/same_inode
 
 ./statx/btime
