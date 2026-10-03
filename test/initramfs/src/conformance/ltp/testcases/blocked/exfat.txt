@@ -3,6 +3,9 @@ bind04
 chdir01A
 chmod01
 chmod01A
+chmod03
+chmod05
+chmod06
 chmod08
 chown05
 chroot04
@@ -15,6 +18,8 @@ fallocate03
 fchdir03
 fchmod01
 fchmod02
+fchmod03
+fchmod05
 fchmodat01
 fchown05
 fchownat01
