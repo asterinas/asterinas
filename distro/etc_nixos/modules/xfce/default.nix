@@ -5,7 +5,12 @@
   ...
 }:
 let
-  startXfce = pkgs.writeScriptBin "start_xfce" (builtins.readFile ./start_xfce.sh);
+  startXfce = pkgs.writeScriptBin "start_xfce" (
+    builtins.replaceStrings
+      [ "@runtime_shell@" "@xfce_xinitrc@" ]
+      [ pkgs.runtimeShell pkgs.xfce4-session.xinitrc ]
+      (builtins.readFile ./start_xfce.sh)
+  );
 in
 {
   imports = [ ./wallpaper.nix ];
@@ -32,7 +37,12 @@ in
         # that getty@tty1.service does not run alongside the XFCE desktop.
         conflicts = [ "getty@tty1.service" ];
         serviceConfig = {
-          Environment = "DISPLAY=:0";
+          # This desktop runs as root without a login session. Applications need
+          # HOME to locate writable user data instead of the read-only Nix store.
+          Environment = [
+            "DISPLAY=:0"
+            "HOME=/root"
+          ];
           ExecStart = "${startXfce}/bin/start_xfce";
           StandardOutput = "tty";
           StandardError = "tty";
