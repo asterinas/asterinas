@@ -154,6 +154,7 @@ riscv64_pkgs:
 		--arg enableConformanceTest true \
 		--out-link /nix/var/nix/gcroots/auto/riscv64-pkgs \
 		-A busybox \
+		-A conformance.kselftest \
 		-A conformance.ltp \
 		-A regression.package
 
