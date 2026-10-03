@@ -19,6 +19,11 @@ fi
 BENCHMARK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 source "${BENCHMARK_ROOT}/common/prepare_host.sh"
 RESULT_TEMPLATE="${BENCHMARK_ROOT}/result_template.json"
+BENCH_REPO_ROOT=""
+BENCH_ASTERINAS_VIRTIOFS_WORK_DIR=""
+BENCH_VIRTIOFS_WORK_DIR=""
+BENCH_VIRTIOFSD_PID=""
+BENCH_VIRTIOFS_SOCKET=""
 
 # Parse benchmark results
 parse_raw_results() {
@@ -29,8 +34,12 @@ parse_raw_results() {
 
     # Extract and sanitize numeric results
     local linux_result aster_result
-    linux_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${LINUX_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
-    aster_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${ASTER_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
+    linux_result=$(awk -v pattern="$search_pattern" -v column="$result_index" \
+        '$0 ~ pattern { if (column == "NF") print $NF; else print $column }' \
+        "${LINUX_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
+    aster_result=$(awk -v pattern="$search_pattern" -v column="$result_index" \
+        '$0 ~ pattern { if (column == "NF") print $NF; else print $column }' \
+        "${ASTER_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
 
     # Ensure both results are valid
     if [ -z "${linux_result}" ] || [ -z "${aster_result}" ]; then
@@ -80,6 +89,21 @@ extract_result_file() {
 }
 
 # Run the specified benchmark with runtime configurations
+start_linux_virtiofsd() {
+    "${BENCH_REPO_ROOT}/tools/run_virtiofsd.sh" \
+        --work-dir "$BENCH_VIRTIOFS_WORK_DIR" \
+        &
+    BENCH_VIRTIOFSD_PID=$!
+    for _ in $(seq 1 100); do
+        [[ -S "$BENCH_VIRTIOFS_SOCKET" ]] && break
+        sleep 0.1
+    done
+    if [[ ! -S "$BENCH_VIRTIOFS_SOCKET" ]]; then
+        echo "Error: virtiofsd did not create its socket" >&2
+        exit 1
+    fi
+}
+
 run_benchmark() {
     local benchmark="$1"
     local run_mode="$2"
@@ -92,6 +116,7 @@ run_benchmark() {
     local smp_val=1
     local mem_val="8G"
     local aster_scheme_cmd_part="SCHEME=iommu" # Default scheme
+    local virtiofs_enabled="off"
 
     # Process runtime_configs_str to override defaults and gather extra args
     while IFS='=' read -r key value; do
@@ -109,6 +134,9 @@ run_benchmark() {
                  else
                      aster_scheme_cmd_part="SCHEME=${value}" # Override default
                  fi
+                 ;;
+             "virtiofs")
+                 virtiofs_enabled="$value"
                  ;;
              *)
                  echo "Warning: Unknown runtime configuration key '$key'" >&2
@@ -131,6 +159,18 @@ run_benchmark() {
     )
     if [[ "$platform" == "tdx" ]]; then
         asterinas_cmd_arr+=(INTEL_TDX=1)
+    fi
+
+    if [[ "$virtiofs_enabled" == "on" ]]; then
+        BENCH_REPO_ROOT=$(cd "${BENCHMARK_ROOT}/../../../.." && pwd)
+        BENCH_ASTERINAS_VIRTIOFS_WORK_DIR=$(mktemp -d -p /tmp asterinas-bench-aster-virtiofs-XXXXXX)
+        BENCH_VIRTIOFS_WORK_DIR=$(mktemp -d -p /tmp asterinas-bench-linux-virtiofs-XXXXXX)
+        BENCH_VIRTIOFS_SOCKET="${BENCH_VIRTIOFS_WORK_DIR}/vfs.sock"
+        trap 'if [[ -n "$BENCH_VIRTIOFSD_PID" ]]; then kill "$BENCH_VIRTIOFSD_PID" 2>/dev/null || true; wait "$BENCH_VIRTIOFSD_PID" 2>/dev/null || true; fi; rm -rf "$BENCH_ASTERINAS_VIRTIOFS_WORK_DIR" "$BENCH_VIRTIOFS_WORK_DIR"' EXIT
+        asterinas_cmd_arr+=(
+            VIRTIOFS=on
+            "VIRTIOFS_WORK_DIR=${BENCH_ASTERINAS_VIRTIOFS_WORK_DIR}"
+        )
     fi
 
     local linux_cmd_arr=(
@@ -166,6 +206,16 @@ run_benchmark() {
         )
     fi
 
+    if [[ "$virtiofs_enabled" == "on" ]]; then
+        # The Linux VM uses the same mount tag and socket convention as Asterinas.
+        linux_cmd_arr+=(
+            -object "memory-backend-memfd,id=mem0,size=${mem_val},share=on"
+            -numa node,memdev=mem0
+            -chardev "socket,id=char0,path=${BENCH_VIRTIOFS_SOCKET}"
+            -device "vhost-user-fs-pci,chardev=char0,tag=aster-virtiofs"
+        )
+    fi
+
     # Run the benchmark depending on the mode
     case "${run_mode}" in
         "guest_only")
@@ -173,6 +223,9 @@ run_benchmark() {
             # Execute directly from array, redirect stderr to stdout, then tee
             "${asterinas_cmd_arr[@]}" 2>&1 | tee "${ASTER_OUTPUT}"
             prepare_fs "$benchmark"
+            if [[ "$virtiofs_enabled" == "on" ]]; then
+                start_linux_virtiofsd
+            fi
             echo "Running benchmark ${benchmark} on Linux..."
             # Execute directly from array, redirect stderr to stdout, then tee
             "${linux_cmd_arr[@]}" 2>&1 | tee "${LINUX_OUTPUT}"
@@ -186,6 +239,9 @@ run_benchmark() {
             local linux_cmd_str
             printf -v linux_cmd_str '%q ' "${linux_cmd_arr[@]}"
 
+            if [[ "$virtiofs_enabled" == "on" ]]; then
+                start_linux_virtiofsd
+            fi
             echo "Running benchmark ${benchmark} on host and guest..."
             bash "${BENCHMARK_ROOT}/common/host_guest_bench_runner.sh" \
                 "${BENCHMARK_ROOT}/${benchmark}" \
