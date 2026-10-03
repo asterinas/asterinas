@@ -59,6 +59,24 @@ Significant decisions in Asterinas are made through a transparent RFC process.
 This part describes the RFC process
 and archives all approvaed RFCs.
 
+## Publications
+
+Asterinas has been the subject of the following publications,
+listed from newest to oldest:
+
+* [_RusyFuzz: Unhandled Exception Guided Fuzzing for Rust OS Kernel_](https://conf.researchr.org/details/icse-2026/icse-2026-research-track/96/RusyFuzz-Unhandled-Exception-Guided-Fuzzing-for-Rust-OS-Kernel),
+  **ICSE 2026**.
+* [_MlsDisk: Trusted Block Storage for TEEs Based on Layered Secure Logging_](https://www.usenix.org/conference/fast26/presentation/xu),
+  **FAST 2026**.
+* [_CortenMM: Efficient Memory Management with Strong Correctness Guarantees_](https://dl.acm.org/doi/10.1145/3731569.3764836),
+  **SOSP 2025**, Best Paper Award.
+* [_Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB_](https://www.usenix.org/conference/atc25/presentation/peng-yuke),
+  **USENIX ATC 2025**.
+* [_Converos: Practical Model Checking for Verifying Rust OS Kernel Concurrency_](https://www.usenix.org/conference/atc25/presentation/tang),
+  **USENIX ATC 2025**.
+* [_Asterinas: A Rust-Based Framekernel to Reimagine Linux in the 2020s_](https://www.usenix.org/publications/loginonline/asterinas-rust-based-framekernel-reimagine-linux-2020s),
+  **USENIX _;login:_ 2025**.
+
 ## Licensing
 
 Asterinas's source code and documentation primarily use the
