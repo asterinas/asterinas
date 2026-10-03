@@ -169,6 +169,17 @@ pub(crate) unsafe extern "C" fn ap_early_entry(cpu_id: u32) -> ! {
     // TLB coherence because the BSP may not be able to send IPIs to flush the
     // TLBs. Do not perform complex operations during this period.
     report_online_and_hw_cpu_id(cpu_id);
+
+    #[cfg(target_arch = "x86_64")]
+    crate::if_tdx_enabled!({
+        // Each CPU accepts a disjoint memory slice. The BSP waits for all CPUs to
+        // finish before publishing accepted memory to the frame allocator.
+        // Memory acceptance does not update page tables or allocate memory.
+        // SAFETY: This AP boot entry runs once per AP after `init_on_ap` assigns its
+        // unique CPU ID. APs are started only after allocator initialization.
+        unsafe { crate::mm::frame::unaccepted::accept_memory_on_ap() };
+    });
+
     let ap_late_entry = AP_LATE_ENTRY.wait();
     crate::arch::mm::tlb_flush_all_excluding_global();
 

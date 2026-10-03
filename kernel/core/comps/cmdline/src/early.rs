@@ -16,12 +16,15 @@
 //! even the heap allocator is not ready.
 //! As such, all parser logic in this module has to be written as const expressions.
 
-use ostd::{boot::EarlyCmdline, log::LevelFilter};
+use ostd::{
+    boot::{AcceptMemoryMode, EarlyCmdline},
+    log::LevelFilter,
+};
 
 /// Kernel command-line keys consumed by [`early_cmdline_parser`].
 ///
 /// These are stripped during dispatch so they are not forwarded to init.
-const EARLY_PARAMS: &[&str] = &["earlycon", "loglevel"];
+const EARLY_PARAMS: &[&str] = &["accept_memory", "earlycon", "loglevel"];
 
 /// Returns whether `key` is handled only by the early parser.
 pub(super) fn is_early_param(key: &str) -> bool {
@@ -38,6 +41,8 @@ pub(super) fn is_early_param(key: &str) -> bool {
 /// - `earlycon` — enables the early UART console (exact token match).
 /// - `loglevel=N` — sets the OSTD log filter (`N` in `0..=8`, see [`LevelFilter`]).
 /// - `loglevel=LEVEL` — also accepts textual levels such as `error` or `debug`.
+/// - `accept_memory=lazy|eager` — on x86 TDX guests, selects on-demand or eager
+///   memory acceptance.
 /// - `--` — stops parsing; all following tokens are for the init process.
 ///
 /// Double quotes (`"`) protect spaces inside one token (Linux-compatible).
@@ -47,6 +52,7 @@ pub(super) fn is_early_param(key: &str) -> bool {
 const fn early_cmdline_parser(cmdline: &str) -> EarlyCmdline {
     let mut has_early_console = false;
     let mut log_level = LevelFilter::Debug;
+    let mut accept_memory_mode = AcceptMemoryMode::Lazy;
 
     let bytes: &[u8] = cmdline.as_bytes();
     let mut index = 0;
@@ -80,6 +86,11 @@ const fn early_cmdline_parser(cmdline: &str) -> EarlyCmdline {
             break;
         } else if matches!(token, b"earlycon") {
             has_early_console = true;
+        } else if let Some((key, value)) = token.split_at_checked(14)
+            && matches!(key, b"accept_memory=")
+            && let Some(parsed_mode) = parse_accept_memory_at(value)
+        {
+            accept_memory_mode = parsed_mode;
         } else if let Some((key, value)) = token.split_at_checked(9)
             && matches!(key, b"loglevel=")
             && let Some(parsed_log_level) = parse_loglevel_at(value)
@@ -91,6 +102,7 @@ const fn early_cmdline_parser(cmdline: &str) -> EarlyCmdline {
     EarlyCmdline {
         log_level,
         has_early_console,
+        accept_memory_mode,
     }
 }
 
@@ -148,6 +160,15 @@ const fn parse_loglevel_name_at(bytes: &[u8]) -> Option<LevelFilter> {
     }
 }
 
+const fn parse_accept_memory_at(bytes: &[u8]) -> Option<AcceptMemoryMode> {
+    let bytes = strip_linux_double_quotes(bytes, 0, bytes.len());
+    match bytes {
+        b"lazy" => Some(AcceptMemoryMode::Lazy),
+        b"eager" => Some(AcceptMemoryMode::Eager),
+        _ => None,
+    }
+}
+
 #[cfg(ktest)]
 mod tests {
     use ostd::prelude::*;
@@ -156,6 +177,7 @@ mod tests {
 
     #[ktest]
     fn is_early_param_recognizes_early_keys() {
+        assert!(is_early_param("accept_memory"));
         assert!(is_early_param("earlycon"));
         assert!(is_early_param("loglevel"));
         assert!(!is_early_param("log_level"));
@@ -167,6 +189,7 @@ mod tests {
         let result = early_cmdline_parser("");
         assert_eq!(result.log_level, LevelFilter::Debug);
         assert!(!result.has_early_console);
+        assert!(matches!(result.accept_memory_mode, AcceptMemoryMode::Lazy));
     }
 
     #[ktest]
@@ -261,5 +284,49 @@ mod tests {
         let result = early_cmdline_parser("loglevel=0 \"ignored -- token\" earlycon");
         assert_eq!(result.log_level, LevelFilter::Off);
         assert!(result.has_early_console);
+    }
+
+    #[ktest]
+    fn early_cmdline_parser_accept_memory_formats() {
+        assert_eq!(
+            early_cmdline_parser("accept_memory=eager").accept_memory_mode,
+            AcceptMemoryMode::Eager
+        );
+        assert_eq!(
+            early_cmdline_parser("accept_memory=\"eager\"").accept_memory_mode,
+            AcceptMemoryMode::Eager
+        );
+        assert_eq!(
+            early_cmdline_parser("\"accept_memory=eager\"").accept_memory_mode,
+            AcceptMemoryMode::Eager
+        );
+    }
+
+    #[ktest]
+    fn early_cmdline_parser_accept_memory_last_valid_value_wins() {
+        assert_eq!(
+            early_cmdline_parser("accept_memory=eager accept_memory=lazy").accept_memory_mode,
+            AcceptMemoryMode::Lazy
+        );
+    }
+
+    #[ktest]
+    fn early_cmdline_parser_accept_memory_invalid_value_does_not_override() {
+        assert_eq!(
+            early_cmdline_parser("accept_memory=eager accept_memory=unknown").accept_memory_mode,
+            AcceptMemoryMode::Eager
+        );
+        assert_eq!(
+            early_cmdline_parser("accept_memory=unknown").accept_memory_mode,
+            AcceptMemoryMode::Lazy
+        );
+    }
+
+    #[ktest]
+    fn early_cmdline_parser_accept_memory_stops_at_double_dash() {
+        assert_eq!(
+            early_cmdline_parser("accept_memory=eager -- accept_memory=lazy").accept_memory_mode,
+            AcceptMemoryMode::Eager
+        );
     }
 }

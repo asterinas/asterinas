@@ -86,18 +86,18 @@ unsafe fn init() {
     // and after memory regions are initialized.
     unsafe { mm::frame::allocator::init_early_allocator() };
 
-    let early_cmdline = boot::parse_early_cmdline();
+    let early_cmdline = boot::early_cmdline();
 
     #[cfg(target_arch = "x86_64")]
     arch::if_tdx_enabled!({
     } else {
         // SAFETY: This function is called only once on the BSP.
-        unsafe { arch::serial::init(&early_cmdline) };
+        unsafe { arch::serial::init(early_cmdline) };
     });
     #[cfg(not(target_arch = "x86_64"))]
-    arch::serial::init(&early_cmdline);
+    arch::serial::init(early_cmdline);
 
-    log::init(&early_cmdline);
+    log::init(early_cmdline);
 
     // SAFETY:
     //  1. They are only called once in the boot context of the BSP.
@@ -127,7 +127,7 @@ unsafe fn init() {
     #[cfg(target_arch = "x86_64")]
     arch::if_tdx_enabled!({
         // SAFETY: This function is called only once on the BSP.
-        unsafe { arch::serial::init(&early_cmdline) };
+        unsafe { arch::serial::init(early_cmdline) };
     });
 
     smp::init();
