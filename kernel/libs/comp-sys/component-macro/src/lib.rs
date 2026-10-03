@@ -35,7 +35,7 @@ pub(crate) const COMPONENT_FILE_NAME: &str = "Components.toml";
 ///     Ok(())
 /// }
 ///
-/// component::submit!(component::ComponentRegistry::new(component::InitStage::Bootstrap, &init, file!()));
+/// component::submit!(component::ComponentRegistry::new(component::InitStage::Bootstrap, &init, env!("CARGO_MANIFEST_DIR")));
 /// ```
 /// The priority will calculate automatically
 ///
@@ -55,7 +55,7 @@ pub fn init_component(args: TokenStream, input: TokenStream) -> proc_macro::Toke
         component::submit!(component::ComponentRegistry::new(
             component::InitStage::#stage,
             &#function_name,
-            file!())
+            env!("CARGO_MANIFEST_DIR"))
         );
     }
     .into()
