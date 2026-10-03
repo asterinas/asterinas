@@ -237,7 +237,7 @@ impl<D: DmaDirection> DmaStream<D> {
         }
 
         // SAFETY: We've checked that the range is inbound.
-        unsafe { self.sync_cache(byte_range.clone()) };
+        unsafe { self.sync_cache(byte_range.clone(), is_from_device) };
 
         if is_from_device && let Inner::Both(kva, _, seg) = &self.inner {
             self.sync_via_copying(byte_range, true, seg, kva);
@@ -249,7 +249,7 @@ impl<D: DmaDirection> DmaStream<D> {
     /// # Safety
     ///
     /// The caller must ensure that `byte_range` is inbound.
-    unsafe fn sync_cache(&self, byte_range: Range<usize>) {
+    unsafe fn sync_cache(&self, byte_range: Range<usize>, is_from_device: bool) {
         if self.is_cache_coherent {
             return;
         }
@@ -274,7 +274,7 @@ impl<D: DmaDirection> DmaStream<D> {
         //    direction correspond to a DMA region (they're part of `self`).
         // 2. `can_sync_dma()` is either checked above (for `Inner::Kva` and
         //    `Inner::Both`) or when constructing `self` (for `Inner::Segment`).
-        unsafe { crate::arch::mm::sync_dma_range::<D>(range) };
+        unsafe { crate::arch::mm::sync_dma_range(range, is_from_device) };
     }
 
     fn sync_via_copying(

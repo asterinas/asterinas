@@ -14,7 +14,6 @@ use x86_64::{
 
 use crate::mm::{
     PAGE_SIZE, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
-    dma::DmaDirection,
     page_prop::{PageFlags, PageProperty, PageTableFlags, PrivilegedPageFlags as PrivFlags},
     page_table::{PteScalar, PteTrait},
 };
@@ -124,7 +123,7 @@ pub(crate) fn can_sync_dma() -> bool {
 ///  - the virtual address range and DMA direction correspond correctly to a
 ///    DMA region;
 ///  - `can_sync_dma()` is `true`.
-pub(crate) unsafe fn sync_dma_range<D: DmaDirection>(_range: Range<Vaddr>) {
+pub(crate) unsafe fn sync_dma_range(_range: Range<Vaddr>, _is_from_device: bool) {
     // The streaming DMA mapping in x86_64 is cache coherent, and does not
     // require synchronization.
     // Reference: <https://lwn.net/Articles/855328/>, <https://lwn.net/Articles/2265/>.
