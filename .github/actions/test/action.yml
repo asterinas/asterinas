@@ -86,7 +86,7 @@ runs:
         [[ "${{ matrix.id }}" == "lint" ]] && CMD+="make check"
         [[ "${{ matrix.id }}" == "compile" ]] && CMD+="make kernel"
         [[ "${{ matrix.id }}" == "usermode_test" ]] && CMD+="make test"
-        [[ "${{ matrix.id }}" == "ktest" ]] && CMD+="make ktest NETDEV=tap"
+        [[ "${{ matrix.id }}" == "ktest" ]] && CMD+="make ktest NETDEV=tap SMP=4"
         [[ -n "${{ inputs.arch }}" ]] && CMD+=" TARGET_ARCH=${{ inputs.arch }}"
 
         echo "Executing: $CMD"
