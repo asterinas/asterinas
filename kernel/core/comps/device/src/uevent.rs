@@ -16,6 +16,7 @@
 //! Use [`emit_uevent`] to send an explicit notification for a device.
 //! Writing `/sys/.../uevent` accepts `<action> [<UUID> [<KEY=VALUE> ...]]`
 //! and sends the same kind of event through `parse_synthetic`.
+//! [`current_seqnum`] backs the read-only `/sys/kernel/uevent_seqnum`.
 //!
 //! The environment is limited to 64 entries and 2048 bytes, matching Linux.
 //! Automatic events are best effort; explicit events report environment and
