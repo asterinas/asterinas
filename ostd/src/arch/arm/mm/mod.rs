@@ -158,9 +158,9 @@ pub(crate) unsafe fn sync_dma_range(mut range: Range<Vaddr>, is_from_device: boo
         // are safe to perform.
         unsafe {
             if is_from_device {
-                asm!("dc ivac, {}", in(reg) vaddr);
+                asm!("dc ivac, {}", in(reg) vaddr, options(nostack, preserves_flags));
             } else {
-                asm!("dc cvac, {}", in(reg) vaddr);
+                asm!("dc cvac, {}", in(reg) vaddr, options(nostack, preserves_flags));
             }
         }
     }

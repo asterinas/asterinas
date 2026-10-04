@@ -121,6 +121,8 @@ pub(crate) fn can_sync_dma() -> bool {
 ///    DMA region;
 ///  - `can_sync_dma()` is `true`.
 pub(crate) unsafe fn sync_dma_range(mut range: Range<Vaddr>, is_from_device: bool) {
+    use core::arch::asm;
+
     debug_assert!(can_sync_dma());
 
     static CMO_MANAGEMENT_BLOCK_SIZE: Once<usize> = Once::new();
@@ -151,9 +153,9 @@ pub(crate) unsafe fn sync_dma_range(mut range: Range<Vaddr>, is_from_device: boo
         // are safe to perform.
         unsafe {
             if is_from_device {
-                core::arch::asm!("cbo.inval ({})", in(reg) addr, options(nostack))
+                asm!("cbo.inval ({})", in(reg) addr, options(nostack, preserves_flags));
             } else {
-                core::arch::asm!("cbo.clean ({})", in(reg) addr, options(nostack))
+                asm!("cbo.clean ({})", in(reg) addr, options(nostack, preserves_flags));
             }
         }
     }
