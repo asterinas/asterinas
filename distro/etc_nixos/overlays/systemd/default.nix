@@ -3,7 +3,6 @@ final: prev: {
     patches = (old.patches or [ ]) ++ [
       ./0001-Skip-mount-state-checking.patch
       ./0002-Disable-loop-too-fast-warning.patch
-      ./0003-Switch-MS_SLAVE-to-MS_PRIVATE.patch
     ];
 
     postInstall = ''
