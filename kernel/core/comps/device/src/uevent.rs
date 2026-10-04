@@ -11,17 +11,23 @@
 //!
 //! This module defines the eight ABI actions, the ordered `KEY=VALUE`
 //! environment ([`UeventVars`]), the validated event ([`Uevent`]), and the
-//! parser for the synthetic request grammar.
+//! parser for requests written to a device's sysfs `uevent` attribute.
+//!
+//! Use [`emit_uevent`] to send an explicit notification for a device.
+//! Writing `/sys/.../uevent` accepts `<action> [<UUID> [<KEY=VALUE> ...]]`
+//! and sends the same kind of event through `parse_synthetic`.
 //!
 //! The environment is limited to 64 entries and 2048 bytes, matching Linux.
+//! Automatic events are best effort; explicit events report environment and
+//! hook errors to the caller.
 
-use alloc::{string::String, vec::Vec};
+use alloc::{string::String, sync::Arc, vec::Vec};
 use core::{
     fmt::{self, Write},
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use crate::common::{Error, Result};
+use crate::common::{self, AnyDevice, Error, Result};
 
 /// Maximum number of environment entries, matching Linux's `UEVENT_NUM_ENVP`.
 const MAX_UEVENT_VARS: usize = 64;
@@ -30,6 +36,25 @@ const MAX_UEVENT_VARS: usize = 64;
 const MAX_UEVENT_BYTES: usize = 2048;
 /// The most recently allocated sequence number.
 static CURRENT_SEQNUM: AtomicU64 = AtomicU64::new(0);
+
+/// Sends an explicit uevent for `dev`.
+///
+/// The action describes why the notification is sent; it does not ask the
+/// device model to perform the operation. For example, `remove` or `bind`
+/// only broadcasts an event, while the caller remains responsible for
+/// unregistering the device or changing its driver.
+///
+/// Any of the eight actions may be passed. Automatic `add`, `remove`,
+/// `bind`, and `unbind` events are sent by the device model itself. Devices
+/// without a bus or class subsystem produce no event.
+///
+/// Errors from building the uevent environment or from the broadcast hook propagate.
+/// A successful return does not guarantee delivery: events are not queued or
+/// replayed, and listeners that are absent or whose receive queues are full
+/// miss the notification.
+pub fn emit_uevent<D: AnyDevice + ?Sized>(dev: &Arc<D>, action: UeventAction) -> Result<()> {
+    common::uevent::emit(dev.to_arc().as_ref(), action, &UeventVars::new())
+}
 
 /// Returns the most recently allocated sequence number.
 ///

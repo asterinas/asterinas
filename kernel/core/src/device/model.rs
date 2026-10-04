@@ -4,7 +4,7 @@
 //! `aster-device` component access to devtmpfs.
 
 use aster_device::{
-    common::DevKind,
+    common::{DEFAULT_DEVNODE_MODE, DevKind},
     hooks::{self, DevNodeRequest, HookError, KernelHooks},
 };
 
@@ -54,7 +54,7 @@ fn to_devtmpfs_node(request: &DevNodeRequest) -> Result<DevtmpfsNode> {
         DevKind::Char => DeviceType::Char,
         DevKind::Block => DeviceType::Block,
     };
-    let mode = InodeMode::from_bits(request.mode)
+    let mode = InodeMode::from_bits(request.mode.unwrap_or(DEFAULT_DEVNODE_MODE))
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid device node mode"))?;
     let meta = DevtmpfsNodeMeta::with_mode(request.path.clone(), mode)
         .map_err(|_| Error::with_message(Errno::EINVAL, "invalid device node path"))?;

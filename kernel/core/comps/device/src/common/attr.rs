@@ -264,6 +264,13 @@ impl AttrTable {
         Ok(())
     }
 
+    /// Removes every attribute, so later reads and writes fail.
+    pub(super) fn clear(&self) {
+        let mut inner = self.inner.write();
+        inner.set = SysAttrSet::empty().clone();
+        inner.ops.clear();
+    }
+
     /// Removes attributes by name.
     ///
     /// Names that are absent are ignored.

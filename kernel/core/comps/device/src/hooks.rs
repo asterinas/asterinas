@@ -20,6 +20,7 @@ use crate::common::{DevNum, Error, Result, SysStr};
 /// The hooks must be ready to handle requests when installed.
 /// Node creation requests are queued before installation;
 /// removing a device cancels its queued request.
+/// Uevents are not queued or replayed, so events sent before installation are lost.
 /// Calling this a second time has no effect.
 pub fn install_hooks(hooks: &'static dyn KernelHooks) {
     HOOKS.install(hooks);
@@ -39,6 +40,14 @@ pub trait KernelHooks: Send + Sync + 'static {
     /// Deletes a `/dev` node created earlier.
     /// The request is the one that created the node.
     fn delete_devnode(&self, request: &DevNodeRequest) -> core::result::Result<(), HookError>;
+
+    /// Broadcasts a validated uevent to user space.
+    fn broadcast_uevent(
+        &self,
+        _event: &crate::uevent::Uevent,
+    ) -> core::result::Result<(), HookError> {
+        Ok(())
+    }
 }
 
 /// A request to create or delete a `/dev` node.
@@ -49,7 +58,10 @@ pub struct DevNodeRequest {
     /// The path of the node relative to `/dev`, e.g. `null` or `input/event0`.
     pub path: SysStr,
     /// The permission bits of the node.
-    pub mode: u16,
+    ///
+    /// `None` means the devtmpfs default (`0o600`). `Some(0)` is normalized
+    /// to `None` when the request is built.
+    pub mode: Option<u16>,
 }
 
 /// An error from a kernel hook.
@@ -62,6 +74,13 @@ pub(crate) fn create_devnode(request: DevNodeRequest) -> Result<()> {
 
 pub(crate) fn delete_devnode(request: &DevNodeRequest) -> Result<()> {
     HOOKS.delete_devnode(request)
+}
+
+pub(crate) fn broadcast_uevent(event: &crate::uevent::Uevent) -> Result<()> {
+    match HOOKS.hooks.get() {
+        Some(hooks) => hooks.broadcast_uevent(event).map_err(|_| Error::Hook),
+        None => Ok(()),
+    }
 }
 
 /// The hooks, once installed, and the requests waiting for them.
@@ -86,12 +105,12 @@ impl HookSlot {
     /// Calling this a second time has no effect.
     pub(crate) fn install(&self, hooks: &'static dyn KernelHooks) {
         let mut pending = self.pending.lock();
-        let installed = self.hooks.call_once(|| hooks);
         for request in core::mem::take(&mut *pending) {
             // A failure here cannot be reported to the caller that queued
             // the request long ago; the node is simply absent.
-            let _ = installed.create_devnode(&request);
+            let _ = hooks.create_devnode(&request);
         }
+        self.hooks.call_once(|| hooks);
     }
 
     pub(crate) fn create_devnode(&self, request: DevNodeRequest) -> Result<()> {

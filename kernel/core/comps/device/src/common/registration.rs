@@ -17,11 +17,12 @@ use crate::{
     common::{
         Error, Result, Subsystem, SubsystemKind, SysStr,
         attr::{Attr, TyErasedAttr},
-        devnum::{DEFAULT_DEVNODE_MODE, DevNum},
+        devnum::DevNum,
         node::{SysTreeEdit, add_link, remove_link},
         registry,
     },
     hooks::{self, DevNodeRequest},
+    uevent::UeventAction,
 };
 
 /// Registers a device, publishing its sysfs directory and optional `/dev` node.
@@ -52,7 +53,7 @@ pub fn remove<D: AnyDevice + ?Sized>(dev: &Arc<D>) -> Result<()> {
         }
         *state = State::Removed;
     }
-    teardown(&this);
+    teardown(&this, Teardown::Announced);
     Ok(())
 }
 
@@ -167,7 +168,7 @@ fn add_erased(this: Arc<dyn AnyDevice>) -> Result<()> {
         }
         Err(e) => {
             *base.state().lock() = State::Removed;
-            teardown(&this);
+            teardown(&this, Teardown::Silent);
             Err(e)
         }
     }
@@ -181,7 +182,7 @@ fn add_steps(this: &Arc<dyn AnyDevice>) -> Result<()> {
     place(this)?;
 
     // 2. Core attributes.
-    let mut attrs = Vec::new();
+    let mut attrs = alloc::vec![TyErasedAttr::from_dyn(&UEVENT_ATTR)];
     if base.devnum().is_some() {
         attrs.push(TyErasedAttr::from_dyn(&DEV_ATTR));
     }
@@ -220,6 +221,9 @@ fn add_steps(this: &Arc<dyn AnyDevice>) -> Result<()> {
     // No fallible registration steps remain. The path is now stable, and
     // callbacks can register children without a later rollback orphaning them.
     *base.state().lock() = State::Adding(Vec::new());
+    // Announce `add` before probing, as Linux does. The event is best effort:
+    // a failure here does not roll back the registration.
+    super::uevent::emit_lifecycle(this.as_ref(), UeventAction::Add);
 
     // 6. Let the subsystem act.
     if let Some(ops) = subsystem.ops() {
@@ -229,8 +233,16 @@ fn add_steps(this: &Arc<dyn AnyDevice>) -> Result<()> {
     Ok(())
 }
 
+/// How a teardown reports its result to user space.
+enum Teardown {
+    /// Normal removal: send `remove` after the node, links, and attributes are gone.
+    Announced,
+    /// Rollback of a failed registration: send nothing.
+    Silent,
+}
+
 /// Undoes registration, tolerating steps that never happened.
-fn teardown(this: &Arc<dyn AnyDevice>) {
+fn teardown(this: &Arc<dyn AnyDevice>, kind: Teardown) {
     let base = this.base();
     let subsystem = this.subsystem();
     // Only links this device created are removed: an index entry under the
@@ -242,12 +254,21 @@ fn teardown(this: &Arc<dyn AnyDevice>) {
         ops.on_removed(this);
     }
 
+    // Build the uevent environment while the `/dev` node, links, and
+    // attributes still exist, but broadcast only after they are gone. This
+    // matches the order in which Linux user space observes `remove`.
+    let prepared = if matches!(kind, Teardown::Announced) {
+        crate::uevent::PreparedUevent::prepare(this.as_ref(), UeventAction::Remove)
+    } else {
+        None
+    };
+
     // 5. Device number.
     if let Some(devnum) = base.devnum() {
         // Taken in its own statement: the guard of an `if let` scrutinee lives
         // to the end of the block, which would hold this device's `devnode`
         // mutex across the hook and put the hook queue underneath it.
-        let request = base.devnode().lock().take();
+        let request = base.devnode().lock().clone();
         if let Some(request) = request {
             let _ = hooks::delete_devnode(&request);
         }
@@ -270,6 +291,16 @@ fn teardown(this: &Arc<dyn AnyDevice>) {
     }
     if links.subsystem {
         remove_link(base, "subsystem");
+    }
+
+    // Attribute reads fail from here on; the removal event uses the
+    // environment prepared above.
+    base.attrs().clear();
+
+    if let Some(prepared) = prepared
+        && let Err(error) = prepared.commit()
+    {
+        ostd::debug!("cannot emit remove for {}: {error}", this.name());
     }
 
     // 3. and 2. Attributes are dropped with the directory.
@@ -372,9 +403,18 @@ fn devnode_request(dev: &dyn AnyDevice, devnum: DevNum) -> DevNodeRequest {
         path: over
             .path
             .unwrap_or_else(|| SysStr::from(dev.base().name().replace('!', "/"))),
-        mode: over.mode.unwrap_or(DEFAULT_DEVNODE_MODE),
+        // A raw zero mode means "use the devtmpfs default"; any non-zero
+        // value is an explicit policy, even if its low nine bits are zero.
+        mode: over.mode.filter(|mode| *mode != 0),
     }
 }
+
+/// The per-device sysfs `uevent` attribute.
+///
+/// Reading lists the device environment; writing sends a synthetic event as
+/// described by the `parse_synthetic` request syntax in [`crate::uevent`].
+const UEVENT_ATTR: Attr<dyn AnyDevice> =
+    Attr::rw("uevent", super::uevent::show, super::uevent::store);
 
 const DEV_ATTR: Attr<dyn AnyDevice> = Attr::ro("dev", show_dev);
 
