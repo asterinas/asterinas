@@ -38,6 +38,7 @@ pub mod common;
 pub mod hooks;
 #[cfg(ktest)]
 mod test;
+pub mod uevent;
 
 use component::{ComponentInitError, init_component};
 
