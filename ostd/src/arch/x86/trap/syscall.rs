@@ -21,18 +21,18 @@ use core::arch::global_asm;
 use x86_64::{
     VirtAddr,
     registers::{
-        model_specific::{Efer, EferFlags, LStar, SFMask},
+        model_specific::{Efer, EferFlags, LStar, SFMask, Star},
         rflags::RFlags,
     },
 };
 
-use super::RawUserContext;
+use super::{RawUserContext, gdt};
 use crate::{irq::DisabledLocalIrqGuard, mm::PagingConstsTrait};
 
 global_asm!(
     include_str!("syscall.S"),
-    USER_CS = const super::gdt::USER_CS.0,
-    USER_SS = const super::gdt::USER_SS.0,
+    USER_CS = const gdt::USER_CS.0,
+    USER_SS = const gdt::USER_SS.0,
     ADDRESS_WIDTH = const crate::arch::mm::PagingConsts::ADDRESS_WIDTH,
 );
 
@@ -45,23 +45,40 @@ pub(super) unsafe fn init_on_cpu() {
     // We now assume that all x86-64 CPUs should support the `syscall` and `sysret` instructions.
     // Otherwise, we should check `has_extensions(IsaExtensions::SYSCALL)` here.
 
+    // SAFETY:
+    // 1. This CPU is still in the boot context, so task preemption cannot occur.
+    // 2. The caller has initialized the GDT, and `configure_msrs_racy` initializes
+    //    the syscall MSRs before `EferFlags::SYSTEM_CALL_EXTENSIONS` is enabled.
+    unsafe {
+        configure_msrs_racy();
+        Efer::update(|efer| {
+            efer.insert(EferFlags::SYSTEM_CALL_EXTENSIONS);
+        });
+    }
+}
+
+/// Configures the kernel's syscall selectors, entry point, and flags mask.
+pub(in crate::arch) fn configure_msrs(_irq_guard: &DisabledLocalIrqGuard) {
+    // SAFETY: `_irq_guard` prevents preemption.
+    unsafe { configure_msrs_racy() };
+}
+
+/// Configures the kernel's syscall selectors, entry point, and flags mask.
+///
+/// # Safety
+///
+/// The caller must ensure that no preemption can occur.
+unsafe fn configure_msrs_racy() {
     // Flags to clear on syscall.
     //
     // Linux 5.0 uses TF|DF|IF|IOPL|AC|NT. Reference:
     // <https://github.com/torvalds/linux/blob/v5.0/arch/x86/kernel/cpu/common.c#L1559-L1562>
     const RFLAGS_MASK: u64 = 0x47700;
 
-    // SAFETY: The segment selectors are correctly initialized (as upheld by the caller), and the
-    // entry point and flags to clear are also correctly set, so enabling the `syscall` and
-    // `sysret` instructions is safe.
     unsafe {
+        Star::write_raw(gdt::SYSRET_BASE.0, gdt::KERNEL_CS.0);
         LStar::write(VirtAddr::new(syscall_entry as *const () as usize as u64));
         SFMask::write(RFlags::from_bits(RFLAGS_MASK).unwrap());
-
-        // Enable the `syscall` and `sysret` instructions.
-        Efer::update(|efer| {
-            efer.insert(EferFlags::SYSTEM_CALL_EXTENSIONS);
-        });
     }
 }
 

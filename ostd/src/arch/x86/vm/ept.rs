@@ -228,7 +228,7 @@ mod test {
             (PageFlags::RW, CachePolicy::Writeback, 0b011 | (6 << 3)),
             (PageFlags::RX, CachePolicy::Uncacheable, 0b101),
         ] {
-            let prop = PageProperty::new_user(flags, cache);
+            let prop = PageProperty::new_guest(flags, cache);
             let entry = PageTableEntry::from_repr(&PteScalar::Mapped(paddr, prop), 1);
             assert_eq!(entry.as_usize() & 0x3f, hardware_bits);
             assert_eq!(entry.as_usize() & PageTableEntry::PHYS_MASK, paddr);

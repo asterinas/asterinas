@@ -25,6 +25,17 @@ impl PageProperty {
             priv_flags: PrivilegedPageFlags::USER,
         }
     }
+
+    /// Creates a new `PageProperty` with the given flags and cache policy for the guest.
+    pub fn new_guest(flags: PageFlags, cache: CachePolicy) -> Self {
+        Self {
+            flags,
+            cache,
+            // Keep USER set in case this property is used in `VmSpace`.
+            // EPT preserves this flag as software metadata.
+            priv_flags: PrivilegedPageFlags::USER,
+        }
+    }
 }
 
 // TODO: Make it more abstract when supporting other architectures.

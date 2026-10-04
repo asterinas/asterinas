@@ -4,8 +4,12 @@
 
 mod context;
 pub(crate) mod ept;
+mod exit;
+mod guest_mode;
 mod types;
+mod vmcs;
 pub(crate) mod vmx;
+mod x86;
 
 /// Initializes hardware-virtualization state on the current CPU.
 pub(super) fn init() {
@@ -14,5 +18,10 @@ pub(super) fn init() {
 
 pub use self::{
     context::GuestContext,
-    types::{VcpuDescTable, VcpuMsrs, VcpuRegs, VcpuSegment, VcpuSregs},
+    exit::{GuestExitInfo, VmxExitReason},
+    guest_mode::{GuestMode, GuestReturnReason},
+    types::{
+        GuestInterrupt, GuestTimerInstant, VcpuDescTable, VcpuMsrs, VcpuRegs, VcpuSegment,
+        VcpuSregs,
+    },
 };

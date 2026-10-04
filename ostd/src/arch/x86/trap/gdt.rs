@@ -8,10 +8,7 @@ use core::cell::UnsafeCell;
 use x86_64::{
     PrivilegeLevel, VirtAddr,
     instructions::tables::{lgdt, load_tss},
-    registers::{
-        model_specific::Star,
-        segmentation::{CS, Segment},
-    },
+    registers::segmentation::{CS, Segment},
     structures::{
         DescriptorTablePointer,
         gdt::{Descriptor, SegmentSelector},
@@ -19,7 +16,16 @@ use x86_64::{
     },
 };
 
-use crate::cpu::local::{CpuLocal, StaticCpuLocal};
+use crate::{
+    cpu::local::{CpuLocal, StaticCpuLocal},
+    cpu_local_cell,
+    irq::DisabledLocalIrqGuard,
+    mm::Vaddr,
+};
+
+cpu_local_cell! {
+    static GDT_BASE: Vaddr = 0;
+}
 
 /// Initializes and loads the GDT and TSS.
 ///
@@ -70,23 +76,31 @@ pub(super) unsafe fn init_on_cpu() {
     //    code/data segments, and the TSS segment.
     //  - Specifically, the TSS segment points to the CPU-local TSS of the current CPU.
     unsafe { lgdt(&gdtr) };
+    GDT_BASE.store(gdt.as_ptr() as Vaddr);
 
     // Load the TSS.
-    let tss_sel = SegmentSelector::new(7, PrivilegeLevel::Ring0);
-    assert_eq!(gdt[tss_sel.index() as usize], tss0);
-    assert_eq!(gdt[(tss_sel.index() + 1) as usize], tss1);
+    assert_eq!(gdt[TSS_SELECTOR.index() as usize], tss0);
+    assert_eq!(gdt[(TSS_SELECTOR.index() + 1) as usize], tss1);
     // SAFETY: The selector points to the TSS descriptors in the GDT.
-    unsafe { load_tss(tss_sel) };
+    unsafe { load_tss(TSS_SELECTOR) };
 
-    // Set up the selectors for the `syscall` and `sysret` instructions.
-    let sysret = SegmentSelector::new(4, PrivilegeLevel::Ring3);
+    // Validate the selectors for the `syscall` and `sysret` instructions.
+    let sysret = SYSRET_BASE;
     assert_eq!(gdt[(sysret.index() + 1) as usize], UDATA);
     assert_eq!(gdt[(sysret.index() + 2) as usize], UCODE64);
-    let syscall = SegmentSelector::new(1, PrivilegeLevel::Ring0);
+    let syscall = KERNEL_CS;
     assert_eq!(gdt[syscall.index() as usize], KCODE64);
     assert_eq!(gdt[(syscall.index() + 1) as usize], KDATA);
-    // SAFETY: The selector points to correct kernel/user code/data descriptors in the GDT.
-    unsafe { Star::write_raw(sysret.0, syscall.0) };
+}
+
+/// Returns the current CPU's GDT base address.
+pub(in crate::arch) fn gdt_base(_guard: &DisabledLocalIrqGuard) -> Vaddr {
+    GDT_BASE.load()
+}
+
+/// Returns the current CPU's TSS base address.
+pub(in crate::arch) fn tss_base(_guard: &DisabledLocalIrqGuard) -> Vaddr {
+    UnsafeCell::raw_get(LOCAL_TSS.as_ptr()) as Vaddr
 }
 
 // The linker script makes sure that the `.cpu_local_tss` section is at the beginning of the area
@@ -127,8 +141,13 @@ pub(in crate::arch) const KCODE32: u64 = 0x00CF_9B00_0000_FFFF;
 const UCODE64: u64 = 0x00AF_FB00_0000_FFFF;
 const UDATA: u64 = 0x00CF_F300_0000_FFFF;
 
-const KERNEL_CS: SegmentSelector = SegmentSelector::new(1, PrivilegeLevel::Ring0);
+pub(in crate::arch) const KERNEL_CS: SegmentSelector =
+    SegmentSelector::new(1, PrivilegeLevel::Ring0);
 const KERNEL_SS: SegmentSelector = SegmentSelector::new(2, PrivilegeLevel::Ring0);
+pub(in crate::arch) const SYSRET_BASE: SegmentSelector =
+    SegmentSelector::new(4, PrivilegeLevel::Ring3);
+pub(in crate::arch) const TSS_SELECTOR: SegmentSelector =
+    SegmentSelector::new(7, PrivilegeLevel::Ring0);
 
 pub(super) const USER_CS: SegmentSelector = SegmentSelector::new(6, PrivilegeLevel::Ring3);
 pub(super) const USER_SS: SegmentSelector = SegmentSelector::new(5, PrivilegeLevel::Ring3);
