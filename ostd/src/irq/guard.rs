@@ -42,8 +42,12 @@ pub struct DisabledLocalIrqGuard {
 
 impl !Send for DisabledLocalIrqGuard {}
 
-// SAFETY: The guard disables local IRQs, which meets the first
-// sufficient condition for atomic mode.
+// Required by `InAtomicMode`. See the safety section of its doc comments.
+impl !Sync for DisabledLocalIrqGuard {}
+
+// SAFETY:
+// 1. The guard disables local IRQs;
+// 2. The guard cannot be moved to or used by other tasks.
 unsafe impl InAtomicMode for DisabledLocalIrqGuard {}
 
 impl DisabledLocalIrqGuard {

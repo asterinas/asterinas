@@ -169,8 +169,6 @@ impl<T: ?Sized + fmt::Debug, G: SpinGuardian> fmt::Debug for SpinLockGuard<'_, T
     }
 }
 
+// `G::Guard` is `!Send` and `!Sync`, so is `SpinLockGuard`.
 impl<T: ?Sized, G: SpinGuardian> !Send for SpinLockGuard<'_, T, G> {}
-
-// SAFETY: `SpinLockGuard` can be shared between tasks/threads in same CPU.
-// As `lock()` is only called when there are no race conditions caused by interrupts.
-unsafe impl<T: ?Sized + Sync, G: SpinGuardian> Sync for SpinLockGuard<'_, T, G> {}
+impl<T: ?Sized, G: SpinGuardian> !Sync for SpinLockGuard<'_, T, G> {}

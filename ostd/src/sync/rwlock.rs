@@ -264,14 +264,15 @@ impl<T: ?Sized + fmt::Debug, G> fmt::Debug for RwLock<T, G> {
 unsafe impl<T: ?Sized + Send, G> Send for RwLock<T, G> {}
 unsafe impl<T: ?Sized + Send + Sync, G> Sync for RwLock<T, G> {}
 
+// `G::Guard` and `G::ReadGuard` are `!Send` and `!Sync`, so are the guards.
 impl<T: ?Sized, G: SpinGuardian> !Send for RwLockWriteGuard<'_, T, G> {}
-unsafe impl<T: ?Sized + Sync, G: SpinGuardian> Sync for RwLockWriteGuard<'_, T, G> {}
+impl<T: ?Sized, G: SpinGuardian> !Sync for RwLockWriteGuard<'_, T, G> {}
 
 impl<T: ?Sized, G: SpinGuardian> !Send for RwLockReadGuard<'_, T, G> {}
-unsafe impl<T: ?Sized + Sync, G: SpinGuardian> Sync for RwLockReadGuard<'_, T, G> {}
+impl<T: ?Sized, G: SpinGuardian> !Sync for RwLockReadGuard<'_, T, G> {}
 
 impl<T: ?Sized, G: SpinGuardian> !Send for RwLockUpgradeableGuard<'_, T, G> {}
-unsafe impl<T: ?Sized + Sync, G: SpinGuardian> Sync for RwLockUpgradeableGuard<'_, T, G> {}
+impl<T: ?Sized, G: SpinGuardian> !Sync for RwLockUpgradeableGuard<'_, T, G> {}
 
 /// A guard that provides immutable data access.
 #[clippy::has_significant_drop]
