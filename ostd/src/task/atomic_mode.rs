@@ -60,6 +60,11 @@ pub fn might_sleep() {
 ///
 /// The implementer must ensure that the atomic mode is maintained while
 /// the guard type is alive.
+///
+/// A guard is only valid evidence about the task that created it: it proves
+/// nothing about any other task. Therefore, such guards must be `!Send` and
+/// `!Sync`, so that the guards and their references are confined to the
+/// creating task.
 pub unsafe trait InAtomicMode: core::fmt::Debug {}
 
 /// Abstracts any type from which one can obtain a reference to an atomic-mode guard.
