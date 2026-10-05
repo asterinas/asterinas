@@ -106,9 +106,14 @@ NIXOS_DISABLE_SYSTEMD ?= false
 NIXOS_STAGE_2_INIT ?= /bin/sh -l
 # End of NixOS settings
 
-# ISO installer settings
+# ISO settings
+USE_ASTERINAS_KERNEL ?= false
+ifeq ($(USE_ASTERINAS_KERNEL), true)
+AUTO_INSTALL ?= false
+else
 AUTO_INSTALL ?= true
-# End of ISO installer settings
+endif
+# End of ISO settings
 
 # Cachix binary cache settings
 CACHIX_AUTH_TOKEN ?=
@@ -375,7 +380,11 @@ iso:
 # Build the Asterinas NixOS ISO installer image and then do installation
 run_iso: OVMF = off
 run_iso:
-	@./tools/nixos/run.sh iso
+	@if [ -n "$(NIXOS_TEST_SUITE)" ] && [ "$(USE_ASTERINAS_KERNEL)" = "true" ]; then \
+        $(MAKE) --no-print-directory -C test/nixos run_iso; \
+    else \
+        ./tools/nixos/run.sh iso; \
+    fi
 
 # Create an Asterinas NixOS installation on host
 nixos: BOOT_PROTOCOL = linux-efi-handover64

@@ -32,8 +32,13 @@ fi
 # Change to Asterinas root directory to ensure all scripts run from the correct location.
 cd "${ASTERINAS_DIR}"
 
-# Get base QEMU arguments from qemu_args.sh script
-QEMU_ARGS=$(${ASTERINAS_DIR}/tools/qemu_args.sh common 2>/dev/null)
+# The Live ISO boots without development test disks or an installation target.
+QEMU_SCHEME=common
+if [ "$MODE" = "iso" ] && [ "${USE_ASTERINAS_KERNEL:-false}" = "true" ]; then
+    QEMU_SCHEME=iso
+    export CONSOLE=hvc0
+fi
+QEMU_ARGS=$(${ASTERINAS_DIR}/tools/qemu_args.sh "$QEMU_SCHEME" 2>/dev/null)
 
 # Add mode-specific disk and device arguments
 case "$MODE" in
@@ -45,25 +50,34 @@ case "$MODE" in
         "
         ;;
     iso)
-        ASTER_IMAGE_PATH=${ASTERINAS_DIR}/target/nixos/asterinas.img
-        NIXOS_DISK_SIZE_IN_MB=${NIXOS_DISK_SIZE_IN_MB:-16384}
-        ISO_IMAGE_PATH=$(find "${ASTERINAS_DIR}/target/nixos/iso_image/iso" -name "*.iso" | head -n 1)
+        if [ "${USE_ASTERINAS_KERNEL:-false}" = "true" ]; then
+            ISO_IMAGE_PATH="${ASTERINAS_DIR}/target/nixos/iso_image/iso/asterinas-live.iso"
+            if [ ! -f "$ISO_IMAGE_PATH" ]; then
+                echo "Error: Live ISO not found; build with USE_ASTERINAS_KERNEL=true first" >&2
+                exit 1
+            fi
+            QEMU_ARGS="${QEMU_ARGS} -cdrom ${ISO_IMAGE_PATH} -boot d"
+        else
+            ASTER_IMAGE_PATH=${ASTERINAS_DIR}/target/nixos/asterinas.img
+            NIXOS_DISK_SIZE_IN_MB=${NIXOS_DISK_SIZE_IN_MB:-16384}
+            ISO_IMAGE_PATH=$(find "${ASTERINAS_DIR}/target/nixos/iso_image/iso" -name "*.iso" ! -name "asterinas-live.iso" | head -n 1)
 
-        if [ ! -f "$ISO_IMAGE_PATH" ]; then
-            echo "Error: ISO_IMAGE not found!"
-            exit 1
+            if [ ! -f "$ISO_IMAGE_PATH" ]; then
+                echo "Error: ISO_IMAGE not found!"
+                exit 1
+            fi
+
+            rm -f "${ASTER_IMAGE_PATH}"
+            echo "Creating image at ${ASTER_IMAGE_PATH} of size ${NIXOS_DISK_SIZE_IN_MB}MB......"
+            dd if=/dev/zero of="${ASTER_IMAGE_PATH}" bs=1M count=${NIXOS_DISK_SIZE_IN_MB} status=none
+            echo "Image created successfully!"
+
+            QEMU_ARGS="${QEMU_ARGS} \
+                -cdrom ${ISO_IMAGE_PATH} -boot d \
+                -drive if=none,format=raw,id=u0,file=${ASTER_IMAGE_PATH} \
+                -device virtio-blk-pci,drive=u0,disable-legacy=on,disable-modern=off \
+            "
         fi
-
-        rm -f "${ASTER_IMAGE_PATH}"
-        echo "Creating image at ${ASTER_IMAGE_PATH} of size ${NIXOS_DISK_SIZE_IN_MB}MB......"
-        dd if=/dev/zero of="${ASTER_IMAGE_PATH}" bs=1M count=${NIXOS_DISK_SIZE_IN_MB} status=none
-        echo "Image created successfully!"
-
-        QEMU_ARGS="${QEMU_ARGS} \
-            -cdrom ${ISO_IMAGE_PATH} -boot d \
-            -drive if=none,format=raw,id=u0,file=${ASTER_IMAGE_PATH} \
-            -device virtio-blk-pci,drive=u0,disable-legacy=on,disable-modern=off \
-        "
         ;;
     *)
         usage

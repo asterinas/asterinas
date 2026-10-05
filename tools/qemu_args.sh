@@ -4,7 +4,7 @@
 
 # This script is used to generate QEMU arguments for OSDK.
 # Usage: `qemu_args.sh [scheme]`
-#  - scheme: "normal", "test", "microvm" or "iommu";
+#  - scheme: "normal", "test", "microvm", "iommu", or "iso";
 # Other arguments are configured via environmental variables:
 #  - OVMF: "on" or "off";
 #  - OVMF_DIR: directory containing OVMF.fd, OVMF_VARS.fd and microvm/MICROVM.fd;
@@ -83,6 +83,28 @@ if [ "$CONSOLE" = "hvc0" ]; then
     CONSOLE_ARGS="-device virtconsole,chardev=mux -serial file:qemu-serial.log"
 else
     CONSOLE_ARGS="-serial chardev:mux"
+fi
+
+# The Live ISO boots without development data disks or an installation target.
+if [ "$1" = "iso" ]; then
+    ISO_NETWORK_DEVICE_ARGS=""
+    if [ "$NETDEV" = "user" ] || [ "$NETDEV" = "tap" ]; then
+        ISO_NETWORK_DEVICE_ARGS="-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES"
+    fi
+    QEMU_ARGS="\
+        -cpu Icelake-Server,+x2apic,+vmx \
+        -machine q35,kernel-irqchip=split \
+        -smp ${SMP:-1} -m ${MEM:-8G} \
+        -bios ${OVMF_DIR}/OVMF.fd \
+        --no-reboot -nographic -display $QEMU_DISPLAY \
+        -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
+        -device virtio-serial-pci,disable-legacy=on,disable-modern=off \
+        $CONSOLE_ARGS -monitor chardev:mux \
+        $NETDEV_ARGS $ISO_NETWORK_DEVICE_ARGS \
+        -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+    "
+    echo "$QEMU_ARGS"
+    exit 0
 fi
 
 if [ "$INITRAMFS" = "off" ]; then

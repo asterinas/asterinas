@@ -114,6 +114,17 @@ make run_iso
 
 ### Run Tests
 
+To run a suite directly from an Asterinas NixOS Live ISO, without installation:
+
+```bash
+USE_ASTERINAS_KERNEL=true make iso NIXOS_TEST_SUITE=my-test
+USE_ASTERINAS_KERNEL=true make run_iso NIXOS_TEST_SUITE=my-test
+```
+
+The suite's optional `extra_config.nix` extends the Live system configuration.
+The same flag selects the Live ISO when it runs.
+`NIXOS_TEST_CASE` and `NIXOS_TEST_TIMEOUT` apply to Live ISO tests as well.
+
 ```bash
 # Run all tests in the suite
 make run_nixos NIXOS_TEST_SUITE=my-test
