@@ -395,6 +395,35 @@ mod segment {
     }
 
     #[ktest]
+    #[should_panic(expected = "segment virtual address empty for slicing")]
+    fn segment_slice_empty() {
+        let segment = FrameAllocOptions::new()
+            .alloc_segment(1)
+            .expect("Failed to allocate segment");
+        // Slicing an empty range should panic.
+        segment.slice(&(0..0));
+    }
+
+    #[ktest]
+    fn segment_iter_partial_drop() {
+        let options = FrameAllocOptions::new();
+        let segment = options
+            .alloc_segment_with(2, |_| MockFrameMeta { value: 42 })
+            .expect("Failed to allocate segment");
+        let paddr = segment.paddr();
+
+        let mut iter = segment.into_iter();
+        drop(iter.next().expect("The segment is non-empty"));
+        // Dropping the iterator must release the frame it never yielded.
+        drop(iter);
+
+        let new_segment = options
+            .alloc_segment(2)
+            .expect("Failed to allocate segment");
+        assert_eq!(new_segment.paddr(), paddr);
+    }
+
+    #[ktest]
     fn segment_to_usegment() {
         let options = FrameAllocOptions::new();
         let segment = options.alloc_segment(1).unwrap();
