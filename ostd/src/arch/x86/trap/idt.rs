@@ -2,7 +2,6 @@
 
 //! Configure the Interrupt Descriptor Table (IDT).
 
-use alloc::boxed::Box;
 use core::arch::global_asm;
 
 use spin::Once;
@@ -21,7 +20,7 @@ unsafe extern "C" {
     static VECTORS: [usize; NUM_INTERRUPTS];
 }
 
-static GLOBAL_IDT: Once<&'static [Entry<()>]> = Once::new();
+static GLOBAL_IDT: Once<[Entry<()>; NUM_INTERRUPTS]> = Once::new();
 
 /// Initializes and loads the IDT.
 ///
@@ -29,8 +28,8 @@ static GLOBAL_IDT: Once<&'static [Entry<()>]> = Once::new();
 /// This is not a safety requirement, however, because calling this method again will do nothing
 /// more than load the same IDT.
 pub(super) fn init_on_cpu() {
-    let idt = *GLOBAL_IDT.call_once(|| {
-        let idt = Box::leak(Box::new([const { Entry::missing() }; NUM_INTERRUPTS]));
+    let idt = GLOBAL_IDT.call_once(|| {
+        let mut idt = [const { Entry::missing() }; NUM_INTERRUPTS];
 
         // SAFETY: The vector array is properly initialized, lives for `'static`, and will never be
         // mutated. So it's always fine to create an immutable borrow to it.
