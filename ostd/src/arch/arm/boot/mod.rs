@@ -55,7 +55,9 @@ fn parse_framebuffer_info() -> Option<BootloaderFramebufferArg> {
 fn parse_memory_regions(device_tree_paddr: usize) -> MemoryRegionArray {
     let mut regions = MemoryRegionArray::new();
 
-    for region in DEVICE_TREE.get().unwrap().memory().regions() {
+    let device_tree = DEVICE_TREE.get().unwrap();
+
+    for region in device_tree.memory().regions() {
         if region.size.unwrap_or(0) > 0 {
             regions
                 .push(MemoryRegion::new(
@@ -67,7 +69,20 @@ fn parse_memory_regions(device_tree_paddr: usize) -> MemoryRegionArray {
         }
     }
 
-    if let Some(node) = DEVICE_TREE.get().unwrap().find_node("/reserved-memory") {
+    for reservation in device_tree.memory_reservations() {
+        let size = reservation.size();
+        if size > 0 {
+            regions
+                .push(MemoryRegion::new(
+                    reservation.address() as usize,
+                    size,
+                    MemoryRegionType::Reserved,
+                ))
+                .unwrap();
+        }
+    }
+
+    if let Some(node) = device_tree.find_node("/reserved-memory") {
         for child in node.children() {
             if let Some(reg_iter) = child.reg() {
                 for region in reg_iter {
@@ -101,7 +116,7 @@ fn parse_memory_regions(device_tree_paddr: usize) -> MemoryRegionArray {
     regions
         .push(MemoryRegion::new(
             device_tree_paddr,
-            DEVICE_TREE.get().unwrap().total_size(),
+            device_tree.total_size(),
             MemoryRegionType::Module,
         ))
         .unwrap();
