@@ -42,7 +42,12 @@ unsafe impl<T> AnyStorage<T> for DynamicStorage<T> {
         let va = bsp_va + cpu_id.as_usize() * CHUNK_SIZE;
         va as *mut T
     }
+}
 
+impl<T> DynamicStorage<T> {
+    /// Gets the `mut` pointer for the object on a target CPU.
+    ///
+    /// This method is intended for use when initializing or dropping the storage.
     fn get_mut_ptr_on_target(&mut self, cpu: CpuId) -> *mut T {
         self.get_ptr_on_target(cpu).cast_mut()
     }
