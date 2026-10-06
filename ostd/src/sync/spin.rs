@@ -30,7 +30,7 @@ use crate::task::atomic_mode::AsAtomicModeGuard;
 pub struct SpinLock<T: ?Sized, G = PreemptDisabled> {
     phantom: PhantomData<G>,
     /// Only the last field of a struct may have a dynamically sized type.
-    /// That's why SpinLockInner is put in the last field.
+    /// That's why `SpinLockInner` is put in the last field.
     inner: SpinLockInner<T>,
 }
 
@@ -100,7 +100,6 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
         self.inner.val.get_mut()
     }
 
-    /// Acquires the spin lock, otherwise busy waiting
     fn acquire_lock(&self) {
         while !self.try_acquire_lock() {
             core::hint::spin_loop();
@@ -114,7 +113,10 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
             .is_ok()
     }
 
-    fn release_lock(&self) {
+    /// # Safety
+    ///
+    /// The caller must ensure that it has acquired the lock.
+    unsafe fn release_lock(&self) {
         self.inner.lock.store(false, Ordering::Release);
     }
 }
@@ -125,7 +127,7 @@ impl<T: ?Sized + fmt::Debug, G> fmt::Debug for SpinLock<T, G> {
     }
 }
 
-// SAFETY: Only a single lock holder is permitted to access the inner data of Spinlock.
+// SAFETY: Only a single lock holder is permitted to access the inner data of `Spinlock`.
 unsafe impl<T: ?Sized + Send, G> Send for SpinLock<T, G> {}
 unsafe impl<T: ?Sized + Send, G> Sync for SpinLock<T, G> {}
 
@@ -147,19 +149,22 @@ impl<T: ?Sized, G: SpinGuardian> Deref for SpinLockGuard<'_, T, G> {
     type Target = T;
 
     fn deref(&self) -> &T {
+        // SAFETY: The spin lock is locked, which provides exclusive access to the data.
         unsafe { &*self.lock.inner.val.get() }
     }
 }
 
 impl<T: ?Sized, G: SpinGuardian> DerefMut for SpinLockGuard<'_, T, G> {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: The spin lock is locked, which provides exclusive access to the data.
         unsafe { &mut *self.lock.inner.val.get() }
     }
 }
 
 impl<T: ?Sized, G: SpinGuardian> Drop for SpinLockGuard<'_, T, G> {
     fn drop(&mut self) {
-        self.lock.release_lock();
+        // SAFETY: The spin lock is locked.
+        unsafe { self.lock.release_lock() };
     }
 }
 

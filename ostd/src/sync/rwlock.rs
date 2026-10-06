@@ -17,7 +17,7 @@ use super::{
 };
 use crate::task::atomic_mode::AsAtomicModeGuard;
 
-/// Spin-based Read-write Lock
+/// A spin lock that provides data access to either one writer or many readers.
 ///
 /// # Overview
 ///
@@ -259,8 +259,8 @@ impl<T: ?Sized + fmt::Debug, G> fmt::Debug for RwLock<T, G> {
     }
 }
 
-/// Because there can be more than one readers to get the T's immutable ref,
-/// so T must be Sync to guarantee the sharing safety.
+// There can be more than one readers to get the `T`'s immutable reference,
+// so `T` must be `Sync` to guarantee the sharing safety.
 unsafe impl<T: ?Sized + Send, G> Send for RwLock<T, G> {}
 unsafe impl<T: ?Sized + Send + Sync, G> Sync for RwLock<T, G> {}
 
@@ -292,6 +292,7 @@ impl<T: ?Sized, G: SpinGuardian> Deref for RwLockReadGuard<'_, T, G> {
     type Target = T;
 
     fn deref(&self) -> &T {
+        // SAFETY: The mutex is locked by a reader, which provides shared access to the data.
         unsafe { &*self.inner.val.get() }
     }
 }
@@ -324,12 +325,14 @@ impl<T: ?Sized, G: SpinGuardian> Deref for RwLockWriteGuard<'_, T, G> {
     type Target = T;
 
     fn deref(&self) -> &T {
+        // SAFETY: The mutex is locked by a writer, which provides exclusive access to the data.
         unsafe { &*self.inner.val.get() }
     }
 }
 
 impl<T: ?Sized, G: SpinGuardian> DerefMut for RwLockWriteGuard<'_, T, G> {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: The mutex is locked by a writer, which provides exclusive access to the data.
         unsafe { &mut *self.inner.val.get() }
     }
 }
@@ -347,7 +350,7 @@ impl<T: ?Sized + fmt::Debug, G: SpinGuardian> fmt::Debug for RwLockWriteGuard<'_
 }
 
 /// A guard that provides immutable data access but can be atomically
-/// upgraded to `RwLockWriteGuard`.
+/// upgraded to [`RwLockWriteGuard`].
 pub struct RwLockUpgradeableGuard<'a, T: ?Sized, G: SpinGuardian> {
     guard: G::Guard,
     inner: &'a RwLock<T, G>,
@@ -403,6 +406,7 @@ impl<T: ?Sized, G: SpinGuardian> Deref for RwLockUpgradeableGuard<'_, T, G> {
     type Target = T;
 
     fn deref(&self) -> &T {
+        // SAFETY: The mutex is locked by a reader, which provides exclusive access to the data.
         unsafe { &*self.inner.val.get() }
     }
 }

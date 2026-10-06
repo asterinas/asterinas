@@ -212,8 +212,8 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for RwMutex<T> {
     }
 }
 
-/// Because there can be more than one readers to get the T's immutable ref,
-/// so T must be Sync to guarantee the sharing safety.
+// There can be more than one readers to get the `T`'s immutable reference,
+// so `T` must be `Sync` to guarantee the sharing safety.
 unsafe impl<T: ?Sized + Send> Send for RwMutex<T> {}
 unsafe impl<T: ?Sized + Send + Sync> Sync for RwMutex<T> {}
 
@@ -235,6 +235,7 @@ impl<T: ?Sized> Deref for RwMutexReadGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
+        // SAFETY: The mutex is locked by a reader, which provides shared access to the data.
         unsafe { &*self.inner.val.get() }
     }
 }
@@ -253,14 +254,6 @@ impl<T: ?Sized> Drop for RwMutexReadGuard<'_, T> {
 #[must_use]
 pub struct RwMutexWriteGuard<'a, T: ?Sized> {
     inner: &'a RwMutex<T>,
-}
-
-impl<T: ?Sized> Deref for RwMutexWriteGuard<'_, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        unsafe { &*self.inner.val.get() }
-    }
 }
 
 impl<'a, T: ?Sized> RwMutexWriteGuard<'a, T> {
@@ -293,8 +286,18 @@ impl<'a, T: ?Sized> RwMutexWriteGuard<'a, T> {
     }
 }
 
+impl<T: ?Sized> Deref for RwMutexWriteGuard<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        // SAFETY: The mutex is locked by a writer, which provides exclusive access to the data.
+        unsafe { &*self.inner.val.get() }
+    }
+}
+
 impl<T: ?Sized> DerefMut for RwMutexWriteGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: The mutex is locked by a writer, which provides exclusive access to the data.
         unsafe { &mut *self.inner.val.get() }
     }
 }
@@ -325,8 +328,10 @@ impl<'a, T: ?Sized> RwMutexUpgradeableGuard<'a, T> {
     ///
     /// The calling thread will not sleep, but spin to wait for the existing
     /// reader to be released. There are two main reasons.
-    /// - First, it needs to sleep in an extra waiting queue and needs extra wake-up logic and overhead.
-    /// - Second, upgrading method usually requires a high response time (because the mutex is being used now).
+    /// - First, it needs to sleep in an extra waiting queue and needs extra
+    ///   wake-up logic and overhead.
+    /// - Second, upgrading method usually requires a high response time
+    ///   (because the mutex is being used now).
     pub fn upgrade(mut self) -> RwMutexWriteGuard<'a, T> {
         self.inner.lock.fetch_or(BEING_UPGRADED, Acquire);
         loop {
@@ -364,6 +369,7 @@ impl<T: ?Sized> Deref for RwMutexUpgradeableGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
+        // SAFETY: The mutex is locked by a reader, which provides shared access to the data.
         unsafe { &*self.inner.val.get() }
     }
 }
