@@ -5,17 +5,36 @@ on:
   pull_request:
     paths:
       - distro/**
+      - Makefile
+      - test/nixos/**
       - .github/workflows/test_iso_image.yml
       - tools/nixos/**
+      - tools/qemu_args.sh
   push:
     branches:
       - main
     paths:
       - distro/**
+      - Makefile
+      - test/nixos/**
       - .github/workflows/test_iso_image.yml
       - tools/nixos/**
+      - tools/qemu_args.sh
 
 jobs:
+  live-iso-test:
+    runs-on: ubuntu-4-cores-150GB-ssd
+    container:
+      image: asterinas/kernel-dev:0.18.1-20260926
+      options: -v /dev:/dev --privileged
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Asterinas NixOS Live ISO
+        run: USE_ASTERINAS_KERNEL=true make iso NIXOS_TEST_SUITE=hello
+      - name: Run hello tests in the Live ISO
+        run: USE_ASTERINAS_KERNEL=true make run_iso NIXOS_TEST_SUITE=hello
+
   iso-test:
     runs-on: ubuntu-4-cores-150GB-ssd
     container:

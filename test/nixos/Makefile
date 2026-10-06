@@ -54,6 +54,10 @@ prepare: check-test-name
     fi
 
 .PHONY: iso
+ifeq ($(USE_ASTERINAS_KERNEL), true)
+iso: BASE_CONFIG := $(ASTERINAS_ROOT)/distro/iso_image/configuration.nix
+iso: TEST_CONFIG := $(ASTERINAS_ROOT)/distro/iso_image/$(TEST_CONFIG_FILE_NAME)
+endif
 iso: prepare
 	@echo "==> Building ISO installer for test '$(NIXOS_TEST_NAME)'..."
 	@echo "    Building ISO installer...";
@@ -84,6 +88,17 @@ run_nixos: check-test-name
             TEST_CASE_ARG="--test $(NIXOS_TEST_CASE)"; \
         fi; \
         QEMU_CMD="bash $(RUN_SCRIPT) nixos"; \
+        cargo run -- --qemu-cmd "$$QEMU_CMD" $$TEST_CASE_ARG || \
+        exit 1
+
+.PHONY: run_iso
+run_iso: check-test-name
+	@cd "$(TEST_DIR)" && \
+        TEST_CASE_ARG=""; \
+        if [ -n "$(NIXOS_TEST_CASE)" ]; then \
+            TEST_CASE_ARG="--test $(NIXOS_TEST_CASE)"; \
+        fi; \
+        QEMU_CMD="bash $(RUN_SCRIPT) iso"; \
         cargo run -- --qemu-cmd "$$QEMU_CMD" $$TEST_CASE_ARG || \
         exit 1
 

@@ -6,6 +6,8 @@
   extra-trusted-public-keys ? "",
   target_platform ? "x86_64-linux",
   version ? "",
+  useAsterinasKernel ? false,
+  logLevel ? "error",
   ...
 }:
 let
@@ -46,4 +48,17 @@ let
     '';
   };
 in
-(pkgs.nixos configuration).config.system.build.isoImage
+if useAsterinasKernel then
+  import ./asterinas.nix {
+    inherit
+      pkgs
+      target_platform
+      version
+      logLevel
+      config-file-name
+      ;
+    substituters = extra-substituters;
+    trusted-public-keys = extra-trusted-public-keys;
+  }
+else
+  (pkgs.nixos configuration).config.system.build.isoImage
