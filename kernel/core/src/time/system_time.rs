@@ -13,7 +13,7 @@ use crate::prelude::*;
 pub(crate) struct SystemTime(PrimitiveDateTime);
 
 pub(crate) static START_TIME: Once<SystemTime> = Once::new();
-pub(super) static START_TIME_AS_DURATION: Once<Duration> = Once::new();
+pub(crate) static START_TIME_AS_DURATION: Once<Duration> = Once::new();
 
 pub(super) fn init() {
     let start_time = convert_system_time(read_start_time()).unwrap();

@@ -5,6 +5,8 @@
 pub(crate) use core::{Clock, timer};
 
 use ::core::time::Duration;
+#[cfg(not(target_arch = "loongarch64"))]
+pub(crate) use system_time::START_TIME_AS_DURATION;
 pub(crate) use system_time::{START_TIME, SystemTime};
 pub(crate) use timer::{Timer, TimerManager};
 
