@@ -124,7 +124,7 @@ pub trait VmIo {
     fn read_slice<T: Pod>(&self, offset: usize, slice: &mut [T]) -> Result<()> {
         let len_in_bytes = size_of_val(slice);
         let ptr = slice as *mut [T] as *mut u8;
-        // SAFETY: the slice can be transmuted to a writable byte slice since the elements
+        // SAFETY: The slice can be transmuted to a writable byte slice since the elements
         // are all Plain-Old-Data (Pod) types.
         let buf = unsafe { core::slice::from_raw_parts_mut(ptr, len_in_bytes) };
         self.read_bytes(offset, buf)
@@ -167,7 +167,7 @@ pub trait VmIo {
     fn write_slice<T: Pod>(&self, offset: usize, slice: &[T]) -> Result<()> {
         let len_in_bytes = size_of_val(slice);
         let ptr = slice as *const [T] as *const u8;
-        // SAFETY: the slice can be transmuted to a readable byte slice since the elements
+        // SAFETY: The slice can be transmuted to a readable byte slice since the elements
         // are all Plain-Old-Data (Pod) types.
         let buf = unsafe { core::slice::from_raw_parts(ptr, len_in_bytes) };
         self.write_bytes(offset, buf)
