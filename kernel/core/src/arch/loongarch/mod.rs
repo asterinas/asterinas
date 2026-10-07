@@ -4,6 +4,4 @@ pub(crate) mod cpu;
 mod power;
 pub(crate) mod signal;
 
-pub(crate) fn init() {
-    power::init();
-}
+pub(crate) fn init() {}
