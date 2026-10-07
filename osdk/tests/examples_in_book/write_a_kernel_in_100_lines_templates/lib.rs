@@ -27,8 +27,7 @@ use ostd::user::{DummyUserHooks, ReturnReason, UserMode};
 /// labeled as `#[ostd::main]` will be called.
 #[ostd::main]
 pub fn main() {
-    let program_binary = include_bytes!("../hello");
-    let vm_space = Arc::new(create_vm_space(program_binary));
+    let vm_space = Arc::new(create_vm_space(PROGRAM_BINARY));
     vm_space.activate();
     let user_task = create_user_task(vm_space);
     user_task.run();
@@ -50,7 +49,6 @@ fn create_vm_space(program: &[u8]) -> VmSpace {
     // created and manipulated safely through
     // the `VmSpace` abstraction.
     let vm_space = VmSpace::new();
-    const MAP_ADDR: Vaddr = 0x0040_0000; // The map addr for statically-linked executable
     let preempt_guard = disable_preempt();
     let mut cursor = vm_space
         .cursor_mut(&preempt_guard, &(MAP_ADDR..MAP_ADDR + nbytes))
@@ -67,7 +65,7 @@ fn create_user_task(vm_space: Arc<VmSpace>) -> Arc<Task> {
     fn user_task() {
         let current = Task::current().unwrap();
         // Switching between user-kernel space is
-        // performed via the UserMode abstraction.
+        // performed via the `UserMode` abstraction.
         let mut user_mode = {
             let user_ctx = create_user_context();
             UserMode::new(user_ctx)
@@ -90,9 +88,9 @@ fn create_user_task(vm_space: Arc<VmSpace>) -> Arc<Task> {
         }
     }
 
-    // Kernel tasks are managed by the Framework,
+    // Kernel tasks are managed by OSTD,
     // while scheduling algorithms for them can be
-    // determined by the users of the Framework.
+    // determined by the users of OSTD.
     Arc::new(TaskOptions::new(user_task).data(vm_space).build().unwrap())
 }
 
@@ -101,7 +99,6 @@ fn create_user_context() -> UserContext {
     // to arbitrary values via the `UserContext`
     // abstraction.
     let mut user_ctx = UserContext::default();
-    const ENTRY_POINT: Vaddr = 0x0040_1000; // The entry point for statically-linked executable
     user_ctx.set_rip(ENTRY_POINT);
     user_ctx
 }
@@ -134,3 +131,7 @@ fn handle_syscall(user_context: &mut UserContext, vm_space: &VmSpace) {
         _ => unimplemented!(),
     }
 }
+
+const PROGRAM_BINARY: &[u8] = include_bytes!("../hello"); // A statically-linked executable.
+const MAP_ADDR: Vaddr = 0x0040_0000; // The mapping address for the executable.
+const ENTRY_POINT: Vaddr = 0x0040_1000; // The entry point for the executable.
