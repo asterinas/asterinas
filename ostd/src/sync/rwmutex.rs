@@ -249,6 +249,12 @@ impl<T: ?Sized> Drop for RwMutexReadGuard<'_, T> {
     }
 }
 
+impl<T: ?Sized + fmt::Debug> fmt::Debug for RwMutexReadGuard<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
+}
+
 /// A guard that provides mutable data access.
 #[clippy::has_significant_drop]
 #[must_use]
@@ -311,6 +317,12 @@ impl<T: ?Sized> Drop for RwMutexWriteGuard<'_, T> {
         // Thanks to the `wait_until` method, either all readers
         // continue to execute or one writer continues to execute.
         self.inner.queue.wake_all();
+    }
+}
+
+impl<T: ?Sized + fmt::Debug> fmt::Debug for RwMutexWriteGuard<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
     }
 }
 
@@ -380,5 +392,11 @@ impl<T: ?Sized> Drop for RwMutexUpgradeableGuard<'_, T> {
         if res == UPGRADEABLE_READER {
             self.inner.queue.wake_all();
         }
+    }
+}
+
+impl<T: ?Sized + fmt::Debug> fmt::Debug for RwMutexUpgradeableGuard<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
     }
 }
