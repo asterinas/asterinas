@@ -486,7 +486,7 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
                 cache: CachePolicy::Writeback,
                 priv_flags: PrivilegedPageFlags::GLOBAL,
             };
-            // SAFETY: we are doing the metadata mappings for the kernel.
+            // SAFETY: We are doing the metadata mappings for the kernel.
             unsafe { boot_pt.map_base_page(vaddr, frame_paddr, prop) };
         }
     })
@@ -646,7 +646,7 @@ fn add_temp_linear_mapping(max_paddr: Paddr) {
         priv_flags: PrivilegedPageFlags::GLOBAL,
     };
 
-    // SAFETY: we are doing the linear mapping for the kernel.
+    // SAFETY: We are doing the linear mapping for the kernel.
     unsafe {
         boot_pt::with_borrow(|boot_pt| {
             for paddr in prange.step_by(PAGE_SIZE) {

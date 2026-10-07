@@ -263,7 +263,7 @@ impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
             core::sync::atomic::fence(Ordering::Acquire);
 
-            // SAFETY: this is the last reference and is about to be dropped.
+            // SAFETY: This is the last reference and is about to be dropped.
             unsafe { self.slot().drop_last_in_place() };
 
             allocator::get_global_frame_allocator().dealloc(self.paddr(), PAGE_SIZE);

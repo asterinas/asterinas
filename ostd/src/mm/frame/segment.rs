@@ -46,7 +46,7 @@ pub type USegment = Segment<dyn AnyUFrameMeta>;
 impl<M: AnyFrameMeta + ?Sized> Drop for Segment<M> {
     fn drop(&mut self) {
         for paddr in self.range.clone().step_by(PAGE_SIZE) {
-            // SAFETY: for each frame there would be a forgotten handle
+            // SAFETY: For each frame there would be a forgotten handle
             // when creating the `Segment` object.
             drop(unsafe { Frame::<M>::from_raw(paddr) });
         }
@@ -56,7 +56,7 @@ impl<M: AnyFrameMeta + ?Sized> Drop for Segment<M> {
 impl<M: AnyFrameMeta + ?Sized> Clone for Segment<M> {
     fn clone(&self) -> Self {
         for paddr in self.range.clone().step_by(PAGE_SIZE) {
-            // SAFETY: for each frame there would be a forgotten handle
+            // SAFETY: For each frame there would be a forgotten handle
             // when creating the `Segment` object, so we already have
             // reference counts for the frames.
             unsafe { inc_frame_ref_count(paddr) };
@@ -247,7 +247,7 @@ impl<M: AnyFrameMeta + ?Sized> Iterator for Segment<M> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.range.start < self.range.end {
-            // SAFETY: each frame in the range would be a handle forgotten
+            // SAFETY: Each frame in the range would be a handle forgotten
             // when creating the `Segment` object.
             let frame = unsafe { Frame::<M>::from_raw(self.range.start) };
             self.range.start += PAGE_SIZE;
@@ -270,7 +270,7 @@ impl<M: AnyFrameMeta> TryFrom<Segment<dyn AnyFrameMeta>> for Segment<M> {
     type Error = Segment<dyn AnyFrameMeta>;
 
     fn try_from(seg: Segment<dyn AnyFrameMeta>) -> Result<Self, Self::Error> {
-        // SAFETY: for each page there would be a forgotten handle
+        // SAFETY: For each page there would be a forgotten handle
         // when creating the `Segment` object.
         let first_frame = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(seg.range.start) };
         let first_frame = ManuallyDrop::new(first_frame);
@@ -307,7 +307,7 @@ impl TryFrom<Segment<dyn AnyFrameMeta>> for USegment {
     /// If the usage of the page is not the same as the expected usage, it will
     /// return the dynamic page itself as is.
     fn try_from(seg: Segment<dyn AnyFrameMeta>) -> Result<Self, Self::Error> {
-        // SAFETY: for each page there would be a forgotten handle
+        // SAFETY: For each page there would be a forgotten handle
         // when creating the `Segment` object.
         let first_frame = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(seg.range.start) };
         let first_frame = ManuallyDrop::new(first_frame);
