@@ -190,7 +190,7 @@ pub enum PrctlCmd {
     PR_SET_CHILD_SUBREAPER(bool),
     PR_GET_CHILD_SUBREAPER(Vaddr),
     PR_SET_NO_NEW_PRIVS(bool),
-    PR_GET_NO_NEW_PRIVS(),
+    PR_GET_NO_NEW_PRIVS,
 }
 
 #[repr(u64)]
@@ -228,7 +228,7 @@ impl PrctlCmd {
             PR_SET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_SET_CHILD_SUBREAPER(arg2 > 0)),
             PR_GET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_GET_CHILD_SUBREAPER(arg2 as _)),
             PR_SET_NO_NEW_PRIVS => Ok(PrctlCmd::PR_SET_NO_NEW_PRIVS(arg2 == 1)),
-            PR_GET_NO_NEW_PRIVS => Ok(PrctlCmd::PR_GET_NO_NEW_PRIVS()),
+            PR_GET_NO_NEW_PRIVS => Ok(PrctlCmd::PR_GET_NO_NEW_PRIVS),
             _ => {
                 debug!("prctl cmd number: {}", option);
                 return_errno_with_message!(Errno::EINVAL, "unsupported prctl command");
