@@ -115,8 +115,8 @@ fn seccomp_sync_threads(
 // Pointer to the filter program in user space.
 #[derive(Clone, Copy, Pod)]
 struct UserspaceFilterMeta {
-    user_buf_ptr: Vaddr,
     user_buf_len: usize,
+    user_buf_ptr: Vaddr,
 }
 
 bitflags! {
