@@ -19,8 +19,8 @@
 
 let
   wallpaper = pkgs.fetchurl {
-    url = "https://raw.githubusercontent.com/asterinas/asterinas-artwork/f92b04a998f16c0b11f22987181a67c9106c3684/aster_nixos/v0.18.0/wallpaper_berry-madjidi_unsplash_1625x1080.png";
-    sha256 = "0y6r8nq9gp05nlpk1s9fscs0jcj70pxhxaim698q9lfwfqkidlhz";
+    url = "https://raw.githubusercontent.com/asterinas/asterinas-artwork/58d828f8c70655e51bc63a7cfd4b7ff04f53fda5/aster_nixos/v0.19.0/wallpaper_saacid-ahmed_unsplash_1670%E2%80%8A%C3%97%E2%80%8A1080.png";
+    sha256 = "0n2h5m6jv7h34c45cb09qq63cmga27ph0p6vdxfy2smzkznfisy4";
   };
 
   xfceDesktopXml = pkgs.writeText "xfce4-desktop.xml" ''
@@ -34,6 +34,15 @@ let
       <property name="last-settings-migration-version" type="uint" value="1"/>
       <property name="backdrop" type="empty">
         <property name="screen0" type="empty">
+          <!-- The DRM modesetting driver exposes the virtual display as Virtual-1.
+               XFCE uses the connector name to look up its backdrop settings. -->
+          <property name="monitorVirtual-1" type="empty">
+            <property name="workspace0" type="empty">
+              <property name="last-image" type="string" value="${wallpaper}"/>
+              <!-- image-style=5 means "zoomed" wallpaper mode in XFCE -->
+              <property name="image-style" type="int" value="5"/>
+            </property>
+          </property>
           <property name="monitor0" type="empty">
             <property name="workspace0" type="empty">
               <property name="last-image" type="string" value="${wallpaper}"/>
