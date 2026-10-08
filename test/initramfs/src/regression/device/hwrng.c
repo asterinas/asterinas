@@ -160,38 +160,31 @@ FN_TEST(hwrng_write_on_ro_ebadf)
 }
 END_TEST()
 
+FN_TEST(hwrng_open_read_only_succeeds)
+{
+	int fd = TEST_SUCC(open(HWRNG_DEVICE, O_RDONLY));
+
+	TEST_SUCC(close(fd));
+}
+END_TEST()
+
 FN_TEST(hwrng_write_on_wo_einval)
 {
-	/*
-	 * FIXME: Linux rejects `O_WRONLY` and `O_RDWR` in `rng_dev_open()`
-	 * with `EINVAL`. Asterinas does not pass the access mode to
-	 * `Device::open()` yet, so the open succeeds and the later write fails
-	 * with `EBADF` instead.
-	 */
-#ifdef __asterinas__
-	uint8_t buf[16] = { 0 };
-	int fd = TEST_SUCC(open(HWRNG_DEVICE, O_WRONLY));
-
-	TEST_ERRNO(write(fd, buf, sizeof(buf)), EBADF);
-	TEST_SUCC(close(fd));
-#else
 	TEST_ERRNO(open(HWRNG_DEVICE, O_WRONLY), EINVAL);
-#endif
 }
 END_TEST()
 
 FN_TEST(hwrng_write_on_rw_einval)
 {
-	/* FIXME: See `hwrng_write_on_wo_einval`. */
-#ifdef __asterinas__
-	uint8_t buf[16] = { 0 };
-	int fd = TEST_SUCC(open(HWRNG_DEVICE, O_RDWR));
-
-	TEST_ERRNO(write(fd, buf, sizeof(buf)), EBADF);
-	TEST_SUCC(close(fd));
-#else
 	TEST_ERRNO(open(HWRNG_DEVICE, O_RDWR), EINVAL);
-#endif
+}
+END_TEST()
+
+FN_TEST(hwrng_nonblock_read_only_open_succeeds)
+{
+	int fd = TEST_SUCC(open(HWRNG_DEVICE, O_RDONLY | O_NONBLOCK));
+
+	TEST_SUCC(close(fd));
 }
 END_TEST()
 

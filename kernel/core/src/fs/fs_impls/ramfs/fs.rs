@@ -267,6 +267,7 @@ impl Inner {
         &self,
         access_mode: AccessMode,
         status_flags: StatusFlags,
+        creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         match self {
             Self::BlockDevice(device_id) | Self::CharDevice(device_id) => {
@@ -285,7 +286,7 @@ impl Inner {
                     )));
                 };
 
-                Some(device.open())
+                Some(device.open(&device::DeviceOpenContext::new(access_mode, creation_flags)))
             }
             Self::NamedPipe(pipe) => Some(pipe.open_named(access_mode, status_flags)),
             _ => None,
@@ -1207,8 +1208,9 @@ impl Inode for RamInode {
         _self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
+        creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        self.inner.open(access_mode, status_flags)
+        self.inner.open(access_mode, status_flags, creation_flags)
     }
 
     fn create(

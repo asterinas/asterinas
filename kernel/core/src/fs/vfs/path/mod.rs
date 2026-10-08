@@ -204,7 +204,12 @@ impl Path {
             self.resize(0)?;
         }
 
-        InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
+        InodeHandle::new(
+            self.clone(),
+            open_args.access_mode,
+            *status_flags,
+            *creation_flags,
+        )
     }
 
     /// Gets the parent `Path` within the same mount.

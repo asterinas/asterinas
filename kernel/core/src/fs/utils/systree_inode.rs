@@ -591,6 +591,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         _self_dentry: &VfsDentry,
         _access_mode: AccessMode,
         _status_flags: StatusFlags,
+        _creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         None
     }
