@@ -13,6 +13,7 @@ use core::time::Duration;
 pub use clocksource::{ClockSource, Instant};
 use component::{ComponentInitError, init_component};
 use rtc::Driver;
+pub use rtc::RtcError;
 use spin::Once;
 
 // Set this crate's log prefix for `ostd::log`.
@@ -71,6 +72,29 @@ static START_TIME: Once<SystemTime> = Once::new();
 /// Returns the `START_TIME`, which is the system time when calibrating.
 pub fn read_start_time() -> SystemTime {
     *START_TIME.get().unwrap()
+}
+
+/// Reads the current hardware RTC time.
+///
+/// Returns [`RtcError::NotInitialized`] before component initialization and
+/// [`RtcError::NoDevice`] if no hardware RTC was found. This reads the RTC
+/// independently of the system's wall clock and the saved start time.
+pub fn read_rtc() -> Result<SystemTime, RtcError> {
+    RTC_DRIVER.get().ok_or(RtcError::NotInitialized)?.read_rtc()
+}
+
+/// Sets the hardware RTC time.
+///
+/// This does not change the system's wall clock or the saved start time.
+/// The CMOS backend accepts whole seconds and years 1970 through 9999 only.
+/// Without a century register, its supported years are 2000 through 2099.
+/// Other hardware backends currently return
+/// [`RtcError::Unsupported`]. Authorization is the caller's responsibility.
+pub fn set_rtc(time: SystemTime) -> Result<(), RtcError> {
+    RTC_DRIVER
+        .get()
+        .ok_or(RtcError::NotInitialized)?
+        .set_rtc(&time)
 }
 
 /// Returns the monotonic time from the TSC clocksource.
