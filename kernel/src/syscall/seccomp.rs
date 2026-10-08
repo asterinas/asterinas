@@ -16,6 +16,7 @@ use crate::{
             },
         },
     },
+    thread::Tid,
 };
 
 pub fn sys_seccomp(op: u64, flags: u32, uargs: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
@@ -62,11 +63,7 @@ fn is_ancestor(
     false
 }
 
-fn seccomp_sync_threads(
-    ctx: &Context,
-    tsync_esrch: bool,
-    new_filter: SeccompFilterProg,
-) -> Result<i64> {
+fn seccomp_sync_threads(ctx: &Context, new_filter: SeccompFilterProg) -> Result<(), Tid> {
     let tasks_guard = ctx.process.tasks().lock();
     let current_thread = ctx.posix_thread;
     let current_state = current_thread.seccomp_state();
@@ -90,12 +87,7 @@ fn seccomp_sync_threads(
         };
 
         if !can_sync {
-            if tsync_esrch {
-                return Err(Error::new(Errno::ESRCH));
-            } else {
-                // Linux returns the TID of the first thread that failed synchronization
-                return Ok(posix_thread.tid() as i64);
-            }
+            return Err(posix_thread.tid());
         }
     }
 
@@ -109,7 +101,7 @@ fn seccomp_sync_threads(
         posix_thread.set_seccomp_state(new_state.clone());
     }
 
-    Ok(0)
+    Ok(())
 }
 
 // Pointer to the filter program in user space.
@@ -136,6 +128,7 @@ bitflags! {
         const WAIT_KILLABLE_RECV = 1 << 5;
     }
 }
+
 fn seccomp_set_mode_filter(flags_raw: u32, uargs: Vaddr, ctx: &Context) -> Result<i64> {
     let flags = SeccompFilterFlags::from_bits(flags_raw)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown seccomp filter flags"))?;
@@ -153,8 +146,9 @@ fn seccomp_set_mode_filter(flags_raw: u32, uargs: Vaddr, ctx: &Context) -> Resul
         .credentials()
         .effective_capset()
         .contains(CapSet::SYS_ADMIN)
+        && !thread.no_new_privs()
     {
-        return Err(Error::new(Errno::EPERM));
+        return Err(Error::new(Errno::EACCES));
     }
 
     if flags.contains(SeccompFilterFlags::TSYNC_ESRCH) && !flags.contains(SeccompFilterFlags::TSYNC)
@@ -191,26 +185,38 @@ fn seccomp_set_mode_filter(flags_raw: u32, uargs: Vaddr, ctx: &Context) -> Resul
     let seccompfilter = SeccompFilterProg::from_netfilter(netfilter)?;
 
     if flags.contains(SeccompFilterFlags::TSYNC) {
-        seccomp_sync_threads(
-            ctx,
-            flags.contains(SeccompFilterFlags::TSYNC_ESRCH),
-            seccompfilter,
-        )?;
+        match seccomp_sync_threads(ctx, seccompfilter) {
+            Ok(()) => return Ok(0),
+            Err(failed_tid) => {
+                if flags.contains(SeccompFilterFlags::TSYNC_ESRCH) {
+                    return_errno!(Errno::ESRCH);
+                } else {
+                    return Ok(failed_tid as i64);
+                }
+            }
+        }
     } else {
         thread.set_n_push_seccomp_filter(seccompfilter);
+        Ok(0)
     }
-
-    Ok(0)
 }
 
 /// Action to be taken by the hypervisor based on seccomp filter result
 pub(super) enum SeccompFilterAction {
-    Allow,
-    Errno(Errno),
-    Kill,
+    KillProcess,
+    KillThread,
     Trap(u16),
-    #[expect(dead_code)] // TODO
-    Trace(u32),
+    Errno(u16),
+    UserNotif,
+    Log,
+    Trace(#[expect(dead_code)] u32),
+    Allow,
+}
+
+const SECCOMP_RET_ACTION: u32 = 0xffff_0000;
+#[inline]
+fn action_only(ret: u32) -> i32 {
+    (ret & SECCOMP_RET_ACTION) as i32
 }
 
 pub(super) fn execute_seccomp_filter(
@@ -228,7 +234,10 @@ pub(super) fn execute_seccomp_filter(
             syscall_frame.syscall_number,
             &syscall_frame.args,
         ))?;
-        result = (result as i32).min(n as i32) as u32;
+
+        if action_only(n) < action_only(result) {
+            result = n;
+        }
     }
 
     parse_seccomp_return(result)
@@ -238,15 +247,14 @@ fn parse_seccomp_return(return_value: u32) -> Result<SeccompFilterAction> {
     use cbpf::SECCOMP_RET_MASK;
 
     match (return_value & SECCOMP_RET_MASK).try_into() {
-        Ok(SeccompRet::Allow) => Ok(SeccompFilterAction::Allow),
-        Ok(SeccompRet::Errno) => {
-            let errno = (return_value & 0xffff) as i32;
-            let errno = Errno::try_from(errno).map_err(|_| Error::new(Errno::EINVAL))?;
-            Ok(SeccompFilterAction::Errno(errno))
-        }
-        Ok(SeccompRet::Kill) => Ok(SeccompFilterAction::Kill),
-        Ok(SeccompRet::Trace) => Ok(SeccompFilterAction::Trace(return_value & 0xffff)),
+        Ok(SeccompRet::KillProcess) => Ok(SeccompFilterAction::KillProcess),
+        Ok(SeccompRet::KillThread) => Ok(SeccompFilterAction::KillThread),
         Ok(SeccompRet::Trap) => Ok(SeccompFilterAction::Trap((return_value & 0xffff) as u16)),
-        Err(_) => unreachable!("invalid seccomp filter return value"),
+        Ok(SeccompRet::Errno) => Ok(SeccompFilterAction::Errno((return_value & 0xffff) as u16)),
+        Ok(SeccompRet::UserNotif) => Ok(SeccompFilterAction::UserNotif),
+        Ok(SeccompRet::Trace) => Ok(SeccompFilterAction::Trace(return_value & 0xffff)),
+        Ok(SeccompRet::Log) => Ok(SeccompFilterAction::Log),
+        Ok(SeccompRet::Allow) => Ok(SeccompFilterAction::Allow),
+        Err(_) => Err(Error::new(Errno::EINVAL)),
     }
 }

@@ -391,13 +391,13 @@ impl PosixThread {
             let current_state = guard.get();
 
             // should we guard against internel kernel logic bugs?
-            // if current_state.mode != SeccompMode::Disabled {
-            //     return Err::new(Errno::EACCES);
-            // }
-            debug_assert!(
-                current_state.mode == SeccompMode::Disabled,
-                "Should be reacheble only if seccomp is disabled"
-            );
+            if current_state.mode != SeccompMode::Disabled {
+                return Err::new(Errno::EACCES);
+            }
+            // debug_assert!(
+            //     current_state.mode == SeccompMode::Disabled,
+            //     "Should be reacheble only if seccomp is disabled"
+            // );
 
             match guard.compare_exchange(Arc::new(SeccompState {
                 mode: SeccompMode::Strict,
@@ -457,8 +457,8 @@ impl PosixThread {
         self.no_new_privs.load(Ordering::Relaxed)
     }
 
-    pub fn set_no_new_privs(&self, no_new_privs: bool) {
-        self.no_new_privs.store(no_new_privs, Ordering::Relaxed)
+    pub fn set_no_new_privs(&self) {
+        self.no_new_privs.store(true, Ordering::Relaxed)
     }
 }
 

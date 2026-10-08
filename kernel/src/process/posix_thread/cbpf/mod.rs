@@ -32,10 +32,13 @@ pub const SECCOMP_RET_MASK: u32 = 0xffff0000;
 #[repr(u32)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, TryFromInt)]
 pub enum SeccompRet {
-    Kill = 0x00000000,
+    KillProcess = 0x8000000,
+    KillThread = 0x00000000,
     Trap = 0x00030000,
     Errno = 0x00050000,
+    UserNotif = 0x7fc00000,
     Trace = 0x7ff00000,
+    Log = 0x7ffc0000,
     Allow = 0x7fff0000,
 }
 
@@ -643,7 +646,7 @@ impl ClassicBPFilter for SeccompFilterProg {
                     if ins_k >= SECCOMP_DATA_SIZE || ins_k & 3 != 0 {
                         return Err(Error::new(Errno::EINVAL));
                     }
-                    x = {
+                    a = {
                         match ins_k {
                             0 => Ok(syscall_id as u32),
                             4 => Ok(seccomp_arch()),

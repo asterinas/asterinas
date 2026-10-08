@@ -134,9 +134,7 @@ pub fn sys_prctl(
             };
             return Ok(ret);
         }
-        PrctlCmd::PR_SET_NO_NEW_PRIVS(is_set) => {
-            ctx.posix_thread.set_no_new_privs(is_set);
-        }
+        PrctlCmd::PR_SET_NO_NEW_PRIVS => ctx.posix_thread.set_no_new_privs(),
         PrctlCmd::PR_GET_NO_NEW_PRIVS => {
             return Ok(SyscallReturn::Return(
                 ctx.posix_thread.no_new_privs() as isize
@@ -189,7 +187,7 @@ pub enum PrctlCmd {
     PR_GET_TIMERSLACK,
     PR_SET_CHILD_SUBREAPER(bool),
     PR_GET_CHILD_SUBREAPER(Vaddr),
-    PR_SET_NO_NEW_PRIVS(bool),
+    PR_SET_NO_NEW_PRIVS,
     PR_GET_NO_NEW_PRIVS,
 }
 
@@ -227,7 +225,13 @@ impl PrctlCmd {
             PR_GET_TIMERSLACK => Ok(PrctlCmd::PR_GET_TIMERSLACK),
             PR_SET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_SET_CHILD_SUBREAPER(arg2 > 0)),
             PR_GET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_GET_CHILD_SUBREAPER(arg2 as _)),
-            PR_SET_NO_NEW_PRIVS => Ok(PrctlCmd::PR_SET_NO_NEW_PRIVS(arg2 == 1)),
+            PR_SET_NO_NEW_PRIVS => {
+                if arg2 != 1 || arg3 != 0 || _arg4 != 0 || _arg5 != 0 {
+                    return_errno!(Errno::EINVAL)
+                } else {
+                    Ok(PrctlCmd::PR_SET_NO_NEW_PRIVS)
+                }
+            }
             PR_GET_NO_NEW_PRIVS => Ok(PrctlCmd::PR_GET_NO_NEW_PRIVS),
             _ => {
                 debug!("prctl cmd number: {}", option);

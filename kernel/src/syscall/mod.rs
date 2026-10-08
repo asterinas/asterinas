@@ -15,7 +15,8 @@ use crate::{
     cpu::LinuxAbi,
     prelude::*,
     process::{
-        posix_thread::cbpf::SeccompMode,
+        TermStatus,
+        posix_thread::{cbpf::SeccompMode, do_exit, do_exit_group},
         signal::{
             c_types::siginfo_t,
             constants::{SIGKILL, SIGSYS},
@@ -396,20 +397,18 @@ pub fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
             if ![SYS_READ, SYS_WRITE, SYS_RT_SIGRETURN, SYS_EXIT]
                 .contains(&syscall_frame.syscall_number)
             {
-                ctx.process.stop(SIGKILL);
+                do_exit(TermStatus::Killed(SIGKILL), ctx, user_ctx);
                 return;
             }
         }
         SeccompMode::Filter => {
             match seccomp::execute_seccomp_filter(ctx.posix_thread, user_ctx, syscall_frame) {
-                Ok(SeccompFilterAction::Allow) => (),
-                Ok(SeccompFilterAction::Errno(errno)) => {
-                    user_ctx.set_syscall_ret((-(errno as i32)) as usize);
+                Ok(SeccompFilterAction::KillProcess) => {
+                    do_exit_group(TermStatus::Killed(SIGSYS), ctx, user_ctx);
                     return;
                 }
-                Ok(SeccompFilterAction::Kill) => {
-                    // TODO add seperate thread kill
-                    ctx.process.stop(SIGKILL);
+                Ok(SeccompFilterAction::KillThread) => {
+                    do_exit(TermStatus::Killed(SIGSYS), ctx, user_ctx);
                     return;
                 }
                 Ok(SeccompFilterAction::Trap(data)) => {
@@ -420,14 +419,34 @@ pub fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
                         .enqueue_signal(Box::new(RawSignal::new(info)));
                     return;
                 }
-                Ok(SeccompFilterAction::Trace(_)) => {
-                    error!("Seccomp TRACE action is not supported yet");
-                    ctx.process.stop(SIGKILL);
+                Ok(SeccompFilterAction::Errno(code)) => {
+                    let ret = if code == 0 {
+                        0
+                    } else {
+                        (-(code as i64)) as usize
+                    };
+                    user_ctx.set_syscall_ret(ret);
                     return;
                 }
+                Ok(SeccompFilterAction::UserNotif) => {
+                    error!("Seccomp UserNotif action is not supported yet");
+                    do_exit_group(TermStatus::Killed(SIGSYS), ctx, user_ctx);
+                    return;
+                }
+                Ok(SeccompFilterAction::Trace(_)) => {
+                    error!("Seccomp TRACE action is not supported yet");
+                    do_exit_group(TermStatus::Killed(SIGSYS), ctx, user_ctx);
+                    return;
+                }
+                Ok(SeccompFilterAction::Log) => {
+                    error!("Seccomp TRACE action is not supported yet");
+                    do_exit_group(TermStatus::Killed(SIGSYS), ctx, user_ctx);
+                    return;
+                }
+                Ok(SeccompFilterAction::Allow) => (),
                 Err(err) => {
-                    error!("Invalid errno received from seccomp: {:?}", err);
-                    ctx.process.stop(SIGKILL);
+                    error!("Seccomp filter return an invalid value");
+                    do_exit_group(TermStatus::Killed(SIGSYS), ctx, user_ctx);
                     return;
                 }
             }
