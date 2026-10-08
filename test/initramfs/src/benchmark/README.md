@@ -141,14 +141,14 @@ The configuration files provide metadata about the benchmark jobs and results, s
 Below are the contents of these files for the sample benchmark:
 
 ```yaml
-# fio/ext2_no_iommu_seq_write_bw/bench_result.yaml
+# fio/ext2_seq_write_bw_direct_no_iommu/bench_result.yaml
 alert:
   threshold: "125%"
   bigger_is_better: true
 
 result_extraction:
-  search_pattern: "bw="
-  result_index: 2
+  parser: fio_json
+  direction: write
 
 chart:
   title: "[Ext2] The bandwidth of sequential writes (IOMMU disabled on Asterinas)"
@@ -234,6 +234,7 @@ alert:                        # Alert configuration for performance regression
   bigger_is_better: true      # true: Higher values are better; false: Lower values are better
 
 result_extraction:            # Result extraction configuration
+  parser: text                # Optional. Defaults to text.
   search_pattern: "sender"    # Regex or string to locate results
   nth_occurrence: 1           # Optional. Which matched occurrence to use (default to 1).
   result_index: 7             # Match index to use
@@ -249,5 +250,7 @@ runtime_config:              # Runtime configuration
   smp: 1                     # Number of CPUs to allocate to the VM
   mem: 8G                  # Memory size in GB to allocate to the VM
 ```
+
+FIO benchmarks use `parser: fio_json` with `direction: read` or `direction: write` instead of `search_pattern`, `nth_occurrence`, and `result_index`. Their `run.sh` scripts invoke `sh /benchmark/fio/common/run_fio.sh` with the FIO arguments. This wrapper emits JSON between `FIO_RESULT_BEGIN` and `FIO_RESULT_END` markers so the host can separate the result from guest console messages. The parser requires one successful job whose effective `rw` option matches `direction`, and converts its positive `bw_bytes` value from bytes/s to decimal MB/s. The chart unit must therefore be `MB/s`. Incomplete or duplicate result blocks and invalid job results fail parsing.
 
 By adhering to this format, we ensure clarity and consistency in benchmarking workflows and reporting systems.

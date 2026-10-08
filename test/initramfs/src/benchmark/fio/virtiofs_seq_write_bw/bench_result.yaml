@@ -7,11 +7,9 @@ chart:
   title: '[virtio-fs] The bandwidth of sequential writes (buffered I/O, w/o IOMMU)'
   unit: MB/s
 result_extraction:
-  result_index: 2
-  search_pattern: bw=[0-9.]+[KMGT]?i?B/s
+  parser: fio_json
+  direction: write
 runtime_config:
   aster_scheme: 'null'
   virtiofs: 'on'
   virtiofs_tag: aster-virtiofs
-  virtiofs_socket: /tmp/vhostqemu/benchmark-vfs.sock
-  virtiofs_shared_dir: test/initramfs/build/virtiofs-benchmark

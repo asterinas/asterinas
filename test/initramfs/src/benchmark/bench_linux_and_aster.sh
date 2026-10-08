@@ -18,7 +18,22 @@ fi
 # Set up paths
 BENCHMARK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 source "${BENCHMARK_ROOT}/common/prepare_host.sh"
+source "${BENCHMARK_ROOT}/fio/common/parse_result.sh"
 RESULT_TEMPLATE="${BENCHMARK_ROOT}/result_template.json"
+
+# Extract and sanitize numeric results.
+extract_raw_result() {
+    local search_pattern="$1" result_index="$2" output="$3"
+
+    awk -v pattern="$search_pattern" -v field="$result_index" '
+        $0 ~ pattern {
+            value = $field
+            gsub(/\r/, "", value)
+            gsub(/[^0-9.]/, "", value)
+            print value
+        }
+    ' "$output"
+}
 
 # Parse benchmark results
 parse_raw_results() {
@@ -26,11 +41,25 @@ parse_raw_results() {
     local nth_occurrence="$2"
     local result_index="$3"
     local result_file="$4"
+    local parser="$5"
+    local direction="$6"
 
     # Extract and sanitize numeric results
     local linux_result aster_result
-    linux_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${LINUX_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
-    aster_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${ASTER_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
+    case "$parser" in
+        text)
+            linux_result=$(extract_raw_result "$search_pattern" "$result_index" "$LINUX_OUTPUT" | sed -n "${nth_occurrence}p")
+            aster_result=$(extract_raw_result "$search_pattern" "$result_index" "$ASTER_OUTPUT" | sed -n "${nth_occurrence}p")
+            ;;
+        fio_json)
+            linux_result=$(extract_fio_result "$LINUX_OUTPUT" "$direction")
+            aster_result=$(extract_fio_result "$ASTER_OUTPUT" "$direction")
+            ;;
+        *)
+            echo "Error: Unknown result parser '$parser'" >&2
+            return 1
+            ;;
+    esac
 
     # Ensure both results are valid
     if [ -z "${linux_result}" ] || [ -z "${aster_result}" ]; then
@@ -79,6 +108,51 @@ extract_result_file() {
     fi
 }
 
+# Linux is launched directly rather than through OSDK, so manage its daemon here.
+run_linux_vm() (
+    local virtiofs="$1" mem="$2" tag="$3"
+    shift 3
+    local linux_cmd=("$@")
+
+    if [[ "$virtiofs" == "on" ]]; then
+        local work_dir daemon_pid
+        work_dir=$(mktemp -d /tmp/asterinas-bench-virtiofs-XXXXXX)
+        stop_virtiofsd() {
+            kill "$daemon_pid" 2>/dev/null || true
+            wait "$daemon_pid" 2>/dev/null || true
+            rm -rf -- "$work_dir"
+        }
+        "${BENCHMARK_ROOT}/../../../../tools/run_virtiofsd.sh" --work-dir "$work_dir" &
+        daemon_pid=$!
+        trap stop_virtiofsd EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+
+        local attempt
+        for ((attempt = 0; attempt < 100; attempt++)); do
+            [[ -S "$work_dir/vfs.sock" ]] && break
+            if ! kill -0 "$daemon_pid" 2>/dev/null; then
+                cat "$work_dir/virtiofsd.log" >&2
+                exit 1
+            fi
+            sleep 0.1
+        done
+        if [[ ! -S "$work_dir/vfs.sock" ]]; then
+            echo "Error: Timed out waiting for virtiofsd." >&2
+            exit 1
+        fi
+
+        linux_cmd+=(
+            -object "memory-backend-memfd,id=mem0,size=${mem},share=on"
+            -numa "node,memdev=mem0"
+            -chardev "socket,id=char0,path=${work_dir}/vfs.sock"
+            -device "vhost-user-fs-pci,chardev=char0,tag=${tag}"
+        )
+    fi
+
+    "${linux_cmd[@]}"
+)
+
 # Run the specified benchmark with runtime configurations
 run_benchmark() {
     local benchmark="$1"
@@ -92,6 +166,8 @@ run_benchmark() {
     local smp_val=1
     local mem_val="8G"
     local aster_scheme_cmd_part="SCHEME=iommu" # Default scheme
+    local virtiofs_val="off"
+    local virtiofs_tag="aster-virtiofs"
 
     # Process runtime_configs_str to override defaults and gather extra args
     while IFS='=' read -r key value; do
@@ -109,6 +185,16 @@ run_benchmark() {
                  else
                      aster_scheme_cmd_part="SCHEME=${value}" # Override default
                  fi
+                 ;;
+             "virtiofs")
+                 if [[ "$value" != "on" && "$value" != "off" ]]; then
+                     echo "Error: Invalid virtiofs setting '$value'" >&2
+                     exit 1
+                 fi
+                 virtiofs_val="$value"
+                 ;;
+             "virtiofs_tag")
+                 virtiofs_tag="$value"
                  ;;
              *)
                  echo "Warning: Unknown runtime configuration key '$key'" >&2
@@ -128,6 +214,8 @@ run_benchmark() {
         RELEASE_LTO=1
         NETDEV=tap
         VHOST=on
+        "VIRTIOFS=${virtiofs_val}"
+        "VIRTIOFS_TAG=${virtiofs_tag}"
     )
     if [[ "$platform" == "tdx" ]]; then
         asterinas_cmd_arr+=(INTEL_TDX=1)
@@ -175,7 +263,7 @@ run_benchmark() {
             prepare_fs "$benchmark"
             echo "Running benchmark ${benchmark} on Linux..."
             # Execute directly from array, redirect stderr to stdout, then tee
-            "${linux_cmd_arr[@]}" 2>&1 | tee "${LINUX_OUTPUT}"
+            run_linux_vm "$virtiofs_val" "$mem_val" "$virtiofs_tag" "${linux_cmd_arr[@]}" 2>&1 | tee "${LINUX_OUTPUT}"
             ;;
         "host_guest")
             # Note: host_guest_bench_runner.sh expects commands as single strings.
@@ -206,14 +294,22 @@ run_benchmark() {
 parse_results() {
     local bench_result="$1"
 
-    local search_pattern=$(yq -r '.result_extraction.search_pattern // empty' "$bench_result")
-    local nth_occurrence=$(yq -r '.result_extraction.nth_occurrence // 1' "$bench_result")
-    local result_index=$(yq -r '.result_extraction.result_index // empty' "$bench_result")
-    local unit=$(yq -r '.chart.unit // empty' "$bench_result")
-    local legend=$(yq -r '.chart.legend // {system}' "$bench_result")
+    local search_pattern nth_occurrence result_index unit legend parser direction
+    search_pattern=$(yq -r '.result_extraction.search_pattern // empty' "$bench_result")
+    nth_occurrence=$(yq -r '.result_extraction.nth_occurrence // 1' "$bench_result")
+    result_index=$(yq -r '.result_extraction.result_index // empty' "$bench_result")
+    unit=$(yq -r '.chart.unit // empty' "$bench_result")
+    legend=$(yq -r '.chart.legend // {system}' "$bench_result")
+    parser=$(yq -r '.result_extraction.parser // "text"' "$bench_result")
+    direction=$(yq -r '.result_extraction.direction // empty' "$bench_result")
+
+    if [[ "$parser" == "fio_json" && "$unit" != "MB/s" ]]; then
+        echo "Error: The fio_json parser produces results in MB/s." >&2
+        return 1
+    fi
 
     generate_template "$unit" "$legend"
-    parse_raw_results "$search_pattern" "$nth_occurrence" "$result_index" "$(extract_result_file "$bench_result")"
+    parse_raw_results "$search_pattern" "$nth_occurrence" "$result_index" "$(extract_result_file "$bench_result")" "$parser" "$direction"
 }
 
 # Clean up temporary files

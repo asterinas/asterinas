@@ -7,7 +7,7 @@ chart:
   title: '[NVMe] The bandwidth of sequential writes (direct I/O, w/o IOMMU)'
   unit: MB/s
 result_extraction:
-  result_index: 2
-  search_pattern: bw=[0-9]+
+  parser: fio_json
+  direction: write
 runtime_config:
   aster_scheme: 'null'
