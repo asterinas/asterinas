@@ -43,7 +43,7 @@ pub enum SeccompRet {
 }
 
 /// cBPF instruction as passed from user space.
-/// It has not yet been verified.
+#[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct RawFilterBlock {
     pub code: u16,
@@ -130,7 +130,7 @@ impl NetFilterProg {
         let len = unverified.len();
 
         // https://elixir.bootlin.com/linux/v6.18/source/net/core/filter.c#L1056
-        if len == 0 || len > BPF_MAXINS {
+        if len == 0 || len > BPF_MAXINS as usize {
             return Err(Error::new(Errno::EINVAL));
         }
 

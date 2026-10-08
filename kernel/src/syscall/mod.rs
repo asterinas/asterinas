@@ -444,7 +444,7 @@ pub fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
                     return;
                 }
                 Ok(SeccompFilterAction::Allow) => (),
-                Err(err) => {
+                Err(_) => {
                     error!("Seccomp filter return an invalid value");
                     do_exit_group(TermStatus::Killed(SIGSYS), ctx, user_ctx);
                     return;

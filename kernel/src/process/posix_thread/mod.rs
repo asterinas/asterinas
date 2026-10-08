@@ -392,7 +392,7 @@ impl PosixThread {
 
             // should we guard against internel kernel logic bugs?
             if current_state.mode != SeccompMode::Disabled {
-                return Err::new(Errno::EACCES);
+                return_errno!(Errno::EINVAL);
             }
             // debug_assert!(
             //     current_state.mode == SeccompMode::Disabled,

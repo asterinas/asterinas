@@ -184,7 +184,7 @@ fn seccomp_set_mode_filter(flags_raw: u32, uargs: Vaddr, ctx: &Context) -> Resul
             .vmar()
             .vm_space()
             .reader(
-                filter_meta.user_buf_ptr + size_of::<RawFilterBlock>() * i,
+                filter_meta.user_buf_ptr + size_of::<RawFilterBlock>() * i as usize,
                 size_of::<RawFilterBlock>(),
             )?
             .read_val::<RawFilterBlock>()?;
@@ -213,6 +213,7 @@ fn seccomp_set_mode_filter(flags_raw: u32, uargs: Vaddr, ctx: &Context) -> Resul
 }
 
 /// Action to be taken by the hypervisor based on seccomp filter result
+#[derive(Debug)]
 pub(super) enum SeccompFilterAction {
     KillProcess,
     KillThread,
@@ -261,7 +262,11 @@ fn parse_seccomp_return(return_value: u32) -> Result<SeccompFilterAction> {
         Ok(SeccompRet::KillProcess) => Ok(SeccompFilterAction::KillProcess),
         Ok(SeccompRet::KillThread) => Ok(SeccompFilterAction::KillThread),
         Ok(SeccompRet::Trap) => Ok(SeccompFilterAction::Trap((return_value & 0xffff) as u16)),
-        Ok(SeccompRet::Errno) => Ok(SeccompFilterAction::Errno((return_value & 0xffff) as u16)),
+        Ok(SeccompRet::Errno) => {
+            const MAX_ERRNO: u16 = 4095;
+            let errno = ((return_value & 0xffff) as u16).min(MAX_ERRNO);
+            Ok(SeccompFilterAction::Errno(errno))
+        }
         Ok(SeccompRet::UserNotif) => Ok(SeccompFilterAction::UserNotif),
         Ok(SeccompRet::Trace) => Ok(SeccompFilterAction::Trace(return_value & 0xffff)),
         Ok(SeccompRet::Log) => Ok(SeccompFilterAction::Log),
