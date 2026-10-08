@@ -128,6 +128,7 @@ impl<T: NsCommonOps> Inode for NsInode<T> {
         _self_dentry: &Dentry,
         access_mode: AccessMode,
         _status_flags: StatusFlags,
+        _creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         // FIXME: This may not be the most appropriate place to check the access mode,
         // but the check must not be bypassed even if the current process has the
@@ -277,7 +278,12 @@ impl<T: NsCommonOps> FileOps for NsFile<T> {
 /// Opens a namespace as a file and returns the file descriptor.
 fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<FileDesc> {
     let path = ns.get_path();
-    let inode_handle = InodeHandle::new(path.clone(), AccessMode::O_RDONLY, StatusFlags::empty())?;
+    let inode_handle = InodeHandle::new(
+        path.clone(),
+        AccessMode::O_RDONLY,
+        StatusFlags::empty(),
+        crate::fs::file::CreationFlags::empty(),
+    )?;
 
     let current_task = Task::current().unwrap();
     let thread_local = current_task.as_thread_local().unwrap();

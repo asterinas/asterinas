@@ -490,6 +490,7 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
+        _creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         None
     }
