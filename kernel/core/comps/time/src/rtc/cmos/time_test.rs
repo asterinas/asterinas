@@ -2,7 +2,6 @@
 
 //! Tests of deadlines and the public RTC API, including disposable-VM port tests.
 
-use alloc::sync::Arc;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use ostd::{
@@ -17,7 +16,7 @@ use super::*;
 
 static RTC: Once<Arc<RtcCmos>> = Once::new();
 
-fn rtc() -> &'static Arc<RtcCmos> {
+pub(super) fn rtc() -> &'static Arc<RtcCmos> {
     RTC.call_once(|| {
         let rtc = Arc::new(RtcCmos::try_new().expect("test requires a legacy CMOS RTC"));
         crate::RTC_DRIVER.call_once(|| rtc.clone());

@@ -19,6 +19,39 @@ pub enum RtcError {
     Timeout,
 }
 
+/// A legacy RTC alarm's time-of-day match fields.
+///
+/// `None` matches every value of that field. These fields do not select a date;
+/// an enabled alarm fires on the next match and is then disabled.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RtcAlarmTime {
+    pub hour: Option<u8>,
+    pub minute: Option<u8>,
+    pub second: Option<u8>,
+}
+
+/// Whether an RTC alarm is armed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RtcAlarmState {
+    Disabled,
+    Enabled,
+}
+
+/// The configured RTC alarm and its latched event state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RtcAlarm {
+    pub time: RtcAlarmTime,
+    pub state: RtcAlarmState,
+    /// Remains set after delivery until consumed or the alarm is armed again.
+    pub pending: bool,
+}
+
+/// A notification invoked in interrupt context after the CMOS lock is released.
+///
+/// The callback and its captured values must be safe to use and drop in interrupt
+/// context. The callback must not sleep or wait for another CPU.
+pub type RtcAlarmCallback = dyn Fn() + Send + Sync + 'static;
+
 /// Generic interface for RTC drivers.
 pub(crate) trait Driver {
     /// Creates a RTC driver.
@@ -32,6 +65,26 @@ pub(crate) trait Driver {
 
     /// Sets RTC time, if supported by this backend.
     fn set_rtc(&self, _time: &SystemTime) -> Result<(), RtcError> {
+        Err(RtcError::Unsupported)
+    }
+
+    fn read_alarm(&self) -> Result<RtcAlarm, RtcError> {
+        Err(RtcError::Unsupported)
+    }
+
+    fn set_alarm(&self, _time: RtcAlarmTime, _state: RtcAlarmState) -> Result<(), RtcError> {
+        Err(RtcError::Unsupported)
+    }
+
+    fn set_alarm_state(&self, _state: RtcAlarmState) -> Result<(), RtcError> {
+        Err(RtcError::Unsupported)
+    }
+
+    fn set_alarm_callback(&self, _callback: Option<Arc<RtcAlarmCallback>>) -> Result<(), RtcError> {
+        Err(RtcError::Unsupported)
+    }
+
+    fn take_alarm_event(&self) -> Result<bool, RtcError> {
         Err(RtcError::Unsupported)
     }
 }
@@ -82,6 +135,26 @@ impl Driver for RtcDummy {
     }
 
     fn set_rtc(&self, _time: &SystemTime) -> Result<(), RtcError> {
+        Err(RtcError::NoDevice)
+    }
+
+    fn read_alarm(&self) -> Result<RtcAlarm, RtcError> {
+        Err(RtcError::NoDevice)
+    }
+
+    fn set_alarm(&self, _time: RtcAlarmTime, _state: RtcAlarmState) -> Result<(), RtcError> {
+        Err(RtcError::NoDevice)
+    }
+
+    fn set_alarm_state(&self, _state: RtcAlarmState) -> Result<(), RtcError> {
+        Err(RtcError::NoDevice)
+    }
+
+    fn set_alarm_callback(&self, _callback: Option<Arc<RtcAlarmCallback>>) -> Result<(), RtcError> {
+        Err(RtcError::NoDevice)
+    }
+
+    fn take_alarm_event(&self) -> Result<bool, RtcError> {
         Err(RtcError::NoDevice)
     }
 }

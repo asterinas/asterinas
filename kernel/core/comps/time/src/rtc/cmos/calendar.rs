@@ -23,22 +23,26 @@ pub(super) enum DividerMode {
 #[derive(Clone, Copy)]
 pub(super) enum Register {
     Second = 0x00,
+    SecondAlarm = 0x01,
     Minute = 0x02,
+    MinuteAlarm = 0x03,
     Hour = 0x04,
+    HourAlarm = 0x05,
     Day = 0x07,
     Month = 0x08,
     Year = 0x09,
     StatusA = 0x0a,
     StatusB = 0x0b,
+    StatusC = 0x0c,
     StatusD = 0x0d,
 }
 
-const UIP: u8 = 1 << 7;
-const SET: u8 = 1 << 7;
+pub(super) const UIP: u8 = 1 << 7;
+pub(super) const SET: u8 = 1 << 7;
 pub(super) const VRT: u8 = 1 << 7;
 const BINARY: u8 = 1 << 2;
-const HOUR_24: u8 = 1 << 1;
-const PM: u8 = 1 << 7;
+pub(super) const HOUR_24: u8 = 1 << 1;
+pub(super) const PM: u8 = 1 << 7;
 const DIVIDER_RESET: u8 = 0x70;
 const AMD_BANK_SELECT: u8 = 1 << 4;
 
@@ -177,7 +181,7 @@ pub(super) fn write(access: &mut impl Access, time: &SystemTime) -> Result<Optio
     Ok(Some(()))
 }
 
-fn decode_byte(value: u8, status_b: u8) -> Result<u8, RtcError> {
+pub(super) fn decode_byte(value: u8, status_b: u8) -> Result<u8, RtcError> {
     if status_b & BINARY != 0 {
         return Ok(value);
     }
@@ -189,7 +193,7 @@ fn decode_byte(value: u8, status_b: u8) -> Result<u8, RtcError> {
     Ok(high * 10 + low)
 }
 
-fn encode_byte(value: u8, status_b: u8) -> u8 {
+pub(super) fn encode_byte(value: u8, status_b: u8) -> u8 {
     if status_b & BINARY != 0 {
         value
     } else {
