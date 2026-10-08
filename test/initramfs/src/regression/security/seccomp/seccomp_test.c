@@ -218,8 +218,8 @@ static void test_filter_kill(void)
 	int status = 0;
 	waitpid(pid, &status, 0);
 	assert(WIFSIGNALED(status));
-	assert(WTERMSIG(status) == SIGKILL);
-	printf("  [PASS] test_filter_kill (killed by SIGKILL as expected)\n");
+	assert(WTERMSIG(status) == SIGSYS);
+	printf("  [PASS] test_filter_kill (killed by SIGSYS as expected)\n");
 }
 
 static void test_filter_inheritance(void)

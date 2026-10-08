@@ -73,8 +73,8 @@ impl IntoIterator for UnverifiedFilterProg {
 }
 
 impl UnverifiedFilterProg {
-    pub fn new(len: usize) -> Self {
-        Self(Vec::with_capacity(len))
+    pub fn new(len: u16) -> Self {
+        Self(Vec::with_capacity(len as usize))
     }
 
     pub fn push(&mut self, raw: RawFilterBlock) {
@@ -754,7 +754,7 @@ pub mod cbpf_opcodes {
     pub const BPF_TAX: u16 = 0x00;
     pub const BPF_TXA: u16 = 0x80;
 
-    pub const BPF_MAXINS: usize = 4096;
+    pub const BPF_MAXINS: u16 = 4096;
     pub const BPF_MEMWORDS: u32 = 16;
 
     // Linux uses a -0x1000 literal with an unsigned type here.

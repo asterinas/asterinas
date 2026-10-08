@@ -13,6 +13,7 @@ use crate::{
                 SeccompMode::{self},
                 SeccompOp::{self},
                 SeccompRet, UnverifiedFilterProg,
+                cbpf_opcodes::BPF_MAXINS,
             },
         },
     },
@@ -94,20 +95,26 @@ fn seccomp_sync_threads(ctx: &Context, new_filter: SeccompFilterProg) -> Result<
     let new_state = current_thread.set_n_push_seccomp_filter(new_filter);
 
     // Update all sibling threads
+    let no_new_privs = current_thread.no_new_privs();
     for task in tasks_guard.as_slice() {
-        let Some(posix_thread) = task.as_posix_thread() else {
+        let Some(thread) = task.as_posix_thread() else {
             continue;
         };
-        posix_thread.set_seccomp_state(new_state.clone());
+        if no_new_privs {
+            thread.set_no_new_privs();
+        }
+        thread.set_seccomp_state(new_state.clone());
     }
 
     Ok(())
 }
 
 // Pointer to the filter program in user space.
+#[repr(C)]
 #[derive(Clone, Copy, Pod)]
 struct UserspaceFilterMeta {
-    user_buf_len: usize,
+    user_buf_len: u16,
+    _pad: [u8; 6],
     user_buf_ptr: Vaddr,
 }
 
@@ -165,6 +172,10 @@ fn seccomp_set_mode_filter(flags_raw: u32, uargs: Vaddr, ctx: &Context) -> Resul
         .read_val()?;
 
     let filter_len = filter_meta.user_buf_len;
+    if filter_len == 0 || filter_len > BPF_MAXINS {
+        return_errno_with_message!(Errno::EINVAL, "invalid seccomp filter length");
+    }
+
     let mut insns = UnverifiedFilterProg::new(filter_len);
 
     for i in 0..filter_len {
