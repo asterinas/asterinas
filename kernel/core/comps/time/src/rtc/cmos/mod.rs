@@ -111,19 +111,19 @@ impl crate::nvram::Backend for RtcCmos {
     }
 
     fn read(&self, offset: usize, buffer: &mut [u8]) -> Result<usize, crate::NvramError> {
-        nvram::read(&mut *self.access.lock(), offset, buffer)
+        (&mut *self.access.lock() as &mut dyn nvram::Access).read(offset, buffer)
     }
 
     fn write(&self, offset: usize, buffer: &[u8]) -> Result<usize, crate::NvramError> {
-        nvram::write(&mut *self.access.lock(), offset, buffer)
+        (&mut *self.access.lock() as &mut dyn nvram::Access).write(offset, buffer)
     }
 
     fn initialize(&self) {
-        nvram::initialize(&mut *self.access.lock());
+        (&mut *self.access.lock() as &mut dyn nvram::Access).initialize();
     }
 
     fn set_checksum(&self) {
-        nvram::set_checksum(&mut *self.access.lock());
+        (&mut *self.access.lock() as &mut dyn nvram::Access).set_checksum();
     }
 }
 
