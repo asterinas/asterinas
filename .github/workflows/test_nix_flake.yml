@@ -37,24 +37,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check nixpkgs revisions
-        # These files cannot read flake.lock, so they repeat the locked rev.
-        run: |
-          revision="$(jq -r '.nodes.nixpkgs.locked.rev' flake.lock)"
-
-          for file in \
-            tools/dev_env/docker/prebuilt-nix-packages/Dockerfile \
-            distro/nixpkgs.nix
-          do
-            pinned="$(sed -nE 's#.*NixOS/nixpkgs/archive/([0-9a-f]{40})\.tar\.gz.*#\1#p' "$file" | sort -u | paste -sd ' ')"
-            if [ "$pinned" != "$revision" ]; then
-              echo "$file: expected only nixpkgs $revision, found: ${pinned:-none}" >&2
-              exit 1
-            fi
-          done
-          echo "nixpkgs revision: $revision"
       - name: Install Nix
         uses: cachix/install-nix-action@v31
+      # Make reads nixpkgs through distro/nixpkgs.nix.
+      # Remove this check once Make uses the flake's nixpkgs input directly.
+      - name: Check nixpkgs source
+        run: |
+          flake_source="$(nix flake archive --json --no-update-lock-file . | jq -r '.inputs.nixpkgs.path')"
+          legacy_source="$(nix-instantiate --eval --strict --json --expr \
+            'toString (import ./distro/nixpkgs.nix {}).path' | jq -r .)"
+          if [ "$legacy_source" != "$flake_source" ]; then
+            echo "Expected nixpkgs $flake_source, found $legacy_source in distro/nixpkgs.nix" >&2
+            exit 1
+          fi
       - name: Check flake
         run: nix flake check --no-build --all-systems --no-update-lock-file
 
