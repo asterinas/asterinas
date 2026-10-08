@@ -25,6 +25,10 @@
 
 extern crate alloc;
 
+use alloc::sync::Arc;
+
+use aster_systree::SysObj;
+
 // Set this crate's log prefix for `ostd::log`.
 macro_rules! __log_prefix {
     () => {
@@ -42,7 +46,14 @@ mod test;
 use component::{ComponentInitError, init_component};
 
 pub use self::common::registration::{add as add_device, remove as remove_device};
-use self::common::registry;
+use self::common::{Result, registry};
+
+/// Adds a sysfs node under `/sys/devices/virtual/<class>`.
+pub fn add_virtual_sysfs_node(class: &str, node: Arc<dyn SysObj>) -> Result<()> {
+    registry::get()
+        .attach_into_virtual_glue_dir(class, node)
+        .map(|_| ())
+}
 
 /// Initializes the device model for kernel-mode tests.
 #[cfg(ktest)]
