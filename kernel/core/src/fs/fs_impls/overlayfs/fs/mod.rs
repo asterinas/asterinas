@@ -13,6 +13,18 @@ pub(super) mod mount;
 
 pub(in crate::fs::fs_impls) fn init() {
     crate::fs::vfs::registry::register(&fs_type::OverlayFsType).unwrap();
+
+    crate::fs::sysfs::register_module_params(
+        OVERLAY_FS_NAME,
+        [
+            ("index", aster_systree::SysParamValue::Bool(false)),
+            ("redirect_dir", aster_systree::SysParamValue::Bool(false)),
+            ("metacopy", aster_systree::SysParamValue::Bool(false)),
+            ("nfs_export", aster_systree::SysParamValue::Bool(false)),
+            ("xino_auto", aster_systree::SysParamValue::Bool(false)),
+        ],
+    )
+    .unwrap();
 }
 
 use self::mount::{inuse::UpperWorkdirInuse, policy::MountPolicy};
