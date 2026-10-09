@@ -337,7 +337,7 @@ The review file is deliberately a plain Markdown artifact so it serves both audi
    so a thin adapter posts the comments as inline review comments on a pull request:
    [`scripts/post_reviews_to_github.sh`](../scripts/post_reviews_to_github.sh) parses a review file and posts it
    (dropping any comment whose line is not on the PR diff, which GitHub would silently discard).
-   The workflow `.github/workflows/review_pr_with_codex.yml`, triggered by an `/aster-code-review` PR comment,
+   The workflow `.github/workflows/invoke_aster_code_review.yml`, triggered by an `/aster-code-review` PR comment,
    drives exactly this: run the skill via the CLI, then post with the adapter.
 2. **The Ralph loop.**
    The agent reads the review file and fixes the flagged issues,
