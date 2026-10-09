@@ -10,12 +10,9 @@ SHELL ["/bin/bash", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Register channels so `nix-shell -p` works in the image.
-# FIXME: Installing Nix as root is not supported in single-user mode.
 COPY flake.lock /tmp/asterinas/flake.lock
 RUN <<'EOF'
 set -e
-sh <(curl -L https://nixos.org/nix/install) --daemon --yes
-. /etc/profile.d/nix.sh
 nixpkgs_url="$(python3 - <<'PYTHON'
 import json
 
@@ -41,7 +38,6 @@ EOF
 COPY test/initramfs /tmp/asterinas/test/initramfs
 COPY distro/nixpkgs.nix /tmp/asterinas/distro/nixpkgs.nix
 WORKDIR /tmp/asterinas/test/initramfs
-ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
 
 # Build aarch64 packages
 RUN make aarch64_pkgs VERBOSE=0 \

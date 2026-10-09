@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 #
-# QEMU pinned to the version and softmmu target list used by the Docker image.
+# QEMU shared by the development shell and OSDK image.
 # The binary is host-native; guest architectures run through TCG.
 { qemu, fetchurl }:
 
