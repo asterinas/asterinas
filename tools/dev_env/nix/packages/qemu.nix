@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 #
-# QEMU pinned to the version and softmmu target list used by the Docker image.
+# The development shell and OSDK image share this QEMU package.
 # The binary is host-native; guest architectures run through TCG.
 { qemu, fetchurl }:
 
@@ -15,6 +15,16 @@
   # fix-qemu-ga.patch (dropped below) it would exec FHS paths that do not
   # exist on NixOS. Skip it and its `ga` output entirely.
   guestAgentSupport = false;
+  # Asterinas uses VNC or runs without a display. It does not forward guest
+  # audio or host smart cards, so these backends would add unused dependencies.
+  gtkSupport = false;
+  sdlSupport = false;
+  spiceSupport = false;
+  pipewireSupport = false;
+  pulseSupport = false;
+  alsaSupport = false;
+  jackSupport = false;
+  smartcardSupport = false;
 }).overrideAttrs
   (old: rec {
     version = "10.2.1";
