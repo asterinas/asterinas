@@ -259,7 +259,7 @@ RUN ARCH=$(case ${TARGETARCH} in \
     esac) && \
     if [ -n "${ARCH}" ]; then \
         curl -L "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-${ARCH}.tgz" \
-            | tar -xz && \
+            | tar --no-same-owner -xz && \
         install -D -m 755 "release-v1.16.1-${ARCH}/firecracker-v1.16.1-${ARCH}" /usr/local/bin/firecracker && \
         rm -rf "release-v1.16.1-${ARCH}"; \
     fi
