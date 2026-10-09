@@ -97,4 +97,19 @@ since `distro/README.md` references them -->
     make run_kernel
     ```
 
+    For visually impaired contributors using screen readers (such as NVDA, JAWS, or Orca),
+    run Asterinas with accessible terminal redirection:
+
+    ```bash
+    make run_kernel ACCESSIBLE=1
+    ```
+
+    or using `CONSOLE_MODE=terminal`:
+
+    ```bash
+    make run_kernel CONSOLE_MODE=terminal
+    ```
+
+    This redirects console and serial output directly to standard terminal I/O.
+
 If everything goes well, Asterinas is now up and running inside a VM.
