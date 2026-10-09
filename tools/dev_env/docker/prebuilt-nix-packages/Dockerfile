@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
-# This image adds Nix tooling and cached Asterinas test packages to the OSDK image.
+# This image adds Nix channels, Nix utilities, and cached Asterinas test packages
+# to the OSDK image, which already has Nix installed.
 
 ARG BASE_VERSION
 FROM asterinas/osdk-dev:${BASE_VERSION} AS build-base
@@ -10,12 +11,9 @@ SHELL ["/bin/bash", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Register channels so `nix-shell -p` works in the image.
-# FIXME: Installing Nix as root is not supported in single-user mode.
 COPY flake.lock /tmp/asterinas/flake.lock
 RUN <<'EOF'
 set -e
-sh <(curl -L https://nixos.org/nix/install) --daemon --yes
-. /etc/profile.d/nix.sh
 nixpkgs_url="$(python3 - <<'PYTHON'
 import json
 
@@ -41,7 +39,6 @@ EOF
 COPY test/initramfs /tmp/asterinas/test/initramfs
 COPY distro/nixpkgs.nix /tmp/asterinas/distro/nixpkgs.nix
 WORKDIR /tmp/asterinas/test/initramfs
-ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
 
 # Build aarch64 packages
 RUN make aarch64_pkgs VERBOSE=0 \
