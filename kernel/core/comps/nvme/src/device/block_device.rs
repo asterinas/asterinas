@@ -977,6 +977,7 @@ mod test {
         mm::{FrameAllocOptions, VmIo, VmReader, io::util::HasVmReaderWriter},
         prelude::ktest,
     };
+    use spin::Once;
 
     use super::{BioType, IoOp, NvmeBlockDevice};
     use crate::nvme_init;
@@ -987,10 +988,15 @@ mod test {
     #[ktest]
     fn initialize() {
         ensure_initialized();
+        // Initialization must also be idempotent when no NVMe device exists.
+        ensure_initialized();
     }
 
     fn ensure_initialized() {
-        if aster_block::collect_all().is_empty() {
+        // An absent NVMe device leaves the registry empty even after successful
+        // initialization. Do not initialize softirq callbacks again in that case.
+        static INITIALIZED: Once<()> = Once::new();
+        INITIALIZED.call_once(|| {
             component::init_all(
                 component::InitStage::Bootstrap,
                 component::parse_metadata!(),
@@ -998,7 +1004,7 @@ mod test {
             .unwrap();
 
             nvme_init().expect("`nvme_init` returned an error");
-        }
+        });
     }
 
     #[ktest]
