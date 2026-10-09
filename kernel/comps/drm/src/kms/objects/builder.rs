@@ -59,7 +59,7 @@ use crate::kms::{
 ///
 /// Current topology constraints:
 ///
-/// - Each CRTC must reference one primary plane.
+/// - Each CRTC must reference its own primary plane.
 /// - The primary plane of a CRTC must have type `Primary`.
 /// - If a CRTC has a cursor plane, it must have type `Cursor`.
 /// - A primary or cursor plane must also be attached to that CRTC
@@ -281,7 +281,15 @@ impl DrmKmsObjectStoreBuilder {
             return_errno_with_message!(Errno::EINVAL, "the KMS topology has no CRTCs");
         }
 
+        let mut used_primary_planes = KmsObjectMask::ZERO;
         for (crtc_index, crtc) in self.crtcs.iter().enumerate() {
+            if used_primary_planes.replace(crtc.primary_plane.get(), true) {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the KMS primary plane is shared by multiple CRTCs"
+                );
+            }
+
             let primary_plane = self
                 .planes
                 .get(crtc.primary_plane.get())
