@@ -42,11 +42,26 @@ parse_raw_results() {
     local nth_occurrence="$2"
     local result_index="$3"
     local result_file="$4"
+    local parser="$5"
+    local direction="$6"
 
     # Extract and sanitize numeric results
     local linux_result aster_result
-    linux_result=$(extract_result "${LINUX_OUTPUT}" "$search_pattern" "$result_index" "$nth_occurrence")
-    aster_result=$(extract_result "${ASTER_OUTPUT}" "$search_pattern" "$result_index" "$nth_occurrence")
+    case "$parser" in
+        text)
+            linux_result=$(extract_result "$LINUX_OUTPUT" "$search_pattern" "$result_index" "$nth_occurrence")
+            aster_result=$(extract_result "$ASTER_OUTPUT" "$search_pattern" "$result_index" "$nth_occurrence")
+            ;;
+        fio_json)
+            source "${BENCHMARK_ROOT}/fio/common/parse_result.sh"
+            linux_result=$(extract_fio_result "$LINUX_OUTPUT" "$direction")
+            aster_result=$(extract_fio_result "$ASTER_OUTPUT" "$direction")
+            ;;
+        *)
+            echo "Error: Unknown result parser '$parser'" >&2
+            return 1
+            ;;
+    esac
 
     # Ensure both results are valid
     if [ -z "${linux_result}" ] || [ -z "${aster_result}" ]; then
@@ -287,14 +302,22 @@ run_benchmark() {
 parse_results() {
     local bench_result="$1"
 
-    local search_pattern=$(yq -r '.result_extraction.search_pattern // empty' "$bench_result")
-    local nth_occurrence=$(yq -r '.result_extraction.nth_occurrence // 1' "$bench_result")
-    local result_index=$(yq -r '.result_extraction.result_index // empty' "$bench_result")
-    local unit=$(yq -r '.chart.unit // empty' "$bench_result")
-    local legend=$(yq -r '.chart.legend // {system}' "$bench_result")
+    local search_pattern nth_occurrence result_index unit legend parser direction
+    search_pattern=$(yq -r '.result_extraction.search_pattern // empty' "$bench_result")
+    nth_occurrence=$(yq -r '.result_extraction.nth_occurrence // 1' "$bench_result")
+    result_index=$(yq -r '.result_extraction.result_index // empty' "$bench_result")
+    unit=$(yq -r '.chart.unit // empty' "$bench_result")
+    legend=$(yq -r '.chart.legend // "{system}"' "$bench_result")
+    parser=$(yq -r '.result_extraction.parser // "text"' "$bench_result")
+    direction=$(yq -r '.result_extraction.direction // empty' "$bench_result")
+
+    if [[ "$parser" == "fio_json" && "$unit" != "MB/s" ]]; then
+        echo "Error: The fio_json parser produces results in MB/s." >&2
+        return 1
+    fi
 
     generate_template "$unit" "$legend"
-    parse_raw_results "$search_pattern" "$nth_occurrence" "$result_index" "$(extract_result_file "$bench_result")"
+    parse_raw_results "$search_pattern" "$nth_occurrence" "$result_index" "$(extract_result_file "$bench_result")" "$parser" "$direction"
 }
 
 # Clean up temporary files
