@@ -38,11 +38,6 @@ impl PciCommonDevice {
         &self.bar_manager
     }
 
-    /// Returns a mutable reference to the PCI Base Address Register (BAR) manager.
-    pub fn bar_manager_mut(&mut self) -> &mut BarManager {
-        &mut self.bar_manager
-    }
-
     /// Returns the PCI device type.
     pub fn device_type(&self) -> PciDeviceType {
         self.header_type.device_type()
@@ -75,23 +70,12 @@ impl PciCommonDevice {
     /// the necessary resources are not available.
     pub fn acquire_msix_capability(&mut self) -> Result<Option<CapabilityMsixData>> {
         self.capabilities
-            .acquire_msix_data(&self.location, &mut self.bar_manager)
+            .acquire_msix_data(&self.location, &self.bar_manager)
     }
 
     /// Gets access to the vendor-specific capability data.
     pub fn iter_vndr_capability(&self) -> impl Iterator<Item = CapabilityVndrData> {
         self.capabilities.iter_vndr_data(&self.location)
-    }
-
-    /// Gets access to the vendor-specific capability data with a mutable reference to the BAR
-    /// manager.
-    pub fn iter_vndr_capability_with_bar_manager(
-        &mut self,
-    ) -> (impl Iterator<Item = CapabilityVndrData>, &mut BarManager) {
-        (
-            self.capabilities.iter_vndr_data(&self.location),
-            &mut self.bar_manager,
-        )
     }
 
     pub(super) fn new(location: PciDeviceLocation) -> Option<Self> {
@@ -215,11 +199,6 @@ impl BarManager {
     /// Gains access to the BAR space and returns `None` if that BAR is absent.
     pub fn bar(&self, idx: u8) -> Option<&Bar> {
         self.bars[idx as usize].as_ref()
-    }
-
-    /// Gains mutable access to the BAR space and returns `None` if that BAR is absent.
-    pub fn bar_mut(&mut self, idx: u8) -> Option<&mut Bar> {
-        self.bars[idx as usize].as_mut()
     }
 
     /// Parses the BAR space by PCI device location.
