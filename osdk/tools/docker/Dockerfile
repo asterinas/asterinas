@@ -29,39 +29,6 @@ RUN if [ "${TARGETARCH}" = "arm64" ]; then \
             gcc-multilib-x86-64-linux-gnu; \
     fi
 
-#= Build QEMU =================================================================
-
-FROM build-base AS build-qemu
-
-RUN apt update && apt-get install -y --no-install-recommends \
-    libgcrypt-dev   `# optional build dependency` \
-    libglib2.0-dev  `# build dependency` \
-    libnuma-dev     `# optional build dependency` \
-    libpixman-1-dev `# build dependency` \
-    libusb-dev      `# optional build dependency` \
-    meson \
-    ninja-build
-RUN apt clean && rm -rf /var/lib/apt/lists/*
-
-FROM build-qemu AS qemu
-
-# Fetch and install a later version of QEMU from the official source.
-#
-# The QEMU version in the Ubuntu 24.04 repository is 8.*, which has known problems.
-# The libslirp dependency is for QEMU's network backend.
-WORKDIR /root
-
-RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-10.2.1.tar.xz \
-    && mkdir /root/qemu \
-    && tar xf qemu.tar.xz --strip-components=1 -C /root/qemu \
-    && rm qemu.tar.xz
-WORKDIR /root/qemu
-RUN ./configure --target-list=x86_64-softmmu,riscv64-softmmu,loongarch64-softmmu,aarch64-softmmu --prefix=/usr/local/qemu --enable-slirp --enable-numa \
-    && make -j \
-    && make install
-WORKDIR /root
-RUN rm -rf /root/qemu
-
 #= Build OVMF =================================================================
 
 FROM build-cross-tools AS build-ovmf
@@ -190,8 +157,6 @@ RUN apt update \
     gdb                 `# A part of OSDK debug support` \
     grub-efi-amd64 \
     grub2-common \
-    libnuma1            `# running dependency for QEMU` \
-    libpixman-1-dev     `# running dependency for QEMU` \
     libsqlite3-dev      `# used by klint` \
     libssl-dev          `# used by cargo-udeps` \
     mtools              `# used by grub-mkrescue` \
@@ -199,6 +164,10 @@ RUN apt update \
     xorriso \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Nix here so downstream images can use the same store and package manager.
+RUN bash -c 'sh <(curl -L https://nixos.org/nix/install) --daemon --yes'
+ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
 
 # Install Rust with both nightly and stable
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -228,18 +197,16 @@ RUN cargo install --locked \
 # Install klint. Pin the Klint commit compatible with the Asterinas toolchain.
 RUN cargo install klint --git https://github.com/Rust-for-Linux/klint --rev d2a4d60
 
-# Install QEMU built from the previous stages
-COPY --from=qemu /usr/local/qemu /usr/local/qemu
+COPY flake.nix flake.lock /tmp/asterinas/
+COPY tools/dev_env/nix /tmp/asterinas/tools/dev_env/nix
+# The prebuilt image clears automatic roots. Keep QEMU under a named root
+# so downstream garbage collection retains it and its runtime dependencies.
+RUN nix --extra-experimental-features 'nix-command flakes' \
+    build --accept-flake-config --no-update-lock-file \
+    --out-link /nix/var/nix/gcroots/qemu path:/tmp/asterinas#qemu \
+    && ln -s /nix/var/nix/gcroots/qemu /usr/local/qemu \
+    && rm -rf /tmp/asterinas
 ENV PATH="/usr/local/qemu/bin:${PATH}"
-# Buildx `TARGETARCH` (amd64 and arm64) is different from QEMU's target (x86_64
-# and aarch64). Create aliases so the lib path always exists.
-RUN if [ -d /usr/local/qemu/lib/aarch64-linux-gnu ] && [ ! -e /usr/local/qemu/lib/arm64-linux-gnu ]; then \
-        ln -s /usr/local/qemu/lib/aarch64-linux-gnu /usr/local/qemu/lib/arm64-linux-gnu; \
-    fi \
-    && if [ -d /usr/local/qemu/lib/x86_64-linux-gnu ] && [ ! -e /usr/local/qemu/lib/amd64-linux-gnu ]; then \
-        ln -s /usr/local/qemu/lib/x86_64-linux-gnu /usr/local/qemu/lib/amd64-linux-gnu; \
-    fi
-ENV LD_LIBRARY_PATH="/usr/local/qemu/lib/${TARGETARCH}-linux-gnu${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
 # Install OVMF built from the previous stages
 COPY --from=ovmf /root/edk2/Build/OvmfX64/RELEASE_GCC5/FV/ /root/ovmf/release
@@ -259,7 +226,7 @@ RUN ARCH=$(case ${TARGETARCH} in \
     esac) && \
     if [ -n "${ARCH}" ]; then \
         curl -L "https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.1/firecracker-v1.16.1-${ARCH}.tgz" \
-            | tar -xz && \
+            | tar --no-same-owner -xz && \
         install -D -m 755 "release-v1.16.1-${ARCH}/firecracker-v1.16.1-${ARCH}" /usr/local/bin/firecracker && \
         rm -rf "release-v1.16.1-${ARCH}"; \
     fi
