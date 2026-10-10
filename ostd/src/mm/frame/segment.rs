@@ -12,8 +12,13 @@ use crate::mm::{AnyUFrameMeta, HasPaddr, HasSize, PAGE_SIZE, Paddr, Split};
 
 /// A contiguous range of homogeneous physical memory frames.
 ///
-/// This is a handle to multiple contiguous frames. It will be more lightweight
-/// than owning an array of frame handles.
+/// This is a handle to one or multiple contiguous frames. It will be more
+/// lightweight than owning an array of frame handles.
+///
+/// A [`Segment`] always owns at least one frame: an empty segment would
+/// retain a physical address it holds no reference to, and its metadata type
+/// would be meaningless. All constructors and slicing/splitting operations
+/// reject empty ranges.
 ///
 /// The ownership is achieved by the reference counting mechanism of frames.
 /// When constructing a [`Segment`], the frame handles are created then
@@ -24,6 +29,7 @@ use crate::mm::{AnyUFrameMeta, HasPaddr, HasSize, PAGE_SIZE, Paddr, Split};
 /// type.
 #[repr(transparent)]
 pub struct Segment<M: AnyFrameMeta + ?Sized> {
+    // Invariant: `range.start < range.end`.
     range: Range<Paddr>,
     _marker: core::marker::PhantomData<M>,
 }
@@ -45,11 +51,20 @@ pub type USegment = Segment<dyn AnyUFrameMeta>;
 
 impl<M: AnyFrameMeta + ?Sized> Drop for Segment<M> {
     fn drop(&mut self) {
-        for paddr in self.range.clone().step_by(PAGE_SIZE) {
-            // SAFETY: For each frame there would be a forgotten handle
-            // when creating the `Segment` object.
-            drop(unsafe { Frame::<M>::from_raw(paddr) });
-        }
+        // SAFETY: For each frame there would be a forgotten handle
+        // when creating the `Segment` object.
+        unsafe { release_frames::<M>(&self.range) };
+    }
+}
+
+/// # Safety
+///
+/// The caller must ensure that it owns and can drop the frames in `range`
+/// whose metadata type is `M`.
+unsafe fn release_frames<M: AnyFrameMeta + ?Sized>(range: &Range<Paddr>) {
+    for paddr in range.clone().step_by(PAGE_SIZE) {
+        // SAFETY: The safety is upheld by the caller.
+        drop(unsafe { Frame::<M>::from_raw(paddr) });
     }
 }
 
@@ -93,13 +108,22 @@ impl<M: AnyFrameMeta> Segment<M> {
             return Err(GetFrameError::OutOfBound);
         }
         assert!(range.start < range.end);
+        let mut paddr_iter = range.step_by(PAGE_SIZE);
         // Construct a segment early to recycle previously forgotten frames if
         // the subsequent operations fails in the middle.
-        let mut segment = Self {
-            range: range.start..range.start,
-            _marker: core::marker::PhantomData,
+        let mut segment = {
+            // A `Segment` keeps the invariant of being non-empty (see the
+            // struct), so the loop below must start with a segment of one
+            // frame instead of an empty one.
+            //
+            // The range is checked to be non-empty above, so it has a first page.
+            let first_paddr = paddr_iter.next().unwrap();
+            Self::from(Frame::<M>::from_unused(
+                first_paddr,
+                metadata_fn(first_paddr),
+            )?)
         };
-        for paddr in range.step_by(PAGE_SIZE) {
+        for paddr in paddr_iter {
             let frame = Frame::<M>::from_unused(paddr, metadata_fn(paddr))?;
             let _ = ManuallyDrop::new(frame);
             segment.range.end = paddr + PAGE_SIZE;
@@ -114,9 +138,13 @@ impl<M: AnyFrameMeta> Segment<M> {
     /// The range must be a forgotten [`Segment`] that matches the type `M`.
     /// It could be manually forgotten by [`core::mem::forget`],
     /// [`ManuallyDrop`], or [`Self::into_raw`].
+    ///
+    /// The range must be non-empty (`range.start < range.end`), since every
+    /// [`Segment`] owns at least one frame.
     pub(crate) unsafe fn from_raw(range: Range<Paddr>) -> Self {
         debug_assert_eq!(range.start % PAGE_SIZE, 0);
         debug_assert_eq!(range.end % PAGE_SIZE, 0);
+        debug_assert!(range.start < range.end);
         Self {
             range,
             _marker: core::marker::PhantomData,
@@ -159,16 +187,21 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
     ///
     /// # Panics
     ///
-    /// The function panics if the byte offset range is out of bounds, or if
-    /// any of the ends of the byte offset range is not base-page aligned.
+    /// The function panics if the byte offset range is out of bounds, is
+    /// empty, or if any of the ends of the byte offset range is not base-page
+    /// aligned.
     pub fn slice(&self, range: &Range<usize>) -> Self {
         assert!(
             range.start.is_multiple_of(PAGE_SIZE) && range.end.is_multiple_of(PAGE_SIZE),
             "segment virtual address not aligned for slicing"
         );
         assert!(
-            range.start <= range.end && range.end <= self.size(),
+            range.end <= self.size(),
             "segment virtual address out-of-bound for slicing"
+        );
+        assert!(
+            range.start < range.end,
+            "segment virtual address empty for slicing"
         );
 
         let start = self.range.start + range.start;
@@ -242,24 +275,6 @@ impl<M: AnyFrameMeta + ?Sized> From<Frame<M>> for Segment<M> {
     }
 }
 
-impl<M: AnyFrameMeta + ?Sized> Iterator for Segment<M> {
-    type Item = Frame<M>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.range.start < self.range.end {
-            // SAFETY: Each frame in the range would be a handle forgotten
-            // when creating the `Segment` object.
-            let frame = unsafe { Frame::<M>::from_raw(self.range.start) };
-            self.range.start += PAGE_SIZE;
-            // The end cannot be non-page-aligned.
-            debug_assert!(self.range.start <= self.range.end);
-            Some(frame)
-        } else {
-            None
-        }
-    }
-}
-
 impl<M: AnyFrameMeta> From<Segment<M>> for Segment<dyn AnyFrameMeta> {
     fn from(seg: Segment<M>) -> Self {
         Self::from_unsized(seg)
@@ -326,5 +341,62 @@ impl TryFrom<Segment<dyn AnyFrameMeta>> for USegment {
         }
         // SAFETY: The metadata is coerceable and the struct is transmutable.
         Ok(unsafe { core::mem::transmute::<Segment<dyn AnyFrameMeta>, USegment>(seg) })
+    }
+}
+
+pub use self::iter::IntoIter;
+
+mod iter {
+    use core::{marker::PhantomData, ops::Range};
+
+    use super::{Frame, Segment};
+    use crate::mm::{PAGE_SIZE, Paddr, frame::meta::AnyFrameMeta};
+
+    /// A consuming iterator over the [`Frame`]s in a [`Segment`].
+    ///
+    /// It is created by the [`IntoIterator`] implementation of [`Segment`].
+    /// Dropping the iterator releases the frames that have not been consumed
+    /// yet.
+    pub struct IntoIter<M: AnyFrameMeta + ?Sized> {
+        range: Range<Paddr>,
+        _marker: PhantomData<M>,
+    }
+
+    impl<M: AnyFrameMeta + ?Sized> Iterator for IntoIter<M> {
+        type Item = Frame<M>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.range.start < self.range.end {
+                // SAFETY: Each frame in the range would be a handle forgotten
+                // when creating the `Segment` object.
+                let frame = unsafe { Frame::<M>::from_raw(self.range.start) };
+                self.range.start += PAGE_SIZE;
+                // The end cannot be non-page-aligned.
+                debug_assert!(self.range.start <= self.range.end);
+                Some(frame)
+            } else {
+                None
+            }
+        }
+    }
+
+    impl<M: AnyFrameMeta + ?Sized> Drop for IntoIter<M> {
+        fn drop(&mut self) {
+            // SAFETY: For each frame there would be a forgotten handle
+            // when creating the `Segment` object.
+            unsafe { super::release_frames::<M>(&self.range) };
+        }
+    }
+
+    impl<M: AnyFrameMeta + ?Sized> IntoIterator for Segment<M> {
+        type Item = Frame<M>;
+        type IntoIter = IntoIter<M>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            IntoIter {
+                range: self.into_raw(),
+                _marker: PhantomData,
+            }
+        }
     }
 }
