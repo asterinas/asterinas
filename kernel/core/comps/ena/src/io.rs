@@ -32,6 +32,31 @@ pub(crate) const TX_DESC_LAST: u32 = 1 << 27;
 pub(crate) const TX_DESC_COMP_REQ: u32 = 1 << 28;
 pub(crate) const TX_DESC_REQ_ID_LO_SHIFT: u32 = 22;
 pub(crate) const TX_DESC_ADDR_HI_MASK: u32 = 0xffff;
+// meta_ctrl checksum-offload fields
+pub(crate) const TX_DESC_L4_PROTO_IDX_SHIFT: u32 = 8;
+pub(crate) const TX_DESC_L4_PROTO_IDX_MASK: u32 = 0x1f << 8;
+pub(crate) const TX_DESC_L3_CSUM_EN: u32 = 1 << 13;
+pub(crate) const TX_DESC_L4_CSUM_EN: u32 = 1 << 14;
+pub(crate) const TX_DESC_L4_CSUM_PARTIAL: u32 = 1 << 17;
+pub(crate) const L3_PROTO_IPV4: u8 = 8;
+pub(crate) const L4_PROTO_TCP: u8 = 12;
+pub(crate) const L4_PROTO_UDP: u8 = 13;
+
+/// `struct ena_eth_io_tx_meta_desc`: header geometry for checksum offload.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+pub(crate) struct TxMetaDesc {
+    pub(crate) len_ctrl: u32,
+    pub(crate) word1: u32,
+    pub(crate) word2: u32,
+    pub(crate) reserved: u32,
+}
+
+pub(crate) const TX_META_DESC_EXT_VALID: u32 = 1 << 14;
+pub(crate) const TX_META_DESC_ETH_META_TYPE: u32 = 1 << 20;
+pub(crate) const TX_META_DESC_META_STORE: u32 = 1 << 21;
+pub(crate) const TX_META_DESC_META_DESC: u32 = 1 << 23;
+pub(crate) const TX_META_DESC_FIRST: u32 = 1 << 26;
 
 /// `struct ena_eth_io_tx_cdesc` (8 bytes).
 #[repr(C)]
@@ -79,6 +104,8 @@ pub(crate) struct RxCdesc {
 /// The phase bit is bit 24 of `status`, i.e. bit 0 of its fourth byte.
 pub(crate) const RX_CDESC_FIRST: u32 = 1 << 26;
 pub(crate) const RX_CDESC_LAST: u32 = 1 << 27;
+pub(crate) const RX_CDESC_L4_CSUM_ERR: u32 = 1 << 14;
+pub(crate) const RX_CDESC_L4_CSUM_CHECKED: u32 = 1 << 16;
 
 /// `struct ena_eth_io_intr_reg`: unmask with zero delay.
 pub(crate) const INTR_UNMASK: u32 = 1 << 30;
@@ -108,7 +135,7 @@ impl SubmissionRing {
     }
 
     pub(crate) fn free_entries(&self) -> u16 {
-        IO_QUEUE_DEPTH - 1 - self.tail.wrapping_sub(self.next_to_comp)
+        (IO_QUEUE_DEPTH - 1).saturating_sub(self.tail.wrapping_sub(self.next_to_comp))
     }
 
     /// Writes `desc` at the tail and advances it (flipping the phase on wrap).

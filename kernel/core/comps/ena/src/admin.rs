@@ -14,7 +14,7 @@ use core::{
 use aster_pci::cfg_space::BarAccess;
 use ostd::{
     Error,
-    mm::{HasDaddr, VmIo, VmIoOnce, dma::DmaCoherent},
+    mm::{HasDaddr, HasSize, VmIo, VmIoOnce, dma::DmaCoherent},
 };
 
 use crate::regs;
@@ -26,14 +26,30 @@ pub(crate) const AENQ_DEPTH: u16 = 16;
 pub(crate) const OP_CREATE_SQ: u8 = 1;
 pub(crate) const OP_CREATE_CQ: u8 = 3;
 pub(crate) const OP_GET_FEATURE: u8 = 8;
+pub(crate) const OP_GET_STATS: u8 = 11;
 pub(crate) const OP_SET_FEATURE: u8 = 9;
 
 // Feature ids.
 pub(crate) const FEAT_DEVICE_ATTRIBUTES: u8 = 1;
 pub(crate) const FEAT_MAX_QUEUES_NUM: u8 = 2;
 pub(crate) const FEAT_MAX_QUEUES_EXT: u8 = 7;
+pub(crate) const FEAT_RSS_HASH_FUNCTION: u8 = 10;
+pub(crate) const FEAT_STATELESS_OFFLOAD_CONFIG: u8 = 11;
+pub(crate) const FEAT_RSS_INDIRECTION_TABLE: u8 = 12;
 pub(crate) const FEAT_MTU: u8 = 14;
+pub(crate) const FEAT_RSS_HASH_INPUT: u8 = 18;
 pub(crate) const FEAT_AENQ_CONFIG: u8 = 26;
+pub(crate) const FEAT_HOST_ATTR_CONFIG: u8 = 28;
+
+// AENQ groups (bit positions) and the matching syndrome values.
+pub(crate) const AENQ_GROUP_LINK_CHANGE: u32 = 1 << 0;
+pub(crate) const AENQ_GROUP_FATAL_ERROR: u32 = 1 << 1;
+pub(crate) const AENQ_GROUP_WARNING: u32 = 1 << 2;
+pub(crate) const AENQ_GROUP_NOTIFICATION: u32 = 1 << 3;
+pub(crate) const AENQ_GROUP_KEEP_ALIVE: u32 = 1 << 4;
+
+/// Flag in `AqEntry::flags`: the command's data is in the control buffer.
+const AQ_CTRL_DATA_INDIRECT: u8 = 1 << 2;
 
 pub(crate) const SQ_DIRECTION_TX: u8 = 1;
 pub(crate) const SQ_DIRECTION_RX: u8 = 2;
@@ -65,6 +81,30 @@ pub(crate) struct AcqEntry {
     pub(crate) extended_status: u16,
     pub(crate) sq_head_indx: u16,
     pub(crate) data: [u32; 14],
+}
+
+/// `struct ena_admin_aenq_entry` (64 bytes).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+pub(crate) struct AenqEntry {
+    pub(crate) group: u16,
+    pub(crate) syndrome: u16,
+    pub(crate) flags: u8,
+    pub(crate) reserved1: [u8; 3],
+    pub(crate) timestamp_low: u32,
+    pub(crate) timestamp_high: u32,
+    pub(crate) data: [u32; 12],
+}
+
+/// An asynchronous event read from the AENQ.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum AenqEvent {
+    LinkChange { up: bool },
+    FatalError,
+    Warning,
+    Notification(u16),
+    KeepAlive { rx_drops: u64, tx_drops: u64 },
+    Unknown(u16),
 }
 
 /// `struct ena_admin_ena_mmio_req_read_less_resp`.
@@ -131,6 +171,12 @@ pub(crate) struct AdminQueue {
     readless: bool,
     /// Admin command timeout in microseconds (from `CAPS.ADMIN_CMD_TO`).
     cmd_timeout_us: u64,
+    aenq_head: u16,
+    aenq_phase: u8,
+    /// Scratch control buffer for indirect GET/SET_FEATURE (one page).
+    ctrl_buf: DmaCoherent,
+    /// Host info page (`ena_admin_host_info`) handed to the device.
+    host_info: DmaCoherent,
 }
 
 impl AdminQueue {
@@ -141,6 +187,8 @@ impl AdminQueue {
         let cq = DmaCoherent::alloc(1, true)?;
         let aenq = DmaCoherent::alloc(1, true)?;
         let mmio_resp = DmaCoherent::alloc(1, true)?;
+        let ctrl_buf = DmaCoherent::alloc(1, true)?;
+        let host_info = DmaCoherent::alloc(1, true)?;
         let mut this = Self {
             bar,
             sq,
@@ -155,11 +203,188 @@ impl AdminQueue {
             mmio_seq: 0,
             readless: true,
             cmd_timeout_us: 3_000_000,
+            aenq_head: AENQ_DEPTH,
+            aenq_phase: 1,
+            ctrl_buf,
+            host_info,
         };
         this.write_mmio_resp_addr();
         this.reset()?;
         this.init_queues()?;
         Ok(this)
+    }
+
+    /// Resets the device and re-programs the admin queue; every I/O queue
+    /// created before is gone afterwards. Used for recovery after a fatal
+    /// error or a missed keep-alive.
+    pub(crate) fn reinit(&mut self) -> Result<(), AdminError> {
+        self.sq_tail = 0;
+        self.sq_phase = 1;
+        self.cq_head = 0;
+        self.cq_phase = 1;
+        self.next_cmd_id = 0;
+        self.aenq_head = AENQ_DEPTH;
+        self.aenq_phase = 1;
+        self.readless = true;
+        // Zero the rings so stale phase bits cannot be mistaken for completions.
+        for mem in [&self.sq, &self.cq, &self.aenq] {
+            let zero = [0u8; 64];
+            for i in 0..(mem.size() / 64) {
+                mem.write_bytes(i * 64, &zero).unwrap();
+            }
+        }
+        self.write_mmio_resp_addr();
+        self.reset()?;
+        self.init_queues()
+    }
+
+    /// `SET_FEATURE HOST_ATTR_CONFIG`: tells the device who the driver is.
+    /// Linux does this before anything else. Tried here and reverted: with
+    /// host attributes set (OS type FreeBSD), the Nitro device stopped
+    /// delivering unicast Rx from outside the VPC while DHCP/DNS still worked.
+    /// Kept for experiments; not called.
+    #[expect(dead_code)]
+    pub(crate) fn set_host_attributes(&mut self) -> Result<(), AdminError> {
+        // struct ena_admin_host_info: os_type(u32) os_dist_str[128] os_dist(u32)
+        // kernel_ver_str[32] kernel_ver(u32) driver_version(u32)
+        // supported_network_features[2] ena_spec_version(u16) bdf(u16) num_cpus(u16) reserved(u16) driver_supported_features(u32)
+        let mut page = alloc::vec![0u8; 4096];
+        // OS type: there is no "other"; 4 (FreeBSD) is the closest to a
+        // from-scratch driver and does not make the device assume Linux quirks.
+        page[0..4].copy_from_slice(&4u32.to_le_bytes());
+        let dist = b"Asterinas/elixir_unikernel";
+        page[4..4 + dist.len()].copy_from_slice(dist);
+        let kver = b"asterinas";
+        page[136..136 + kver.len()].copy_from_slice(kver);
+        page[172..176].copy_from_slice(&(1u32 << 24 | 1).to_le_bytes()); // driver version 1.0.1 (major 1, minor 0, sub 1)
+        page[184..186].copy_from_slice(&(2u16 << 8).to_le_bytes()); // ENA spec version 2.0
+        page[188..190].copy_from_slice(&(ostd::cpu::num_cpus() as u16).to_le_bytes());
+        self.host_info.write_bytes(0, &page).unwrap();
+        fence(Ordering::SeqCst);
+        let (lo, hi) = mem_addr_words(self.host_info.daddr());
+        // host_attr desc: os_info_ba (lo, hi), debug_ba (0, 0), debug_area_size 0
+        self.set_feature(FEAT_HOST_ATTR_CONFIG, &[lo, hi, 0, 0, 0])
+    }
+
+    /// Enables the given AENQ groups (`SET_FEATURE AENQ_CONFIG`) and starts
+    /// event delivery by writing the AENQ head doorbell (= depth: every entry
+    /// available); the device writes no events before that. The AENQ is
+    /// polled every 100 ms from the timer tick, with the admin interrupt
+    /// masked: keep-alives come once a second and the watchdog allows 6 s, so
+    /// polling is plenty, and leaving vector 0 unmasked hung the guest after a
+    /// device reset (the interrupt re-fires until the head doorbell is
+    /// written, which the tick does too late). `ena.aenq_irq=1` unmasks it
+    /// for experiments.
+    pub(crate) fn enable_aenq_groups(&mut self, groups: u32) -> Result<u32, AdminError> {
+        let supported = self.get_feature(FEAT_AENQ_CONFIG, 0)?[0];
+        let enabled = groups & supported;
+        self.set_feature(FEAT_AENQ_CONFIG, &[supported, enabled])?;
+        if crate::AENQ_IRQ_PARAM.get().is_some_and(|v| v == "1") {
+            self.write32(regs::INTR_MASK, 0);
+        } else {
+            self.write32(regs::INTR_MASK, regs::ADMIN_INTR_MASK);
+        }
+        self.write32(regs::AENQ_HEAD_DB, AENQ_DEPTH as u32);
+        Ok(enabled)
+    }
+
+    /// Reads all pending asynchronous events and acknowledges them.
+    pub(crate) fn poll_aenq(&mut self) -> alloc::vec::Vec<AenqEvent> {
+        const AENQ_PHASE_MASK: u8 = 0x1;
+        let mut events = alloc::vec::Vec::new();
+        loop {
+            let slot = (self.aenq_head % AENQ_DEPTH) as usize * size_of::<AenqEntry>();
+            let flags: u8 = self.aenq.read_once(slot + 4).unwrap();
+            if flags & AENQ_PHASE_MASK != self.aenq_phase {
+                break;
+            }
+            fence(Ordering::SeqCst);
+            let e: AenqEntry = self.aenq.read_val(slot).unwrap();
+            self.aenq_head = self.aenq_head.wrapping_add(1);
+            if self.aenq_head.is_multiple_of(AENQ_DEPTH) {
+                self.aenq_phase ^= 1;
+            }
+            events.push(match e.group {
+                0 => AenqEvent::LinkChange {
+                    up: e.data[0] & 1 != 0,
+                },
+                1 => AenqEvent::FatalError,
+                2 => AenqEvent::Warning,
+                3 => AenqEvent::Notification(e.syndrome),
+                4 => AenqEvent::KeepAlive {
+                    rx_drops: e.data[0] as u64 | (e.data[1] as u64) << 32,
+                    tx_drops: e.data[2] as u64 | (e.data[3] as u64) << 32,
+                },
+                g => AenqEvent::Unknown(g),
+            });
+            if events.len() >= AENQ_DEPTH as usize {
+                break;
+            }
+        }
+        if !events.is_empty() {
+            fence(Ordering::SeqCst);
+            self.write32(regs::AENQ_HEAD_DB, self.aenq_head as u32);
+        }
+        events
+    }
+
+    /// Reads `DEV_STS` and reports whether the device flagged a fatal error.
+    /// (Fatal errors arrive through the AENQ as well; this is for diagnostics.)
+    #[expect(dead_code)]
+    pub(crate) fn fatal_error(&mut self) -> bool {
+        let sts = self.read32(regs::DEV_STS);
+        sts != regs::MMIO_READ_TIMEOUT && sts & regs::DEV_STS_FATAL_ERROR != 0
+    }
+
+    /// `GET_FEATURE` whose response goes to the control buffer; returns up to
+    /// `len` bytes of it.
+    #[expect(dead_code)]
+    pub(crate) fn get_feature_indirect(
+        &mut self,
+        feature_id: u8,
+        version: u8,
+        len: usize,
+    ) -> Result<alloc::vec::Vec<u8>, AdminError> {
+        let mut cmd = AqEntry {
+            opcode: OP_GET_FEATURE,
+            flags: AQ_CTRL_DATA_INDIRECT,
+            ..Default::default()
+        };
+        let (lo, hi) = mem_addr_words(self.ctrl_buf.daddr());
+        cmd.words[0] = len as u32;
+        cmd.words[1] = lo;
+        cmd.words[2] = hi;
+        cmd.words[3] = (feature_id as u32) << 8 | (version as u32) << 16;
+        self.execute(cmd)?;
+        let mut out = alloc::vec![0u8; len];
+        self.ctrl_buf.read_bytes(0, &mut out).unwrap();
+        Ok(out)
+    }
+
+    /// `SET_FEATURE` with `inline_data` plus `ctrl` bytes in the control buffer.
+    pub(crate) fn set_feature_indirect(
+        &mut self,
+        feature_id: u8,
+        inline_data: &[u32],
+        ctrl: &[u8],
+    ) -> Result<(), AdminError> {
+        assert!(ctrl.len() <= self.ctrl_buf.size());
+        self.ctrl_buf.write_bytes(0, ctrl).unwrap();
+        fence(Ordering::SeqCst);
+        let mut cmd = AqEntry {
+            opcode: OP_SET_FEATURE,
+            flags: AQ_CTRL_DATA_INDIRECT,
+            ..Default::default()
+        };
+        let (lo, hi) = mem_addr_words(self.ctrl_buf.daddr());
+        cmd.words[0] = ctrl.len() as u32;
+        cmd.words[1] = lo;
+        cmd.words[2] = hi;
+        cmd.words[3] = (feature_id as u32) << 8;
+        for (i, w) in inline_data.iter().enumerate().take(11) {
+            cmd.words[4 + i] = *w;
+        }
+        self.execute(cmd).map(|_| ())
     }
 
     fn write32(&self, off: usize, val: u32) {
@@ -292,7 +517,6 @@ impl AdminQueue {
             entry | (ADMIN_QUEUE_DEPTH as u32 & regs::AQ_CAPS_DEPTH_MASK),
         );
 
-        // The AENQ must exist even though we never enable any event group.
         let (lo, hi) = mem_addr_words(self.aenq.daddr());
         self.write32(regs::AENQ_BASE_LO, lo);
         self.write32(regs::AENQ_BASE_HI, hi);
@@ -361,6 +585,20 @@ impl AdminQueue {
             delay_us(20);
             waited += 20;
         }
+    }
+
+    /// `GET_STATS` basic, device-wide: `(tx_pkts, rx_pkts, rx_drops, tx_drops)`.
+    pub(crate) fn get_basic_stats(&mut self) -> Result<(u64, u64, u64, u64), AdminError> {
+        let mut cmd = AqEntry {
+            opcode: OP_GET_STATS,
+            ..Default::default()
+        };
+        // words[3]: type (u8 basic=0), scope (u8 eth_traffic=1), reserved; words[4]: queue_idx | device_id<<16 (0xffff = all)
+        cmd.words[3] = 1 << 8;
+        cmd.words[4] = 0xffff << 16;
+        let d = self.execute(cmd)?.data;
+        let u64at = |i: usize| d[i] as u64 | (d[i + 1] as u64) << 32;
+        Ok((u64at(2), u64at(6), u64at(8), u64at(10)))
     }
 
     /// `GET_FEATURE feature_id` (inline response).
