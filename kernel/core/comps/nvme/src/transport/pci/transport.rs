@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::Arc;
 use core::{
     fmt::Debug,
     ops::{Deref, DerefMut},
 };
 
 use aster_pci::{
+    bus::PciDevice,
     cfg_space::{Bar, BarAccess},
     common_device::PciCommonDevice,
 };
@@ -27,7 +29,7 @@ pub(crate) struct NvmePciTransport {
 }
 
 pub(crate) struct NvmePciTransportInner {
-    common_device: PciCommonDevice,
+    common_device: Arc<PciDevice>,
     msix_manager: NvmeMsixManager,
 }
 
@@ -42,20 +44,16 @@ impl Debug for NvmePciTransport {
 impl NvmePciTransport {
     /// Creates a PCI NVMe transport for `common_device`.
     ///
-    /// Returns `Err` with the device if BAR0 is unusable, too small, cannot be mapped, or MSI-X
-    /// setup fails.
-    #[expect(clippy::result_large_err)]
-    pub(super) fn new(
-        common_device: PciCommonDevice,
-    ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
+    /// Returns `Err` if BAR0 is unusable, too small, cannot be mapped, or MSI-X setup fails.
+    pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, BusProbeError> {
         let Some(config_bar) = Self::check_and_acquire_bar0(&common_device) else {
             error!("BAR0 is unusable: missing, not MMIO, map failed, or too small");
-            return Err((BusProbeError::ConfigurationSpaceError, common_device));
+            return Err(BusProbeError::ConfigurationSpaceError);
         };
 
         let Some(msix_manager) = Self::init_msix(&common_device) else {
             error!("MSI-X capability missing or MSI-X setup failed");
-            return Err((BusProbeError::ConfigurationSpaceError, common_device));
+            return Err(BusProbeError::ConfigurationSpaceError);
         };
 
         Ok(Self {

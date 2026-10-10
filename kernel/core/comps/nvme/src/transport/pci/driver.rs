@@ -1,71 +1,50 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::sync::Arc;
 
-use aster_pci::{
-    PciDeviceId,
-    bus::{PciDevice, PciDriver},
-    common_device::PciCommonDevice,
+use aster_device::{
+    bus::Driver,
+    common::{Attr, Error, Result},
 };
-use ostd::{bus::BusProbeError, sync::SpinLock};
+use aster_pci::bus::{PciBus, PciDevice, PciMatch};
 
 use super::transport::NvmePciTransport;
 
-#[derive(Debug)]
-struct NvmePciDevice {
-    device_id: PciDeviceId,
-}
+pub(crate) struct NvmePciDriver;
 
-impl NvmePciDevice {
-    fn new(device_id: PciDeviceId) -> Self {
-        Self { device_id }
-    }
-}
-
-impl PciDevice for NvmePciDevice {
-    fn device_id(&self) -> PciDeviceId {
-        self.device_id
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct NvmePciDriver {
-    devices: SpinLock<Vec<NvmePciTransport>>,
-}
-
-impl NvmePciDriver {
-    pub(crate) fn pop_device_transport(&self) -> Option<NvmePciTransport> {
-        self.devices.lock().pop()
+impl Driver<PciBus> for NvmePciDriver {
+    fn name(&self) -> &str {
+        "nvme"
     }
 
-    pub(super) fn new() -> Self {
-        NvmePciDriver {
-            devices: SpinLock::new(Vec::new()),
-        }
-    }
-}
-
-impl PciDriver for NvmePciDriver {
-    fn probe(
-        &self,
-        device: PciCommonDevice,
-    ) -> Result<Arc<dyn PciDevice>, (BusProbeError, PciCommonDevice)> {
+    fn match_data(&self) -> &[PciMatch] {
         const NVME_DEVICE_CLASS: u8 = 0x01;
         const NVME_DEVICE_SUBCLASS: u8 = 0x08;
         const NVME_DEVICE_PROG_IF: u8 = 0x02;
 
-        if device.device_id().class != NVME_DEVICE_CLASS
-            || device.device_id().subclass != NVME_DEVICE_SUBCLASS
-            || device.device_id().prog_if != NVME_DEVICE_PROG_IF
-        {
-            return Err((BusProbeError::DeviceNotMatch, device));
-        }
+        &[PciMatch::Class {
+            class: NVME_DEVICE_CLASS,
+            subclass: NVME_DEVICE_SUBCLASS,
+            prog_if: NVME_DEVICE_PROG_IF,
+        }]
+    }
 
-        let device_id = *device.device_id();
-        let transport = NvmePciTransport::new(device)?;
+    fn on_probe(&self, device: &Arc<PciDevice>) -> Result<()> {
+        let transport = NvmePciTransport::new(device.clone()).map_err(|_| Error::ProbeFailed)?;
+        super::push_device_transport(transport);
+        Ok(())
+    }
 
-        self.devices.lock().push(transport);
+    fn on_release(&self, _device: &Arc<PciDevice>) {
+        // FIXME: Stop I/O and unregister NVMe devices before releasing controller resources.
+        panic!("nvme driver removal is not supported");
+    }
 
-        Ok(Arc::new(NvmePciDevice::new(device_id)))
+    fn dev_attrs(&self) -> &'static [Attr<PciDevice>] {
+        &[]
+    }
+
+    fn suppress_bind_attrs(&self) -> bool {
+        true
     }
 }
