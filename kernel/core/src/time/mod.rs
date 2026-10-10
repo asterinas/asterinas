@@ -5,7 +5,7 @@
 pub(crate) use core::{Clock, timer};
 
 use ::core::time::Duration;
-pub(crate) use system_time::{START_TIME, SystemTime};
+pub(crate) use system_time::{START_TIME, SystemTime, realtime_adjust, set_realtime};
 pub(crate) use timer::{Timer, TimerManager};
 
 use crate::prelude::*;
