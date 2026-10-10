@@ -38,8 +38,10 @@ use crate::{
 const CLOCK_TAI: usize = 11;
 const VDSO_BASES: usize = CLOCK_TAI + 1;
 const DEFAULT_CLOCK_MODE: VdsoClockMode = VdsoClockMode::Tsc;
+const NANOS_PER_SEC: u64 = 1_000_000_000;
 
 static START_SECS_COUNT: Once<u64> = Once::new();
+static START_NANOS_COUNT: Once<u64> = Once::new();
 static VDSO: Once<Arc<Vdso>> = Once::new();
 
 #[derive(Clone, Copy, Debug)]
@@ -163,29 +165,33 @@ impl VdsoData {
     fn update_high_res_instant(&mut self, instant: Instant, instant_cycles: u64) {
         self.last_cycles = instant_cycles;
         for clock_id in HIGH_RES_CLOCK_IDS {
-            let secs = if clock_id == ClockId::CLOCK_REALTIME {
-                instant.secs() + START_SECS_COUNT.get().unwrap()
+            let (secs, nanos) = if clock_id == ClockId::CLOCK_REALTIME {
+                let base = Self::realtime_basetime(instant);
+                (base.as_secs(), base.subsec_nanos() as u64)
             } else {
-                instant.secs()
+                (instant.secs(), instant.nanos() as u64)
             };
 
-            self.update_clock_instant(
-                clock_id as usize,
-                secs,
-                (instant.nanos() as u64) << self.shift as u64,
-            );
+            self.update_clock_instant(clock_id as usize, secs, nanos << self.shift as u64);
         }
     }
 
     fn update_coarse_res_instant(&mut self, instant: Instant) {
         for clock_id in COARSE_RES_CLOCK_IDS {
-            let secs = if clock_id == ClockId::CLOCK_REALTIME_COARSE {
-                instant.secs() + START_SECS_COUNT.get().unwrap()
+            let (secs, nanos) = if clock_id == ClockId::CLOCK_REALTIME_COARSE {
+                let base = Self::realtime_basetime(instant);
+                (base.as_secs(), base.subsec_nanos() as u64)
             } else {
-                instant.secs()
+                (instant.secs(), instant.nanos() as u64)
             };
-            self.update_clock_instant(clock_id as usize, secs, instant.nanos() as u64);
+            self.update_clock_instant(clock_id as usize, secs, nanos);
         }
+    }
+
+    fn realtime_basetime(instant: Instant) -> Duration {
+        let secs = instant.secs() + START_SECS_COUNT.get().unwrap();
+        let nanos = instant.nanos() as u64 + START_NANOS_COUNT.get().unwrap();
+        Duration::new(secs + nanos / NANOS_PER_SEC, (nanos % NANOS_PER_SEC) as u32)
     }
 }
 
@@ -367,13 +373,14 @@ fn update_vdso_coarse_res_instant(_guard: TimerGuard) {
 }
 
 /// Initializes the time duration from 1970-01-01 00:00:00 to the start time.
-fn init_start_secs_count() {
+fn init_start_time_offset() {
     let time_duration = START_TIME
         .get()
         .unwrap()
         .duration_since(&SystemTime::UNIX_EPOCH)
         .unwrap();
     START_SECS_COUNT.call_once(|| time_duration.as_secs());
+    START_NANOS_COUNT.call_once(|| time_duration.subsec_nanos() as u64);
 }
 
 /// Initializes the vDSO singleton.
@@ -383,7 +390,7 @@ fn init_vdso() {
 }
 
 pub(super) fn init_in_first_kthread() {
-    init_start_secs_count();
+    init_start_time_offset();
     init_vdso();
 
     aster_time::VDSO_DATA_HIGH_RES_UPDATE_FN.call_once(|| update_vdso_high_res_instant);
