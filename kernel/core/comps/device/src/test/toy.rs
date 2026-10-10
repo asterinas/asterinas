@@ -65,6 +65,7 @@ pub(super) static DISK_TYPE: DeviceType<BusDevice<ToyBus>> = DeviceType::named("
 pub(super) struct ToyDiskDriver {
     pub(super) match_data: ToyMatch,
     pub(super) class: Arc<ClassHandle<ToyBlock>>,
+    pub(super) suppress_bind_attrs: bool,
 }
 
 impl Driver<ToyBus> for ToyDiskDriver {
@@ -105,6 +106,10 @@ impl Driver<ToyBus> for ToyDiskDriver {
 
     fn dev_attrs(&self) -> &'static [Attr<BusDevice<ToyBus>>] {
         BOUND_BY
+    }
+
+    fn suppress_bind_attrs(&self) -> bool {
+        self.suppress_bind_attrs
     }
 }
 

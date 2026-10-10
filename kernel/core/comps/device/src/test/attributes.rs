@@ -2,7 +2,7 @@
 
 //! Device attribute tests.
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::prelude::ktest;
@@ -48,9 +48,13 @@ fn attribute_ids_survive_bind_and_unbind() {
         .register_driver(Box::new(ToyDiskDriver {
             match_data: ToyMatch { vendor: 9 },
             class: class.clone(),
+            suppress_bind_attrs: false,
         }))
         .unwrap();
     assert!(dev.driver().is_some());
+    let driver_attrs = utils::attr_names("/bus/toy/drivers/toy_disk");
+    assert!(driver_attrs.iter().any(|name| name == "bind"));
+    assert!(driver_attrs.iter().any(|name| name == "unbind"));
 
     let bound = utils::attr_ids(path);
     for (name, id) in &before {
@@ -146,4 +150,60 @@ fn invalid_attribute_names_are_rejected() {
         assert!(utils::lookup("/devices/virtual/toyblk/invalid-attr").is_none());
         assert!(utils::lookup("/class/toyblk/invalid-attr").is_none());
     }
+}
+
+#[ktest]
+fn suppressed_bind_attrs_are_inaccessible() {
+    // 1. Add a device and bind a driver that suppresses sysfs bind/unbind attributes.
+    let (class, bus) = toy::register_toy_subsystems();
+    let dev = BusDevice::builder(
+        &bus,
+        "suppressed0",
+        ToyDev {
+            vendor: 101,
+            model: 101,
+        },
+    )
+    .build();
+    crate::add_device(&dev).unwrap();
+    let driver = bus
+        .register_driver(Box::new(ToyDiskDriver {
+            match_data: ToyMatch { vendor: 101 },
+            class: class.clone(),
+            suppress_bind_attrs: true,
+        }))
+        .unwrap();
+
+    // 2. Check that the attributes are absent and reads/writes fail without changing the binding.
+    let path = "/bus/toy/drivers/toy_disk";
+    let attrs = utils::attr_names(path);
+    let directory = utils::lookup(path).unwrap().cast_to_node().unwrap();
+    let disk = class.find_device("td101").unwrap();
+
+    for name in ["bind", "unbind"] {
+        assert!(!attrs.iter().any(|attr| attr == name));
+        assert!(matches!(
+            directory.show_attr(name),
+            Err(aster_systree::Error::NotFound)
+        ));
+        assert!(matches!(
+            directory.store_attr(name, "suppressed0"),
+            Err(aster_systree::Error::NotFound)
+        ));
+    }
+    assert!(Arc::ptr_eq(&dev.driver().unwrap(), &driver));
+    assert!(Arc::ptr_eq(&class.find_device("td101").unwrap(), &disk));
+
+    // 3. Unbind via the kernel API, then check that writing `bind` leaves the device unbound.
+    bus.unbind(&dev).unwrap();
+    assert!(matches!(
+        directory.store_attr("bind", "suppressed0"),
+        Err(aster_systree::Error::NotFound)
+    ));
+    assert!(dev.driver().is_none());
+    assert!(class.find_device("td101").is_none());
+
+    // 4. Remove the device and unregister the driver.
+    crate::remove_device(&dev).unwrap();
+    bus.unregister_driver(&driver).unwrap();
 }
