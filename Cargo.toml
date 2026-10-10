@@ -40,6 +40,7 @@ members = [
     "kernel/core/comps/input",
     "kernel/core/comps/logger",
     "kernel/core/comps/mlsdisk",
+    "kernel/core/comps/ena",
     "kernel/core/comps/network",
     "kernel/core/comps/nvme",
     "kernel/core/comps/pci",
@@ -95,6 +96,7 @@ default-members = [
     "kernel/core/comps/input",
     "kernel/core/comps/logger",
     "kernel/core/comps/mlsdisk",
+    "kernel/core/comps/ena",
     "kernel/core/comps/network",
     "kernel/core/comps/nvme",
     "kernel/core/comps/pci",
@@ -182,6 +184,7 @@ aster-framebuffer = { path = "kernel/core/comps/framebuffer" }
 aster-input = { path = "kernel/core/comps/input" }
 aster-logger = { path = "kernel/core/comps/logger" }
 aster-mlsdisk = { path = "kernel/core/comps/mlsdisk" }
+aster-ena = { path = "kernel/core/comps/ena" }
 aster-network = { path = "kernel/core/comps/network" }
 aster-nvme = { path = "kernel/core/comps/nvme" }
 aster-pci = { path = "kernel/core/comps/pci" }
