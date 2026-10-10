@@ -78,4 +78,5 @@ fi
 ./job_control
 ./pidfd
 ./pidfd_getfd
+./pid_reuse
 ./wait4

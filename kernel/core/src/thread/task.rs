@@ -15,7 +15,8 @@ use crate::{
     cpu::LinuxAbi,
     prelude::*,
     process::{
-        posix_thread::{AsPosixThread, FIRST_POSIX_TID, ThreadLocal, ptrace::PtraceStopResult},
+        INIT_PROCESS_PID,
+        posix_thread::{AsPosixThread, ThreadLocal, ptrace::PtraceStopResult},
         signal::{HandlePendingSignal, PauseReason, handle_pending_signal},
     },
     syscall::handle_syscall,
@@ -64,7 +65,7 @@ pub(crate) fn create_new_user_task(
         };
 
         // The startup method is only executed when the first user thread starts up.
-        if ctx.posix_thread.tid() == FIRST_POSIX_TID {
+        if ctx.posix_thread.tid() == INIT_PROCESS_PID {
             crate::init::on_first_process_startup(&ctx);
         }
 
