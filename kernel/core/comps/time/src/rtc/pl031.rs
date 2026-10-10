@@ -10,7 +10,10 @@ use chrono::DateTime;
 use fdt_util::AcquireIoMems;
 use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
 
-use crate::{SystemTime, rtc::Driver};
+use crate::{
+    SystemTime,
+    rtc::{Driver, RtcError},
+};
 
 pub(super) struct RtcPl031 {
     io_mem: IoMem,
@@ -29,12 +32,12 @@ impl Driver for RtcPl031 {
         Some(Self { io_mem })
     }
 
-    fn read_rtc(&self) -> SystemTime {
+    fn read_rtc(&self) -> Result<SystemTime, RtcError> {
         let timestamp = self.io_mem.read_once::<u32>(RTCDR_OFFSET).unwrap();
 
         // This won't fail because the timestamp is a 32-bit integer.
         let time = DateTime::from_timestamp(timestamp as i64, 0).unwrap();
-        SystemTime::from(time.naive_utc())
+        Ok(SystemTime::from(time.naive_utc()))
     }
 }
 
