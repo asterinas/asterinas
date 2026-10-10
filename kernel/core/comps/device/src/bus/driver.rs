@@ -104,6 +104,13 @@ pub trait Driver<B: Bus>: Send + Sync + 'static {
 
     /// Returns the attributes exposed by devices while bound to this driver.
     fn dev_attrs(&self) -> &'static [Attr<BusDevice<B>>];
+
+    /// Returns whether to omit the driver's sysfs `bind` and `unbind` attributes.
+    ///
+    /// The return value is read only during registration,
+    /// so subsequent changes do not affect the driver's sysfs attributes.
+    /// This does not affect automatic probing or kernel binding and removal APIs.
+    fn suppress_bind_attrs(&self) -> bool;
 }
 
 /// A registered driver.
@@ -126,10 +133,16 @@ impl<B: Bus> DriverHandle<B> {
     ///
     /// Panics if the driver name is not a valid `SysTree` node name.
     pub(crate) fn new(driver: Box<dyn Driver<B>>, bus: Weak<BusHandle<B>>) -> Result<Arc<Self>> {
-        let dir = Dir::with_attrs(
-            SysStr::from(driver.name().to_string()),
-            &[("bind", SysPerms::OWNER_W), ("unbind", SysPerms::OWNER_W)],
-        )?;
+        let name = SysStr::from(driver.name().to_string());
+        let suppress_bind_attrs = driver.suppress_bind_attrs();
+        let dir = if suppress_bind_attrs {
+            Dir::new(name)
+        } else {
+            Dir::with_attrs(
+                name,
+                &[("bind", SysPerms::OWNER_W), ("unbind", SysPerms::OWNER_W)],
+            )?
+        };
         let dev_attrs = driver.dev_attrs();
         let handle = Arc::new_cyclic(|weak| DriverHandle {
             driver,
@@ -139,9 +152,11 @@ impl<B: Bus> DriverHandle<B> {
             bus,
             weak: weak.clone(),
         });
-        dir.set_ops(Box::new(DriverDirOps {
-            driver: handle.weak.clone(),
-        }));
+        if !suppress_bind_attrs {
+            dir.set_ops(Box::new(DriverDirOps {
+                driver: handle.weak.clone(),
+            }));
+        }
         Ok(handle)
     }
 

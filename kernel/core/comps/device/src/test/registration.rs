@@ -152,6 +152,7 @@ fn bus_device_registration_and_probe() {
         .register_driver(Box::new(ToyDiskDriver {
             match_data: ToyMatch { vendor: 1 },
             class: class.clone(),
+            suppress_bind_attrs: false,
         }))
         .unwrap();
     let observer = Arc::new(CountingObserver {
