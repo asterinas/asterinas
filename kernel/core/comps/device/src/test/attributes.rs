@@ -2,7 +2,7 @@
 
 //! Device attribute tests.
 
-use alloc::sync::Arc;
+use alloc::boxed::Box;
 
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::prelude::ktest;
@@ -45,7 +45,7 @@ fn attribute_ids_survive_bind_and_unbind() {
 
     // 2. Register a matching driver and check that binding preserves existing IDs.
     let driver = bus
-        .register_driver(Arc::new(ToyDiskDriver {
+        .register_driver(Box::new(ToyDiskDriver {
             match_data: ToyMatch { vendor: 9 },
             class: class.clone(),
         }))
