@@ -67,6 +67,31 @@ impl<D: WithDevice, E: Ext> EtherIface<D, E> {
             arp_table: SpinLock::new(BTreeMap::new()),
         })
     }
+
+    /// Creates an Ethernet iface without an IPv4 address that obtains one via DHCP.
+    pub fn new_dhcp(
+        driver: D,
+        ether_addr: EthernetAddress,
+        name: InterfaceName,
+        sched_poll: E::ScheduleNextPoll,
+        flags: InterfaceFlags,
+    ) -> Arc<Self> {
+        let interface = driver.with(|device| {
+            let config = Config::new(wire::HardwareAddress::Ethernet(ether_addr));
+            let now = get_network_timestamp();
+            new_interface(config, device.capabilities(), now)
+        });
+
+        let common =
+            IfaceCommon::new_with_dhcp(name, InterfaceType::ETHER, flags, interface, sched_poll);
+
+        Arc::new(Self {
+            driver,
+            common,
+            ether_addr,
+            arp_table: SpinLock::new(BTreeMap::new()),
+        })
+    }
 }
 
 impl<D, E: Ext> IfaceInternal<E> for EtherIface<D, E> {

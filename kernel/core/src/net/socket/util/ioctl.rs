@@ -18,12 +18,16 @@ use crate::{
 
 mod ioctl_defs {
     use super::{CIfConf, CIfReq};
-    use crate::{ioc, util::ioctl::InOutData};
+    use crate::{
+        ioc,
+        util::ioctl::{InData, InOutData},
+    };
 
     // Reference: <https://elixir.bootlin.com/linux/v7.1/source/include/uapi/linux/sockios.h#L56>.
     pub(super) type GetIfName       = ioc!(SIOCGIFNAME,     0x8910, InOutData<CIfReq>);
     pub(super) type GetIfConf       = ioc!(SIOCGIFCONF,     0x8912, InOutData<CIfConf>);
     pub(super) type GetIfFlags      = ioc!(SIOCGIFFLAGS,    0x8913, InOutData<CIfReq>);
+    pub(super) type SetIfFlags      = ioc!(SIOCSIFFLAGS,    0x8914, InData<CIfReq>);
     pub(super) type GetIfMetric     = ioc!(SIOCGIFMETRIC,   0x891D, InOutData<CIfReq>);
     pub(super) type GetIfMtu        = ioc!(SIOCGIFMTU,      0x8921, InOutData<CIfReq>);
     pub(super) type GetIfHwAddr     = ioc!(SIOCGIFHWADDR,   0x8927, InOutData<CIfReq>);
@@ -71,6 +75,13 @@ fn network_device_ioctl(raw_ioctl: RawIoctl) -> Result<i32> {
             let iface = ifreq.get_iface_by_index()?;
             ifreq.name = *iface.name();
             cmd.write(&ifreq)?;
+            Ok(0)
+        }
+        cmd @ SetIfFlags => {
+            // Interfaces are always up in this kernel; accept the request so that
+            // `ifconfig`-style configuration (and /init programs) can proceed.
+            let mut ifreq = cmd.read()?;
+            let _ = ifreq.get_iface_by_name()?;
             Ok(0)
         }
         cmd @ GetIfFlags => {
@@ -263,6 +274,17 @@ impl CIfReq {
     pub(in crate::net::socket) fn set_sockaddr_ipv4(&mut self, ipv4_addr: Ipv4Address) {
         let socket_addr = CSocketAddr::new_ipv4(ipv4_addr);
         self.data = CIfReqData::new_addr(socket_addr);
+    }
+
+    /// Reads the IPv4 address from the `ifr_addr` member (a `struct sockaddr_in`).
+    pub(in crate::net::socket) fn get_sockaddr_ipv4(&self) -> Result<Ipv4Address> {
+        let sa = self.data.addr();
+        if sa.family != CSocketAddrFamily::AF_INET as u16 {
+            return_errno_with_message!(Errno::EAFNOSUPPORT, "ifr_addr is not AF_INET");
+        }
+        Ok(Ipv4Address::new(
+            sa.data[2], sa.data[3], sa.data[4], sa.data[5],
+        ))
     }
 
     pub(in crate::net::socket) fn get_iface_by_name(&mut self) -> Result<&'static Arc<Iface>> {
