@@ -130,7 +130,7 @@ impl<B: Bus> BusHandle<B> {
     /// # Panics
     ///
     /// Panics if the driver name is not a valid `SysTree` node name.
-    pub fn register_driver(&self, driver: Arc<dyn Driver<B>>) -> Result<Arc<DriverHandle<B>>> {
+    pub fn register_driver(&self, driver: Box<dyn Driver<B>>) -> Result<Arc<DriverHandle<B>>> {
         if self
             .drivers
             .lock()
