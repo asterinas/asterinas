@@ -11,6 +11,7 @@
 //! `toy` and `utils` provide shared test helpers.
 
 mod attributes;
+mod binding;
 mod names;
 mod observers;
 mod registration;

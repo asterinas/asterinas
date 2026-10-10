@@ -51,6 +51,9 @@ fn attribute_ids_survive_bind_and_unbind() {
         }))
         .unwrap();
     assert!(dev.driver().is_some());
+    let driver_attrs = utils::attr_names("/bus/toy/drivers/toy_disk");
+    assert!(driver_attrs.iter().any(|name| name == "bind"));
+    assert!(driver_attrs.iter().any(|name| name == "unbind"));
 
     let bound = utils::attr_ids(path);
     for (name, id) in &before {
