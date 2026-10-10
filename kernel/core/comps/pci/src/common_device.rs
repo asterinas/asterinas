@@ -2,10 +2,8 @@
 
 //! PCI device common definitions or functions.
 
-use ostd::Result;
-
 use crate::{
-    capability::{RawCapabilities, msix::CapabilityMsixData, vendor::CapabilityVndrData},
+    capability::{RawCapabilities, msix::RawCapabilityMsix, vendor::CapabilityVndrData},
     cfg_space::{AddrLen, Bar, Command, PciBridgeCfgOffset, PciCommonCfgOffset, Status},
     device_info::{PciDeviceId, PciDeviceLocation},
 };
@@ -64,13 +62,9 @@ impl PciCommonDevice {
         Status::from_bits_truncate(self.location.read16(PciCommonCfgOffset::Status as u16))
     }
 
-    /// Acquires necessary resources to build the MSI-X capability data, if the capability exists.
-    ///
-    /// Note that the MSI-X capability data occupies some memory BARs. Therefore, it will fail if
-    /// the necessary resources are not available.
-    pub fn acquire_msix_capability(&mut self) -> Result<Option<CapabilityMsixData>> {
-        self.capabilities
-            .acquire_msix_data(&self.location, &self.bar_manager)
+    /// Returns the raw MSI-X capability, if present.
+    pub(crate) fn raw_msix_capability(&self) -> Option<&RawCapabilityMsix> {
+        self.capabilities.msix()
     }
 
     /// Gets access to the vendor-specific capability data.
