@@ -110,7 +110,7 @@ pub trait Driver<B: Bus>: Send + Sync + 'static {
 ///
 /// Dereferences to the driver itself.
 pub struct DriverHandle<B: Bus> {
-    driver: Arc<dyn Driver<B>>,
+    driver: Box<dyn Driver<B>>,
     // Keep a reference so device attributes remain fixed for this registration.
     dev_attrs: &'static [Attr<BusDevice<B>>],
     dir: Arc<Dir>,
@@ -125,7 +125,7 @@ impl<B: Bus> DriverHandle<B> {
     /// # Panics
     ///
     /// Panics if the driver name is not a valid `SysTree` node name.
-    pub(crate) fn new(driver: Arc<dyn Driver<B>>, bus: Weak<BusHandle<B>>) -> Result<Arc<Self>> {
+    pub(crate) fn new(driver: Box<dyn Driver<B>>, bus: Weak<BusHandle<B>>) -> Result<Arc<Self>> {
         let dir = Dir::with_attrs(
             SysStr::from(driver.name().to_string()),
             &[("bind", SysPerms::OWNER_W), ("unbind", SysPerms::OWNER_W)],
