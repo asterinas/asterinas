@@ -24,6 +24,21 @@ crate::register_poweroff_handler!(
     crate::power::Priority::HIGH
 );
 
+// The triple fault comes after the i8042 controller (which registers at `Priority::new(1)`), as
+// the last resort. It is the only method that works on machines without an ACPI reset register
+// or a keyboard controller, such as EC2 Nitro instances.
+crate::register_restart_handler!(ostd::arch::power::try_restart, crate::power::Priority::LOW);
+
+/// Powers off by restarting.
+///
+/// Without an ACPI AML interpreter the kernel cannot enter S5 on real hardware or on EC2, so a
+/// guest whose init process asked for `poweroff` would otherwise hang with a dead console. A
+/// restart re-runs the same image, which is what an auto-scaling group wants from a crashed node.
+fn try_poweroff_by_restart(code: ExitCode) {
+    ostd::power::restart(code);
+}
+crate::register_poweroff_handler!(try_poweroff_by_restart, crate::power::Priority::LOW);
+
 pub(super) fn init() {
     let acpi_info = ACPI_INFO.get().unwrap();
 

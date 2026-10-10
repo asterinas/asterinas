@@ -30,6 +30,7 @@ use crate::{
     time::{
         START_TIME, SystemTime,
         clocks::MonotonicClock,
+        realtime_adjust,
         timer::{Timeout, TimerGuard},
     },
     vm::page_cache::{Vmo, VmoMapMode, VmoOptions},
@@ -163,28 +164,25 @@ impl VdsoData {
     fn update_high_res_instant(&mut self, instant: Instant, instant_cycles: u64) {
         self.last_cycles = instant_cycles;
         for clock_id in HIGH_RES_CLOCK_IDS {
-            let secs = if clock_id == ClockId::CLOCK_REALTIME {
-                instant.secs() + START_SECS_COUNT.get().unwrap()
+            let (secs, nanos) = if clock_id == ClockId::CLOCK_REALTIME {
+                realtime_parts(instant)
             } else {
-                instant.secs()
+                (instant.secs(), instant.nanos() as u64)
             };
 
-            self.update_clock_instant(
-                clock_id as usize,
-                secs,
-                (instant.nanos() as u64) << self.shift as u64,
-            );
+            self.update_clock_instant(clock_id as usize, secs, nanos << self.shift as u64);
         }
     }
 
     fn update_coarse_res_instant(&mut self, instant: Instant) {
         for clock_id in COARSE_RES_CLOCK_IDS {
-            let secs = if clock_id == ClockId::CLOCK_REALTIME_COARSE {
-                instant.secs() + START_SECS_COUNT.get().unwrap()
+            let (secs, nanos) = if clock_id == ClockId::CLOCK_REALTIME_COARSE {
+                realtime_parts(instant)
             } else {
-                instant.secs()
+                (instant.secs(), instant.nanos() as u64)
             };
-            self.update_clock_instant(clock_id as usize, secs, instant.nanos() as u64);
+
+            self.update_clock_instant(clock_id as usize, secs, nanos);
         }
     }
 }
@@ -354,6 +352,35 @@ impl Vdso {
 }
 
 /// Updates instants with respect to high-resolution clocks in vDSO data.
+/// The realtime clock as (seconds, nanoseconds) for a monotonic `instant`:
+/// boot time plus the instant plus the `clock_settime` adjustment.
+fn realtime_parts(instant: Instant) -> (u64, u64) {
+    let base = Duration::new(
+        instant.secs() + START_SECS_COUNT.get().unwrap(),
+        instant.nanos(),
+    );
+    let adjust = realtime_adjust();
+    let adjusted = if adjust >= 0 {
+        base + Duration::from_nanos(adjust as u64)
+    } else {
+        base.saturating_sub(Duration::from_nanos(adjust.unsigned_abs()))
+    };
+    (adjusted.as_secs(), adjusted.subsec_nanos() as u64)
+}
+
+/// Called after `clock_settime`: refresh the vDSO bases so user space sees the
+/// new wall clock before the next timer tick.
+pub(crate) fn on_realtime_adjusted() {
+    if let Some(vdso) = VDSO.get() {
+        // The high-resolution base is (instant, TSC) from the clock source's
+        // last tick; recomputing the realtime seconds from it is enough, as
+        // the vDSO extrapolates with the same cycles.
+        let (instant, cycles) = aster_time::default_clocksource().last_record();
+        vdso.update_high_res_instant(instant, cycles);
+        vdso.update_coarse_res_instant(Instant::from(read_monotonic_time()));
+    }
+}
+
 fn update_vdso_high_res_instant(instant: Instant, instant_cycles: u64) {
     VDSO.get()
         .unwrap()

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::time::Duration;
+use core::{
+    sync::atomic::{AtomicI64, Ordering},
+    time::Duration,
+};
 
 use aster_time::{read_monotonic_time, read_start_time};
 use spin::Once;
@@ -14,6 +17,48 @@ pub(crate) struct SystemTime(PrimitiveDateTime);
 
 pub(crate) static START_TIME: Once<SystemTime> = Once::new();
 pub(super) static START_TIME_AS_DURATION: Once<Duration> = Once::new();
+
+/// Adjustment applied to the wall clock by `clock_settime(CLOCK_REALTIME)` and
+/// `settimeofday`, in nanoseconds, relative to the firmware's boot time.
+///
+/// The monotonic clocks and `START_TIME` are unaffected, as on Linux; only the
+/// realtime clocks (and the vDSO's realtime base) move.
+static REALTIME_ADJUST_NANOS: AtomicI64 = AtomicI64::new(0);
+
+/// Returns the current wall-clock adjustment.
+pub(crate) fn realtime_adjust() -> i64 {
+    REALTIME_ADJUST_NANOS.load(Ordering::Acquire)
+}
+
+/// Sets the wall clock to `new_now` (a duration since the Unix epoch), as
+/// `clock_settime(CLOCK_REALTIME)` does.
+pub(crate) fn set_realtime(new_now: Duration) -> Result<()> {
+    let unadjusted = START_TIME
+        .get()
+        .unwrap()
+        .checked_add(read_monotonic_time())
+        .and_then(|t| t.duration_since(&SystemTime::UNIX_EPOCH).ok())
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "clock out of range"))?;
+    let delta = new_now.as_nanos() as i128 - unadjusted.as_nanos() as i128;
+    let delta = i64::try_from(delta)
+        .map_err(|_| Error::with_message(Errno::EINVAL, "time out of range"))?;
+    REALTIME_ADJUST_NANOS.store(delta, Ordering::Release);
+    // TODO: Add vDSO support for LoongArch (see `crate::vdso`).
+    #[cfg(not(target_arch = "loongarch64"))]
+    crate::vdso::on_realtime_adjusted();
+    Ok(())
+}
+
+fn apply_adjust(time: SystemTime) -> SystemTime {
+    let adjust = realtime_adjust();
+    if adjust >= 0 {
+        time.checked_add(Duration::from_nanos(adjust as u64))
+            .unwrap_or(time)
+    } else {
+        time.checked_sub(Duration::from_nanos(adjust.unsigned_abs()))
+            .unwrap_or(time)
+    }
+}
 
 pub(super) fn init() {
     let start_time = convert_system_time(read_start_time()).unwrap();
@@ -41,11 +86,13 @@ impl SystemTime {
     /// Returns the current system time
     pub(crate) fn now() -> Self {
         // The get real time result should always be valid
-        START_TIME
-            .get()
-            .unwrap()
-            .checked_add(read_monotonic_time())
-            .unwrap()
+        apply_adjust(
+            START_TIME
+                .get()
+                .unwrap()
+                .checked_add(read_monotonic_time())
+                .unwrap(),
+        )
     }
 
     /// Add a duration to self. If the result does not exceed inner bounds return Some(t), else return None.
@@ -55,7 +102,6 @@ impl SystemTime {
     }
 
     /// Subtract a duration from self. If the result does not exceed inner bounds return Some(t), else return None.
-    #[expect(dead_code)]
     pub(crate) fn checked_sub(&self, duration: Duration) -> Option<Self> {
         let duration = convert_to_time_duration(duration);
         self.0.checked_sub(duration).map(SystemTime)
