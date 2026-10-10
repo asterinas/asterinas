@@ -24,12 +24,7 @@ pub(super) fn sys_flock(raw_fd: RawFileDesc, ops: i32, ctx: &Context) -> Result<
             let type_ = FlockType::from(ops);
             FlockItem::new(&file, type_)
         };
-        inode_file
-            .set_flock(flock, is_nonblocking)
-            .map_err(|err| match err.error() {
-                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
-                _ => err,
-            })?;
+        inode_file.set_flock(flock, is_nonblocking)?;
     }
     Ok(SyscallReturn::Return(0))
 }
