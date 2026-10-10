@@ -2,6 +2,7 @@
 
 pub(super) mod alloc;
 mod decoder;
+mod edid;
 mod efi;
 #[cfg(feature = "cvm_guest")]
 mod unaccepted_memory;

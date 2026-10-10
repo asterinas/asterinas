@@ -62,17 +62,17 @@ impl FbBitfield {
                 Self { offset: 0, length: 5, msb_right: 0 },
                 Self::default(),
             ),
-            PixelFormat::Rgb888 => (
+            PixelFormat::Rgb888 | PixelFormat::RgbReserved => (
+                Self { offset: 0, length: 8, msb_right: 0 },
+                Self { offset: 8, length: 8, msb_right: 0 },
+                Self { offset: 16, length: 8, msb_right: 0 },
+                Self::default(),
+            ),
+            PixelFormat::Bgr888 | PixelFormat::BgrReserved => (
                 Self { offset: 16, length: 8, msb_right: 0 },
                 Self { offset: 8, length: 8, msb_right: 0 },
                 Self { offset: 0, length: 8, msb_right: 0 },
                 Self::default(),
-            ),
-            PixelFormat::BgrReserved => (
-                Self { offset: 16, length: 8, msb_right: 0 },
-                Self { offset: 8, length: 8, msb_right: 0 },
-                Self { offset: 0, length: 8, msb_right: 0 },
-                Self { offset: 24, length: 8, msb_right: 0 },
             ),
         }
     }
@@ -285,6 +285,12 @@ impl FbHandle {
 
         let pixel_format = self.framebuffer.pixel_format();
         let (red, green, blue, transp) = FbBitfield::from_pixel_format(pixel_format);
+        // Linux fb_var_screeninfo uses -1 when physical dimensions are unknown.
+        let (width_mm, height_mm) = self
+            .framebuffer
+            .physical_size_mm()
+            .map(|(width, height)| (u32::from(width), u32::from(height)))
+            .unwrap_or((u32::MAX, u32::MAX));
 
         FbVarScreenInfo {
             xres: self.framebuffer.width() as u32,
@@ -296,6 +302,8 @@ impl FbHandle {
             green,
             blue,
             transp,
+            height: height_mm,
+            width: width_mm,
             pixclock: DEFAULT_PIXEL_CLOCK_DIVISOR / self.framebuffer.width() as u32 * 1000
                 / self.framebuffer.height() as u32,
             left_margin: (self.framebuffer.width() as u32 / 8) & 0xf8,
@@ -588,4 +596,46 @@ pub(super) fn init_in_first_kthread() {
     }
 
     char::register(Arc::new(Fb)).expect("failed to register framebuffer char device");
+}
+
+#[cfg(ktest)]
+mod test {
+    use aster_framebuffer::pixel::Pixel;
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    #[ktest]
+    fn fbdev_bitfields_match_rendered_pixels() {
+        let pixel = Pixel {
+            red: 0xd3,
+            green: 0xa5,
+            blue: 0x76,
+        };
+        for format in [
+            PixelFormat::Rgb565,
+            PixelFormat::Rgb888,
+            PixelFormat::Bgr888,
+            PixelFormat::RgbReserved,
+            PixelFormat::BgrReserved,
+        ] {
+            let rendered = pixel.render(format);
+            let mut bytes = [0; 4];
+            bytes[..rendered.nbytes()].copy_from_slice(rendered.as_slice());
+            let packed = u32::from_le_bytes(bytes);
+
+            // Decode the rendered pixel using the bitfields advertised to userspace.
+            let (red, green, blue, transp) = FbBitfield::from_pixel_format(format);
+            for (field, channel) in [(red, pixel.red), (green, pixel.green), (blue, pixel.blue)] {
+                assert_eq!(field.msb_right, 0);
+                let mask = (1 << field.length) - 1;
+                assert_eq!(
+                    (packed >> field.offset) & mask,
+                    u32::from(channel) >> (8 - field.length),
+                    "incorrect channel layout for {format:?}",
+                );
+            }
+            assert_eq!(transp.length, 0, "reserved bytes are not an alpha channel");
+        }
+    }
 }
