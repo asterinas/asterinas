@@ -15,13 +15,17 @@
 
 use core::num::NonZeroU8;
 
+mod nvram;
+#[cfg(ktest)]
+mod test;
+
 use ostd::{
     arch::{
         device::io_port::{ReadWriteAccess, WriteOnlyAccess},
         kernel::ACPI_INFO,
     },
     io::IoPort,
-    sync::SpinLock,
+    sync::{LocalIrqDisabled, SpinLock},
     warn,
 };
 
@@ -29,7 +33,9 @@ use super::Driver;
 use crate::SystemTime;
 
 pub(super) struct RtcCmos {
-    access: SpinLock<CmosAccess>,
+    // RTC and NVRAM share this lock for complete index/data-port transactions.
+    // Local interrupts stay disabled so an IRQ cannot reenter the port pair.
+    access: SpinLock<CmosAccess, LocalIrqDisabled>,
     status_b: StatusB,
 }
 
@@ -93,12 +99,51 @@ impl Driver for RtcCmos {
     fn read_rtc(&self) -> SystemTime {
         CmosData::read_rtc(self).into()
     }
+
+    fn nvram(&self) -> Option<&dyn crate::nvram::Backend> {
+        Some(self)
+    }
+}
+
+impl crate::nvram::Backend for RtcCmos {
+    fn size(&self) -> usize {
+        nvram::SIZE
+    }
+
+    fn read(&self, offset: usize, buffer: &mut [u8]) -> Result<usize, crate::NvramError> {
+        (&mut *self.access.lock() as &mut dyn nvram::Access).read(offset, buffer)
+    }
+
+    fn write(&self, offset: usize, buffer: &[u8]) -> Result<usize, crate::NvramError> {
+        (&mut *self.access.lock() as &mut dyn nvram::Access).write(offset, buffer)
+    }
+
+    fn initialize(&self) {
+        (&mut *self.access.lock() as &mut dyn nvram::Access).initialize();
+    }
+
+    fn set_checksum(&self) {
+        (&mut *self.access.lock() as &mut dyn nvram::Access).set_checksum();
+    }
 }
 
 struct CmosAccess {
     io_sel: IoPort<u8, WriteOnlyAccess>,
     io_val: IoPort<u8, ReadWriteAccess>,
     century_register: Option<NonZeroU8>,
+}
+
+impl nvram::Access for CmosAccess {
+    fn read_byte(&mut self, offset: u8) -> u8 {
+        debug_assert!(usize::from(offset) < nvram::SIZE);
+        self.read_register_impl(nvram::FIRST_BYTE + offset)
+    }
+
+    fn write_byte(&mut self, offset: u8, value: u8) {
+        debug_assert!(usize::from(offset) < nvram::SIZE);
+        self.io_sel.write(nvram::FIRST_BYTE + offset);
+        self.io_val.write(value);
+    }
 }
 
 #[repr(u8)]
