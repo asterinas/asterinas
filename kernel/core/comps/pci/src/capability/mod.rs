@@ -6,16 +6,15 @@ use alloc::vec::Vec;
 
 use align_ext::AlignExt;
 use int_to_c_enum::TryFromInt;
-use ostd::Result;
 
 use self::{
-    msix::{CapabilityMsixData, RawCapabilityMsix},
+    msix::RawCapabilityMsix,
     vendor::{CapabilityVndrData, RawCapabilityVndr},
 };
 use crate::{
     PciDeviceLocation,
     cfg_space::{PciGeneralDeviceCfgOffset, Status},
-    common_device::{BarManager, PciCommonDevice},
+    common_device::PciCommonDevice,
 };
 
 pub mod msix;
@@ -136,17 +135,9 @@ impl RawCapabilities {
         caps
     }
 
-    /// Acquires a new [`CapabilityMsixData`] instance.
-    pub(super) fn acquire_msix_data(
-        &self,
-        loc: &PciDeviceLocation,
-        bar_manager: &BarManager,
-    ) -> Result<Option<CapabilityMsixData>> {
-        let Some(raw_msix) = self.msix.as_ref() else {
-            return Ok(None);
-        };
-
-        Ok(Some(CapabilityMsixData::new(loc, bar_manager, raw_msix)?))
+    /// Returns the raw MSI-X capability, if present.
+    pub(super) fn msix(&self) -> Option<&RawCapabilityMsix> {
+        self.msix.as_ref()
     }
 
     /// Iterates over [`CapabilityVndrData`] instances.
