@@ -9,9 +9,14 @@ use crate::{
             file_table::{RawFileDesc, get_file_fast},
         },
         utils::PATH_MAX,
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
+        vfs::{
+            file_system::FsFlags,
+            path::{AT_FDCWD, EmptyPathStr, FsPath, Path, PerMountFlags},
+        },
     },
     prelude::*,
+    process::credentials::capabilities::CapSet,
+    security::lsm::hooks as lsm_hooks,
 };
 
 pub(super) fn sys_fchmod(raw_fd: RawFileDesc, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
@@ -19,8 +24,7 @@ pub(super) fn sys_fchmod(raw_fd: RawFileDesc, mode: u16, ctx: &Context) -> Resul
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
-    file.path().set_mode(InodeMode::from_bits_truncate(mode))?;
-    fs::vfs::notify::on_attr_change(file.path());
+    do_chmod(file.path(), InodeMode::from_bits_truncate(mode), ctx)?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -78,9 +82,45 @@ fn do_fchmodat(
         }
     };
 
-    path.set_mode(InodeMode::from_bits_truncate(mode))?;
-    fs::vfs::notify::on_attr_change(&path);
+    do_chmod(&path, InodeMode::from_bits_truncate(mode), ctx)?;
     Ok(SyscallReturn::Return(0))
+}
+
+fn do_chmod(path: &Path, mut mode: InodeMode, ctx: &Context) -> Result<()> {
+    if path.mount_node().flags().contains(PerMountFlags::RDONLY)
+        || path.fs().flags().contains(FsFlags::RDONLY)
+    {
+        return_errno_with_message!(Errno::EROFS, "the mount or filesystem is read-only");
+    }
+
+    let metadata = path.metadata()?;
+    let credentials = ctx.posix_thread.credentials();
+
+    if credentials.fsuid() != metadata.uid {
+        lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+            ctx.thread_local.borrow_user_ns().as_ref(),
+            ctx.posix_thread,
+            CapSet::FOWNER,
+        ))?;
+    }
+
+    let is_in_inode_group =
+        credentials.fsgid() == metadata.gid || credentials.groups().contains(&metadata.gid);
+    if mode.contains(InodeMode::S_ISGID)
+        && !is_in_inode_group
+        && lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+            ctx.thread_local.borrow_user_ns().as_ref(),
+            ctx.posix_thread,
+            CapSet::FSETID,
+        ))
+        .is_err()
+    {
+        mode.remove(InodeMode::S_ISGID);
+    }
+
+    path.set_mode(mode)?;
+    fs::vfs::notify::on_attr_change(path);
+    Ok(())
 }
 
 bitflags::bitflags! {

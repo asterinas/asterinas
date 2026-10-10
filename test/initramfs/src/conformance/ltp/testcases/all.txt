@@ -73,8 +73,8 @@ chdir04
 
 chmod01
 chmod03
-# chmod05
-# chmod06
+chmod05
+chmod06
 chmod07
 chmod08
 # chmod09
@@ -274,8 +274,8 @@ fchmod01
 fchmod02
 fchmod03
 fchmod04
-# fchmod05
-# fchmod06
+fchmod05
+fchmod06
 
 #fchmodat test cases
 fchmodat01
