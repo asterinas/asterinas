@@ -267,6 +267,7 @@ smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2026-08-11_1b
     "proto-ipv6",
     "socket-udp",
     "socket-tcp",
+    "socket-dhcpv4",
 ] }
 takeable = "0.2.2"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
