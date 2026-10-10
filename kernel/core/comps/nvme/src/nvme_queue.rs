@@ -11,10 +11,7 @@ use core::{
 };
 
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use ostd::{
-    mm::{HasDaddr, dma::DmaCoherent},
-    warn,
-};
+use ostd::mm::{HasDaddr, dma::DmaCoherent};
 
 use crate::{
     nvme_regs::NvmeDoorbellRegs,
@@ -36,6 +33,8 @@ pub(crate) struct NvmeCompletionQueue {
     cqueue: SafePtr<Cqring, DmaCoherent>,
     head: u16,
     phase: bool,
+    /// Number of entries the device was told about (`<= QUEUE_DEPTH`).
+    depth: u16,
 }
 
 struct Cqring {
@@ -52,7 +51,15 @@ impl NvmeCompletionQueue {
             cqueue: SafePtr::new(dma, 0),
             head: 0,
             phase: true,
+            depth: QUEUE_DEPTH as u16,
         })
+    }
+
+    /// Limits the ring to `depth` entries (the storage stays `QUEUE_DEPTH`).
+    /// Must be called before the queue is created on the device.
+    pub(crate) fn set_depth(&mut self, depth: u16) {
+        debug_assert!(depth >= 2 && depth as usize <= QUEUE_DEPTH);
+        self.depth = depth;
     }
 
     /// Returns the DMA physical address of the completion ring.
@@ -81,7 +88,7 @@ impl NvmeCompletionQueue {
         let entry = ring_slot_ptr
             .read()
             .expect("CQ slot pointer must be valid within allocated DMA ring");
-        self.head = (self.head + 1) % (QUEUE_DEPTH as u16);
+        self.head = (self.head + 1) % self.depth;
         if self.head == 0 {
             self.phase = !self.phase;
         }
@@ -133,7 +140,13 @@ impl<C: Default> NvmeSubmissionQueue<C> {
 impl<C> NvmeSubmissionQueue<C> {
     /// Updates the mirrored SQ head from the SQ head pointer in `completion`.
     pub(crate) fn update_sq_head(&mut self, completion: &NvmeCompletion) {
-        self.inner.head = completion.sq_head() % (QUEUE_DEPTH as u16);
+        self.inner.head = completion.sq_head() % self.inner.depth;
+    }
+
+    /// Limits the ring to `depth` entries; see [`NvmeCompletionQueue::set_depth`].
+    pub(crate) fn set_depth(&mut self, depth: u16) {
+        debug_assert!(depth >= 2 && depth as usize <= QUEUE_DEPTH);
+        self.inner.depth = depth;
     }
 
     /// Returns the DMA physical address of the submission ring.
@@ -143,12 +156,13 @@ impl<C> NvmeSubmissionQueue<C> {
 
     /// Returns the number of SQ slots available for new commands starting at the current tail.
     pub(crate) fn free_slots(&self) -> usize {
+        let depth = self.inner.depth as usize;
         let used = if self.inner.tail >= self.inner.head {
             (self.inner.tail - self.inner.head) as usize
         } else {
-            QUEUE_DEPTH - (self.inner.head - self.inner.tail) as usize
+            depth - (self.inner.head - self.inner.tail) as usize
         };
-        (QUEUE_DEPTH - 1) - used
+        (depth - 1) - used
     }
 }
 
@@ -177,6 +191,8 @@ struct NvmeSubmissionQueueInner {
     squeue: SafePtr<Sqring, DmaCoherent>,
     tail: u16,
     head: u16,
+    /// Number of entries the device was told about (`<= QUEUE_DEPTH`).
+    depth: u16,
 }
 
 struct Sqring {
@@ -193,6 +209,7 @@ impl NvmeSubmissionQueueInner {
             squeue: SafePtr::new(dma, 0),
             tail: 0,
             head: 0,
+            depth: QUEUE_DEPTH as u16,
         })
     }
 
@@ -202,7 +219,7 @@ impl NvmeSubmissionQueueInner {
     ///
     /// Returns the new tail index for the SQ Tail doorbell, or `None` if full.
     fn submit(&mut self, entry: NvmeCommand) -> Option<u16> {
-        let next_tail = (self.tail + 1) % (QUEUE_DEPTH as u16);
+        let next_tail = (self.tail + 1) % self.depth;
         if next_tail == self.head {
             return None;
         }
@@ -261,8 +278,10 @@ where
     fn poll(&mut self) -> Option<(NvmeCompletion, u16)> {
         let (new_head, entry) = self.queue.complete()?;
         if entry.has_error() {
-            warn!(
-                "completion queue {}: command failed (CID={}, status={:04X}, SC={:#04x}, SQID={})",
+            // Visible at every log level: on EC2 this is the only clue when the
+            // EBS controller rejects a setup command.
+            ostd::early_println!(
+                "[kernel] nvme: completion queue {}: command failed (CID={}, status={:#06x}, SC={:#04x}, SQID={})",
                 self.qid,
                 entry.cid(),
                 entry.status(),
@@ -350,30 +369,39 @@ impl<'a, Q, T> NvmeSubmissionQueueAccess<'a, Q>
 where
     Q: DerefMut<Target = NvmeSubmissionQueue<Context<T>>>,
 {
-    /// Submits a batch of commands with contexts and rings the SQ doorbell once.
+    /// Enqueues as many commands as fit and returns how many were taken; the
+    /// rest are handed back in `leftover`. A slot can be free by the head
+    /// pointer (the device fetched the previous command) while its request is
+    /// still outstanding (not yet completed); such a slot is not reused, so
+    /// this can take fewer commands than `free_slots()` suggested.
     pub(crate) fn submit_with_items(
         &mut self,
         commands: impl IntoIterator<Item = (NvmeCommand, T)>,
-    ) -> Option<usize> {
+        leftover: &mut Vec<(NvmeCommand, T)>,
+    ) -> usize {
         let mut count = 0;
-        for (entry, item) in commands {
-            self.enqueue_one(entry, item)?;
+        let mut iter = commands.into_iter();
+        for (entry, item) in iter.by_ref() {
+            if self.queue.context.0[self.queue.inner.tail as usize].is_some() {
+                leftover.push((entry, item));
+                break;
+            }
+            if self.enqueue_one(entry, item).is_none() {
+                break;
+            }
             count += 1;
         }
+        leftover.extend(iter);
         if count > 0 {
             self.ring_doorbell();
         }
-        Some(count)
+        count
     }
 
     /// Enqueues one command and context without ringing the SQ doorbell.
     fn enqueue_one(&mut self, mut entry: NvmeCommand, item: T) -> Option<u16> {
         let cid = self.queue.inner.tail;
         if self.queue.context.0[cid as usize].is_some() {
-            warn!(
-                "submission queue {} slot {} is still outstanding",
-                self.qid, cid
-            );
             return None;
         }
         entry.set_cid(cid);

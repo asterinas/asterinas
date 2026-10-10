@@ -23,6 +23,8 @@ enum AdminCommandSet {
     CreateIocq = 0x05,
     /// Identify command. See Section 5.17.
     IdentifyCommand = 0x06,
+    /// Set Features command. See Section 5.27.
+    SetFeatures = 0x09,
 }
 
 /// I/O Command Set opcodes (NVM Command Set).
@@ -87,6 +89,23 @@ pub(crate) fn create_io_submission_queue(
             ((size as u32) << 16) | (qid as u32),
             ((cqid as u32) << 16) | 1,
         ],
+    )
+}
+
+/// Builds a Set Features (Number of Queues, FID 07h) admin command. See Section 5.27.1.14.
+///
+/// `nsq`/`ncq` are 0-based counts of I/O submission/completion queues. Linux
+/// issues this before creating any I/O queue; some controllers (the EBS NVMe
+/// controller on EC2 Nitro among them) reject Create I/O Completion Queue with
+/// "Invalid Field" until the number of queues has been negotiated.
+pub(crate) fn set_features_num_queues(nsq: u16, ncq: u16) -> NvmeCommand {
+    const FID_NUMBER_OF_QUEUES: u32 = 0x07;
+    NvmeCommand::from_raw_fields(
+        AdminCommandSet::SetFeatures as u8,
+        0,
+        0,
+        [0, 0],
+        [FID_NUMBER_OF_QUEUES, ((ncq as u32) << 16) | (nsq as u32)],
     )
 }
 
