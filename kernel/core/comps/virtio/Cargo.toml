@@ -9,6 +9,7 @@ edition.workspace = true
 aster-bigtcp.workspace = true
 aster-block.workspace = true
 aster-console.workspace = true
+aster-device.workspace = true
 aster-fuse.workspace = true
 aster-input.workspace = true
 aster-network.workspace = true

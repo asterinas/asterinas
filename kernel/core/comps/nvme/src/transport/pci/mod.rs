@@ -3,18 +3,28 @@
 pub(crate) mod driver;
 pub(crate) mod transport;
 
-use alloc::sync::Arc;
+use alloc::{boxed::Box, collections::VecDeque};
 
 use aster_pci::PCI_BUS;
-use spin::Once;
+use ostd::sync::SpinLock;
 
-use self::driver::NvmePciDriver;
+use self::{driver::NvmePciDriver, transport::NvmePciTransport};
 
-pub(crate) static NVME_PCI_DRIVER: Once<Arc<NvmePciDriver>> = Once::new();
+// Transports await functional initialization after PCI driver registration.
+static TRANSPORTS: SpinLock<VecDeque<NvmePciTransport>> = SpinLock::new(VecDeque::new());
+
+fn push_device_transport(transport: NvmePciTransport) {
+    TRANSPORTS.lock().push_back(transport);
+}
+
+pub(crate) fn pop_device_transport() -> Option<NvmePciTransport> {
+    TRANSPORTS.lock().pop_front()
+}
 
 pub(crate) fn nvme_pci_init() {
-    NVME_PCI_DRIVER.call_once(|| Arc::new(NvmePciDriver::new()));
     PCI_BUS
-        .lock()
-        .register_driver(NVME_PCI_DRIVER.get().unwrap().clone());
+        .get()
+        .unwrap()
+        .register_driver(Box::new(NvmePciDriver))
+        .unwrap();
 }
