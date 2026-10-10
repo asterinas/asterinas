@@ -287,43 +287,52 @@ mod test {
         let vmx = VmxGuard::acquire_vmx().expect("VMX is required");
         let first = Vmcs::new(&vmx).unwrap();
         let second = Vmcs::new(&vmx).unwrap();
-        let _preempt_guard = task::disable_preempt();
+        {
+            let _preempt_guard = task::disable_preempt();
 
-        // Fields from the current VMCS can be read and written.
-        first.load(&vmx).unwrap();
-        unsafe { first.write(RIP, 0x1000, &irq::disable_local()).unwrap() };
-        second.load(&vmx).unwrap();
-        unsafe { second.write(RIP, 0x2000, &irq::disable_local()).unwrap() };
-        first.load(&vmx).unwrap();
-        assert_eq!(
-            unsafe { first.read(RIP, &irq::disable_local()).unwrap() },
-            0x1000
-        );
+            // Fields from the current VMCS can be read and written.
+            first.load(&vmx).unwrap();
+            unsafe { first.write(RIP, 0x1000, &irq::disable_local()).unwrap() };
+            second.load(&vmx).unwrap();
+            unsafe { second.write(RIP, 0x2000, &irq::disable_local()).unwrap() };
+            first.load(&vmx).unwrap();
+            assert_eq!(
+                unsafe { first.read(RIP, &irq::disable_local()).unwrap() },
+                0x1000
+            );
+        }
 
-        // VMX shutdown clears active VMCSs, which can be loaded again later.
+        // Dropping the VMX guard may sleep (e.g., waiting for
+        // inter-processor calls), so it must happen after the preemption
+        // guard is released.
         drop(vmx);
         assert!(first.meta().state.lock().active_cpu.is_none());
         assert!(second.meta().state.lock().active_cpu.is_none());
         let vmx = VmxGuard::acquire_vmx().unwrap();
-        first.load(&vmx).unwrap();
-        assert_eq!(
-            unsafe { first.read(RIP, &irq::disable_local()).unwrap() },
-            0x1000
-        );
-        second.load(&vmx).unwrap();
-        assert_eq!(
-            unsafe { second.read(RIP, &irq::disable_local()).unwrap() },
-            0x2000
-        );
+        {
+            let _preempt_guard = task::disable_preempt();
 
-        // Clearing a non-current VMCS preserves the current one.
-        first.deactivate(&vmx).unwrap();
-        drop(first);
-        assert_eq!(
-            unsafe { second.read(RIP, &irq::disable_local()).unwrap() },
-            0x2000
-        );
-        second.deactivate(&vmx).unwrap();
-        drop(second);
+            // VMX shutdown clears active VMCSs, which can be loaded again later.
+            first.load(&vmx).unwrap();
+            assert_eq!(
+                unsafe { first.read(RIP, &irq::disable_local()).unwrap() },
+                0x1000
+            );
+            second.load(&vmx).unwrap();
+            assert_eq!(
+                unsafe { second.read(RIP, &irq::disable_local()).unwrap() },
+                0x2000
+            );
+
+            // Clearing a non-current VMCS preserves the current one.
+            first.deactivate(&vmx).unwrap();
+            drop(first);
+            assert_eq!(
+                unsafe { second.read(RIP, &irq::disable_local()).unwrap() },
+                0x2000
+            );
+            second.deactivate(&vmx).unwrap();
+            drop(second);
+        }
     }
 }
