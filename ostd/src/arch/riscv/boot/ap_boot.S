@@ -6,12 +6,14 @@ SATP_MODE_SV39         = 8 << 60
 SATP_MODE_SV48         = 9 << 60
 SATP_PPN_SHIFT         = 0
 PAGE_SHIFT             = 12
-KERNEL_VMA_OFFSET      = 0xffffffff00000000
 
 # This is to workaround <https://github.com/rust-lang/rust/issues/80608>.
 .attribute arch, "rv64imac"
 
 .section ".ap_boot", "awx", @progbits
+
+.option push
+.option norelax
 
 .balign 4096
 .global ap_boot_start
@@ -25,7 +27,7 @@ ap_boot_start:
     mv      t4, a0
 
     # Load the page table address in Sv48 mode and set SATP.
-    lla     t0, __ap_boot_page_table_pointer - KERNEL_VMA_OFFSET
+    lla     t0, __ap_boot_page_table_pointer
     ld      t1, 0(t0)                   # Load page table physical address.
     li      t2, SATP_MODE_SV48          # Sv48 mode.
     srli    t1, t1, PAGE_SHIFT - SATP_PPN_SHIFT
@@ -58,9 +60,10 @@ ap_flush_tlb:
 
     # Now we need to switch to virtual addressing.
     # Calculate virtual address using the same method as boot.S.
-    li      t1, KERNEL_VMA_OFFSET
-    lla     sp, ap_boot_virtual - KERNEL_VMA_OFFSET
-    or      sp, sp, t1
+    lla     t1, __riscv_kernel_loaded_offset
+    ld      t1, 0(t1)
+    lla     sp, ap_boot_virtual
+    add     sp, sp, t1
     jr      sp
 
 # From here, we're in the canonical virtual address space instead of linear
@@ -106,6 +109,8 @@ ap_cmpxchg_load:
     # Load stack top and CPU local storage's base address.
     ld      sp, 0(t3)                   # Load stack_top.
     ld      gp, 8(t3)                   # Load cpu_local pointer.
+
+.option pop
 
     # Clear frame pointer for clean stack traces.
     li      fp, 0
