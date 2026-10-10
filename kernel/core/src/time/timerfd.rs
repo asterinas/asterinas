@@ -150,6 +150,10 @@ impl TimerfdFile {
         // Cancel the timer and clear the ticks counter.
         timer_guard.cancel();
         self.ticks.store(0, Ordering::Relaxed);
+        // The counter just went to zero: drop the cached `IN` readiness, or
+        // epoll keeps reporting an already-disarmed timer forever (Linux
+        // clears the expiration count on `timerfd_settime`).
+        self.pollee.invalidate();
 
         if expire_time != Duration::ZERO {
             if flags.contains(TFDSetTimeFlags::TFD_TIMER_CANCEL_ON_SET) {
