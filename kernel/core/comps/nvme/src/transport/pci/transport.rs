@@ -48,7 +48,7 @@ impl NvmePciTransport {
     pub(super) fn new(
         mut common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
-        let Some(config_bar) = Self::check_and_acquire_bar0(&mut common_device) else {
+        let Some(config_bar) = Self::check_and_acquire_bar0(&common_device) else {
             error!("BAR0 is unusable: missing, not MMIO, map failed, or too small");
             return Err((BusProbeError::ConfigurationSpaceError, common_device));
         };
@@ -69,8 +69,8 @@ impl NvmePciTransport {
 
     /// Validates BAR0, maps it, and checks its size against the fixed layout and
     /// [`Self::required_bar0_size_bytes`].
-    fn check_and_acquire_bar0(device: &mut PciCommonDevice) -> Option<BarAccess> {
-        let bar0 = device.bar_manager_mut().bar_mut(0)?;
+    fn check_and_acquire_bar0(device: &PciCommonDevice) -> Option<BarAccess> {
+        let bar0 = device.bar_manager().bar(0)?;
         let bar_size = match bar0 {
             Bar::Memory(mem) => mem.size(),
             Bar::Io(_) => return None,

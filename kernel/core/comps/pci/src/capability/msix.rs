@@ -61,11 +61,11 @@ pub struct CapabilityMsixData {
 impl CapabilityMsixData {
     pub(super) fn new(
         loc: &PciDeviceLocation,
-        bar_manager: &mut BarManager,
+        bar_manager: &BarManager,
         raw_cap: &RawCapabilityMsix,
     ) -> Result<Self> {
         let pba_bar = match bar_manager
-            .bar_mut(raw_cap.pba_info.bar_index())
+            .bar(raw_cap.pba_info.bar_index())
             .ok_or(Error::InvalidArgs)?
             .acquire()?
         {
@@ -75,7 +75,7 @@ impl CapabilityMsixData {
         let pba_offset = raw_cap.pba_info.offset();
 
         let table_bar = match bar_manager
-            .bar_mut(raw_cap.table_info.bar_index())
+            .bar(raw_cap.table_info.bar_index())
             .ok_or(Error::InvalidArgs)?
             .acquire()?
         {
