@@ -10,4 +10,4 @@ pub(super) mod apic;
 pub(super) mod kvm_clock;
 pub(super) mod tsc;
 
-pub use acpi::{ACPI_INFO, AcpiInfo};
+pub use acpi::{ACPI_INFO, AcpiInfo, AcpiPmInfo};

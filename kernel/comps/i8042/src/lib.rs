@@ -40,4 +40,5 @@ fn try_cpu_reset(_code: ExitCode) {
         controller.lock().reset_cpu();
     }
 }
-register_restart_handler!(try_cpu_reset, Priority::LOW);
+// Above the triple fault (`Priority::LOW`), which must stay the last resort.
+register_restart_handler!(try_cpu_reset, Priority::new(1));

@@ -263,6 +263,12 @@ fn with_init_argv0(init_name: &str, mut argv: Vec<CString>) -> Vec<CString> {
 
 static INIT_PROCESS: Once<Arc<Process>> = Once::new();
 
+/// A weak reference to the init process, for code that must not block
+/// (e.g. interrupt callbacks delivering `SIGPWR`).
+pub(crate) fn init_process_weak() -> Option<Weak<Process>> {
+    INIT_PROCESS.get().map(Arc::downgrade)
+}
+
 fn init_in_first_kthread(path_resolver: &PathResolver) {
     component::init_all(InitStage::Kthread, component::parse_metadata!()).unwrap();
     crate::thread::init_in_first_kthread();
