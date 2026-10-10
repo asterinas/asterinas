@@ -19,6 +19,8 @@ pub(crate) struct EptPtConfig {}
 // `item_ref_from_raw` are correctly implemented with respect to the `Item` and
 // `ItemRef` types.
 unsafe impl PageTableConfig for EptPtConfig {
+    type Aux = ();
+
     const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..512;
 
     type E = PageTableEntry;

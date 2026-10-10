@@ -183,6 +183,38 @@ FN_TEST(truncate_cowed_pages)
 }
 END_TEST()
 
+FN_TEST(truncate_mremapped_shared_page)
+{
+	// The preceding truncation test intentionally leaves the file one page
+	// long. Restore it before touching the second page in this test.
+	TEST_SUCC(ftruncate(fd, PAGE_SIZE * 2));
+
+	char *source =
+		TEST_SUCC(mmap(NULL, PAGE_SIZE * 2, PROT_READ | PROT_WRITE,
+			       MAP_SHARED, fd, 0));
+	char *target = TEST_SUCC(mmap(NULL, PAGE_SIZE, PROT_NONE,
+				      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	TEST_SUCC(munmap(target, PAGE_SIZE));
+
+	strcpy(source + PAGE_SIZE, "moved shared page");
+	target = TEST_SUCC(mremap(source + PAGE_SIZE, PAGE_SIZE, PAGE_SIZE,
+				  MREMAP_MAYMOVE | MREMAP_FIXED, target));
+	TEST_RES(strcmp(target, "moved shared page"), _ret == 0);
+
+	// Reverse mappings must follow the page moved out of the original VMA.
+	TEST_SUCC(ftruncate(fd, PAGE_SIZE));
+	asm volatile("" : : : "memory");
+	TEST_SUCC(check_page_does_not_exist(target));
+
+	TEST_SUCC(ftruncate(fd, PAGE_SIZE * 2));
+	asm volatile("" : : : "memory");
+	TEST_RES(target[0], _ret == 0);
+
+	TEST_SUCC(munmap(target, PAGE_SIZE));
+	TEST_SUCC(munmap(source, PAGE_SIZE));
+}
+END_TEST()
+
 FN_SETUP(cleanup)
 {
 	CHECK(munmap(mapped_buf, PAGE_SIZE * 2));

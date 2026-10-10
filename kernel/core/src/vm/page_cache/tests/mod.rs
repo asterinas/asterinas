@@ -550,3 +550,27 @@ fn delayed_io_completion() {
     assert!(second_flush_result.lock().take().unwrap().is_ok());
     assert_eq!(backend.persisted_page_bytes(0), latest_dirty_pattern);
 }
+
+// PR #2615: operations preparing page states may sleep, while mapping changes
+// acquire the reverse-map lock with preemption disabled under a PT cursor.
+#[ktest]
+fn reverse_mapping_updates_during_page_cache_operation() {
+    use ostd::{cpu::CpuId, task::disable_preempt};
+
+    let backend = MockPageCacheBackend::new(1);
+    let page_cache = new_backend_page_cache(&backend, 1);
+    let vmo = page_cache.as_vmo().clone();
+    let operation = vmo.rmap_operation.lock();
+    let worker_vmo = vmo.clone();
+    let worker = ThreadOptions::new(move || {
+        let _preempt_guard = disable_preempt();
+        let mut rmap = worker_vmo.rmap().lock();
+        // Removing an absent mapping still exercises the synchronization used
+        // by mmap/munmap, without requiring a userspace address space.
+        rmap.remove_range(Weak::new(), &(PAGE_SIZE..2 * PAGE_SIZE));
+    })
+    .cpu_affinity(CpuId::current_racy().into())
+    .spawn();
+    worker.join();
+    drop(operation);
+}
