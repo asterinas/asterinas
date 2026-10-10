@@ -76,13 +76,17 @@ jobs:
           name: aster-nixos-dev
           authToken: ${{ github.event_name == 'push' && secrets.CACHIX_AUTH_TOKEN_FOR_DEV_CACHE || '' }}
           skipPush: ${{ github.event_name != 'push' }}
+      - name: Record the lock file
+        run: sha256sum flake.lock > "$RUNNER_TEMP/flake-lock.sha256"
       - name: Check in Nix dev shell
         run: |
-          nix develop --accept-flake-config --ignore-environment --keep HOME \
+          nix develop --accept-flake-config --no-update-lock-file --ignore-environment --keep HOME \
             --command make check
       - name: Build and boot Asterinas
         run: |
           # Keep `NIX_USER_CONF_FILES` so nested Nix builds retain Cachix's post-build hook.
-          nix develop --accept-flake-config --ignore-environment --keep HOME \
+          nix develop --accept-flake-config --no-update-lock-file --ignore-environment --keep HOME \
             --keep NIX_USER_CONF_FILES \
             --command make run_kernel AUTO_TEST=boot ENABLE_KVM=${{ matrix.enable_kvm }}
+      - name: Check the lock file is unchanged
+        run: sha256sum --check "$RUNNER_TEMP/flake-lock.sha256"
