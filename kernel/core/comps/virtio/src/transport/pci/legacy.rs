@@ -95,8 +95,8 @@ impl VirtioPciLegacyTransport {
         info!("Found device: {:?}", device_type);
 
         let config_bar = common_device
-            .bar_manager_mut()
-            .bar_mut(0)
+            .bar_manager()
+            .bar(0)
             .unwrap()
             .acquire()
             .unwrap();

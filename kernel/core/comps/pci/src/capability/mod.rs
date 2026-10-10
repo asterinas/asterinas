@@ -140,7 +140,7 @@ impl RawCapabilities {
     pub(super) fn acquire_msix_data(
         &self,
         loc: &PciDeviceLocation,
-        bar_manager: &mut BarManager,
+        bar_manager: &BarManager,
     ) -> Result<Option<CapabilityMsixData>> {
         let Some(raw_msix) = self.msix.as_ref() else {
             return Ok(None);
@@ -150,12 +150,12 @@ impl RawCapabilities {
     }
 
     /// Iterates over [`CapabilityVndrData`] instances.
-    pub(super) fn iter_vndr_data(
-        &self,
-        loc: &PciDeviceLocation,
-    ) -> impl Iterator<Item = CapabilityVndrData> {
+    pub(super) fn iter_vndr_data<'a>(
+        &'a self,
+        device: &'a PciCommonDevice,
+    ) -> impl Iterator<Item = CapabilityVndrData<'a>> {
         self.vndr
             .iter()
-            .map(|raw_vndr| CapabilityVndrData::new(loc, raw_vndr))
+            .map(move |raw_vndr| CapabilityVndrData::new(device, raw_vndr))
     }
 }

@@ -292,7 +292,8 @@ impl VirtioPciModernTransport {
         let mut notify = None;
         let mut common_cfg = None;
         let mut device_cfg = None;
-        let (vndr_caps, bar_manager) = common_device.iter_vndr_capability_with_bar_manager();
+        let vndr_caps = common_device.iter_vndr_capability();
+        let bar_manager = common_device.bar_manager();
         for vndr_cap in vndr_caps {
             let data = VirtioPciCapabilityData::new(bar_manager, vndr_cap);
             match data.typ() {
