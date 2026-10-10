@@ -6,7 +6,14 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use smoltcp::{iface::Route, socket::PollAt};
+use smoltcp::{
+    iface::Route,
+    socket::{
+        PollAt,
+        dhcpv4::{Event as DhcpEvent, Socket as Dhcpv4Socket},
+    },
+    wire::{Ipv4Address, Ipv4Repr, UdpRepr},
+};
 
 use crate::{
     ext::Ext,
@@ -20,20 +27,91 @@ use crate::{
 pub(crate) struct PollableIface<E: Ext> {
     interface: smoltcp::iface::Interface,
     pending_conns: PendingConnSet<E>,
+    /// The DHCPv4 client, present when the interface is configured by DHCP.
+    dhcp: Option<Dhcpv4Socket<'static>>,
+    /// DNS servers announced by the last DHCP lease.
+    dns_servers: Vec<Ipv4Address>,
 }
+
+/// Bumped every time an interface's address or routes change at runtime.
+///
+/// Consumers that cache routing information (the kernel's route tables) compare
+/// this with the value they last saw and rebuild when it differs.
+pub static CONFIG_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 impl<E: Ext> PollableIface<E> {
     pub(super) fn new(interface: smoltcp::iface::Interface) -> Self {
         Self {
             interface,
             pending_conns: PendingConnSet::new(),
+            dhcp: None,
+            dns_servers: Vec::new(),
         }
+    }
+
+    pub(super) fn new_with_dhcp(interface: smoltcp::iface::Interface) -> Self {
+        let mut this = Self::new(interface);
+        this.dhcp = Some(Dhcpv4Socket::new());
+        this
+    }
+
+    /// Returns the DNS servers announced by DHCP (empty for static configuration).
+    pub(super) fn dns_servers(&self) -> &[Ipv4Address] {
+        &self.dns_servers
+    }
+
+    /// Whether DHCP is active and no lease has been obtained yet.
+    pub(super) fn is_dhcp_pending(&self) -> bool {
+        self.dhcp.is_some() && self.ipv4_cidr().is_none()
+    }
+
+    /// Stops the DHCP client. Called when user space configures the address itself.
+    pub(super) fn stop_dhcp(&mut self) {
+        self.dhcp = None;
+        self.dns_servers.clear();
+    }
+
+    /// Applies lease events reported by the DHCP client. Returns whether the
+    /// configuration changed.
+    pub(super) fn poll_dhcp(&mut self) -> bool {
+        let Some(dhcp) = self.dhcp.as_mut() else {
+            return false;
+        };
+        let Some(event) = dhcp.poll() else {
+            return false;
+        };
+        match event {
+            DhcpEvent::Configured(config) => {
+                let address = config.address;
+                let router = config.router;
+                let dns: Vec<Ipv4Address> = config.dns_servers.iter().copied().collect();
+                log::info!("dhcp: lease {} gateway {:?} dns {:?}", address, router, dns);
+                self.set_ipv4_cidr(address);
+                self.set_ipv4_gateway(router);
+                self.dns_servers = dns;
+            }
+            DhcpEvent::Deconfigured => {
+                if self.ipv4_cidr().is_none() {
+                    // smoltcp reports `Deconfigured` once at start-up; nothing to undo.
+                    return false;
+                }
+                log::info!("dhcp: lease lost");
+                self.interface.update_ip_addrs(|addrs| {
+                    addrs.retain(|a| !matches!(a, smoltcp::wire::IpCidr::Ipv4(_)));
+                });
+                self.set_ipv4_gateway(None);
+                self.dns_servers.clear();
+            }
+        }
+        CONFIG_GENERATION.fetch_add(1, Ordering::Release);
+        true
     }
 
     pub(super) fn as_mut(&mut self) -> PollableIfaceMut<'_, E> {
         PollableIfaceMut {
             context: self.interface.context(),
             pending_conns: &mut self.pending_conns,
+            dhcp: self.dhcp.as_mut(),
         }
     }
 
@@ -66,7 +144,7 @@ impl<E: Ext> PollableIface<E> {
     }
 
     /// Replaces the default IPv4 route.
-    pub(super) fn set_ipv4_gateway(&mut self, gateway: Option<smoltcp::wire::Ipv4Address>) {
+    pub(super) fn set_ipv4_gateway(&mut self, gateway: Option<Ipv4Address>) {
         let routes = self.interface.routes_mut();
         match gateway {
             Some(gw) => {
@@ -87,8 +165,20 @@ impl<E: Ext> PollableIface<E> {
     }
 
     /// Returns the next poll time.
-    pub(super) fn next_poll_at_ms(&self) -> Option<u64> {
-        self.pending_conns.next_poll_at_ms()
+    pub(super) fn next_poll_at_ms(&mut self) -> Option<u64> {
+        let conns = self.pending_conns.next_poll_at_ms();
+        let Some(dhcp) = self.dhcp.as_ref() else {
+            return conns;
+        };
+        let dhcp_at = match dhcp.poll_at(self.interface.context()) {
+            PollAt::Now => Some(0),
+            PollAt::Time(t) => Some(t.total_millis() as u64),
+            PollAt::Ingress => None,
+        };
+        match (conns, dhcp_at) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 }
 
@@ -143,6 +233,7 @@ impl<E: Ext> PollableIface<E> {
 pub(crate) struct PollableIfaceMut<'a, E: Ext> {
     context: &'a mut smoltcp::iface::Context,
     pending_conns: &'a mut PendingConnSet<E>,
+    dhcp: Option<&'a mut Dhcpv4Socket<'static>>,
 }
 
 // FIXME: We provide `new()` and `inner_mut()` as `pub(crate)` methods because it's necessary to
@@ -156,11 +247,50 @@ impl<'a, E: Ext> PollableIfaceMut<'a, E> {
         Self {
             context,
             pending_conns,
+            dhcp: None,
         }
     }
 
     pub(crate) fn inner_mut(&mut self) -> (&mut smoltcp::iface::Context, &mut PendingConnSet<E>) {
         (self.context, self.pending_conns)
+    }
+
+    /// Whether a DHCP client is attached and still waiting for a lease.
+    pub(super) fn is_dhcp_pending(&self) -> bool {
+        self.dhcp.is_some() && self.context.ipv4_addr().is_none()
+    }
+
+    /// Feeds an incoming UDP datagram to the DHCP client. Returns `true` if it
+    /// was a DHCP packet (whether or not the client accepted it).
+    pub(super) fn process_dhcp(
+        &mut self,
+        ip_repr: &Ipv4Repr,
+        udp_repr: &UdpRepr,
+        payload: &[u8],
+    ) -> bool {
+        let Some(dhcp) = self.dhcp.as_deref_mut() else {
+            return false;
+        };
+        if udp_repr.src_port != 67 || udp_repr.dst_port != 68 {
+            return false;
+        }
+        dhcp.process(self.context, ip_repr, udp_repr, payload);
+        true
+    }
+
+    /// Lets the DHCP client emit a packet if one is due. The packet is
+    /// returned as (IP header, UDP header, DHCP payload bytes).
+    pub(super) fn dispatch_dhcp(&mut self) -> Option<(Ipv4Repr, UdpRepr, Vec<u8>)> {
+        let dhcp = self.dhcp.as_deref_mut()?;
+        let mut out = None;
+        let _ = dhcp.dispatch(self.context, |_cx, (ip_repr, udp_repr, dhcp_repr)| {
+            let mut buf = alloc::vec![0u8; dhcp_repr.buffer_len()];
+            let mut packet = smoltcp::wire::DhcpPacket::new_unchecked(&mut buf[..]);
+            dhcp_repr.emit(&mut packet).map_err(|_| ())?;
+            out = Some((ip_repr, udp_repr, buf));
+            Ok::<(), ()>(())
+        });
+        out
     }
 }
 
