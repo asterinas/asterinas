@@ -47,6 +47,7 @@ impl InodeHandle {
         path: Path,
         access_mode: AccessMode,
         status_flags: StatusFlags,
+        creation_flags: CreationFlags,
     ) -> Result<Self> {
         let inode = path.inode();
         if !status_flags.contains(StatusFlags::O_PATH) {
@@ -56,13 +57,32 @@ impl InodeHandle {
             inode.check_permission(access_mode.into())?;
         }
 
-        Self::new_unchecked_access(path, access_mode, status_flags)
+        Self::new_unchecked_access_with_creation_flags(
+            path,
+            access_mode,
+            status_flags,
+            creation_flags,
+        )
     }
 
     pub(crate) fn new_unchecked_access(
         path: Path,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Result<Self> {
+        Self::new_unchecked_access_with_creation_flags(
+            path,
+            access_mode,
+            status_flags,
+            CreationFlags::empty(),
+        )
+    }
+
+    fn new_unchecked_access_with_creation_flags(
+        path: Path,
         mut access_mode: AccessMode,
         status_flags: StatusFlags,
+        creation_flags: CreationFlags,
     ) -> Result<Self> {
         let inode = path.inode();
         let open_file = if status_flags.contains(StatusFlags::O_PATH) {
@@ -74,7 +94,7 @@ impl InodeHandle {
             return_errno_with_message!(Errno::EISDIR, "a directory cannot be opened writable");
         } else {
             inode
-                .open(path.dentry(), access_mode, status_flags)
+                .open(path.dentry(), access_mode, status_flags, creation_flags)
                 .transpose()?
         };
 

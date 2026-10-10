@@ -128,6 +128,7 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
         _self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
+        _creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         self.inner.open(access_mode, status_flags)
     }

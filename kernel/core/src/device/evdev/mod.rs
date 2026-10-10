@@ -204,7 +204,7 @@ impl Device for EvdevDevice {
         Some(DevtmpfsNodeMeta::new(format!("input/event{}", self.id.minor().get())).unwrap())
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+    fn open(&self, _context: &crate::device::DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>> {
         // Get the device from the registry.
         let devices = EVDEV_DEVICES.lock();
         let Some(evdev) = devices.get(&self.id.minor()) else {
