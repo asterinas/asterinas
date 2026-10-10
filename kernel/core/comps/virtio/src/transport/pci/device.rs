@@ -3,9 +3,7 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
-use aster_pci::{
-    PciDeviceId, bus::PciDevice, cfg_space::BarAccess, common_device::PciCommonDevice,
-};
+use aster_pci::{bus::PciDevice, cfg_space::BarAccess};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use ostd::{
     bus::BusProbeError,
@@ -35,26 +33,9 @@ struct VirtioPciNotify {
     io_memory: IoMem,
 }
 
-#[derive(Debug)]
-pub(super) struct VirtioPciDevice {
-    device_id: PciDeviceId,
-}
-
-impl VirtioPciDevice {
-    pub(super) fn new(device_id: PciDeviceId) -> Self {
-        Self { device_id }
-    }
-}
-
-impl PciDevice for VirtioPciDevice {
-    fn device_id(&self) -> PciDeviceId {
-        self.device_id
-    }
-}
-
 pub(super) struct VirtioPciModernTransport {
     device_type: VirtioDeviceType,
-    common_device: PciCommonDevice,
+    common_device: Arc<PciDevice>,
     common_cfg: SafePtr<VirtioPciCommonCfg, IoMem>,
     device_cfg: VirtioPciCapabilityData,
     notify: VirtioPciNotify,
@@ -268,10 +249,7 @@ impl VirtioTransport for VirtioPciModernTransport {
 }
 
 impl VirtioPciModernTransport {
-    #[expect(clippy::result_large_err)]
-    pub(super) fn new(
-        common_device: PciCommonDevice,
-    ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
+    pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, BusProbeError> {
         let device_id = common_device.device_id().device_id;
         let device_type_value = if device_id <= 0x1040 {
             device_id - 0x1000
@@ -283,7 +261,7 @@ impl VirtioPciModernTransport {
             Ok(device) => device,
             Err(_) => {
                 warn!("Unrecognized virtio-pci device ID: {:x?}", device_id);
-                return Err((BusProbeError::DeviceNotMatch, common_device));
+                return Err(BusProbeError::DeviceNotMatch);
             }
         };
 
