@@ -11,6 +11,7 @@ use ostd::{
     io::IoMem,
     mm::{PodOnce, VmIoOnce},
 };
+use spin::Once;
 
 use super::PciDeviceLocation;
 
@@ -245,7 +246,7 @@ pub enum Bar {
 
 impl Bar {
     /// Acquires access to the BAR.
-    pub fn acquire(&mut self) -> Result<BarAccess> {
+    pub fn acquire(&self) -> Result<BarAccess> {
         match self {
             Self::Memory(mem_bar) => mem_bar.acquire().cloned().map(BarAccess::Memory),
             // TODO: Implement the `acquire` operation based on `IoPortAllocator`.
@@ -322,7 +323,7 @@ pub struct MemoryBar {
     size: u64,
     prefetchable: bool,
     address_length: AddrLen,
-    io_memory: Option<IoMem>,
+    io_memory: Once<IoMem>,
 }
 
 impl MemoryBar {
@@ -348,16 +349,12 @@ impl MemoryBar {
     }
 
     /// Acquires access to the memory BAR.
-    pub fn acquire(&mut self) -> Result<&IoMem> {
-        if self.io_memory.is_none() {
+    pub fn acquire(&self) -> Result<&IoMem> {
+        self.io_memory.try_call_once(|| {
             // Use the `Uncacheable` cache policy for PCI device BARs by default.
             // Device-specific drivers may remap with different cache policies if needed.
-            self.io_memory = Some(IoMem::acquire(
-                (self.base as usize)..((self.base + self.size) as usize),
-            )?);
-        }
-
-        Ok(self.io_memory.as_ref().unwrap())
+            IoMem::acquire((self.base as usize)..((self.base + self.size) as usize))
+        })
     }
 
     /// Returns access to the memory BAR.
@@ -366,7 +363,7 @@ impl MemoryBar {
     ///
     /// [`acquire`]: Self::acquire
     pub fn access(&self) -> Option<&IoMem> {
-        self.io_memory.as_ref()
+        self.io_memory.get()
     }
 
     /// Creates a memory BAR structure.
@@ -462,7 +459,7 @@ impl MemoryBar {
             size,
             prefetchable,
             address_length,
-            io_memory: None,
+            io_memory: Once::new(),
         })
     }
 }

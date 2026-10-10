@@ -74,7 +74,7 @@ impl VirtioPciLegacyTransport {
 
     #[expect(clippy::result_large_err)]
     pub(super) fn new(
-        mut common_device: PciCommonDevice,
+        common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
         let device_type = match common_device.device_id().device_id {
             0x1000 => VirtioDeviceType::Network,
@@ -95,8 +95,8 @@ impl VirtioPciLegacyTransport {
         info!("Found device: {:?}", device_type);
 
         let config_bar = common_device
-            .bar_manager_mut()
-            .bar_mut(0)
+            .bar_manager()
+            .bar(0)
             .unwrap()
             .acquire()
             .unwrap();

@@ -46,7 +46,7 @@ impl VirtioPciCapabilityData {
         self.option
     }
 
-    pub(super) fn new(bar_manager: &mut BarManager, vendor_cap: CapabilityVndrData) -> Self {
+    pub(super) fn new(bar_manager: &BarManager, vendor_cap: CapabilityVndrData) -> Self {
         let cfg_type = vendor_cap.read8(3).unwrap();
         let cfg_type = match cfg_type {
             1 => VirtioPciCpabilityType::CommonCfg,
@@ -68,7 +68,7 @@ impl VirtioPciCapabilityData {
         };
 
         let bar = vendor_cap.read8(4).unwrap();
-        let memory_bar = if let Some(bar) = bar_manager.bar_mut(bar) {
+        let memory_bar = if let Some(bar) = bar_manager.bar(bar) {
             match bar.acquire() {
                 Ok(BarAccess::Memory(io_mem)) => Some(io_mem),
                 Ok(BarAccess::Io) => {

@@ -2,7 +2,8 @@
 
 //! MSI-X capability support.
 
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use ostd::{Error, Result, io::IoMem, irq::IrqLine, mm::VmIoOnce};
 
@@ -38,6 +39,7 @@ pub(super) struct RawCapabilityMsix {
     msg_ctrl: u16,
     table_info: u32,
     pba_info: u32,
+    is_acquired: Arc<AtomicBool>,
 }
 
 impl RawCapabilityMsix {
@@ -51,17 +53,20 @@ impl RawCapabilityMsix {
             msg_ctrl,
             table_info,
             pba_info,
+            is_acquired: Arc::new(AtomicBool::new(false)),
         }
     }
 }
 
 /// MSI-X capability.
 ///
-/// It will acquire the access to the BAR space it uses.
+/// Owns exclusive access to the MSI-X table and its IRQ lines.
+/// Dropping it masks all vectors and disables MSI-X before releasing the IRQ lines.
 #[derive(Debug)]
 pub struct CapabilityMsixData {
     loc: PciDeviceLocation,
     ptr: u16,
+    is_acquired: Arc<AtomicBool>,
     table_size: u16,
     /// MSI-X table entry content:
     /// | Vector Control: u32 | Msg Data: u32 | Msg Upper Addr: u32 | Msg Addr: u32 |
@@ -78,11 +83,11 @@ pub struct CapabilityMsixData {
 impl CapabilityMsixData {
     pub(super) fn new(
         loc: &PciDeviceLocation,
-        bar_manager: &mut BarManager,
+        bar_manager: &BarManager,
         raw_cap: &RawCapabilityMsix,
     ) -> Result<Self> {
         let pba_bar = match bar_manager
-            .bar_mut((raw_cap.pba_info & MSIX_BAR_INDEX_MASK) as u8)
+            .bar((raw_cap.pba_info & MSIX_BAR_INDEX_MASK) as u8)
             .ok_or(Error::InvalidArgs)?
             .acquire()?
         {
@@ -92,7 +97,7 @@ impl CapabilityMsixData {
         let pba_offset = (raw_cap.pba_info & !MSIX_BAR_INDEX_MASK) as usize;
 
         let table_bar = match bar_manager
-            .bar_mut((raw_cap.table_info & MSIX_BAR_INDEX_MASK) as u8)
+            .bar((raw_cap.table_info & MSIX_BAR_INDEX_MASK) as u8)
             .ok_or(Error::InvalidArgs)?
             .acquire()?
         {
@@ -103,24 +108,49 @@ impl CapabilityMsixData {
 
         let table_size = (raw_cap.msg_ctrl & MSIX_TABLE_SIZE_MASK) + 1;
 
+        if raw_cap
+            .is_acquired
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            return Err(Error::AccessDenied);
+        }
+
+        // Construct the owner before programming the table so `Drop` runs if initialization unwinds.
+        let msix = Self {
+            loc: *loc,
+            ptr: raw_cap.cap_ptr,
+            is_acquired: raw_cap.is_acquired.clone(),
+            table_size,
+            table_bar,
+            pending_table_bar: pba_bar,
+            table_offset,
+            pending_table_offset: pba_offset,
+            irqs: (0..table_size).map(|_| None).collect(),
+        };
+
         // Set the message address and disable all MSI-X vectors.
         let message_address = MSIX_DEFAULT_MSG_ADDR;
         let message_upper_address = 0u32;
         for i in 0..table_size {
             let entry_offset = table_offset + usize::from(i) * MSIX_ENTRY_SIZE;
-            table_bar
+            msix.table_bar
                 .write_once(entry_offset + MSIX_ENTRY_ADDR_OFFSET, &message_address)
                 .unwrap();
-            table_bar
+            msix.table_bar
                 .write_once(
                     entry_offset + MSIX_ENTRY_UPPER_ADDR_OFFSET,
                     &message_upper_address,
                 )
                 .unwrap();
-            table_bar
+            msix.table_bar
                 .write_once(entry_offset + MSIX_ENTRY_CTRL_OFFSET, &MSIX_VECTOR_MASK)
                 .unwrap();
         }
+        // Flush table writes before enabling MSI-X.
+        msix.table_bar
+            .read_once::<u32>(table_offset + MSIX_ENTRY_CTRL_OFFSET)
+            .unwrap();
 
         // Enable MSI-X.
         loc.write16(
@@ -134,21 +164,7 @@ impl CapabilityMsixData {
                 | (Command::INTERRUPT_DISABLE | Command::BUS_MASTER).bits(),
         );
 
-        let mut irqs = Vec::with_capacity(table_size as usize);
-        for _ in 0..table_size {
-            irqs.push(None);
-        }
-
-        Ok(Self {
-            loc: *loc,
-            ptr: raw_cap.cap_ptr,
-            table_size,
-            table_bar,
-            pending_table_bar: pba_bar,
-            table_offset,
-            pending_table_offset: pba_offset,
-            irqs,
-        })
+        Ok(msix)
     }
 
     /// Returns the size of the MSI-X Table.
@@ -196,9 +212,36 @@ impl CapabilityMsixData {
         self.irqs[index].as_mut()
     }
 
-    /// Returns true if the MSI-X Enable bit is set.
+    /// Returns whether the MSI-X Enable bit is set.
     pub fn is_enabled(&self) -> bool {
         let msg_ctrl = self.loc.read16(self.ptr + MSIX_MSG_CTRL_OFFSET);
         msg_ctrl & MSIX_ENABLE != 0
+    }
+}
+
+impl Drop for CapabilityMsixData {
+    fn drop(&mut self) {
+        // Mask all vectors and flush the writes before disabling MSI-X.
+        for i in 0..self.table_size {
+            let entry_offset = self.table_offset + usize::from(i) * MSIX_ENTRY_SIZE;
+            self.table_bar
+                .write_once(entry_offset + MSIX_ENTRY_CTRL_OFFSET, &MSIX_VECTOR_MASK)
+                .unwrap();
+        }
+        self.table_bar
+            .read_once::<u32>(self.table_offset + MSIX_ENTRY_CTRL_OFFSET)
+            .unwrap();
+
+        // Disable MSI-X and read back the control register before releasing IRQ lines.
+        self.loc.write16(
+            self.ptr + MSIX_MSG_CTRL_OFFSET,
+            self.loc.read16(self.ptr + MSIX_MSG_CTRL_OFFSET) & !MSIX_ENABLE,
+        );
+        self.loc.read16(self.ptr + MSIX_MSG_CTRL_OFFSET);
+
+        self.irqs.clear();
+
+        // A new owner must not configure the table until cleanup is complete.
+        self.is_acquired.store(false, Ordering::Release);
     }
 }
