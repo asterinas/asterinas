@@ -128,7 +128,7 @@ pub(super) fn alloc_kva(
     let kva = KVirtArea::map_frames(
         segment.size(),
         0,
-        segment,
+        segment.into_iter(),
         PageProperty {
             flags: PageFlags::RW,
             cache,
