@@ -113,11 +113,15 @@ in
   system.activationScripts.modprobe = lib.mkForce "";
 
   nix.nixPath = [
-    "nixpkgs=${pkgs.path}"
+    # `pkgs.path` is a path value, and Nix copies a path value into the store
+    # whenever it is interpolated into a string. For nixpkgs, that copies the whole
+    # source tree on every evaluation and makes `nixos-rebuild` on Asterinas very slow.
+    # `builtins.storePath` turns `pkgs.path` into a reference to its existing store path,
+    # which also keeps nixpkgs in the system closure for `<nixpkgs>` lookups.
+    "nixpkgs=${builtins.storePath pkgs.path}"
   ]
   ++ builtins.filter (entry: !(lib.hasPrefix "nixpkgs=" entry)) options.nix.nixPath.default
   ++ [ "nixpkgs-overlays=/etc/nixos/overlays" ];
-  system.extraDependencies = [ (builtins.storePath pkgs.path) ];
   nix.settings = {
     experimental-features = [
       "nix-command"
