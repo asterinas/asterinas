@@ -111,6 +111,16 @@ impl<E: Ext> dyn Iface<E> {
         self.common().set_ipv4_gateway(gateway);
     }
 
+    /// DNS servers from the DHCP lease, if the iface is configured by DHCP.
+    pub fn dns_servers(&self) -> Vec<Ipv4Address> {
+        self.common().dns_servers()
+    }
+
+    /// Whether the iface is configured by DHCP and still waiting for a lease.
+    pub fn is_dhcp_pending(&self) -> bool {
+        self.common().is_dhcp_pending()
+    }
+
     /// Returns routes currently installed in the interface.
     pub fn routes(&self) -> Vec<Route> {
         self.common().routes()

@@ -6,6 +6,8 @@
 //! Callers can look up the local interface that owns an address when binding a socket,
 //! or select an output interface when connecting an unbound socket.
 
+use core::sync::atomic::{AtomicU64, Ordering};
+
 use aster_bigtcp::{
     iface::InterfaceType,
     wire::{IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv4Cidr, Ipv6Address, Ipv6Cidr},
@@ -59,12 +61,27 @@ fn build_ipv6_manager() -> RouteManager<Ipv6Address> {
     )
 }
 
+/// The `CONFIG_GENERATION` the tables were last built from.
+static BUILT_GENERATION: AtomicU64 = AtomicU64::new(0);
+
 /// Rebuilds the routing tables from the interfaces' current configuration.
 ///
 /// Call after changing an interface's address, netmask or gateway.
 pub(crate) fn reload() {
+    let generation = aster_bigtcp::iface::CONFIG_GENERATION.load(Ordering::Acquire);
     *IPV4_ROUTE_MANAGER.get().unwrap().write() = build_ipv4_manager();
     *IPV6_ROUTE_MANAGER.get().unwrap().write() = build_ipv6_manager();
+    BUILT_GENERATION.store(generation, Ordering::Release);
+}
+
+/// Rebuilds the tables if an interface changed since they were built (e.g. a
+/// DHCP lease arrived in the poll path, which cannot take the write lock).
+fn reload_if_stale() {
+    if BUILT_GENERATION.load(Ordering::Acquire)
+        != aster_bigtcp::iface::CONFIG_GENERATION.load(Ordering::Acquire)
+    {
+        reload();
+    }
 }
 
 /// A route lookup key for one address family.
@@ -203,6 +220,7 @@ fn iface_ipv6_routes(iface: &Arc<Iface>) -> Vec<RouteEntry<Ipv6Address>> {
 
 /// Looks up the output interface for an IP destination.
 pub(super) fn lookup_iface(dst: IpAddress) -> Result<Arc<Iface>> {
+    reload_if_stale();
     let iface = match dst {
         IpAddress::Ipv4(dst) => IPV4_ROUTE_MANAGER
             .get()
@@ -224,6 +242,7 @@ pub(super) fn lookup_iface(dst: IpAddress) -> Result<Arc<Iface>> {
 
 /// Looks up the interface that owns a local IP address.
 pub(super) fn lookup_local_iface(address: IpAddress) -> Result<Arc<Iface>> {
+    reload_if_stale();
     let (type_, iface) = match address {
         IpAddress::Ipv4(address) => {
             let entry = IPV4_ROUTE_MANAGER
