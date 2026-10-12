@@ -219,7 +219,7 @@ impl FileLike for TimerfdFile {
         let read_len = size_of::<u64>();
 
         if writer.avail() < read_len {
-            return_errno_with_message!(Errno::EINVAL, "buf len is less len u64 size");
+            return_errno_with_message!(Errno::EINVAL, "the timer buffer is too small");
         }
 
         if self.is_nonblocking() {

@@ -298,7 +298,7 @@ impl Path {
     /// Checks whether this path is a searchable directory.
     fn check_dir_search_permission(&self) -> Result<()> {
         if self.type_() != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "must be directory");
+            return_errno_with_message!(Errno::ENOTDIR, "only directories are searchable");
         }
 
         self.inode()
