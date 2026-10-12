@@ -283,6 +283,8 @@ bitflags::bitflags! {
     /// In particular, [`Self::OBJECT`] and [`Self::SIGNED_RANGE`] use Linux's extended-type bit range.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L518-L545>.
+    #[repr(transparent)]
+    #[derive(Pod)]
     pub(crate) struct DrmPropertyFlags: u32 {
         /// An unsigned integer range property.
         const RANGE        = 1 << 1;
