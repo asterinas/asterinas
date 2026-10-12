@@ -12,3 +12,4 @@ set -e
 ./itimer/timer_create
 
 ./timerfd/timerfd_clockid
+./timerfd/timerfd_readiness
