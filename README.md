@@ -19,17 +19,17 @@
 
 The future of operating systems (OSes) belongs to Rust—a modern systems programming language (PL)
 that delivers safety, efficiency, and productivity at once.
-The open question is not _whether_ OS kernels should transition from C to Rust,
-but _how_ we get there.
+The open question is not whether OS kernels should transition from C to Rust,
+but how we get there.
 
 Linux follows an _incremental_ path.
 While the Rust for Linux project has successfully integrated Rust as an official second PL,
-this approach faces _inherent friction_.
+this approach faces inherent friction.
 As a newcomer within a massive C codebase,
 Rust must often compromise on safety, efficiency, clarity, and ergonomics
 to maintain compatibility with legacy structures.
 And while new Rust code can improve what it touches,
-it cannot retroactively eliminate _vulnerabilities_ in decades of existing C code.
+it cannot retroactively eliminate vulnerabilities in decades of existing C code.
 
 Asterinas takes a _clean-slate_ approach.
 By building a Linux-compatible, general-purpose OS kernel from the ground up in Rust,
@@ -65,7 +65,7 @@ Through the lens of a modern PL, Asterinas rethinks and modernizes the construct
 Asterinas aims to become **a production-grade, memory-safe Linux alternative**,
 with performance that matches Linux—and in some scenarios, exceeds it.
 The project has been under active development for four years,
-supports 230+ Linux system calls,
+supports 240+ Linux system calls,
 and has launched an experimental distribution,
 [Asterinas NixOS](https://asterinas.github.io/book/distro/index.html).
 
