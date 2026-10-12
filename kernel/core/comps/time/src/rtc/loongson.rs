@@ -3,7 +3,10 @@
 use fdt_util::AcquireIoMems;
 use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
 
-use crate::{SystemTime, rtc::Driver};
+use crate::{
+    SystemTime,
+    rtc::{Driver, RtcError},
+};
 
 pub(super) struct RtcLoongson {
     io_mem: IoMem,
@@ -27,7 +30,7 @@ impl Driver for RtcLoongson {
         Some(Self { io_mem })
     }
 
-    fn read_rtc(&self) -> SystemTime {
+    fn read_rtc(&self) -> Result<SystemTime, RtcError> {
         // Read the Time of Year (TOY) counter and the RTC timer counter
         // Reference: <https://loongson.github.io/LoongArch-Documentation/Loongson-7A1000-usermanual-EN.html#rtc>
         let sys_toyread0: u32 = self.io_mem.read_once(SYS_TOYREAD0).unwrap();
@@ -42,7 +45,7 @@ impl Driver for RtcLoongson {
         let toy_second = ((sys_toyread0 >> 4) & 0x3f) as u8;
         let nanos = sys_rtcread as u64 % 32768 * 1_000_000_000 / 32768;
 
-        SystemTime {
+        Ok(SystemTime {
             year: toy_year,
             month: toy_month,
             day: toy_day,
@@ -50,7 +53,7 @@ impl Driver for RtcLoongson {
             minute: toy_minute,
             second: toy_second,
             nanos,
-        }
+        })
     }
 }
 

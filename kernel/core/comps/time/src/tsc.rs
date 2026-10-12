@@ -43,7 +43,12 @@ fn calibrate() {
     let clock = CLOCK.get().unwrap();
     let cycles = clock.read_cycles();
     clock.calibrate(cycles);
-    START_TIME.call_once(|| crate::RTC_DRIVER.get().unwrap().read_rtc());
+    START_TIME.call_once(|| {
+        crate::read_rtc().unwrap_or_else(|error| {
+            ostd::warn!("Failed to read the RTC ({error:?}), using the Unix epoch");
+            crate::rtc::fallback_time()
+        })
+    });
 }
 
 /// Reads an `Instant` of the TSC clocksource.
