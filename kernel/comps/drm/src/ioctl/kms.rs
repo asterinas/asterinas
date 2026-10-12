@@ -540,7 +540,7 @@ impl DrmFile {
             };
 
             args.name = *property.name();
-            args.flags = property.flags().bits();
+            args.flags = property.flags();
             drop(object_store);
 
             copy_array_to_user(args_ptr.vm(), args.values_ptr, args.count_values, &values)?;
@@ -705,8 +705,9 @@ impl DrmFile {
                 "the DRM clip count and pointer are inconsistent"
             );
         }
-        const DRM_MODE_FB_DIRTY_ANNOTATE_COPY: u32 = 0x01;
-        if args.flags & DRM_MODE_FB_DIRTY_ANNOTATE_COPY != 0 && !args.num_clips.is_multiple_of(2) {
+        if args.flags.contains(DrmModeFbDirtyFlags::ANNOTATE_COPY)
+            && !args.num_clips.is_multiple_of(2)
+        {
             return_errno_with_message!(
                 Errno::EINVAL,
                 "DRM copy annotation requires pairs of clip rectangles"
@@ -1057,7 +1058,7 @@ pub(super) struct DrmModeGetProperty {
     enum_blob_ptr: u64,
 
     prop_id: u32,
-    flags: u32,
+    flags: DrmPropertyFlags,
     name: FixedCStr<DRM_PROP_NAME_LEN>,
 
     count_values: u32,
@@ -1102,6 +1103,21 @@ struct DrmClipRect {
     y2: u16,
 }
 
+bitflags::bitflags! {
+    /// Framebuffer damage annotation flags in `drm_mode_fb_dirty_cmd::flags`.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L738-L740>.
+    #[repr(transparent)]
+    #[derive(Pod)]
+    struct DrmModeFbDirtyFlags: u32 {
+        /// Indicates that pixels were copied between paired source and destination rectangles.
+        /// Each pair must have matching dimensions, and `num_clips` must be even.
+        const ANNOTATE_COPY = 0x01;
+        /// Indicates that each clip rectangle was completely filled with the specified `color`.
+        const ANNOTATE_FILL = 0x02;
+    }
+}
+
 /// `struct drm_mode_fb_dirty_cmd` in Linux.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L744-L777>.
@@ -1109,7 +1125,7 @@ struct DrmClipRect {
 #[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct DrmModeFbDirtyCmd {
     fb_id: u32,
-    flags: u32,
+    flags: DrmModeFbDirtyFlags,
     color: u32,
     num_clips: u32,
     clips_ptr: u64,
