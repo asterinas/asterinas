@@ -66,7 +66,25 @@ pub fn try_poweroff(code: crate::power::ExitCode) {
 
 /// Attempts to restart the system using an architecture-specific mechanism.
 ///
-/// On x86, this function currently does nothing and returns.
+/// On x86, this triple-faults the current CPU: it loads an empty IDT and raises a software
+/// interrupt, which the CPU cannot deliver, nor the resulting double fault, so it resets. This
+/// is the last-resort reboot method on x86 (Linux does the same) and the only one that works
+/// where neither an ACPI reset register nor an i8042 controller exists, such as on EC2 Nitro.
+///
+/// This method does not return. Nothing runs after it on the current CPU, and the other CPUs
+/// stop when the chipset resets.
 pub fn try_restart(_code: crate::power::ExitCode) {
-    // TODO: Add an OSTD-level restart mechanism for x86.
+    let null_idt: [u8; 10] = [0; 10];
+
+    // SAFETY: We are intentionally bringing the machine down. The empty IDT guarantees that the
+    // `int3` below cannot be handled and the CPU resets instead.
+    unsafe {
+        core::arch::asm!(
+            "cli",
+            "lidt [{}]",
+            "int3",
+            in(reg) null_idt.as_ptr(),
+            options(nostack, noreturn)
+        );
+    }
 }
