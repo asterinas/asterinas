@@ -110,6 +110,38 @@ impl<E: Ext> IfaceCommon<E> {
         interface: smoltcp::iface::Interface,
         sched_poll: E::ScheduleNextPoll,
     ) -> Self {
+        Self::with_pollable(
+            name,
+            type_,
+            flags,
+            PollableIface::new(interface),
+            sched_poll,
+        )
+    }
+
+    pub(super) fn new_with_dhcp(
+        name: InterfaceName,
+        type_: InterfaceType,
+        flags: InterfaceFlags,
+        interface: smoltcp::iface::Interface,
+        sched_poll: E::ScheduleNextPoll,
+    ) -> Self {
+        Self::with_pollable(
+            name,
+            type_,
+            flags,
+            PollableIface::new_with_dhcp(interface),
+            sched_poll,
+        )
+    }
+
+    fn with_pollable(
+        name: InterfaceName,
+        type_: InterfaceType,
+        flags: InterfaceFlags,
+        interface: PollableIface<E>,
+        sched_poll: E::ScheduleNextPoll,
+    ) -> Self {
         let index = INTERFACE_INDEX_ALLOCATOR.fetch_add(1, Ordering::Relaxed);
 
         Self {
@@ -117,7 +149,7 @@ impl<E: Ext> IfaceCommon<E> {
             name,
             type_,
             flags,
-            interface: SpinLock::new(PollableIface::new(interface)),
+            interface: SpinLock::new(interface),
             used_ports: SpinLock::new(PortTable::new()),
             sockets: SpinLock::new(SocketTable::new()),
             sched_poll,
@@ -145,11 +177,24 @@ impl<E: Ext> IfaceCommon<E> {
     }
 
     pub(super) fn set_ipv4_cidr(&self, cidr: Ipv4Cidr) {
-        self.interface.lock().set_ipv4_cidr(cidr);
+        let mut interface = self.interface.lock();
+        // User space takes over: a running DHCP client would fight with it.
+        interface.stop_dhcp();
+        interface.set_ipv4_cidr(cidr);
+        super::poll_iface::CONFIG_GENERATION.fetch_add(1, Ordering::Release);
     }
 
     pub(super) fn set_ipv4_gateway(&self, gateway: Option<Ipv4Address>) {
         self.interface.lock().set_ipv4_gateway(gateway);
+        super::poll_iface::CONFIG_GENERATION.fetch_add(1, Ordering::Release);
+    }
+
+    pub(super) fn dns_servers(&self) -> Vec<Ipv4Address> {
+        self.interface.lock().dns_servers().to_vec()
+    }
+
+    pub(super) fn is_dhcp_pending(&self) -> bool {
+        self.interface.lock().is_dhcp_pending()
     }
 
     pub(super) fn ipv6_cidr(&self) -> Option<Ipv6Cidr> {
@@ -270,6 +315,13 @@ impl<E: Ext> IfaceCommon<E> {
         let mut context = PollContext::new(interface.as_mut(), &sockets, &mut socket_actions);
         context.poll_ingress(device, phy);
         context.poll_egress(device, phy);
+
+        // A lease may have arrived: apply it, then let the client answer (e.g.
+        // send REQUEST after OFFER) before the next poll is scheduled.
+        if interface.poll_dhcp() {
+            let mut context = PollContext::new(interface.as_mut(), &sockets, &mut socket_actions);
+            context.poll_egress(device, phy);
+        }
 
         // Insert new connections and remove dead connections.
         for action in socket_actions.into_iter() {
