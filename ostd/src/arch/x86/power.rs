@@ -42,9 +42,23 @@ mod qemu_isa_debug {
 }
 
 pub(super) fn init() {
-    use super::cpu::cpuid;
+    use super::{cpu::cpuid, kernel::ACPI_INFO};
 
     if !cpuid::query_if_running_in_qemu() {
+        return;
+    }
+    // The "KVMKVMKVM" signature is shared by every KVM-based VMM, including
+    // EC2 Nitro, where there is no isa-debug-exit device and installing this
+    // handler would shadow the real (ACPI) power-off path. QEMU's firmware
+    // tables carry the OEM ID "BOCHS "; require it when ACPI is available.
+    if let Some(info) = ACPI_INFO.get()
+        && let Some(oem_id) = info.oem_id
+        && &oem_id != b"BOCHS "
+    {
+        crate::info!(
+            "KVM hypervisor with firmware OEM {:?}: not QEMU, no isa-debug-exit",
+            core::str::from_utf8(&oem_id).unwrap_or("?")
+        );
         return;
     }
 
