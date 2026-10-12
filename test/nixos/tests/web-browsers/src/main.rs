@@ -15,19 +15,19 @@ nixos_test_main!();
 
 #[nixos_test]
 fn firefox_screenshot_website(nixos_shell: &mut Session) -> Result<(), Error> {
-    nixos_shell.run_cmd("firefox --headless --screenshot https://example.com")?;
+    nixos_shell.run_cmd("firefox --headless --screenshot https://httpbin.org/html")?;
     nixos_shell.run_cmd_and_expect("ls -al screenshot.png", "screenshot.png")?;
     Ok(())
 }
 
 #[nixos_test]
 fn links2_dump_website(nixos_shell: &mut Session) -> Result<(), Error> {
-    nixos_shell.run_cmd_and_expect("links -dump http://example.com", "Example Domain")?;
+    nixos_shell.run_cmd_and_expect("links -dump https://httpbin.org/html", "Herman Melville")?;
     Ok(())
 }
 
 #[nixos_test]
 fn w3m_dump_website(nixos_shell: &mut Session) -> Result<(), Error> {
-    nixos_shell.run_cmd_and_expect("w3m -dump http://example.com", "Example Domain")?;
+    nixos_shell.run_cmd_and_expect("w3m -dump https://httpbin.org/html", "Herman Melville")?;
     Ok(())
 }
