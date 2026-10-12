@@ -23,8 +23,49 @@ mod table;
 
 use entry::{RouteAddressFamily, RouteEntry, RouteMetric, RouteTableId, RouteType};
 
-static IPV4_ROUTE_MANAGER: Once<RouteManager<Ipv4Address>> = Once::new();
-static IPV6_ROUTE_MANAGER: Once<RouteManager<Ipv6Address>> = Once::new();
+// Behind a lock so that `reload()` can rebuild the tables after an interface
+// address or gateway changed at runtime (`SIOCSIFADDR`, `SIOCADDRT`).
+static IPV4_ROUTE_MANAGER: Once<RwLock<RouteManager<Ipv4Address>>> = Once::new();
+static IPV6_ROUTE_MANAGER: Once<RwLock<RouteManager<Ipv6Address>>> = Once::new();
+
+const LOCAL_RULE_PRIORITY: u32 = 0;
+const MAIN_RULE_PRIORITY: u32 = 32766;
+const DEFAULT_RULE_PRIORITY: u32 = 32767;
+
+fn build_ipv4_manager() -> RouteManager<Ipv4Address> {
+    let routes = iface::iter_all_ifaces()
+        .flat_map(iface_ipv4_routes)
+        .collect();
+    RouteManager::new(
+        &[
+            Rule::lookup(LOCAL_RULE_PRIORITY, RouteTableId::LOCAL),
+            Rule::lookup(MAIN_RULE_PRIORITY, RouteTableId::MAIN),
+            Rule::lookup(DEFAULT_RULE_PRIORITY, RouteTableId::DEFAULT),
+        ],
+        routes,
+    )
+}
+
+fn build_ipv6_manager() -> RouteManager<Ipv6Address> {
+    let routes = iface::iter_all_ifaces()
+        .flat_map(iface_ipv6_routes)
+        .collect();
+    RouteManager::new(
+        &[
+            Rule::lookup(LOCAL_RULE_PRIORITY, RouteTableId::LOCAL),
+            Rule::lookup(MAIN_RULE_PRIORITY, RouteTableId::MAIN),
+        ],
+        routes,
+    )
+}
+
+/// Rebuilds the routing tables from the interfaces' current configuration.
+///
+/// Call after changing an interface's address, netmask or gateway.
+pub(crate) fn reload() {
+    *IPV4_ROUTE_MANAGER.get().unwrap().write() = build_ipv4_manager();
+    *IPV6_ROUTE_MANAGER.get().unwrap().write() = build_ipv6_manager();
+}
 
 /// A route lookup key for one address family.
 #[derive(Clone, Debug)]
@@ -46,36 +87,8 @@ impl<A: RouteAddressFamily> RouteLookupKey<A> {
 }
 
 pub(super) fn init() {
-    const LOCAL_RULE_PRIORITY: u32 = 0;
-    const MAIN_RULE_PRIORITY: u32 = 32766;
-    const DEFAULT_RULE_PRIORITY: u32 = 32767;
-
-    IPV4_ROUTE_MANAGER.call_once(|| {
-        let routes = iface::iter_all_ifaces()
-            .flat_map(iface_ipv4_routes)
-            .collect();
-        RouteManager::new(
-            &[
-                Rule::lookup(LOCAL_RULE_PRIORITY, RouteTableId::LOCAL),
-                Rule::lookup(MAIN_RULE_PRIORITY, RouteTableId::MAIN),
-                Rule::lookup(DEFAULT_RULE_PRIORITY, RouteTableId::DEFAULT),
-            ],
-            routes,
-        )
-    });
-
-    IPV6_ROUTE_MANAGER.call_once(|| {
-        let routes = iface::iter_all_ifaces()
-            .flat_map(iface_ipv6_routes)
-            .collect();
-        RouteManager::new(
-            &[
-                Rule::lookup(LOCAL_RULE_PRIORITY, RouteTableId::LOCAL),
-                Rule::lookup(MAIN_RULE_PRIORITY, RouteTableId::MAIN),
-            ],
-            routes,
-        )
-    });
+    IPV4_ROUTE_MANAGER.call_once(|| RwLock::new(build_ipv4_manager()));
+    IPV6_ROUTE_MANAGER.call_once(|| RwLock::new(build_ipv6_manager()));
 }
 
 fn iface_ipv4_routes(iface: &Arc<Iface>) -> Vec<RouteEntry<Ipv4Address>> {
@@ -194,12 +207,14 @@ pub(super) fn lookup_iface(dst: IpAddress) -> Result<Arc<Iface>> {
         IpAddress::Ipv4(dst) => IPV4_ROUTE_MANAGER
             .get()
             .unwrap()
+            .read()
             .lookup_entry(&RouteLookupKey::new(dst))?
             .output_iface()
             .clone(),
         IpAddress::Ipv6(dst) => IPV6_ROUTE_MANAGER
             .get()
             .unwrap()
+            .read()
             .lookup_entry(&RouteLookupKey::new(dst))?
             .output_iface()
             .clone(),
@@ -214,6 +229,7 @@ pub(super) fn lookup_local_iface(address: IpAddress) -> Result<Arc<Iface>> {
             let entry = IPV4_ROUTE_MANAGER
                 .get()
                 .unwrap()
+                .read()
                 .lookup_in_local_table(&RouteLookupKey::new(address))
                 .ok_or_else(|| {
                     Error::with_message(
@@ -227,6 +243,7 @@ pub(super) fn lookup_local_iface(address: IpAddress) -> Result<Arc<Iface>> {
             let entry = IPV6_ROUTE_MANAGER
                 .get()
                 .unwrap()
+                .read()
                 .lookup_in_local_table(&RouteLookupKey::new(address))
                 .ok_or_else(|| {
                     Error::with_message(
@@ -263,6 +280,7 @@ pub(super) fn is_broadcast_endpoint(endpoint: &IpEndpoint) -> bool {
         || IPV4_ROUTE_MANAGER
             .get()
             .unwrap()
+            .read()
             .lookup_entry(&RouteLookupKey::new(address))
             .is_ok_and(|entry| entry.type_() == RouteType::Broadcast)
 }
