@@ -56,6 +56,20 @@ pub fn remove<D: AnyDevice + ?Sized>(dev: &Arc<D>) -> Result<()> {
     Ok(())
 }
 
+/// Attaches a permanent legacy sysfs subtree under `/devices/virtual/<class>`.
+///
+/// This is a temporary bridge for interfaces not yet supported by device
+/// attributes. It does not register an `AnyDevice` or create class/dev links.
+/// The class need not be registered. The subtree must not already have a parent.
+///
+/// # Panics
+///
+/// Panics if the device model is not initialized or the class name is invalid.
+pub fn register_legacy_virtual_node(class: &str, node: Arc<dyn SysObj>) -> Result<()> {
+    registry::get().attach_into_virtual_glue_dir(class, node)?;
+    Ok(())
+}
+
 /// A builder for a bus or class device.
 ///
 /// Obtained from [`BusDevice::builder`] or [`ClassDevice::builder`].
