@@ -29,6 +29,8 @@ fcntl22
 fcntl22_64
 fdatasync01
 fstatat01
+# linkat01 randomly fails on Ubuntu ARM GitHub runners but passes on x86 runners.
+linkat01
 mkdirat01
 mknodat01
 msync01
