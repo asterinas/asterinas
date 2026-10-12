@@ -16,7 +16,7 @@ use int_to_c_enum::TryFromInt;
 use ostd::sync::{SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{Context, Route},
-    wire::{IpAddress, IpEndpoint, Ipv4Cidr, Ipv6Address, Ipv6Cidr},
+    wire::{IpAddress, IpEndpoint, Ipv4Address, Ipv4Cidr, Ipv6Address, Ipv6Cidr},
 };
 
 use super::{
@@ -142,6 +142,14 @@ impl<E: Ext> IfaceCommon<E> {
 
     pub(super) fn ipv4_cidr(&self) -> Option<Ipv4Cidr> {
         self.interface.lock().ipv4_cidr()
+    }
+
+    pub(super) fn set_ipv4_cidr(&self, cidr: Ipv4Cidr) {
+        self.interface.lock().set_ipv4_cidr(cidr);
+    }
+
+    pub(super) fn set_ipv4_gateway(&self, gateway: Option<Ipv4Address>) {
+        self.interface.lock().set_ipv4_gateway(gateway);
     }
 
     pub(super) fn ipv6_cidr(&self) -> Option<Ipv6Cidr> {

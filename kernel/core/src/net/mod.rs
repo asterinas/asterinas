@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod iface;
-mod route;
+pub(crate) mod route;
 pub(crate) mod socket;
 pub(crate) mod uts_ns;
 

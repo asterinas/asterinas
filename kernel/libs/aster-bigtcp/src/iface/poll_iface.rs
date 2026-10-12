@@ -6,7 +6,7 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use smoltcp::iface::Route;
+use smoltcp::{iface::Route, socket::PollAt};
 
 use crate::{
     ext::Ext,
@@ -57,6 +57,27 @@ impl<E: Ext> PollableIface<E> {
         })
     }
 
+    /// Replaces the IPv4 address of the interface (adding one if there was none).
+    pub(super) fn set_ipv4_cidr(&mut self, cidr: smoltcp::wire::Ipv4Cidr) {
+        self.interface.update_ip_addrs(|addrs| {
+            addrs.retain(|a| !matches!(a, smoltcp::wire::IpCidr::Ipv4(_)));
+            addrs.push(smoltcp::wire::IpCidr::Ipv4(cidr)).unwrap();
+        });
+    }
+
+    /// Replaces the default IPv4 route.
+    pub(super) fn set_ipv4_gateway(&mut self, gateway: Option<smoltcp::wire::Ipv4Address>) {
+        let routes = self.interface.routes_mut();
+        match gateway {
+            Some(gw) => {
+                routes.add_default_ipv4_route(gw).unwrap();
+            }
+            None => {
+                routes.remove_default_ipv4_route();
+            }
+        }
+    }
+
     pub(super) fn routes(&mut self) -> Vec<Route> {
         let mut routes = Vec::new();
         self.interface.routes_mut().update(|route_entries| {
@@ -84,7 +105,7 @@ impl<E: Ext> PollableIface<E> {
     pub(crate) fn update_next_poll_at_ms(
         &mut self,
         socket: &Arc<TcpConnectionBg<E>>,
-        poll_at: smoltcp::socket::PollAt,
+        poll_at: PollAt,
     ) -> NeedIfacePoll {
         self.pending_conns.update_next_poll_at_ms(socket, poll_at)
     }
@@ -168,7 +189,7 @@ impl<E: Ext> PollableIfaceMut<'_, E> {
     pub(crate) fn update_next_poll_at_ms(
         &mut self,
         socket: &Arc<TcpConnectionBg<E>>,
-        poll_at: smoltcp::socket::PollAt,
+        poll_at: PollAt,
     ) -> NeedIfacePoll {
         self.pending_conns.update_next_poll_at_ms(socket, poll_at)
     }
@@ -272,15 +293,15 @@ impl<E: Ext> PendingConnSet<E> {
     fn update_next_poll_at_ms(
         &mut self,
         socket: &Arc<TcpConnectionBg<E>>,
-        poll_at: smoltcp::socket::PollAt,
+        poll_at: PollAt,
     ) -> NeedIfacePoll {
         let key = socket.poll_key();
         let old_poll_at_ms = key.next_poll_at_ms.load(Ordering::Relaxed);
 
         let new_poll_at_ms = match poll_at {
-            smoltcp::socket::PollAt::Now => PollKey::IMMEDIATE_VAL,
-            smoltcp::socket::PollAt::Time(instant) => instant.total_millis() as u64,
-            smoltcp::socket::PollAt::Ingress => PollKey::INACTIVE_VAL,
+            PollAt::Now => PollKey::IMMEDIATE_VAL,
+            PollAt::Time(instant) => instant.total_millis() as u64,
+            PollAt::Ingress => PollKey::INACTIVE_VAL,
         };
 
         // Fast path: There is nothing to update.
