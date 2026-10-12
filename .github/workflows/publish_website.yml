@@ -25,6 +25,7 @@ jobs:
         with:
           repository: 'asterinas/asterinas'
           path: 'asterinas'
+          fetch-depth: 0
 
       - name: Cache .lycheecache
         uses: actions/cache@v6
@@ -41,13 +42,36 @@ jobs:
             lychee-${{ runner.os }}-
 
       - name: Build the website
-        env:
-          # Avoid hitting rate limit when lychee accesses github links.
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           cd asterinas/book
           make
-          make check
+
+      - name: Check the website
+        env:
+          # Avoid hitting rate limit when lychee accesses github links.
+          GITHUB_TOKEN: ${{ github.token }}
+          # Compare against the PR base or the state before the push.
+          # Manual runs have no comparison base and must pass all checks.
+          BASE_COMMIT: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          cd asterinas/book
+          # Normally, both API doc version consistency and link validity must pass.
+          if ! make check; then
+            if [ -z "$BASE_COMMIT" ]; then
+              exit 1
+            fi
+            changed_files=$(git -C .. diff --name-only "$BASE_COMMIT" HEAD -- VERSION)
+            if [ -z "$changed_files" ]; then
+              exit 1
+            fi
+
+            # A version bump triggers API doc publication only after merging.
+            # Book links are updated in a follow-up PR once those docs are available,
+            # so allow the version mismatch only when this change modifies VERSION.
+            echo "VERSION changed; allowing API doc links to reference the previous release."
+            # Still require valid links; a version bump must not hide broken links.
+            make check_invalid_or_broken_links
+          fi
 
       - name: Deploy website
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
