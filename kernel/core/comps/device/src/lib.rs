@@ -41,7 +41,9 @@ mod test;
 
 use component::{ComponentInitError, init_component};
 
-pub use self::common::registration::{add as add_device, remove as remove_device};
+pub use self::common::registration::{
+    add as add_device, register_legacy_virtual_node, remove as remove_device,
+};
 use self::common::registry;
 
 /// Initializes the device model for kernel-mode tests.
