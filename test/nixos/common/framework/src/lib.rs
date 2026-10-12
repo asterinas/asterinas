@@ -219,6 +219,10 @@ pub fn __nixos_test_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let desc = SessionDesc::new(init_prompt, "", "poweroff");
     let mut session = Session::new(desc, session);
+    // `emacs` and `vi` are the two line-editing modes of Bash. Turn both off,
+    // because the line editor wraps a long echoed command line at the terminal width
+    // and `Session` would then fail to match it against the command it sent.
+    session.run_cmd("set +o emacs +o vi")?;
 
     let mut passed = 0;
     let mut failed = 0;
