@@ -5,7 +5,9 @@
 pub(crate) use core::{Clock, timer};
 
 use ::core::time::Duration;
-pub(crate) use system_time::{START_TIME, SystemTime};
+#[cfg(not(target_arch = "loongarch64"))]
+pub(crate) use system_time::realtime_adjust;
+pub(crate) use system_time::{START_TIME, SystemTime, set_realtime};
 pub(crate) use timer::{Timer, TimerManager};
 
 use crate::prelude::*;
