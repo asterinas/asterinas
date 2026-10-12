@@ -39,13 +39,12 @@ pub(super) fn sys_utimensat(
     );
     let times = if timespecs_ptr != 0 {
         let (autime, mutime) = read_time_from_user::<timespec_t>(timespecs_ptr, ctx)?;
-        if autime.is_utime_omit() && mutime.is_utime_omit() {
+        let atime = TimeSpec::try_from(autime)?;
+        let mtime = TimeSpec::try_from(mutime)?;
+        if matches!(atime, TimeSpec::Omit) && matches!(mtime, TimeSpec::Omit) {
             return Ok(SyscallReturn::Return(0));
         }
-        Some(TimeSpecPair {
-            atime: autime,
-            mtime: mutime,
-        })
+        Some(TimeSpecPair { atime, mtime })
     } else {
         None
     };
@@ -95,19 +94,9 @@ fn do_futimesat(
 ) -> Result<SyscallReturn> {
     let times = if timeval_ptr != 0 {
         let (autime, mutime) = read_time_from_user::<timeval_t>(timeval_ptr, ctx)?;
-        if autime.usec >= 1000000
-            || autime.usec < 0
-            || autime.sec < 0
-            || mutime.usec >= 1000000
-            || mutime.usec < 0
-            || mutime.sec < 0
-        {
-            return_errno_with_message!(Errno::EINVAL, "invalid time");
-        }
-        let (autime, mutime) = (timespec_t::from(autime), timespec_t::from(mutime));
         Some(TimeSpecPair {
-            atime: autime,
-            mtime: mutime,
+            atime: TimeSpec::try_from(autime)?,
+            mtime: TimeSpec::try_from(mutime)?,
         })
     } else {
         None
@@ -141,15 +130,18 @@ pub(super) fn sys_utime(
     );
     let times = if utimbuf_ptr != 0 {
         let utimbuf = ctx.user_space().read_val::<Utimbuf>(utimbuf_ptr)?;
-        let atime = timespec_t {
+        let autime = timespec_t {
             sec: utimbuf.actime,
             nsec: 0,
         };
-        let mtime = timespec_t {
+        let mutime = timespec_t {
             sec: utimbuf.modtime,
             nsec: 0,
         };
-        Some(TimeSpecPair { atime, mtime })
+        Some(TimeSpecPair {
+            atime: TimeSpec::try_from(autime)?,
+            mtime: TimeSpec::try_from(mutime)?,
+        })
     } else {
         None
     };
@@ -164,12 +156,58 @@ struct Utimbuf {
     modtime: i64,
 }
 
+// ============================== Common logic ==============================
+
 /// A structure to hold access and modification times.
 #[derive(Debug)]
 struct TimeSpecPair {
-    atime: timespec_t,
-    mtime: timespec_t,
+    atime: TimeSpec,
+    mtime: TimeSpec,
 }
+
+/// An enum to hold access or modification time.
+#[derive(Debug)]
+enum TimeSpec {
+    Now,
+    Omit,
+    Spec(Duration),
+}
+
+impl TimeSpec {
+    /// Converts to a duration, using `now` as [`Self::Now`].
+    fn with_now(self, now: Duration) -> Option<Duration> {
+        match self {
+            Self::Now => Some(now),
+            Self::Omit => None,
+            Self::Spec(duration) => Some(duration),
+        }
+    }
+}
+
+impl TryFrom<timeval_t> for TimeSpec {
+    type Error = Error;
+
+    fn try_from(value: timeval_t) -> Result<Self> {
+        Ok(Self::Spec(Duration::try_from(value)?))
+    }
+}
+
+impl TryFrom<timespec_t> for TimeSpec {
+    type Error = Error;
+
+    fn try_from(value: timespec_t) -> Result<Self> {
+        if value.nsec == UTIME_NOW {
+            Ok(Self::Now)
+        } else if value.nsec == UTIME_OMIT {
+            Ok(Self::Omit)
+        } else {
+            Ok(Self::Spec(Duration::try_from(value)?))
+        }
+    }
+}
+
+const UTIME_NOW: i64 = (1i64 << 30) - 1i64;
+const UTIME_OMIT: i64 = (1i64 << 30) - 2i64;
 
 /// A common function for updating file times, supporting both file descriptor (fd) and path-based
 /// operations.
@@ -224,66 +262,27 @@ fn do_utimes(
 }
 
 fn vfs_utimes(path: &Path, times: Option<TimeSpecPair>) -> Result<SyscallReturn> {
+    let now = RealTimeCoarseClock::get().read_time();
     let (atime, mtime, ctime) = match times {
         Some(times) => {
-            if !times.atime.is_valid() || !times.mtime.is_valid() {
-                return_errno_with_message!(Errno::EINVAL, "invalid time")
-            }
-            let now = RealTimeCoarseClock::get().read_time();
-            let atime = if times.atime.is_utime_omit() {
-                path.atime()
-            } else if times.atime.is_utime_now() {
-                now
-            } else {
-                Duration::try_from(times.atime)?
-            };
-            let mtime = if times.mtime.is_utime_omit() {
-                path.mtime()
-            } else if times.mtime.is_utime_now() {
-                now
-            } else {
-                Duration::try_from(times.mtime)?
-            };
+            let atime = times.atime.with_now(now);
+            let mtime = times.mtime.with_now(now);
             (atime, mtime, now)
         }
-        None => {
-            let now = RealTimeCoarseClock::get().read_time();
-            (now, now, now)
-        }
+        None => (Some(now), Some(now), now),
     };
 
     // Update times.
-    path.set_atime(atime);
-    path.set_mtime(mtime);
+    if let Some(atime) = atime {
+        path.set_atime(atime);
+    }
+    if let Some(mtime) = mtime {
+        path.set_mtime(mtime);
+    }
     path.set_ctime(ctime);
     fs::vfs::notify::on_attr_change(path);
     Ok(SyscallReturn::Return(0))
 }
-
-trait UtimeExt {
-    fn is_utime_now(&self) -> bool;
-    fn is_utime_omit(&self) -> bool;
-    fn is_valid(&self) -> bool;
-}
-
-impl UtimeExt for timespec_t {
-    fn is_utime_now(&self) -> bool {
-        self.nsec == UTIME_NOW
-    }
-
-    fn is_utime_omit(&self) -> bool {
-        self.nsec == UTIME_OMIT
-    }
-
-    fn is_valid(&self) -> bool {
-        self.nsec == UTIME_OMIT
-            || self.nsec == UTIME_NOW
-            || (self.nsec >= 0 && self.nsec <= 999_999_999)
-    }
-}
-
-const UTIME_NOW: i64 = (1i64 << 30) - 1i64;
-const UTIME_OMIT: i64 = (1i64 << 30) - 2i64;
 
 bitflags::bitflags! {
     struct UtimensFlags: u32 {

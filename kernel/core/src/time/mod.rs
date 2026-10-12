@@ -49,16 +49,7 @@ impl From<Duration> for timespec_t {
     fn from(duration: Duration) -> timespec_t {
         let sec = duration.as_secs() as time_t;
         let nsec = duration.subsec_nanos() as i64;
-        debug_assert!(sec >= 0); // nsec >= 0 always holds
-        timespec_t { sec, nsec }
-    }
-}
-
-impl From<timeval_t> for timespec_t {
-    fn from(timeval: timeval_t) -> timespec_t {
-        let sec = timeval.sec;
-        let nsec = timeval.usec * NSEC_PER_USEC;
-        debug_assert!(sec >= 0); // nsec >= 0 always holds
+        debug_assert!(sec >= 0); // `nsec >= 0` always holds.
         timespec_t { sec, nsec }
     }
 }
@@ -106,7 +97,7 @@ impl From<Duration> for timeval_t {
     fn from(duration: Duration) -> timeval_t {
         let sec = duration.as_secs() as time_t;
         let usec = duration.subsec_micros() as suseconds_t;
-        debug_assert!(sec >= 0); // usec >= 0 always holds
+        debug_assert!(sec >= 0); // `usec >= 0` always holds.
         timeval_t { sec, usec }
     }
 }
