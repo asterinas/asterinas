@@ -3,12 +3,17 @@
 //! Driver for the Amazon Elastic Network Adapter (ENA), the NIC of EC2
 //! Nitro instances (PCI `1d0f:ec20` and friends).
 //!
-//! Scope: one Tx/Rx queue pair in host memory, descriptor-based
-//! completions, software checksums, MSI-X interrupts for the queue pair
-//! and a polled admin queue. No LLQ, no RSS, no offloads, no AENQ
-//! handling. That is enough for a single-interface guest such as
-//! elixir_unikernel; the structure follows `ena_com.c` so the missing
-//! pieces can be added next to their Linux counterparts.
+//! Scope: up to `ena.queues=` (default: one per vCPU, max 8) Tx/Rx queue
+//! pairs in host memory with RSS over the IPv4 5-tuple, descriptor-based
+//! completions, TCP/UDP checksum offload on Tx (partial, pseudo-header
+//! supplied) and Rx, MSI-X interrupts per queue pair, a polled admin queue,
+//! and AENQ handling (keep-alive watchdog, link change, fatal error) with a
+//! full device reset path. No LLQ, no TSO. The structure follows
+//! `ena_com.c` so the remaining pieces can be added next to their Linux
+//! counterparts.
+//!
+//! Command-line knobs: `ena.queues=N`, `ena.test_reset=SECONDS` (force one
+//! reset after boot, for testing the recovery path).
 //!
 //! Interrupt delivery on Nitro has not been exercised by every path of
 //! this kernel yet, so the driver also raises the network softirqs from
@@ -33,7 +38,7 @@ macro_rules! __log_prefix {
 }
 
 use alloc::{sync::Arc, vec::Vec};
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::Ordering;
 
 use aster_pci::{
     PCI_BUS, PciDeviceId,
@@ -156,9 +161,21 @@ impl PciDriver for EnaPciDriver {
 
 static DRIVER: Once<Arc<EnaPciDriver>> = Once::new();
 
+pub(crate) static QUEUES_PARAM: Once<alloc::string::String> = Once::new();
+aster_cmdline::define_kv_param!("ena.queues", QUEUES_PARAM);
+pub(crate) static TEST_RESET_PARAM: Once<alloc::string::String> = Once::new();
+aster_cmdline::define_kv_param!("ena.test_reset", TEST_RESET_PARAM);
+/// `ena.offload=0` disables Tx/Rx checksum offload (software checksums).
+pub(crate) static OFFLOAD_PARAM: Once<alloc::string::String> = Once::new();
+aster_cmdline::define_kv_param!("ena.offload", OFFLOAD_PARAM);
+/// `ena.aenq_irq=1` unmasks the admin interrupt (default: masked, AENQ polled every 100 ms).
+pub(crate) static AENQ_IRQ_PARAM: Once<alloc::string::String> = Once::new();
+aster_cmdline::define_kv_param!("ena.aenq_irq", AENQ_IRQ_PARAM);
+
 /// Fallback poll: raise the network softirqs every `TICK_DIVIDER` timer ticks.
 const TICK_DIVIDER: u32 = 4;
-static TICKS: AtomicU32 = AtomicU32::new(0);
+/// Device health (AENQ, keep-alive) every `HEALTH_DIVIDER` ticks.
+const HEALTH_DIVIDER: u32 = 100;
 
 #[init_component]
 fn ena_init() -> Result<(), ComponentInitError> {
@@ -220,12 +237,15 @@ fn ena_init() -> Result<(), ComponentInitError> {
     }
     if registered > 0 {
         ostd::timer::register_callback_on_cpu(|| {
-            if TICKS
-                .fetch_add(1, Ordering::Relaxed)
-                .is_multiple_of(TICK_DIVIDER)
-            {
+            device::TICK_MS.fetch_add(1, Ordering::Relaxed);
+            let t = device::TICKS.fetch_add(1, Ordering::Relaxed);
+            if t.is_multiple_of(TICK_DIVIDER) {
                 aster_network::raise_receive_softirq();
                 aster_network::raise_send_softirq();
+            }
+            if t.is_multiple_of(HEALTH_DIVIDER) || device::AENQ_PENDING.load(Ordering::Acquire) {
+                device::TICK_DUE.store(true, Ordering::Release);
+                aster_network::raise_receive_softirq();
             }
         });
     }
