@@ -150,6 +150,7 @@ impl TimerfdFile {
         // Cancel the timer and clear the ticks counter.
         timer_guard.cancel();
         self.ticks.store(0, Ordering::Relaxed);
+        self.pollee.invalidate();
 
         if expire_time != Duration::ZERO {
             if flags.contains(TFDSetTimeFlags::TFD_TIMER_CANCEL_ON_SET) {
@@ -184,6 +185,7 @@ impl TimerfdFile {
 
     fn try_read(&self, writer: &mut VmWriter) -> Result<()> {
         let ticks = self.ticks.fetch_and(0, Ordering::Relaxed);
+        self.pollee.invalidate();
 
         if ticks == 0 {
             return_errno_with_message!(Errno::EAGAIN, "the counter is zero");
