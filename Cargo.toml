@@ -145,24 +145,24 @@ redundant_test_prefix = "warn"
 # FIXME: The current key order is not yet finalized.
 # Once `cargo-cargofmt` becomes stable, we will use it to enforce a consistent key order.
 [workspace.package]
-version = "0.18.1"
+version = "0.19.0"
 repository = "https://github.com/asterinas/asterinas"
 license = "MPL-2.0"
 edition = "2024"
 
 [workspace.dependencies]
-ostd = { path = "ostd", version = "0.18.0" }
+ostd = { path = "ostd", version = "0.19.0" }
 
 # Crates under ostd/libs
 align_ext = { path = "ostd/libs/align_ext", version = "0.1.0" }
 id-alloc = { path = "ostd/libs/id-alloc", version = "0.1.0" }
 int-to-c-enum = { path = "ostd/libs/int-to-c-enum", version = "0.1.0" }
 int-to-c-enum-derive = { path = "ostd/libs/int-to-c-enum/derive", version = "0.1.0" }
-linux-boot-params = { path = "ostd/libs/linux-bzimage/boot-params", version = "0.18.0" }
-ostd-macros = { path = "ostd/libs/ostd-macros", version = "0.18.0" }
+linux-boot-params = { path = "ostd/libs/linux-bzimage/boot-params", version = "0.19.0" }
+ostd-macros = { path = "ostd/libs/ostd-macros", version = "0.19.0" }
 ostd-pod = { path = "ostd/libs/ostd-pod", version = "0.4.0" }
 ostd-pod-macros = { path = "ostd/libs/ostd-pod/macros", version = "0.4.0" }
-ostd-test = { path = "ostd/libs/ostd-test", version = "0.18.0" }
+ostd-test = { path = "ostd/libs/ostd-test", version = "0.19.0" }
 padding-struct = { path = "ostd/libs/padding-struct", version = "0.2.0" }
 
 aster-core = { path = "kernel/core", default-features = false }
