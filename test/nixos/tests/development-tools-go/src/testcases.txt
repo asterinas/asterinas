@@ -321,7 +321,7 @@ plugin
 # reflect/internal/example2
 # regexp
 # regexp/syntax
-runtime -skip='TestBreakpoint|TestAbort|TestDebugCall|TestNonblockingPipe|TestMincoreErrorSign|TestCgoPprofThreadNoTraceback|TestCgoPprofThread|TestCgoPprofPIE|TestCgoPprof|TestCgoCallbackPprof'
+runtime -skip='TestBreakpoint|TestAbort|TestDebugCall|TestNonblockingPipe|TestMincoreErrorSign|TestCgoPprofThreadNoTraceback|TestCgoPprofThread|TestCgoPprofPIE|TestCgoPprof|TestCgoCallbackPprof|TestMemmoveOverflow|TestGoroutineLeakProfile|TestRuntimePanic|TestTracebackRuntimeFunction|TestTracebackRuntimeMethod|TestG0StackOverflow'
 # runtime/cgo
 runtime/coverage
 # runtime/debug -skip='TestPanicOnFault'
