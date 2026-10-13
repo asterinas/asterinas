@@ -43,7 +43,7 @@ impl AsKernelThread for Task {
 }
 
 /// Options to create or spawn a new kernel thread.
-pub(crate) struct ThreadOptions {
+pub struct ThreadOptions {
     func: Option<Box<dyn FnOnce() + Send>>,
     cpu_affinity: CpuSet,
     sched_policy: SchedPolicy,
@@ -52,7 +52,7 @@ pub(crate) struct ThreadOptions {
 
 impl ThreadOptions {
     /// Creates the thread options with the thread function.
-    pub(crate) fn new<F>(func: F) -> Self
+    pub fn new<F>(func: F) -> Self
     where
         F: FnOnce() + Send + 'static,
     {
@@ -96,7 +96,7 @@ impl ThreadOptions {
 
 impl ThreadOptions {
     /// Builds a new kernel thread without running it immediately.
-    pub(crate) fn build(mut self) -> Arc<Task> {
+    pub fn build(mut self) -> Arc<Task> {
         let task_fn = self.func.take().unwrap();
         let thread_fn = move || {
             let _ = oops::catch_panics_as_oops(task_fn);
