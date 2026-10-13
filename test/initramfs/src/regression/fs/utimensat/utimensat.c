@@ -21,6 +21,17 @@ FN_SETUP(prepare)
 }
 END_SETUP()
 
+FN_TEST(both_omitted_ignores_path_and_flags)
+{
+	struct timespec times[2] = {
+		{ .tv_sec = 1234567899, .tv_nsec = UTIME_OMIT },
+		{ .tv_sec = 1234567898, .tv_nsec = UTIME_OMIT },
+	};
+	TEST_SUCC(utimensat(AT_FDCWD, TEST_FILE, times, 0xdeadbeef));
+	TEST_SUCC(utimensat(AT_FDCWD, "/tmp/nonexistent_file", times, 0));
+}
+END_TEST()
+
 FN_TEST(at_empty_path_updates_times)
 {
 	struct timespec times[2] = {
