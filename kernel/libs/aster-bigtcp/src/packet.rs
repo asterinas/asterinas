@@ -275,6 +275,16 @@ impl<L> TxPacket<L> {
     /// # Panics
     ///
     /// This method will panic if `header_len` exceeds the allocated header size.
+    /// Returns a writer over `len` bytes of the packet data starting at
+    /// `offset`, for drivers that patch headers in place (e.g. to fill in a
+    /// pseudo-header checksum for hardware offload).
+    pub fn data_writer(&mut self, offset: usize, len: usize) -> VmWriter<'_, Infallible> {
+        assert!(offset + len <= self.0.data_range.end - self.0.data_range.start);
+        let mut writer = self.0.segment.writer();
+        writer.skip(self.0.data_range.start + offset).limit(len);
+        writer
+    }
+
     pub fn prepend_writer(&mut self, header_len: usize) -> VmWriter<'_, Infallible> {
         assert!(header_len <= self.0.data_range.start - self.0.alloc_range.start);
         let mut writer = self.0.segment.writer();
