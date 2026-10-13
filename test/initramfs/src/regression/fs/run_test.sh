@@ -132,6 +132,7 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 
 ./mount/listmount
 ./mount/mount_api
+./mount/mount_capability
 ./mount/mount_move
 ./mount/mount_propagation
 
