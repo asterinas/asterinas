@@ -120,11 +120,13 @@ use ostd::mm::{Segment, VmIo, VmIoFill};
 use crate::prelude::*;
 
 mod cache_page;
+mod readahead;
 #[cfg(ktest)]
 mod tests;
 mod vmo;
 
 pub(crate) use cache_page::{CachePage, CachePageExt, CachePageMeta, LockedCachePage};
+pub(crate) use readahead::Readahead;
 pub use vmo::Vmo;
 pub(crate) use vmo::{VmoCommitError, VmoFlags, VmoMapMode, VmoOptions};
 
@@ -388,7 +390,6 @@ pub(crate) trait PageCacheBackend: Sync + Send {
     ///
     /// Backends that can process several pages in one request should override
     /// this method. The default implementation submits each page separately.
-    #[expect(dead_code)]
     fn read_pages_async(&self, pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
         for (idx, locked_page) in pages.into_indexed() {
             self.read_page_async(idx, locked_page, io_batch)?;
