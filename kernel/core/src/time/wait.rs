@@ -8,7 +8,7 @@ use super::{Timer, TimerManager, clocks::JIFFIES_TIMER_MANAGER, timer::Timeout};
 use crate::{prelude::*, time::timer::TimerGuard};
 
 /// A trait that provide the timeout related function for [`Waiter`] and [`WaitQueue`]`.
-pub(crate) trait WaitTimeout {
+pub trait WaitTimeout {
     /// Waits until some condition returns `Some(_)` or a given timeout is reached.
     ///
     /// # Errors
@@ -55,7 +55,7 @@ pub(crate) trait WaitTimeout {
 }
 
 /// A timeout with extended semantics.
-pub(crate) enum TimeoutExt<'a> {
+pub enum TimeoutExt<'a> {
     /// The timeout will never fire.
     Never,
     /// The timeout will expire later according to [`ManagedTimeout`].
@@ -121,7 +121,7 @@ impl<'a> From<Option<ManagedTimeout<'a>>> for TimeoutExt<'a> {
 }
 
 /// A [`Timeout`] with the associated [`TimerManager`].
-pub(crate) struct ManagedTimeout<'a> {
+pub struct ManagedTimeout<'a> {
     timeout: Timeout,
     manager: &'a Arc<TimerManager>,
 }
