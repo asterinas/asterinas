@@ -21,7 +21,7 @@ pub(super) fn sys_fsmount(
     let flags = FsMountFlags::try_from(flags)?;
     let mount_attrs = MountAttrs::try_from(mount_attrs)?;
     let per_mount_flags = PerMountFlags::try_from(mount_attrs)?;
-    super::fsopen::check_mount_api_capability(ctx)?;
+    super::mount::check_mount_api_capability(ctx)?;
 
     let fs_config_file = {
         let mut file_table = ctx.thread_local.borrow_file_table_mut();

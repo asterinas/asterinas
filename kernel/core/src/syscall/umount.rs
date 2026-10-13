@@ -31,6 +31,8 @@ pub(super) fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<
             .lookup(&fs_path)?
     };
 
+    super::mount::check_mount_api_capability(ctx)?;
+
     // The path resolution of the umount syscall ensures that the final `Path` must correspond
     // to the topmost mount. If there is a mount stacked above the current thread's `cwd`, normal
     // path lookup through "." cannot access the upper mount, but umount through "." can operate
