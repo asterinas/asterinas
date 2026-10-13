@@ -25,7 +25,7 @@ pub(super) fn sys_move_mount(
     if !(flags - supported_flags).is_empty() {
         return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported move_mount flags");
     }
-    super::fsopen::check_mount_api_capability(ctx)?;
+    super::mount::check_mount_api_capability(ctx)?;
 
     let from_path = ctx
         .user_space()

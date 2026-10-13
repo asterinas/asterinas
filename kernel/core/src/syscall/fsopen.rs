@@ -11,7 +11,7 @@ use crate::{
 
 pub(super) fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let flags = FsOpenFlags::try_from(flags)?;
-    check_mount_api_capability(ctx)?;
+    super::mount::check_mount_api_capability(ctx)?;
 
     let fs_name = ctx
         .user_space()
@@ -34,16 +34,6 @@ pub(super) fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Resu
         .write()
         .insert(file, FdFlags::from(flags));
     Ok(SyscallReturn::Return(fd.into()))
-}
-
-pub(super) fn check_mount_api_capability(ctx: &Context) -> Result<()> {
-    use crate::{process::credentials::capabilities::CapSet, security::lsm::hooks as lsm_hooks};
-
-    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
-        ctx.thread_local.borrow_user_ns().as_ref(),
-        ctx.posix_thread,
-        CapSet::SYS_ADMIN,
-    ))
 }
 
 bitflags! {

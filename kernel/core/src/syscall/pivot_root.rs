@@ -10,6 +10,8 @@ pub(super) fn sys_pivot_root(
     put_old_ptr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
+    super::mount::check_mount_api_capability(ctx)?;
+
     let new_root_name = ctx
         .user_space()
         .read_cstring(new_root_ptr, MAX_FILENAME_LEN)?;

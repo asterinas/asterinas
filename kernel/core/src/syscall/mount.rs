@@ -46,6 +46,8 @@ pub(super) fn sys_mount(
             .get_top_path()
     };
 
+    check_mount_api_capability(ctx)?;
+
     if mount_flags.contains(MountFlags::MS_REMOUNT) && mount_flags.contains(MountFlags::MS_BIND) {
         // If `MS_BIND` is specified, only the mount flags are changed.
         do_remount_mnt(&dst_path, mount_flags, ctx)?;
@@ -74,6 +76,16 @@ pub(super) fn sys_mount(
     }
 
     Ok(SyscallReturn::Return(0))
+}
+
+pub(super) fn check_mount_api_capability(ctx: &Context) -> Result<()> {
+    use crate::{process::credentials::capabilities::CapSet, security::lsm::hooks as lsm_hooks};
+
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        ctx.thread_local.borrow_user_ns().as_ref(),
+        ctx.posix_thread,
+        CapSet::SYS_ADMIN,
+    ))
 }
 
 /// Remounts the mount with new flags.
