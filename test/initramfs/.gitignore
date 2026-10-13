@@ -1,1 +1,6 @@
 build/
+
+
+src/Image
+src/qemu-*
+src/*.cpio.gz

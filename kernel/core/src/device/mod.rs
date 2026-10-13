@@ -8,6 +8,7 @@ mod model;
 mod pty;
 pub mod registry;
 pub(crate) mod tty;
+mod kvm;
 
 use device_id::DeviceId;
 pub(crate) use mem::{getrandom, geturandom};
@@ -67,6 +68,7 @@ pub(crate) fn init_in_first_kthread() {
 pub(crate) fn init_in_first_process() -> Result<()> {
     tty::init_in_first_process()?;
     registry::init_in_first_process()?;
+    kvm::init_in_first_process()?;
 
     Ok(())
 }

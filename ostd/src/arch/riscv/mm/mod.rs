@@ -114,6 +114,27 @@ pub(crate) fn can_sync_dma() -> bool {
     has_extensions(IsaExtensions::ZICBOM)
 }
 
+fn get_cmo_block_size() -> usize {
+    let block_size = DEVICE_TREE
+        .get()
+        .unwrap()
+        .cpus()
+        .find(|cpu| cpu.property("mmu-type").is_some())
+        .expect("Failed to find an application CPU node in device tree")
+        .property("riscv,cbom-block-size")
+        .expect("Failed to find `riscv,cbom-block-size` property of the CPU node")
+        .as_usize()
+        .expect("Failed to parse `riscv,cbom-block-size` property of the CPU node");
+    assert!(block_size.is_power_of_two());
+    assert!(block_size <= PAGE_SIZE);
+    block_size
+}
+
+pub(crate) fn cmo_block_size() -> usize {
+    static CMO_MANAGEMENT_BLOCK_SIZE: Once<usize> = Once::new();
+    *CMO_MANAGEMENT_BLOCK_SIZE.call_once(get_cmo_block_size)
+}
+
 /// # Safety
 ///
 /// The caller must ensure that
@@ -123,22 +144,7 @@ pub(crate) fn can_sync_dma() -> bool {
 pub(crate) unsafe fn sync_dma_range(mut range: Range<Vaddr>, is_from_device: bool) {
     debug_assert!(can_sync_dma());
 
-    static CMO_MANAGEMENT_BLOCK_SIZE: Once<usize> = Once::new();
-    let cmo_management_block_size = *CMO_MANAGEMENT_BLOCK_SIZE.call_once(|| {
-        let block_size = DEVICE_TREE
-            .get()
-            .unwrap()
-            .cpus()
-            .find(|cpu| cpu.property("mmu-type").is_some())
-            .expect("Failed to find an application CPU node in device tree")
-            .property("riscv,cbom-block-size")
-            .expect("Failed to find `riscv,cbom-block-size` property of the CPU node")
-            .as_usize()
-            .expect("Failed to parse `riscv,cbom-block-size` property of the CPU node");
-        assert!(block_size.is_power_of_two());
-        assert!(block_size <= PAGE_SIZE);
-        block_size
-    });
+    let cmo_management_block_size = cmo_block_size();
 
     // Start at an aligned address, so the following loop can cover every byte in the range.
     range.start &= !(cmo_management_block_size - 1);

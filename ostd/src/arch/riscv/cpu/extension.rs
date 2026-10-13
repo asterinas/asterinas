@@ -227,6 +227,15 @@ define_isa_extensions! {
     ZVFBFWMA    = 96, "zvfbfwma",    "Vector BF16 widening mul-add";
     ZAAMO       = 97, "zaamo",       "Atomic memory operations";
     ZALRSC      = 98, "zalrsc",      "Load-reserved/store-conditional";
+    ZICBOP		= 99, "----", "-----";
+    SVRSW60T59B	= 100, "----", "-----";
+    ZALASR		= 101, "----", "-----";
+    ZILSD		= 102, "----", "-----";
+    ZCLSD		= 103, "----", "-----";
+    ZICFILP		= 104, "----", "-----";
+    ZICFISS		= 105, "----", "-----";
+
+    XLINUXENVCFG= 127, "----", "-----";
 }
 
 #[cfg(ktest)]

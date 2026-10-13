@@ -14,6 +14,9 @@
 let
   boot_hello = builtins.path { path = ./../src/boot_hello.sh; };
   init = builtins.path { path = ./../src/init; };
+  qemu = builtins.path { path = ./../src/qemu-system-riscv64; };
+  kernel = builtins.path { path = ./../src/Image; };
+  initramfs = builtins.path { path = ./../src/rv.cpio.gz; };
   etc = lib.fileset.toSource {
     root = ./../etc;
     fileset = ./../etc;
@@ -57,6 +60,11 @@ stdenvNoCC.mkDerivation {
 
     cp ${boot_hello} $out/test/boot_hello.sh
     cp ${init} $out/init
+
+    mkdir -p $out/kvm_test
+    cp ${qemu} $out/kvm_test/qemu-system-riscv64
+    cp ${kernel} $out/kvm_test/Image
+    cp ${initramfs} $out/kvm_test/rv.cpio.gz
 
     cp -r ${etc}/* $out/etc/
 

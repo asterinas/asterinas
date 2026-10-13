@@ -436,6 +436,26 @@ impl FFpuContext {
         // memory safety.
         unsafe { load_fpu_context_f(self as *const _) };
     }
+
+    /// Get fcsr reg
+    pub fn get_fcsr(&self) -> u32 {
+        self.fcsr
+    }
+
+    /// Get f reg by index
+    pub fn get_f(&self, index: usize) -> u32 {
+        self.f[index]
+    }
+
+    /// Set fcsr reg
+    pub fn set_fcsr(&mut self, value: u32) {
+        self.fcsr = value;
+    }
+
+    /// Set f reg by index
+    pub fn set_f(&mut self, index: usize, value: u32) {
+        self.f[index] = value;
+    }
 }
 
 impl DFpuContext {
@@ -448,6 +468,26 @@ impl DFpuContext {
         // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
         // memory safety.
         unsafe { load_fpu_context_d(self as *const _) };
+    }
+
+    /// Get fcsr reg
+    pub fn get_fcsr(&self) -> u32 {
+        self.fcsr
+    }
+
+    /// Get f reg by index
+    pub fn get_f(&self, index: usize) -> u64 {
+        self.f[index]
+    }
+
+    /// Set fcsr reg
+    pub fn set_fcsr(&mut self, value: u32) {
+        self.fcsr = value;
+    }
+
+    /// Set f reg by index
+    pub fn set_f(&mut self, index: usize, value: u64) {
+        self.f[index] = value;
     }
 }
 

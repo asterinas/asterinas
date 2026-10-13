@@ -17,6 +17,8 @@ pub(crate) mod task;
 mod timer;
 pub mod trap;
 
+pub mod vm;
+
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
     // Unimplemented, no-op

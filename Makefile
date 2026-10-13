@@ -3,7 +3,7 @@
 # =========================== Makefile options. ===============================
 
 # Global build options.
-TARGET_ARCH ?= x86_64
+TARGET_ARCH ?= riscv64
 BENCHMARK ?= none
 BOOT_METHOD ?= grub-rescue-iso
 BOOT_PROTOCOL ?= multiboot2

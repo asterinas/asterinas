@@ -1,5 +1,5 @@
 {
-    "rust-analyzer.cargo.target": "x86_64-unknown-none",
+    "rust-analyzer.cargo.target": "riscv64imac-unknown-none-elf",
     "rust-analyzer.check.extraEnv": {
         "RUSTFLAGS": "--check-cfg cfg(ktest) --cfg ktest"
     },
