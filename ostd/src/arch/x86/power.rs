@@ -42,9 +42,23 @@ mod qemu_isa_debug {
 }
 
 pub(super) fn init() {
-    use super::cpu::cpuid;
+    use super::{cpu::cpuid, kernel::ACPI_INFO};
 
     if !cpuid::query_if_running_in_qemu() {
+        return;
+    }
+    // The "KVMKVMKVM" signature is shared by every KVM-based VMM, including
+    // EC2 Nitro, where there is no isa-debug-exit device and installing this
+    // handler would shadow the real (ACPI) power-off path. QEMU's firmware
+    // tables carry the OEM ID "BOCHS "; require it when ACPI is available.
+    if let Some(info) = ACPI_INFO.get()
+        && let Some(oem_id) = info.oem_id
+        && &oem_id != b"BOCHS "
+    {
+        crate::info!(
+            "KVM hypervisor with firmware OEM {:?}: not QEMU, no isa-debug-exit",
+            core::str::from_utf8(&oem_id).unwrap_or("?")
+        );
         return;
     }
 
@@ -66,7 +80,25 @@ pub fn try_poweroff(code: crate::power::ExitCode) {
 
 /// Attempts to restart the system using an architecture-specific mechanism.
 ///
-/// On x86, this function currently does nothing and returns.
+/// On x86, this triple-faults the current CPU: it loads an empty IDT and raises a software
+/// interrupt, which the CPU cannot deliver, nor the resulting double fault, so it resets. This
+/// is the last-resort reboot method on x86 (Linux does the same) and the only one that works
+/// where neither an ACPI reset register nor an i8042 controller exists, such as on EC2 Nitro.
+///
+/// This method does not return. Nothing runs after it on the current CPU, and the other CPUs
+/// stop when the chipset resets.
 pub fn try_restart(_code: crate::power::ExitCode) {
-    // TODO: Add an OSTD-level restart mechanism for x86.
+    let null_idt: [u8; 10] = [0; 10];
+
+    // SAFETY: We are intentionally bringing the machine down. The empty IDT guarantees that the
+    // `int3` below cannot be handled and the CPU resets instead.
+    unsafe {
+        core::arch::asm!(
+            "cli",
+            "lidt [{}]",
+            "int3",
+            in(reg) null_idt.as_ptr(),
+            options(nostack, noreturn)
+        );
+    }
 }

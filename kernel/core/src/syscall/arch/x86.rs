@@ -16,6 +16,7 @@ use super::{
     chown::{sys_chown, sys_fchown, sys_fchownat, sys_lchown},
     chroot::sys_chroot,
     clock_gettime::sys_clock_gettime,
+    clock_settime::{sys_clock_settime, sys_settimeofday},
     clone::{sys_clone, sys_clone3},
     close::{sys_close, sys_close_range},
     connect::sys_connect,
@@ -327,6 +328,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SYNC = 162             => sys_sync(args[..0]);
     SYS_MOUNT = 165            => sys_mount(args[..5]);
     SYS_UMOUNT2 = 166          => sys_umount(args[..2]);
+    SYS_SETTIMEOFDAY = 164     => sys_settimeofday(args[..2]);
     SYS_REBOOT = 169           => sys_reboot(args[..4]);
     SYS_SETHOSTNAME = 170      => sys_sethostname(args[..2]);
     SYS_SETDOMAINNAME = 171    => sys_setdomainname(args[..2]);
@@ -357,6 +359,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_TIMER_SETTIME = 223    => sys_timer_settime(args[..4]);
     SYS_TIMER_GETTIME = 224    => sys_timer_gettime(args[..2]);
     SYS_TIMER_DELETE = 226     => sys_timer_delete(args[..1]);
+    SYS_CLOCK_SETTIME = 227    => sys_clock_settime(args[..2]);
     SYS_CLOCK_GETTIME = 228    => sys_clock_gettime(args[..2]);
     SYS_CLOCK_NANOSLEEP = 230  => sys_clock_nanosleep(args[..4]);
     SYS_EXIT_GROUP = 231       => sys_exit_group(args[..1], &mut user_ctx);
