@@ -16,7 +16,7 @@
 </p>
 
 **News:**
-- 2026-10-13: Asterinas 0.19.0 is released, adding a DRM graphics subsystem, AArch64 as the fourth supported architecture, a Rust-native device model (`aster-device`), better guest-kernel support for secure containers, and the first self-hosted build of Asterinas on Asterinas NixOS. Read the [announcement](https://asterinas.github.io/2026/10/12/announcing-asterinas-0.19.0.html).
+- 2026-10-13: Asterinas 0.19.0 is released, adding a DRM graphics subsystem, AArch64 as the fourth supported architecture, a Rust-native device model (`aster-device`), better guest-kernel support for secure containers, and the first self-hosted build of Asterinas on Asterinas NixOS. Read the [announcement](https://asterinas.github.io/2026/10/13/announcing-asterinas-0.19.0.html).
 
 ## Introducing Asterinas
 
