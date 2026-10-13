@@ -321,6 +321,8 @@ impl InodeInner {
             return Err(err);
         }
 
+        // Evict pages that may have been brought in by concurrent readahead.
+        self.page_cache().evict_range(discard_start_bytes..end)?;
         self.set_mtime_ctime(utils::now());
         if end > self.file_size() {
             self.set_file_size(end);
