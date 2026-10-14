@@ -14,6 +14,7 @@ use crate::{
     fs::{
         file::{AccessMode, InodeHandle, InodeMode, InodeType, StatusFlags, mkmod},
         tmpfs::TmpFs,
+        utils,
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FallocMode, FileOps, Inode, Metadata},
@@ -246,12 +247,13 @@ impl MemfdInodeHandle for InodeHandle {
                 mkmod!(a+rw)
             };
 
+            let (uid, gid) = utils::current_fs_ids();
             let ram_inode = RamInode::new_file_detached_in_memfd(
                 weak_self,
                 MemfdTmpFs::singleton().sb().container_dev_id,
                 mode,
-                Uid::new_root(),
-                Gid::new_root(),
+                uid,
+                gid,
             );
 
             let mut seals = FileSeals::empty();

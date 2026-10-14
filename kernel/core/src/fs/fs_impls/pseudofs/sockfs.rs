@@ -8,6 +8,7 @@ use crate::{
     fs::{
         file::mkmod,
         pseudofs::{NaivePseudoFs, PseudoInodeType},
+        utils,
         vfs::{
             file_system::FileSystem,
             path::{Mount, Path},
@@ -15,7 +16,6 @@ use crate::{
         },
     },
     prelude::*,
-    process::{Gid, Uid},
 };
 
 pub(super) fn init() {
@@ -37,11 +37,12 @@ impl SockFs {
 
     /// Creates a pseudo `Path` for a socket.
     pub(crate) fn new_path() -> Path {
+        let (uid, gid) = utils::current_fs_ids();
         let socket_inode = Arc::new(Self::singleton().alloc_inode(
             PseudoInodeType::Socket,
             mkmod!(a+rwx),
-            Uid::new_root(),
-            Gid::new_root(),
+            uid,
+            gid,
         ));
 
         Path::new_pseudo(Self::mount_node().clone(), socket_inode, |inode| {

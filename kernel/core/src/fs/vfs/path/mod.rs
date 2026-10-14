@@ -28,6 +28,7 @@ use crate::{
         vfs::{
             file_system::{FileSystem, FsFlags},
             inode::{HardLinkability, Inode, Metadata, MknodType, RenameMode},
+            notify,
             registry::FsAndRoot,
             xattr::{self, XattrName, XattrNamespace, XattrSetFlags},
         },
@@ -815,6 +816,45 @@ impl Path {
         }
 
         old_dir_dentry.rename(old_name, &new_dir_dentry, new_name, mode)
+    }
+
+    /// Changes the mode after checking mount writability and the caller's permissions.
+    pub(crate) fn chmod(&self, mut mode: InodeMode, ctx: &Context) -> Result<()> {
+        self.check_mount_writable()?;
+
+        // FIXME: Keep the ownership checks and mode update in one inode critical
+        // section. `metadata()` returns a snapshot, so a concurrent `chown()` can
+        // change the owner or group before `set_mode()` runs.
+        let metadata = self.metadata()?;
+        let credentials = ctx.posix_thread.credentials();
+        let user_ns = ctx.thread_local.borrow_user_ns();
+
+        if credentials.fsuid() != metadata.uid {
+            lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                user_ns.as_ref(),
+                ctx.posix_thread,
+                CapSet::FOWNER,
+            ))?;
+        }
+
+        // If the caller is not in the file's group and lacks `CAP_FSETID`,
+        // Linux silently clears the requested `S_ISGID` bit.
+        // Reference: <https://man7.org/linux/man-pages/man2/chmod.2.html>.
+        if mode.contains(InodeMode::S_ISGID)
+            && !credentials.has_group_for_fs_access(metadata.gid)
+            && lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                user_ns.as_ref(),
+                ctx.posix_thread,
+                CapSet::FSETID,
+            ))
+            .is_err()
+        {
+            mode.remove(InodeMode::S_ISGID);
+        }
+
+        self.set_mode(mode)?;
+        notify::on_attr_change(self);
+        Ok(())
     }
 }
 

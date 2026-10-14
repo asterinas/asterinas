@@ -218,6 +218,14 @@ impl<R: TRights> Credentials<R> {
         self.0.groups()
     }
 
+    /// Returns whether the filesystem group ID or a supplementary group ID matches `gid`.
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub(crate) fn has_group_for_fs_access(&self, gid: Gid) -> bool {
+        self.fsgid() == gid || self.groups().contains(&gid)
+    }
+
     /// Acquires the write lock of supplementary group IDs.
     ///
     /// This method requires the `Write` right.
