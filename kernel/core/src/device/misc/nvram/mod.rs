@@ -64,23 +64,25 @@ struct CmosBackend;
 
 impl Backend for CmosBackend {
     fn size(&self) -> core::result::Result<usize, NvramError> {
-        aster_time::nvram_size()
+        Ok(aster_time::nvram_backend()?.size())
     }
 
     fn read(&self, offset: usize, output: &mut [u8]) -> core::result::Result<usize, NvramError> {
-        aster_time::nvram_read(offset, output)
+        aster_time::nvram_backend()?.read(offset, output)
     }
 
     fn write(&self, offset: usize, input: &[u8]) -> core::result::Result<usize, NvramError> {
-        aster_time::nvram_write(offset, input)
+        aster_time::nvram_backend()?.write(offset, input)
     }
 
     fn initialize(&self) -> core::result::Result<(), NvramError> {
-        aster_time::nvram_initialize()
+        aster_time::nvram_backend()?.initialize();
+        Ok(())
     }
 
     fn set_checksum(&self) -> core::result::Result<(), NvramError> {
-        aster_time::nvram_set_checksum()
+        aster_time::nvram_backend()?.set_checksum();
+        Ok(())
     }
 }
 
