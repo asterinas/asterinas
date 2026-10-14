@@ -6,7 +6,10 @@
 use inherit_methods_macro::inherit_methods;
 use ostd::arch::cpu::context::UserContext;
 
-use super::sig_num::SigNum;
+use super::{
+    constants::{SI_TKILL, SI_USER},
+    sig_num::SigNum,
+};
 use crate::{
     arch::cpu::SigContext,
     prelude::*,
@@ -79,6 +82,13 @@ impl siginfo_t {
 
     pub(crate) fn si_addr(&self) -> Vaddr {
         self.siginfo_fields.sigfault().addr
+    }
+
+    pub(crate) fn sender_pid(&self) -> Option<Pid> {
+        match self.si_code {
+            SI_USER | SI_TKILL => Some(self.siginfo_fields.common().first.piduid().pid),
+            _ => None,
+        }
     }
 }
 
