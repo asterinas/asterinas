@@ -10,7 +10,7 @@ use aster_systree::{
 use crate::{
     fs::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, SyncMode, mkmod},
-        utils::DirentVisitor,
+        utils::{self, DirentVisitor},
         vfs::{
             file_system::{FileSystem, SuperBlock},
             inode::{
@@ -72,6 +72,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
 
     fn new_metadata(ino: u64, type_: InodeType, sb: &SuperBlock) -> Metadata {
         let now = RealTimeCoarseClock::get().read_time();
+        let (uid, gid) = utils::current_fs_ids();
         Metadata {
             ino,
             size: 0,
@@ -84,8 +85,8 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             // The mode field in metadata will not be used
             mode: mkmod!(a=),
             nr_hard_links: 1,
-            uid: Uid::new_root(),
-            gid: Gid::new_root(),
+            uid,
+            gid,
             container_dev_id: sb.container_dev_id,
             self_dev_id: None,
             birth_at: None,

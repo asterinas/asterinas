@@ -59,8 +59,8 @@ fn clear_set_id_bits(dentry: &Dentry) -> Result<()> {
     if mode.contains(InodeMode::S_ISGID) {
         let inode_gid = inode.group()?;
         let credentials = posix_thread.credentials();
-        let retain_sgid = !mode.contains(InodeMode::S_IXGRP)
-            && (credentials.fsgid() == inode_gid || credentials.groups().contains(&inode_gid));
+        let retain_sgid =
+            !mode.contains(InodeMode::S_IXGRP) && credentials.has_group_for_fs_access(inode_gid);
 
         if !retain_sgid {
             mode.remove(InodeMode::S_ISGID);
