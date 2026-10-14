@@ -12,10 +12,7 @@ use core::time::Duration;
 
 pub use clocksource::{ClockSource, Instant};
 use component::{ComponentInitError, init_component};
-pub use nvram::{
-    Error as NvramError, initialize as nvram_initialize, read as nvram_read,
-    set_checksum as nvram_set_checksum, size as nvram_size, write as nvram_write,
-};
+pub use nvram::{Backend as NvramBackend, Error as NvramError, backend as nvram_backend};
 use rtc::Driver;
 use spin::Once;
 
