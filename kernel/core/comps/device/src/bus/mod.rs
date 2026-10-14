@@ -66,7 +66,7 @@ pub trait Bus: Sized + Send + Sync + 'static {
     type Device: Send + Sync + 'static;
 
     /// What a driver declares to say which devices it accepts.
-    type MatchData: Send + Sync + 'static;
+    type MatchData: ?Sized + Send + Sync + 'static;
 
     /// Decides whether a driver's match data accepts a device.
     fn matches(&self, dev: &Self::Device, data: &Self::MatchData) -> bool;
