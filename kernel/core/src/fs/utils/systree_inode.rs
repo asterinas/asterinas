@@ -498,14 +498,14 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
             Self::new_branch_dir(
                 SysTreeNodeKind::Branch(branch_child),
                 Some(mode),
-                self.parent().clone(),
+                Arc::downgrade(&self.this()),
                 &sb,
             )
         } else {
             Self::new_leaf_dir(
                 SysTreeNodeKind::Leaf(new_child.cast_to_node().unwrap()),
                 Some(mode),
-                self.parent().clone(),
+                Arc::downgrade(&self.this()),
                 &sb,
             )
         };
