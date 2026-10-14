@@ -137,16 +137,14 @@ impl Debug for BioRequestSingleQueue {
 /// that (1) are of the same request type and (2) are contiguous in terms of target sectors.
 /// This helps reduce the number of I/O requests submitted to the underlying storage medium.
 ///
-/// Second, a `BioRequest` provides the physical sector addresses suitable for storage medium.
-/// The sector addresses returned from `SubmittedBio::sid_range()` are logical ones:
-/// they need to be adjusted with `SubmittedBio::sid_offset()` to calculate the physical ones.
-/// This calculation is handled internally by `BioRequest`.
-/// One can simply call `BioRequest::sid_range()` to obtain the physical sector addresses.
+/// Second, a `BioRequest` provides the sector addresses suitable for storage medium.
+/// Block layers may have remapped the submitted BIO. One can simply call
+/// `BioRequest::sid_range()` to obtain the addresses seen by the current device.
 #[derive(Debug)]
 pub struct BioRequest {
     /// The type of the I/O
     type_: BioType,
-    /// The physical range of target sectors on the device
+    /// The mapped range of target sectors on the device served by this queue.
     sid_range: Range<Sid>,
     /// The number of segments
     num_segments: usize,
@@ -193,10 +191,8 @@ impl BioRequest {
             return false;
         }
 
-        let sid_offset = rq_bio.sid_offset();
-
-        rq_bio.sid_range().start + sid_offset == self.sid_range.end
-            || rq_bio.sid_range().end + sid_offset == self.sid_range.start
+        rq_bio.sid_range().start == self.sid_range.end
+            || rq_bio.sid_range().end == self.sid_range.start
     }
 
     /// Merges the `SubmittedBio` into this request.
@@ -210,13 +206,12 @@ impl BioRequest {
         assert!(self.can_merge(&rq_bio));
 
         let rq_bio_nr_segments = rq_bio.segments().len();
-        let sid_offset = rq_bio.sid_offset();
 
-        if rq_bio.sid_range().start + sid_offset == self.sid_range.end {
-            self.sid_range.end = rq_bio.sid_range().end + sid_offset;
+        if rq_bio.sid_range().start == self.sid_range.end {
+            self.sid_range.end = rq_bio.sid_range().end;
             self.bios.push_back(rq_bio);
         } else {
-            self.sid_range.start = rq_bio.sid_range().start + sid_offset;
+            self.sid_range.start = rq_bio.sid_range().start;
             self.bios.push_front(rq_bio);
         }
 
@@ -226,9 +221,7 @@ impl BioRequest {
 
 impl From<SubmittedBio> for BioRequest {
     fn from(bio: SubmittedBio) -> Self {
-        let mut sid_range = bio.sid_range().clone();
-        sid_range.start = sid_range.start + bio.sid_offset();
-        sid_range.end = sid_range.end + bio.sid_offset();
+        let sid_range = bio.sid_range().clone();
 
         Self {
             type_: bio.type_(),
@@ -240,5 +233,47 @@ impl From<SubmittedBio> for BioRequest {
                 bios
             },
         }
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use ostd::prelude::ktest;
+
+    use super::*;
+    use crate::{
+        SECTOR_SIZE,
+        bio::{Bio, BioDirection, BioSegment},
+    };
+
+    fn write_bio(start: u64) -> SubmittedBio {
+        Bio::new(
+            BioType::Write,
+            Sid::new(start),
+            vec![BioSegment::alloc_exact(
+                1,
+                SECTOR_SIZE,
+                BioDirection::ToDevice,
+            )],
+            None,
+        )
+        .submit_for_test()
+    }
+
+    #[ktest]
+    fn merges_contiguous_remapped_data_bios() {
+        let queue = BioRequestSingleQueue::new();
+        let mut first = write_bio(10);
+        let mut second = write_bio(20);
+        first.remap_sid_start(Sid::new(100)).unwrap();
+        second.remap_sid_start(Sid::new(101)).unwrap();
+
+        queue.enqueue(first).unwrap();
+        queue.enqueue(second).unwrap();
+
+        assert_eq!(queue.num_requests(), 1);
+        let request = queue.dequeue();
+        assert_eq!(request.sid_range(), &(Sid::new(100)..Sid::new(102)));
+        assert_eq!(request.bios().count(), 2);
     }
 }

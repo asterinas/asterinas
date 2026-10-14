@@ -62,11 +62,16 @@ impl Bio {
         let nsectors = segments
             .iter()
             .map(|segment| segment.nsectors().to_raw())
-            .sum();
+            .try_fold(0_u64, u64::checked_add)
+            .expect("BIO sector count overflow");
+        let end = start_sid
+            .to_raw()
+            .checked_add(nsectors)
+            .expect("BIO sector range overflow");
 
         let metadata = Arc::new(BioMetadata {
             type_,
-            sid_range: start_sid..start_sid + nsectors,
+            sid_range: start_sid..Sid::new(end),
             status: AtomicU32::new(BioStatus::Init as u32),
             wait_queue: WaitQueue::new(),
         });
@@ -95,6 +100,29 @@ impl Bio {
     /// Returns the status.
     pub fn status(&self) -> BioStatus {
         self.metadata.status()
+    }
+
+    #[cfg(ktest)]
+    pub fn submit_for_test(self) -> SubmittedBio {
+        let Self {
+            metadata,
+            complete_fn,
+            segments,
+        } = self;
+        let result = metadata.status.compare_exchange(
+            BioStatus::Init as u32,
+            BioStatus::Submit as u32,
+            Ordering::Release,
+            Ordering::Relaxed,
+        );
+        assert!(result.is_ok());
+        let mapped_sid_range = metadata.sid_range().clone();
+        SubmittedBio {
+            metadata,
+            mapped_sid_range,
+            complete_fn,
+            segments,
+        }
     }
 
     /// Submits self to the `block_device` asynchronously.
@@ -128,9 +156,10 @@ impl Bio {
         assert!(result.is_ok());
 
         let waiter_metadata = metadata.clone();
+        let mapped_sid_range = metadata.sid_range().clone();
         let submitted_bio = SubmittedBio {
             metadata,
-            sid_offset: 0,
+            mapped_sid_range,
             complete_fn,
             segments,
         };
@@ -200,7 +229,7 @@ impl From<BioEnqueueError> for Error {
 /// The request queue of a block device only accepts `SubmittedBio`s into the queue.
 pub struct SubmittedBio {
     metadata: Arc<BioMetadata>,
-    sid_offset: u64,
+    mapped_sid_range: Range<Sid>,
     complete_fn: Option<BioCompleteFn>,
     segments: Vec<BioSegment>,
 }
@@ -211,19 +240,41 @@ impl SubmittedBio {
         self.metadata.type_()
     }
 
-    /// Returns the range of target sectors on the device.
+    /// Returns the sector range mapped for the current block device layer.
     pub fn sid_range(&self) -> &Range<Sid> {
-        self.metadata.sid_range()
+        &self.mapped_sid_range
     }
 
-    /// Returns the offset of the first sector ID.
-    pub fn sid_offset(&self) -> u64 {
-        self.sid_offset
+    /// Remaps the mapped sector range to a new start while preserving its length.
+    ///
+    /// Returns `Refused` without changing the mapping if the new end overflows.
+    pub fn remap_sid_start(&mut self, new_start: Sid) -> Result<(), BioEnqueueError> {
+        let length = self
+            .mapped_sid_range
+            .end
+            .to_raw()
+            .checked_sub(self.mapped_sid_range.start.to_raw())
+            .ok_or(BioEnqueueError::Refused)?;
+        let new_end = new_start
+            .to_raw()
+            .checked_add(length)
+            .ok_or(BioEnqueueError::Refused)?;
+        self.mapped_sid_range = new_start..Sid::new(new_end);
+        Ok(())
     }
 
-    /// Sets the offset of the first sector ID.
-    pub fn set_sid_offset(&mut self, offset: u64) {
-        self.sid_offset = offset;
+    /// Offsets the mapped sector range while preserving its length.
+    ///
+    /// Returns `Refused` without changing the mapping if the offset overflows.
+    pub fn offset_mapped_sid_range(&mut self, offset: u64) -> Result<(), BioEnqueueError> {
+        let new_start = self
+            .mapped_sid_range
+            .start
+            .to_raw()
+            .checked_add(offset)
+            .map(Sid::new)
+            .ok_or(BioEnqueueError::Refused)?;
+        self.remap_sid_start(new_start)
     }
 
     /// Returns the slice to the memory segments.
@@ -274,7 +325,7 @@ impl Debug for SubmittedBio {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("SubmittedBio")
             .field("metadata", &self.metadata)
-            .field("sid_offset", &self.sid_offset)
+            .field("mapped_sid_range", &self.mapped_sid_range)
             .field("segments", &self.segments)
             .finish()
     }
@@ -396,6 +447,12 @@ impl BioSegment {
     /// the bio direction.
     pub fn alloc(nblocks: usize, direction: BioDirection) -> Self {
         Self::alloc_inner(nblocks, 0, nblocks * BLOCK_SIZE, direction)
+    }
+
+    /// Allocates a sector-aligned test segment with an exact byte length.
+    #[cfg(ktest)]
+    pub fn alloc_exact(nblocks: usize, len: usize, direction: BioDirection) -> Self {
+        Self::alloc_inner(nblocks, 0, len, direction)
     }
 
     /// The inner function that do the real segment allocation.
@@ -583,4 +640,70 @@ fn target_pool(direction: BioDirection) -> Option<&'static Arc<BioSegmentPool>> 
 /// Checks if the given offset is aligned to sector.
 pub(crate) fn is_sector_aligned(offset: usize) -> bool {
     offset.is_multiple_of(SECTOR_SIZE)
+}
+
+#[cfg(ktest)]
+mod tests {
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    fn submitted_bio(start: u64, end: u64) -> SubmittedBio {
+        let sid_range = Sid::new(start)..Sid::new(end);
+        SubmittedBio {
+            metadata: Arc::new(BioMetadata {
+                type_: BioType::Read,
+                sid_range: sid_range.clone(),
+                status: AtomicU32::new(BioStatus::Submit as u32),
+                wait_queue: WaitQueue::new(),
+            }),
+            mapped_sid_range: sid_range,
+            complete_fn: None,
+            segments: Vec::new(),
+        }
+    }
+
+    #[ktest]
+    fn remap_sid_start_preserves_length_and_logical_range() {
+        let mut bio = submitted_bio(10, 18);
+
+        bio.remap_sid_start(Sid::new(100)).unwrap();
+
+        assert_eq!(bio.sid_range(), &(Sid::new(100)..Sid::new(108)));
+        assert_eq!(bio.metadata.sid_range(), &(Sid::new(10)..Sid::new(18)));
+    }
+
+    #[ktest]
+    fn offset_mapped_sid_range_composes_multiple_block_layers() {
+        let mut bio = submitted_bio(10, 18);
+
+        bio.offset_mapped_sid_range(100).unwrap();
+        bio.offset_mapped_sid_range(1_000).unwrap();
+
+        assert_eq!(bio.sid_range(), &(Sid::new(1_110)..Sid::new(1_118)));
+    }
+
+    #[ktest]
+    fn remap_sid_start_rejects_overflow_without_changing_range() {
+        let mut bio = submitted_bio(10, 18);
+        let original = bio.sid_range().clone();
+
+        assert_eq!(
+            bio.remap_sid_start(Sid::new(u64::MAX - 3)),
+            Err(BioEnqueueError::Refused)
+        );
+        assert_eq!(bio.sid_range(), &original);
+    }
+
+    #[ktest]
+    fn offset_mapped_sid_range_rejects_overflow_without_changing_range() {
+        let mut bio = submitted_bio(u64::MAX - 8, u64::MAX);
+        let original = bio.sid_range().clone();
+
+        assert_eq!(
+            bio.offset_mapped_sid_range(9),
+            Err(BioEnqueueError::Refused)
+        );
+        assert_eq!(bio.sid_range(), &original);
+    }
 }
