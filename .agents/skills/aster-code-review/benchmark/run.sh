@@ -160,12 +160,21 @@ default_review() { # <worktree> <out> <skill-args>
     ( cd "$1" && ACR_GUIDELINE_ROOT="$GROOT" "$ACR_CLI" $3 "$2" --overwrite )
 }
 default_grade() { # <defects-file> <review>
-    "$RUN_AGENT" "You are grading a code review. The expected defects are in $1; the \
-produced review is $2. Each expected defect gives a 'defect:' description for context \
-and a 'MATCH IF:' criterion. For each expected defect, decide whether ANY comment in \
-the review satisfies its MATCH IF criterion at the stated code location (wording may \
-differ). Respond with ONLY two space-separated integers, caught then total, and \
-nothing else (for example: 1 2)."
+    "$RUN_AGENT" "You are grading a code review. The expected defects are in $1. The produced review is in $2.\n\n\
+  Task:\n\
+  Count how many expected defects were caught by the produced review.\n\
+  Each expected defect has:\n\
+    - Location: the target file path or commit-message locus, optionally with line(s)\n\
+    - Persona\n\
+    - MATCH IF: the authoritative matching criterion\n\
+  For each expected defect, decide whether ANY single produced review comment catches that defect. A review comment is considered a match only if all of the following conditions are satisfied\n\
+     - Match defect location: The file path of the defect must match. If the expected defect has a line range, the
+     produced comment's defect line range should contain the expected defect's actual line range.\n\
+     - Match defect persona: The defect persona (\e.g., security, development,maintainability,hardware,documentation) must match. If the persona in expected defect is development, the persona in produced review must be persona.\n\
+     - Match defect description: The description must match the specific problem (e.g., \"memory leak in function
+     X\", \"out of memory\", \"missing lock\").\n\
+  Output:\n\
+  Respond with ONLY two space-separated integers, caught then total, and nothing else (for example: 1 2)."
 }
 default_neg_grade() { # <negatives-file> <review>
     "$RUN_AGENT" "The items in $1 are false-positive traps that a correct review must \
