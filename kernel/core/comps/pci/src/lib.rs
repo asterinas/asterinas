@@ -76,11 +76,24 @@ mod device_info;
 
 extern crate alloc;
 
+use core::{fmt, ops::RangeInclusive};
+
 use component::{ComponentInitError, init_component};
 pub use device_info::{PciDeviceId, PciDeviceLocation};
 use ostd::sync::Mutex;
 
-use self::{bus::PciBus, common_device::PciCommonDevice};
+use self::{
+    bus::PciBus,
+    common_device::{PciCommonDevice, PciDeviceType},
+};
+
+// FIXME: Discover root buses from firmware instead of assuming bus 0 is the only root.
+// The accessible bus range does not identify root buses.
+// Until firmware root discovery is supported, use bus 0 as the root of the device tree,
+// matching our QEMU Q35 configuration with a single root bus (`pcie.0`).
+// Reference: <https://github.com/qemu/qemu/blob/master/docs/pcie.txt>.
+const ROOT_BUS: u8 = 0;
+const MAX_BUSES_PER_SEGMENT: usize = 256;
 
 #[init_component]
 fn pci_init() -> Result<(), ComponentInitError> {
@@ -98,34 +111,99 @@ fn init() {
     };
     ostd::info!("initializing the PCI bus with bus numbers `{:?}`", all_bus);
 
-    let mut lock = PCI_BUS.lock();
+    if let Err(err) = scan_bus(
+        &mut PCI_BUS.lock(),
+        &all_bus,
+        ROOT_BUS,
+        &mut [false; MAX_BUSES_PER_SEGMENT],
+    ) {
+        ostd::error!("cannot enumerate PCI devices: {:?}", err);
+    }
+}
 
-    let all_dev = PciDeviceLocation::MIN_DEVICE..=PciDeviceLocation::MAX_DEVICE;
-    let all_func = PciDeviceLocation::MIN_FUNCTION..=PciDeviceLocation::MAX_FUNCTION;
+fn scan_bus(
+    pci_bus: &mut PciBus,
+    range: &RangeInclusive<u8>,
+    bus: u8,
+    visited: &mut [bool; MAX_BUSES_PER_SEGMENT],
+) -> Result<()> {
+    if !range.contains(&bus) {
+        return Err(Error::InvalidTopology);
+    }
 
-    for bus in all_bus {
-        for device in all_dev.clone() {
-            let mut device_location = PciDeviceLocation {
-                bus,
-                device,
-                function: PciDeviceLocation::MIN_FUNCTION,
-            };
+    // A bus may be reachable through multiple bridges, as on the i450NX chipset.
+    // Skip buses already scanned to avoid duplicate devices and recursion cycles.
+    // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/pci/probe.c#L1400-L1405>.
+    if visited[bus as usize] {
+        return Ok(());
+    }
+    visited[bus as usize] = true;
 
-            let Some(first_function_device) = PciCommonDevice::new(device_location) else {
-                continue;
-            };
-            let has_multi_function = first_function_device.has_multi_funcs();
-            // Register function 0 in advance
-            lock.register_common_device(first_function_device);
+    for device in PciDeviceLocation::MIN_DEVICE..=PciDeviceLocation::MAX_DEVICE {
+        let mut location = PciDeviceLocation {
+            bus,
+            device,
+            function: PciDeviceLocation::MIN_FUNCTION,
+        };
+        let Some(common_device) = PciCommonDevice::new(location) else {
+            continue;
+        };
+        let has_multi_function = common_device.has_multi_funcs();
+        register_function(pci_bus, range, common_device, visited)?;
 
-            if has_multi_function {
-                for function in all_func.clone().skip(1) {
-                    device_location.function = function;
-                    if let Some(common_device) = PciCommonDevice::new(device_location) {
-                        lock.register_common_device(common_device);
-                    }
-                }
+        if !has_multi_function {
+            continue;
+        }
+        for function in (PciDeviceLocation::MIN_FUNCTION + 1)..=PciDeviceLocation::MAX_FUNCTION {
+            location.function = function;
+            if let Some(common_device) = PciCommonDevice::new(location) {
+                register_function(pci_bus, range, common_device, visited)?;
             }
+        }
+    }
+    Ok(())
+}
+
+fn register_function(
+    pci_bus: &mut PciBus,
+    range: &RangeInclusive<u8>,
+    common_device: PciCommonDevice,
+    visited: &mut [bool; MAX_BUSES_PER_SEGMENT],
+) -> Result<()> {
+    let device_type = common_device.device_type();
+    let location = *common_device.location();
+    pci_bus.register_common_device(common_device);
+
+    const UNCONFIGURED_SECONDARY_BUS: u8 = 0;
+    if let PciDeviceType::PciToPciBridge(_, secondary, _) = device_type
+        && secondary != UNCONFIGURED_SECONDARY_BUS
+    {
+        // An invalid bridge edge must not stop enumeration of unrelated devices.
+        match scan_bus(pci_bus, range, secondary, visited) {
+            Err(Error::InvalidTopology) => ostd::warn!(
+                "skipping bridge {:02x}:{:02x}.{} secondary bus {:02x}: outside accessible range",
+                location.bus,
+                location.device,
+                location.function,
+                secondary
+            ),
+            result => result?,
+        }
+    }
+    Ok(())
+}
+
+enum Error {
+    /// A bus number is outside the accessible range.
+    InvalidTopology,
+}
+
+type Result<T, E = Error> = core::result::Result<T, E>;
+
+impl fmt::Debug for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidTopology => f.write_str("InvalidTopology"),
         }
     }
 }
