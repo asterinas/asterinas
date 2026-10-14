@@ -6,16 +6,16 @@ use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use ostd::{
-    arch::{read_tsc, tsc_freq},
-    cpu::{CpuId, CpuSet, num_cpus},
+    arch,
+    cpu::{self, CpuId, CpuSet},
     early_println,
     prelude::ktest,
-    smp::inter_processor_call,
-    task::atomic_mode::might_sleep,
+    smp,
+    task::atomic_mode,
 };
 use spin::Once;
 
-use super::{Driver, RtcCmos, nvram::Access};
+use super::{Driver, RtcCmos};
 use crate::{NvramError, SystemTime};
 
 static RTC: Once<Arc<RtcCmos>> = Once::new();
@@ -48,7 +48,7 @@ fn valid_time(time: &SystemTime) -> bool {
 
 fn raw_snapshot(rtc: &RtcCmos) -> [u8; super::nvram::SIZE] {
     let mut access = rtc.access.lock();
-    core::array::from_fn(|index| access.read_byte(index as u8))
+    core::array::from_fn(|index| access.read_nvram_byte(index as u8))
 }
 
 struct RestoreNvram {
@@ -67,7 +67,7 @@ impl RestoreNvram {
     fn restore(&self) {
         let mut access = self.rtc.access.lock();
         for (index, byte) in self.original.iter().enumerate() {
-            access.write_byte(index as u8, *byte);
+            access.write_nvram_byte(index as u8, *byte);
         }
     }
 }
@@ -81,14 +81,15 @@ impl Drop for RestoreNvram {
 #[ktest]
 fn rtc_cmos_read_only_regression() {
     let rtc = rtc();
-    might_sleep();
+    let backend = crate::nvram_backend().unwrap();
+    atomic_mode::might_sleep();
     let original = raw_snapshot(rtc);
     let before = rtc.read_rtc();
     assert!(valid_time(&before));
-    assert_eq!(crate::nvram_size(), Ok(super::nvram::SIZE));
+    assert_eq!(backend.size(), super::nvram::SIZE);
     for _ in 0..128 {
         let mut bytes = [0; super::nvram::SIZE];
-        match crate::nvram_read(0, &mut bytes) {
+        match backend.read(0, &mut bytes) {
             Ok(length) => {
                 assert_eq!(length, bytes.len());
                 assert_eq!(bytes, original);
@@ -98,21 +99,21 @@ fn rtc_cmos_read_only_regression() {
         }
         assert!(valid_time(&rtc.read_rtc()));
     }
-    let start = read_tsc();
+    let start = arch::read_tsc();
     let after = loop {
         let after = rtc.read_rtc();
         if after != before {
             break after;
         }
         assert!(
-            read_tsc().wrapping_sub(start) < 3 * tsc_freq(),
+            arch::read_tsc().wrapping_sub(start) < 3 * arch::tsc_freq(),
             "RTC stopped ticking"
         );
     };
     assert!(valid_time(&after));
     assert!(after > before);
     assert_eq!(raw_snapshot(rtc), original);
-    might_sleep();
+    atomic_mode::might_sleep();
     early_println!(
         "[nvram-hw] read-only PASS: before={:?}, after={:?}",
         before,
@@ -120,18 +121,20 @@ fn rtc_cmos_read_only_regression() {
     );
 }
 
-// Each IPI performs a bounded batch. It never waits for another worker, allocates,
-// or accesses user memory. All port accesses use the production shared lock.
+// Each IPI performs a bounded batch without sleeping, allocating, accessing user
+// memory or waiting for IPI completion. Port operations can spin on the shared
+// CMOS lock while another CPU owns it.
 fn concurrent_port_batch() {
     let cpu = u32::from(CpuId::current_racy()) as usize;
     CPU_MASK.fetch_or(1_u64 << cpu, Ordering::Relaxed);
     let active = ACTIVE.fetch_add(1, Ordering::SeqCst) + 1;
     MAX_ACTIVE.fetch_max(active, Ordering::SeqCst);
     let rtc = RTC.get().unwrap();
+    let backend = crate::nvram_backend().unwrap();
     for _ in 0..8 {
         if cpu.is_multiple_of(2) {
             let payload = [0x80 + cpu as u8; 30];
-            if crate::nvram_write(2, &payload) != Ok(payload.len()) {
+            if backend.write(2, &payload) != Ok(payload.len()) {
                 ERRORS.fetch_add(1, Ordering::Relaxed);
             }
             WRITES.fetch_add(1, Ordering::Relaxed);
@@ -142,8 +145,8 @@ fn concurrent_port_batch() {
             RTC_READS.fetch_add(1, Ordering::Relaxed);
         }
         let mut output = [0; 30];
-        if crate::nvram_read(2, &mut output) != Ok(output.len())
-            || !(0x80..0x80 + num_cpus() as u8).contains(&output[0])
+        if backend.read(2, &mut output) != Ok(output.len())
+            || !(0x80..0x80 + cpu::num_cpus() as u8).contains(&output[0])
             || output.iter().any(|byte| *byte != output[0])
         {
             ERRORS.fetch_add(1, Ordering::Relaxed);
@@ -167,20 +170,21 @@ fn nvram_cmos_write_and_smp_regression() {
         return;
     }
     assert!(
-        (2..=64).contains(&num_cpus()),
+        (2..=64).contains(&cpu::num_cpus()),
         "SMP regression requires 2..=64 CPUs"
     );
     let rtc = rtc();
+    let backend = crate::nvram_backend().unwrap();
     let restore = RestoreNvram::new(rtc);
     let before = rtc.read_rtc();
     assert!(valid_time(&before));
     let status_b = rtc.access.lock().read_status_b().bits();
 
-    crate::nvram_initialize().unwrap();
+    backend.initialize();
     // CMOS 0x32 and 0x37 are RTC century registers/aliases on PC platforms.
     // QEMU recalculates them from its clock on reads after initialization.
-    // These locations are not ordinary SRAM; the algorithm tests separately
-    // prove that initialization writes zero to every byte.
+    // These locations are device-managed rather than ordinary SRAM, so their
+    // readback values are excluded from the cleared-region assertion.
     let initialized = raw_snapshot(rtc);
     let century = rtc.access.lock().century_register.map(|r| r.get());
     for (offset, byte) in initialized.iter().enumerate() {
@@ -190,49 +194,43 @@ fn nvram_cmos_write_and_smp_regression() {
         }
     }
     restore.restore();
-    crate::nvram_set_checksum().unwrap();
-    assert_eq!(crate::nvram_write(2, &[0x80; 30]), Ok(30));
+    backend.set_checksum();
+    assert_eq!(backend.write(2, &[0x80; 30]), Ok(30));
     let mut payload = [0; 30];
-    assert_eq!(crate::nvram_read(2, &mut payload), Ok(30));
+    assert_eq!(backend.read(2, &mut payload), Ok(30));
     assert_eq!(payload, [0x80; 30]);
-    assert_eq!(crate::nvram_read(usize::MAX, &mut payload), Ok(0));
-    assert_eq!(crate::nvram_write(usize::MAX, &payload), Ok(0));
+    assert_eq!(backend.read(usize::MAX, &mut payload), Ok(0));
+    assert_eq!(backend.write(usize::MAX, &payload), Ok(0));
     {
         let mut access = rtc.access.lock();
-        access.write_byte(2, 0x81);
+        access.write_nvram_byte(2, 0x81);
     }
-    assert_eq!(
-        crate::nvram_read(0, &mut []),
-        Err(NvramError::InvalidChecksum)
-    );
-    assert_eq!(
-        crate::nvram_write(2, &payload),
-        Err(NvramError::InvalidChecksum)
-    );
-    crate::nvram_set_checksum().unwrap();
-    assert_eq!(crate::nvram_write(2, &[0x80; 30]), Ok(30));
+    assert_eq!(backend.read(0, &mut []), Err(NvramError::InvalidChecksum));
+    assert_eq!(backend.write(2, &payload), Err(NvramError::InvalidChecksum));
+    backend.set_checksum();
+    assert_eq!(backend.write(2, &[0x80; 30]), Ok(30));
 
     for counter in [&ACTIVE, &MAX_ACTIVE, &ERRORS, &WRITES, &READS, &RTC_READS] {
         counter.store(0, Ordering::SeqCst);
     }
     CPU_MASK.store(0, Ordering::SeqCst);
     for _ in 0..128 {
-        inter_processor_call(&CpuSet::new_full(), concurrent_port_batch).wait();
+        smp::inter_processor_call(&CpuSet::new_full(), concurrent_port_batch).wait();
     }
     assert_eq!(ERRORS.load(Ordering::SeqCst), 0);
     assert_eq!(ACTIVE.load(Ordering::SeqCst), 0);
     assert_eq!(
         CPU_MASK.load(Ordering::SeqCst).count_ones() as usize,
-        num_cpus()
+        cpu::num_cpus()
     );
-    assert_eq!(READS.load(Ordering::SeqCst), 1024 * num_cpus());
+    assert_eq!(READS.load(Ordering::SeqCst), 1024 * cpu::num_cpus());
     assert!(
         MAX_ACTIVE.load(Ordering::SeqCst) >= 2,
         "no overlapping CPU workers observed"
     );
     assert!(WRITES.load(Ordering::SeqCst) > 0);
     assert!(RTC_READS.load(Ordering::SeqCst) > 0);
-    might_sleep();
+    atomic_mode::might_sleep();
     restore.restore();
     assert_eq!(raw_snapshot(rtc), restore.original);
     assert_eq!(rtc.access.lock().read_status_b().bits(), status_b);
@@ -241,7 +239,7 @@ fn nvram_cmos_write_and_smp_regression() {
     assert!(after >= before);
     early_println!(
         "[nvram-hw] write/SMP PASS: cpus={}, mask={:#x}, max_active={}, writes={}, reads={}, rtc_reads={}, restored=true",
-        num_cpus(),
+        cpu::num_cpus(),
         CPU_MASK.load(Ordering::SeqCst),
         MAX_ACTIVE.load(Ordering::SeqCst),
         WRITES.load(Ordering::SeqCst),
