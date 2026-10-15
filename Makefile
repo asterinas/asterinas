@@ -337,6 +337,11 @@ endif
 kernel:
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
 
+# Print the default QEMU configuration using the exported Makefile options.
+.PHONY: qemu-args
+qemu-args:
+	@./tools/qemu_args.sh normal
+
 # Build the kernel with an initramfs and then run it
 .PHONY: run_kernel
 run_kernel: $(CARGO_OSDK)
