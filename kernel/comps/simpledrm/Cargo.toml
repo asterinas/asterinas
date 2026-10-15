@@ -7,6 +7,7 @@ edition.workspace = true
 aster-core.workspace = true
 aster-drm.workspace = true
 aster-framebuffer.workspace = true
+aster-time.workspace = true
 component.workspace = true
 ostd.workspace = true
 

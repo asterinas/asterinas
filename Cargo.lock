@@ -377,6 +377,7 @@ dependencies = [
  "aster-core",
  "aster-drm",
  "aster-framebuffer",
+ "aster-time",
  "component",
  "ostd",
 ]
