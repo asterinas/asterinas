@@ -1,0 +1,43 @@
+name: Test device model on Linux
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: &device_model_paths
+      - '.github/workflows/test_device_model_linux.yml'
+      - 'test/initramfs/src/regression/fs/sysfs/device/**'
+      - 'test/initramfs/src/regression/fs/sysfs/Makefile'
+      - 'test/initramfs/src/regression/fs/Makefile'
+      - 'tools/qemu_args.sh'
+  push:
+    branches:
+      - main
+    paths: *device_model_paths
+
+jobs:
+  device-model-test:
+    runs-on: ubuntu-latest
+    container:
+      image: asterinas/kernel-dev:0.19.0-20261012
+      options: -v /dev:/dev --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Linux regression tests and initramfs
+        run: |
+          make initramfs AUTO_TEST=regression REGRESSION_TEST_PLATFORM=linux
+
+      - name: Run device model tests on Linux
+        shell: bash
+        run: |
+          qemu_args=$(make --no-print-directory qemu-args AUTO_TEST=regression QEMU_DISPLAY=none)
+          read -r -a qemu_args <<< "$qemu_args"
+          timeout 2m qemu-system-x86_64 "${qemu_args[@]}" \
+            -accel kvm -snapshot \
+            -kernel /opt/linux_binary_cache/vmlinuz \
+            -initrd test/initramfs/build/initramfs.cpio.gz \
+            -append 'console=hvc0 rdinit=/init PATH=/bin:/sbin -- /test/fs/sysfs/device/run_test.sh' \
+            </dev/null 2>&1 | tee device-model-linux.log
+
+          # The init script powers off even if the test command fails.
+          tr -d '\r' < device-model-linux.log | grep -Fx 'All device model tests passed.'
