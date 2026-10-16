@@ -29,6 +29,7 @@ pub mod display_mode;
 pub mod modeset;
 pub mod objects;
 pub mod pixel_format;
+pub mod vblank;
 
 /// Driver-specific operations for a KMS-capable DRM device.
 ///
