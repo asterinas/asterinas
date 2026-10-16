@@ -114,6 +114,20 @@ impl IpcNamespace {
         self.sem_ids.remove(semid, may_remove)
     }
 
+    pub(crate) fn may_remove_sem_set(&self, sem_set: &SemaphoreSet, ctx: &Context) -> bool {
+        let euid = ctx.posix_thread.credentials().euid();
+        let permission = sem_set.permission();
+
+        euid == permission.uid()
+            || euid == permission.cuid()
+            || lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                self.owner.as_ref(),
+                ctx.posix_thread,
+                CapSet::SYS_ADMIN,
+            ))
+            .is_ok()
+    }
+
     /// Returns the existing semaphore set or creates a new one.
     pub(crate) fn get_or_create_sem_set(
         &self,
