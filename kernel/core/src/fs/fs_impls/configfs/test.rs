@@ -38,6 +38,7 @@ use spin::Once;
 use crate::{
     fs::{
         file::{InodeType, mkmod},
+        utils::DirentVisitor,
         vfs::{file_system::FileSystem, path::Dentry},
     },
     time::clocks::init_for_ktest as time_init_for_ktest,
@@ -160,6 +161,26 @@ fn init_demo_subsystem() {
     });
 }
 
+#[derive(Default)]
+struct ParentDirentVisitor {
+    parent_ino: Option<u64>,
+}
+
+impl DirentVisitor for ParentDirentVisitor {
+    fn visit(
+        &mut self,
+        name: &str,
+        ino: u64,
+        _type: InodeType,
+        _offset: usize,
+    ) -> crate::prelude::Result<()> {
+        if name == ".." {
+            self.parent_ino = Some(ino);
+        }
+        Ok(())
+    }
+}
+
 #[ktest]
 fn config_fs() {
     init_demo_subsystem();
@@ -185,6 +206,18 @@ fn config_fs() {
             mkmod!(a+rx, u+w),
         )
         .expect("creating demo 'demo_foo' fails");
+
+    // --- Verify the parent directory entry of demo_foo ---
+    // path: /sys/kernel/config/demo_set/demo_foo/.. -> /sys/kernel/config/demo_set
+    let mut visitor = ParentDirentVisitor::default();
+    demo_foo
+        .readdir_at(0, &mut visitor)
+        .expect("readdir demo_foo failed");
+    assert_eq!(
+        visitor.parent_ino.expect("demo_foo has no .. entry"),
+        demo_set_inode.ino(),
+        "the .. dirent must report the parent directory's inode number"
+    );
 
     // path: /sys/kernel/config/demo_set/demo_bar
     let demo_bar = demo_set_inode
