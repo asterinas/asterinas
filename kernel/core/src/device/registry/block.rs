@@ -3,8 +3,6 @@
 use alloc::borrow::ToOwned;
 
 use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE, bio::BioStatus};
-use aster_nvme::NvmeBlockDevice;
-use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 use device_id::DeviceId;
 use ostd::mm::VmIo;
 
@@ -25,35 +23,14 @@ use crate::{
 };
 
 pub(super) fn init_in_first_kthread() {
-    for device in aster_block::collect_all() {
-        if device.is_partition() {
-            continue;
-        }
-
-        // Spawn threads for virtio block devices
-        if device.downcast_ref::<VirtIoBlockDevice>().is_some() {
-            let device_clone = device.clone();
-            let task_fn = move || {
-                info!("spawn the virtio-block thread");
-                let virtio_block_device = device_clone.downcast_ref::<VirtIoBlockDevice>().unwrap();
-                loop {
-                    virtio_block_device.handle_requests();
-                }
-            };
-            ThreadOptions::new(task_fn).spawn();
-        }
-        // Spawn threads for NVMe block devices
-        else if device.downcast_ref::<NvmeBlockDevice>().is_some() {
-            let device_clone = device.clone();
-            let task_fn = move || {
-                info!("spawn the nvme-block thread");
-                let nvme_block_device = device_clone.downcast_ref::<NvmeBlockDevice>().unwrap();
-                loop {
-                    nvme_block_device.handle_requests();
-                }
-            };
-            ThreadOptions::new(task_fn).spawn();
-        }
+    for handler in aster_block::collect_request_handlers() {
+        let task_fn = move || {
+            info!("spawn the block request thread for {}", handler.name());
+            loop {
+                handler.handle_next_request();
+            }
+        };
+        ThreadOptions::new(task_fn).spawn();
     }
 
     // Partition scanning performs synchronous block I/O, so the request
