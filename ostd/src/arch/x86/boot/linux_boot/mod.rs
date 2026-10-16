@@ -82,19 +82,28 @@ impl ToEarlyBootInfo for BootParams {
             return None;
         }
 
-        let cmdline_ptr = paddr_to_vaddr(self.hdr.cmd_line_ptr as usize);
-        let cmdline_len = self.hdr.cmdline_size as usize;
+        let cmdline_ptr = paddr_to_vaddr(self.hdr.cmd_line_ptr as usize) as *const u8;
+        let cmdline_max_len = self.hdr.cmdline_size as usize;
+
+        let mut len = 0;
+        while len < cmdline_max_len {
+            // SAFETY: By the contract with the loader, the command line terminates at the first nul
+            // byte or after `cmdline_max_len` bytes, whichever comes first. `len` is within the
+            // bounds, so the byte is safe to read.
+            if unsafe { cmdline_ptr.add(len).read() } == 0 {
+                break;
+            }
+            len += 1;
+        }
+
         // SAFETY:
         // 1. The command line is safe to read because of the contract with the loader.
         // 2. We reserve the command-line region in `finish_memory_regions`, so it will live as an
         //    immutable reference for `'static`.
-        let cmdline = unsafe { core::slice::from_raw_parts(cmdline_ptr as *const u8, cmdline_len) };
+        let cmdline = unsafe { core::slice::from_raw_parts(cmdline_ptr, len) };
 
         // Now, unfortunately, there are silent errors because the serial is not up.
-        core::ffi::CStr::from_bytes_until_nul(cmdline)
-            .ok()?
-            .to_str()
-            .ok()
+        core::str::from_utf8(cmdline).ok()
     }
 
     fn initramfs(&self) -> Option<&'static [u8]> {
