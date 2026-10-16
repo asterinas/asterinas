@@ -12,6 +12,9 @@ component.workspace = true
 ostd.workspace = true
 spin.workspace = true
 
+[target.x86_64-unknown-none.dependencies]
+chrono.workspace = true
+
 [target.riscv64imac-unknown-none-elf.dependencies]
 chrono.workspace = true
 fdt-util.workspace = true

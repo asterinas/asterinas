@@ -11,3 +11,4 @@ pub(super) mod kvm_clock;
 pub(super) mod tsc;
 
 pub use acpi::{ACPI_INFO, AcpiInfo};
+pub use kvm_clock::KvmWallClock;

@@ -28,7 +28,7 @@ use spin::Once;
 use crate::{
     syscall::ClockId,
     time::{
-        START_TIME, SystemTime,
+        START_TIME_AS_DURATION,
         clocks::MonotonicClock,
         timer::{Timeout, TimerGuard},
     },
@@ -39,7 +39,6 @@ const CLOCK_TAI: usize = 11;
 const VDSO_BASES: usize = CLOCK_TAI + 1;
 const DEFAULT_CLOCK_MODE: VdsoClockMode = VdsoClockMode::Tsc;
 
-static START_SECS_COUNT: Once<u64> = Once::new();
 static VDSO: Once<Arc<Vdso>> = Once::new();
 
 #[derive(Clone, Copy, Debug)]
@@ -163,29 +162,32 @@ impl VdsoData {
     fn update_high_res_instant(&mut self, instant: Instant, instant_cycles: u64) {
         self.last_cycles = instant_cycles;
         for clock_id in HIGH_RES_CLOCK_IDS {
-            let secs = if clock_id == ClockId::CLOCK_REALTIME {
-                instant.secs() + START_SECS_COUNT.get().unwrap()
+            let (secs, nanos) = if clock_id == ClockId::CLOCK_REALTIME {
+                let base = Self::realtime_duration(instant);
+                (base.as_secs(), base.subsec_nanos() as u64)
             } else {
-                instant.secs()
+                (instant.secs(), instant.nanos() as u64)
             };
 
-            self.update_clock_instant(
-                clock_id as usize,
-                secs,
-                (instant.nanos() as u64) << self.shift as u64,
-            );
+            self.update_clock_instant(clock_id as usize, secs, nanos << (self.shift as u64));
         }
     }
 
     fn update_coarse_res_instant(&mut self, instant: Instant) {
         for clock_id in COARSE_RES_CLOCK_IDS {
-            let secs = if clock_id == ClockId::CLOCK_REALTIME_COARSE {
-                instant.secs() + START_SECS_COUNT.get().unwrap()
+            let (secs, nanos) = if clock_id == ClockId::CLOCK_REALTIME_COARSE {
+                let base = Self::realtime_duration(instant);
+                (base.as_secs(), base.subsec_nanos() as u64)
             } else {
-                instant.secs()
+                (instant.secs(), instant.nanos() as u64)
             };
-            self.update_clock_instant(clock_id as usize, secs, instant.nanos() as u64);
+            self.update_clock_instant(clock_id as usize, secs, nanos);
         }
+    }
+
+    fn realtime_duration(instant: Instant) -> Duration {
+        let start_offset = *START_TIME_AS_DURATION.get().unwrap();
+        start_offset + Duration::new(instant.secs(), instant.nanos())
     }
 }
 
@@ -366,16 +368,6 @@ fn update_vdso_coarse_res_instant(_guard: TimerGuard) {
     VDSO.get().unwrap().update_coarse_res_instant(instant);
 }
 
-/// Initializes the time duration from 1970-01-01 00:00:00 to the start time.
-fn init_start_secs_count() {
-    let time_duration = START_TIME
-        .get()
-        .unwrap()
-        .duration_since(&SystemTime::UNIX_EPOCH)
-        .unwrap();
-    START_SECS_COUNT.call_once(|| time_duration.as_secs());
-}
-
 /// Initializes the vDSO singleton.
 fn init_vdso() {
     let vdso = Vdso::new();
@@ -383,7 +375,6 @@ fn init_vdso() {
 }
 
 pub(super) fn init_in_first_kthread() {
-    init_start_secs_count();
     init_vdso();
 
     aster_time::VDSO_DATA_HIGH_RES_UPDATE_FN.call_once(|| update_vdso_high_res_instant);
@@ -467,3 +458,60 @@ const_assert!(
     VDSO_VMO_LAYOUT.data_offset + size_of::<VdsoData>()
         <= VDSO_VMO_LAYOUT.data_segment_offset + VDSO_VMO_LAYOUT.data_segment_size
 );
+
+#[cfg(ktest)]
+mod test {
+    use core::time::Duration;
+
+    use aster_time::Instant;
+    use aster_util::coeff::Coeff;
+    use ostd::prelude::*;
+
+    use super::{START_TIME_AS_DURATION, VdsoData};
+    use crate::syscall::ClockId;
+
+    const TEST_START_OFFSET: Duration = Duration::new(1_700_000_000, 800_000_000);
+
+    #[ktest]
+    fn realtime_duration_adds_fractional_seconds() {
+        set_test_start_offset();
+
+        let base = VdsoData::realtime_duration(Instant::new(5, 100_000_000));
+        assert_eq!(base, Duration::new(1_700_000_005, 900_000_000));
+
+        // The fractions carry into the seconds field.
+        let base = VdsoData::realtime_duration(Instant::new(5, 400_000_000));
+        assert_eq!(base, Duration::new(1_700_000_006, 200_000_000));
+    }
+
+    #[ktest]
+    fn realtime_clocks_store_fractional_seconds() {
+        set_test_start_offset();
+
+        let instant = Instant::new(5, 400_000_000);
+        let expected = TEST_START_OFFSET + Duration::new(instant.secs(), instant.nanos());
+        let coeff = Coeff::new(1_000_000_000, 1, 1_u64 << 20);
+        // A zero shift would make the high-resolution assertion below vacuous.
+        assert!(coeff.shift() > 0);
+
+        let mut data = VdsoData::empty();
+        data.set_coeff(&coeff);
+        data.update_high_res_instant(instant, 0);
+        data.update_coarse_res_instant(instant);
+
+        let coarse = data.basetime[ClockId::CLOCK_REALTIME_COARSE as usize];
+        assert_eq!(
+            (coarse.secs, coarse.nanos_info),
+            (expected.as_secs(), expected.subsec_nanos() as u64)
+        );
+
+        let realtime = data.basetime[ClockId::CLOCK_REALTIME as usize];
+        let realtime_nanos = realtime.nanos_info >> coeff.shift();
+        assert_eq!(realtime.secs, expected.as_secs());
+        assert_eq!(realtime_nanos, expected.subsec_nanos() as u64);
+    }
+
+    fn set_test_start_offset() {
+        START_TIME_AS_DURATION.call_once(|| TEST_START_OFFSET);
+    }
+}
