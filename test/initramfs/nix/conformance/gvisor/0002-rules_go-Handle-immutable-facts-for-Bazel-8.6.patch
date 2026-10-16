@@ -1,0 +1,138 @@
+From 0916e6d9e00b7d0bca5e74c101d7b5eaccb25fb2 Mon Sep 17 00:00:00 2001
+From: Qingsong Chen <changxian.cqs@antgroup.com>
+Date: Mon, 21 Sep 2026 09:07:25 +0000
+Subject: [PATCH 2/3] rules_go: handle immutable facts required by Bazel 8.6
+
+Bazel 8.6 exposes module extension facts as an immutable value. The pinned
+rules_go implementation calls clear() and update() on that value, causing
+vendor generation to fail. Keep persisted facts separate from the mutable
+SDK metadata map and return the actual metadata used by the extension.
+
+Nix creates the vendor tree without network access and does not carry a full
+MODULE.bazel.lock. Seed the Go SDK versions requested by the dependency graph
+so rules_go does not query go.dev. Go 1.24.6 is required indirectly; removing
+it reproduces the forbidden network request during vendor generation.
+
+---
+ MODULE.bazel              |  6 +++++
+ go/private/extensions.bzl | 53 +++++++++++++++++++++++++++++++--------------
+ 2 files changed, 43 insertions(+), 16 deletions(-)
+
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 21121cff..21e6a5aa 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -20,6 +20,12 @@ go_sdk = use_extension("//go:extensions.bzl", "go_sdk")
+ go_sdk.from_file(
+     name = "go_default_sdk",
+     go_mod = "//:go.mod",
++    sdks = {
++        "linux_amd64": ["go1.25.0.linux-amd64.tar.gz", "2852af0cb20a13139b3448992e69b868e50ed0f8a1e5940ee1de9e19a123b613"],
++        "linux_arm64": ["go1.25.0.linux-arm64.tar.gz", "05de75d6994a2783699815ee553bd5a9327d8b79991de36e38b66862782f54ae"],
++        "linux_loong64": ["go1.25.0.linux-loong64.tar.gz", "cab86b1cf761b1cb3bac86a8877cfc92e7b036fc0d3084123d77013d61432afc"],
++        "linux_riscv64": ["go1.25.0.linux-riscv64.tar.gz", "c018ff74a2c48d55c8ca9b07c8e24163558ffec8bea08b326d6336905d956b67"],
++    },
+ )
+ use_repo(
+     go_sdk,
+diff --git a/go/private/extensions.bzl b/go/private/extensions.bzl
+index 61c83372..0de907bb 100644
+--- a/go/private/extensions.bzl
++++ b/go/private/extensions.bzl
+@@ -198,7 +198,27 @@ def _go_sdk_impl(ctx):
+     host_detected_goos, host_detected_goarch = detect_host_platform(ctx)
+     toolchains = []
+ 
+-    sdks_by_version = getattr(ctx, "facts", None) or {}
++    facts = getattr(ctx, "facts", None)
++    sdks_by_version = {
++        "1.23.0": {
++            "linux_amd64": ["go1.23.0.linux-amd64.tar.gz", "905a297f19ead44780548933e0ff1a1b86e8327bb459e92f9c0012569f76f5e3"],
++            "linux_arm64": ["go1.23.0.linux-arm64.tar.gz", "62788056693009bcf7020eedc778cdd1781941c6145eab7688bd087bce0f8659"],
++            "linux_loong64": ["go1.23.0.linux-loong64.tar.gz", "dc8f723ce1a236e85c8b56d1e6749e270314e99dd41b80a58355e7ffcf9ea857"],
++            "linux_riscv64": ["go1.23.0.linux-riscv64.tar.gz", "a87726205f1a283247f877ccae8ce147ff4e77ac802382647ac52256eb5642c7"],
++        },
++        "1.24.0": {
++            "linux_amd64": ["go1.24.0.linux-amd64.tar.gz", "dea9ca38a0b852a74e81c26134671af7c0fbe65d81b0dc1c5bfe22cf7d4c8858"],
++            "linux_arm64": ["go1.24.0.linux-arm64.tar.gz", "c3fa6d16ffa261091a5617145553c71d21435ce547e44cc6dfb7470865527cc7"],
++            "linux_loong64": ["go1.24.0.linux-loong64.tar.gz", "a201e4c9b7e6d29ed64c43296ed88e81a66f82f2093ce45b766d2c526941396f"],
++            "linux_riscv64": ["go1.24.0.linux-riscv64.tar.gz", "620dcf48c6297519aad6c81f8e344926dc0ab09a2a79f1e306964aece95a553d"],
++        },
++        "1.24.6": {
++            "linux_amd64": ["go1.24.6.linux-amd64.tar.gz", "bbca37cc395c974ffa4893ee35819ad23ebb27426df87af92e93a9ec66ef8712"],
++            "linux_arm64": ["go1.24.6.linux-arm64.tar.gz", "124ea6033a8bf98aa9fbab53e58d134905262d45a022af3a90b73320f3c3afd5"],
++            "linux_loong64": ["go1.24.6.linux-loong64.tar.gz", "8424d9c52b254255d2720769366af73802747e4eaf339c6e86bb52e5a1809fcb"],
++            "linux_riscv64": ["go1.24.6.linux-riscv64.tar.gz", "e92c19ff15a9004fe43e1f62d433555250ef9fe3fabee3dc29ebd4802c2b8021"],
++        },
++    }
+     used_versions = {}
+ 
+     for module in ctx.modules:
+@@ -266,6 +267,7 @@ def _go_sdk_impl(ctx):
+             )
+ 
+             _download_sdk(
++                facts = facts,
+                 module_ctx = ctx,
+                 sdks_by_version = sdks_by_version,
+                 used_versions = used_versions,
+@@ -307,6 +309,7 @@ def _go_sdk_impl(ctx):
+                     )
+ 
+                     _download_sdk(
++                        facts = facts,
+                         module_ctx = ctx,
+                         sdks_by_version = sdks_by_version,
+                         used_versions = used_versions,
+@@ -381,11 +384,7 @@ def _go_sdk_impl(ctx):
+ 
+         # See _download_sdk below for details on these facts.
+         if hasattr(ctx, "facts"):
+-            kwargs["facts"] = {
+-                version: sdk_info
+-                for version, sdk_info in sdks_by_version.items()
+-                if version in used_versions
+-            }
++            kwargs["facts"] = used_versions
+         return ctx.extension_metadata(**kwargs)
+     else:
+         return None
+@@ -416,7 +415,7 @@ def _left_pad_zero(index, length):
+         fail("index must be non-negative")
+     return ("0" * length + str(index))[-length:]
+ 
+-def _download_sdk(*, module_ctx, sdks_by_version, used_versions, name, goos, goarch, download_tag):
++def _download_sdk(*, facts, module_ctx, sdks_by_version, used_versions, name, goos, goarch, download_tag):
+     version = download_tag.version
+     sdks = download_tag.sdks
+     if version and not sdks:
+@@ -424,15 +423,18 @@ def _download_sdk(*, module_ctx, sdks_by_version, used_versions, name, goos, goa
+         # and digest here. When using a version of Bazel that supports module extension facts, this
+         # info will be persisted in the lockfile, allowing for truly airgapped builds with an
+         # up-to-date lockfile and download (formerly repository) cache.
+-        if version not in sdks_by_version:
+-            # Lazily fetch the information about all SDKs so that we avoid the download if the facts
+-            # already contain all the versions we care about.
+-            sdks_by_version.clear()
+-            sdks_by_version.update(fetch_sdks_by_version(module_ctx))
+-        if version not in sdks_by_version:
+-            fail("go_sdk: no SDKs found for version {} requested by".format(version), download_tag)
+-        used_versions[version] = True
+-        sdks = sdks_by_version[version]
++        if facts:
++            sdks = facts.get(version)
++        if not sdks:
++            if version not in sdks_by_version:
++                # Lazily fetch the information about all SDKs so that we avoid the download if the
++                # facts already contain all the versions we care about.
++                sdks_by_version.clear()
++                sdks_by_version.update(fetch_sdks_by_version(module_ctx))
++            if version not in sdks_by_version:
++                fail("go_sdk: no SDKs found for version {} requested by".format(version), download_tag)
++            sdks = sdks_by_version[version]
++        used_versions[version] = sdks
+ 
+     go_download_sdk_rule(
+         name = name,
+-- 
+2.43.0
