@@ -1,0 +1,29 @@
+Subject: [PATCH] Disable host syslog delivery
+
+Kata shim initialization fails when the host cannot deliver Unix syslog
+datagrams. Skip that logging sink while retaining configuration validation.
+Also omit virtiofsd's syslog option for this profile; the observed shim
+failure is not evidence of an independent virtiofsd syslog failure.
+
+--- a/pkg/containerd-shim-v2/create.go
++++ b/pkg/containerd-shim-v2/create.go
+@@ -294,7 +294,7 @@
+ 		configPath = os.Getenv("KATA_CONF_FILE")
+ 	}
+ 
+-	_, runtimeConfig, err := katautils.LoadConfiguration(configPath, false)
++	_, runtimeConfig, err := katautils.LoadConfiguration(configPath, true)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+--- a/virtcontainers/virtiofsd.go
++++ b/virtcontainers/virtiofsd.go
+@@ -183,8 +183,6 @@
+ func (v *virtiofsd) args(FdSocketNumber uint) ([]string, error) {
+ 
+ 	args := []string{
+-		// Send logs to syslog
+-		"--syslog",
+ 		// cache mode for virtiofsd
+ 		"--cache=" + v.cache,
+ 		// shared directory tree
