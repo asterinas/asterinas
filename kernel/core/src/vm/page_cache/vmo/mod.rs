@@ -32,7 +32,10 @@ use xarray::{Cursor, LockedXArray, XArray};
 use crate::{
     prelude::*,
     vm::{
-        page_cache::{CachePage, CachePageExt, PageCacheBackend, PageRun, cache_page::PageState},
+        page_cache::{
+            CachePage, CachePageExt, LockedCachePage, PageCacheBackend, PageRun,
+            cache_page::PageState, readahead::ReadaheadTrigger,
+        },
         vmar::Rmap,
     },
 };
@@ -508,6 +511,49 @@ impl Vmo {
         Ok(())
     }
 
+    /// Submits read-side page-cache population for the specified page-index range.
+    ///
+    /// Missing pages may have backend reads submitted, but this method does not
+    /// wait for the prefetched pages to become readable.
+    /// If `marker_idx` is specified and that page is newly inserted, it is
+    /// marked to trigger the next readahead window.
+    pub(super) fn readahead(
+        &self,
+        page_idx_range: Range<usize>,
+        marker_idx: Option<usize>,
+    ) -> Result<()> {
+        let Some(backed_vmo) = self.as_backed_vmo() else {
+            // Anonymous VMOs (e.g., ramfs) have no I/O latency to hide.
+            return Ok(());
+        };
+
+        backed_vmo.readahead(page_idx_range, marker_idx)
+    }
+
+    /// Reports a cache miss or consumes a readahead marker without waiting for I/O.
+    pub(super) fn take_readahead_trigger(&self, page_idx: usize) -> Option<ReadaheadTrigger> {
+        self.as_backed_vmo()?;
+        let mut locked_pages = self.pages.lock();
+        if page_idx >= self.size().div_ceil(PAGE_SIZE) {
+            return None;
+        }
+        let mut cursor = locked_pages.cursor_mut(page_idx as u64);
+        match cursor.load() {
+            Some(page) => page
+                .take_readahead_marker()
+                .then_some(ReadaheadTrigger::Marker),
+            None => Some(ReadaheadTrigger::CacheMiss),
+        }
+    }
+
+    /// Finds the next absent cache entry in a bounded page-index range.
+    pub(super) fn next_missing_page(&self, range: Range<usize>) -> Option<usize> {
+        let mut locked_pages = self.pages.lock();
+        let end_idx = range.end.min(self.size().div_ceil(PAGE_SIZE));
+        (range.start..end_idx)
+            .find(|&page_idx| locked_pages.cursor_mut(page_idx as u64).load().is_none())
+    }
+
     /// Converts this VMO to a backend VMO wrapper if it has a backend.
     ///
     /// Returns `None` if this is an anonymous VMO.
@@ -859,7 +905,9 @@ impl PageSelection {
             // returning from `flush()`. But we don't know whether this page is being writing back
             // because `try_lock_guard()` fails. So let's be conservative and collect this page.
             PageSelection::Flush => true,
-            PageSelection::Evict => state.is_up_to_date(),
+            // Include uninitialized pages because initialization may be in progress. The eviction
+            // path waits for the page lock and rechecks the state, evicting only up-to-date pages.
+            PageSelection::Evict => state.is_up_to_date() || state.is_uninit(),
         }
     }
 }
@@ -1163,6 +1211,66 @@ impl<'a> BackedVmo<'a> {
         }
 
         removed_pages
+    }
+
+    /// Submits read I/O for pages in the specified page-index range.
+    fn readahead(&self, page_idx_range: Range<usize>, marker_idx: Option<usize>) -> Result<()> {
+        let page_count = self.size().div_ceil(PAGE_SIZE);
+        let readahead_end_idx = page_idx_range.end.min(page_count);
+        if page_idx_range.start >= readahead_end_idx {
+            return Ok(());
+        }
+
+        let mut io_batch = IoBatch::with_capacity(Vmo::PAGE_BATCH_CAPACITY);
+        let mut page_idx = page_idx_range.start;
+        while page_idx < readahead_end_idx {
+            let (next_idx, pages) =
+                self.collect_readahead_run(page_idx, readahead_end_idx, marker_idx)?;
+            if next_idx == page_idx {
+                break;
+            }
+            if !pages.is_empty() {
+                let mut locked_pages = pages.into_iter();
+                let pages = PageRun::new(page_idx, &mut locked_pages);
+                self.backend.read_pages_async(pages, &mut io_batch)?;
+            }
+            page_idx = next_idx;
+        }
+
+        Ok(())
+    }
+
+    /// Collects a bounded run of consecutive missing pages for readahead.
+    fn collect_readahead_run(
+        &self,
+        start_idx: usize,
+        end_idx: usize,
+        marker_idx: Option<usize>,
+    ) -> Result<(usize, Vec<LockedCachePage>)> {
+        let mut pages = Vec::with_capacity(Vmo::PAGE_BATCH_CAPACITY);
+        let mut locked_pages = self.vmo.pages.lock();
+        let end_idx = end_idx.min(self.size().div_ceil(PAGE_SIZE));
+        let mut page_idx = start_idx;
+        while page_idx < end_idx && pages.len() < Vmo::PAGE_BATCH_CAPACITY {
+            let mut cursor = locked_pages.cursor_mut(page_idx as u64);
+            if cursor.load().is_some() {
+                page_idx += 1;
+                break;
+            }
+
+            let page = CachePage::alloc_uninit()?;
+            let Some(locked_page) = page.try_lock() else {
+                break;
+            };
+            if marker_idx == Some(page_idx) {
+                locked_page.set_readahead_marker();
+            }
+            cursor.store(locked_page.clone());
+            pages.push(locked_page);
+            page_idx += 1;
+        }
+
+        Ok((page_idx, pages))
     }
 }
 
