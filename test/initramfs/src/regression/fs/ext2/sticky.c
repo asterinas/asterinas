@@ -20,8 +20,7 @@
 
 static void remove_paths_if_exist(void)
 {
-	CHECK_WITH(unlink(STICKY_NONEMPTY_CHILD),
-		   _ret >= 0 || errno == ENOENT);
+	CHECK_WITH(unlink(STICKY_NONEMPTY_CHILD), _ret >= 0 || errno == ENOENT);
 	CHECK_WITH(rmdir(STICKY_NONEMPTY_DIR), _ret >= 0 || errno == ENOENT);
 	CHECK_WITH(rmdir(STICKY_EMPTY_DIR), _ret >= 0 || errno == ENOENT);
 	CHECK_WITH(unlink(STICKY_FILE), _ret >= 0 || errno == ENOENT);
@@ -64,7 +63,6 @@ FN_TEST(unlink_in_sticky_dir_requires_ownership)
 	TEST_RES(waitpid(pid, &status, 0),
 		 _ret == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-	/* The refused removal must leave the entry in place. */
 	struct stat st;
 	TEST_SUCC(stat(STICKY_FILE, &st));
 
@@ -79,8 +77,8 @@ FN_TEST(rmdir_in_sticky_dir_requires_ownership)
 	pid_t pid = TEST_SUCC(fork());
 	if (pid == 0) {
 		become_non_owner();
-		CHECK_WITH(rmdir(STICKY_EMPTY_DIR), _ret == -1 && errno == EPERM);
-		/* A non-empty directory reports `EPERM`, not `ENOTEMPTY`. */
+		CHECK_WITH(rmdir(STICKY_EMPTY_DIR),
+			   _ret == -1 && errno == EPERM);
 		CHECK_WITH(rmdir(STICKY_NONEMPTY_DIR),
 			   _ret == -1 && errno == EPERM);
 		_exit(0);
@@ -104,8 +102,8 @@ FN_TEST(sticky_dir_allows_removing_own_entries)
 	pid_t pid = TEST_SUCC(fork());
 	if (pid == 0) {
 		become_non_owner();
-		int fd = CHECK(open(STICKY_DIR "/ownfile", O_CREAT | O_WRONLY,
-				    0644));
+		int fd = CHECK(
+			open(STICKY_DIR "/ownfile", O_CREAT | O_WRONLY, 0644));
 		CHECK(close(fd));
 		CHECK(unlink(STICKY_DIR "/ownfile"));
 		_exit(0);
@@ -124,7 +122,6 @@ FN_TEST(sticky_dir_does_not_affect_plain_directory)
 	remove_paths_if_exist();
 
 	CHECK(mkdir(STICKY_DIR, 0777));
-	/* The umask may clear bits, so set the mode explicitly. */
 	CHECK(chmod(STICKY_DIR, 0777));
 	int fd = CHECK(creat(STICKY_FILE, 0644));
 	CHECK(close(fd));
