@@ -137,6 +137,10 @@ pub(crate) struct DrmEventReservation {
 }
 
 impl DrmEventReservation {
+    pub(crate) fn is_receiver_alive(&self) -> bool {
+        self.receiver.strong_count() != 0
+    }
+
     /// Queues a response and notifies readers.
     pub(crate) fn complete_event(mut self, event: DrmEventResponse) -> Result<()> {
         if event.len() != self.reserved_bytes {
