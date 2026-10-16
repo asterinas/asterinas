@@ -32,6 +32,7 @@ use sparse_id_alloc::SparseIdAlloc;
 
 use crate::{
     device::{DrmDevice, DrmMaster},
+    event::DrmEventReceiver,
     gem::object::DrmGemObject,
     has_current_sys_admin,
     kms::objects::{KmsObjectId, framebuffer::DrmFramebuffer, property::blob::DrmPropertyBlob},
@@ -57,6 +58,9 @@ pub(super) struct DrmFile {
     framebuffers: Mutex<Vec<Arc<DrmFramebuffer>>>,
     /// Property blobs created through this open file.
     property_blobs: Mutex<Vec<Arc<DrmPropertyBlob>>>,
+
+    /// The per-file event receiver.
+    event_receiver: Arc<DrmEventReceiver>,
 }
 
 impl DrmFile {
@@ -97,6 +101,8 @@ impl DrmFile {
             gem_handles: Mutex::new(DrmGemHandleTable::new()),
             framebuffers: Mutex::new(Vec::new()),
             property_blobs: Mutex::new(Vec::new()),
+
+            event_receiver: Arc::new(DrmEventReceiver::default()),
         }
     }
 
@@ -280,6 +286,10 @@ impl DrmFile {
             .as_ref()
             .ok_or_else(|| errno!(EACCES, "the DRM operation requires a primary-node file",))
     }
+
+    pub(crate) fn event_receiver(&self) -> &Arc<DrmEventReceiver> {
+        &self.event_receiver
+    }
 }
 
 impl PerOpenFileOps for DrmFile {
@@ -288,7 +298,8 @@ impl PerOpenFileOps for DrmFile {
     }
 
     fn is_offset_aware(&self) -> bool {
-        true
+        // Reads events from the queue without using or advancing a file offset.
+        false
     }
 
     fn mappable(&self, request: FileMmapRequest) -> Result<MappableObject<'_>> {
@@ -326,10 +337,14 @@ impl FileOps for DrmFile {
     fn read_at(
         &self,
         _offset: usize,
-        _writer: &mut VmWriter,
-        _status_flags: StatusFlags,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
     ) -> Result<usize> {
-        Err(errno!(EINVAL, "reading from a DRM file is not supported"))
+        if status_flags.contains(StatusFlags::O_NONBLOCK) {
+            self.event_receiver.try_read(writer)
+        } else {
+            self.wait_events(IoEvents::IN, None, || self.event_receiver.try_read(writer))
+        }
     }
 
     fn write_at(
@@ -343,9 +358,8 @@ impl FileOps for DrmFile {
 }
 
 impl Pollable for DrmFile {
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+        self.event_receiver.poll(mask, poller)
     }
 }
 

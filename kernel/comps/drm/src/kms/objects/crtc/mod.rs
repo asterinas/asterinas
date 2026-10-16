@@ -7,6 +7,8 @@ use crate::kms::objects::{
     property::DrmPropertyAttachments,
 };
 
+pub mod vblank;
+
 /// A display pipeline that scans out planes using a display mode.
 #[derive(Debug)]
 pub(crate) struct DrmCrtc {
