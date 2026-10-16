@@ -19,6 +19,7 @@ pub(super) fn init_in_first_kthread() {
     MISC_MAJOR.call_once(|| acquire_major(MajorId::new(10)).unwrap());
 
     hwrng::init_in_first_kthread();
+    super::vhost::init_in_first_kthread(MISC_MAJOR.get().unwrap().get());
 
     #[cfg(target_arch = "x86_64")]
     ostd::if_tdx_enabled!({
