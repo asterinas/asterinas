@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Weak;
+use core::time::Duration;
 
+use aster_core::prelude::*;
 use ostd::sync::Mutex;
 
 use crate::kms::{
     display_mode::DrmDisplayMode,
     objects::{KmsObjectId, KmsObjectIndex, plane::DrmPlane, property::DrmPropertyAttachments},
+    vblank::{DrmVblank, DrmVblankEvent, DrmVblankWaitResult},
 };
 
 /// A display pipeline that scans out planes using a display mode.
@@ -16,12 +19,13 @@ use crate::kms::{
 /// while its cursor plane is optional;
 /// both links are non-owning because the KMS object store owns the topology objects.
 #[derive(Debug)]
-pub(crate) struct DrmCrtc {
+pub struct DrmCrtc {
     id: KmsObjectId,
     index: KmsObjectIndex,
     config: DrmCrtcConfig,
     state: Mutex<DrmCrtcState>,
     properties: DrmPropertyAttachments,
+    vblank: DrmVblank,
 }
 
 impl DrmCrtc {
@@ -37,6 +41,7 @@ impl DrmCrtc {
             config,
             state: Mutex::new(DrmCrtcState::default()),
             properties,
+            vblank: DrmVblank::default(),
         }
     }
 
@@ -57,7 +62,11 @@ impl DrmCrtc {
     }
 
     pub(crate) fn update_state(&self, state: DrmCrtcState) {
-        *self.state.lock() = state;
+        // Serializes CRTC state changes and their vblank lifecycle notifications.
+        // Lock order: CRTC state -> vblank state; vblank never locks CRTC state.
+        let mut current_state = self.state.lock();
+        *current_state = state;
+        self.vblank.set_enabled(current_state.is_active());
     }
 
     pub(crate) fn primary_plane(&self) -> &Weak<DrmPlane> {
@@ -66,6 +75,31 @@ impl DrmCrtc {
 
     pub(crate) fn properties(&self) -> &DrmPropertyAttachments {
         &self.properties
+    }
+
+    pub(crate) fn vblank_sequence(&self) -> u64 {
+        self.vblank.sequence()
+    }
+
+    pub(crate) fn queue_vblank_event(&self, event: DrmVblankEvent) -> Result<u64> {
+        self.vblank.queue_event(event)
+    }
+
+    pub(crate) fn wait_target_sequence(&self, target_sequence: u64) -> Result<DrmVblankWaitResult> {
+        self.vblank.wait_target_sequence(target_sequence)
+    }
+
+    /// Handles a device notification for one or more vblanks on this CRTC.
+    ///
+    /// Devices pass `sequence_delta = 1` for a normal vblank notification.
+    /// Software clocks include missed vblanks in `sequence_delta` after a delay.
+    /// `timestamp` is the latest vblank's monotonic timestamp.
+    /// Zero increments and notifications while the CRTC is disabled or inactive
+    /// are ignored.
+    ///
+    /// The device must call this from task context because event handling may block.
+    pub fn handle_vblank(&self, timestamp: Duration, sequence_delta: u64) {
+        self.vblank.handle_vblank(timestamp, sequence_delta);
     }
 }
 
