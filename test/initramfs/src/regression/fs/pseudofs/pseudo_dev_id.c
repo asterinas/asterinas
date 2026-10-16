@@ -34,6 +34,9 @@ FN_TEST(pseudo_fs_dev_id_major_is_zero)
 
 	TEST_RES(get_dev_id("/sys/kernel/config", &dev_id), major(dev_id) == 0);
 
+	TEST_RES(get_dev_id("/sys/kernel/security", &dev_id),
+		 major(dev_id) == 0);
+
 	TEST_RES(get_dev_id("/dev", &dev_id), major(dev_id) == 0);
 }
 END_TEST()
@@ -52,24 +55,28 @@ FN_TEST(pseudo_fs_dev_id_minor_is_positive)
 
 	TEST_RES(get_dev_id("/sys/kernel/config", &dev_id), minor(dev_id) > 0);
 
+	TEST_RES(get_dev_id("/sys/kernel/security", &dev_id),
+		 minor(dev_id) > 0);
+
 	TEST_RES(get_dev_id("/dev", &dev_id), minor(dev_id) > 0);
 }
 END_TEST()
 
 FN_TEST(pseudo_fs_dev_id_unique_per_mount)
 {
-	dev_t dev_ids[6];
+	dev_t dev_ids[7];
 
 	TEST_SUCC(get_dev_id("/proc", &dev_ids[0]));
 	TEST_SUCC(get_dev_id("/sys", &dev_ids[1]));
 	TEST_SUCC(get_dev_id("/dev/pts", &dev_ids[2]));
 	TEST_SUCC(get_dev_id("/sys/fs/cgroup", &dev_ids[3]));
 	TEST_SUCC(get_dev_id("/sys/kernel/config", &dev_ids[4]));
-	TEST_SUCC(get_dev_id("/dev", &dev_ids[5]));
+	TEST_SUCC(get_dev_id("/sys/kernel/security", &dev_ids[5]));
+	TEST_SUCC(get_dev_id("/dev", &dev_ids[6]));
 
 	// Test that each pseudo filesystem has a unique device ID
-	for (int i = 0; i < 6; i++) {
-		for (int j = i + 1; j < 6; j++) {
+	for (int i = 0; i < 7; i++) {
+		for (int j = i + 1; j < 7; j++) {
 			TEST_RES(dev_ids[i] != dev_ids[j], _ret);
 		}
 	}

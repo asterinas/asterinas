@@ -15,6 +15,7 @@
 #define CMDLINE_BUFFER_SIZE 4096
 
 static const char *CMDLINE_PATH = "/proc/cmdline";
+static const char *APPARMOR_DIR_PATH = "/sys/kernel/security/apparmor";
 static const char *YAMA_DIR_PATH = "/proc/sys/kernel/yama";
 static const char *YAMA_PTRACE_SCOPE_PATH =
 	"/proc/sys/kernel/yama/ptrace_scope";
@@ -95,6 +96,30 @@ static bool expect_yama_enabled(void)
 
 	return module_list_contains(lsm_param, "yama");
 }
+
+static bool expect_apparmor_enabled(void)
+{
+	char lsm_param[CMDLINE_BUFFER_SIZE] = "";
+
+	if (!find_effective_lsm_param(lsm_param)) {
+		return false;
+	}
+
+	return module_list_contains(lsm_param, "apparmor");
+}
+
+FN_TEST(apparmor_securityfs_visibility_follows_lsm_selection)
+{
+	struct stat statbuf;
+
+	if (expect_apparmor_enabled()) {
+		TEST_RES(stat(APPARMOR_DIR_PATH, &statbuf),
+			 S_ISDIR(statbuf.st_mode));
+	} else {
+		TEST_ERRNO(stat(APPARMOR_DIR_PATH, &statbuf), ENOENT);
+	}
+}
+END_TEST()
 
 FN_TEST(yama_procfs_visibility_follows_lsm_selection)
 {
