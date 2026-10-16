@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(netlink)]
+
 use core::num::NonZeroU32;
 
 use super::legacy::CRtGenMsg;
@@ -11,11 +13,21 @@ use crate::{
     prelude::*,
 };
 
-pub(crate) type AddrSegment = SegmentCommon<AddrSegmentBody, AddrAttr>;
+pub(in netlink) type AddrSegment = SegmentCommon<AddrSegmentBody, AddrAttr>;
 
 impl SegmentBody for AddrSegmentBody {
     type CLegacyType = CRtGenMsg;
     type CType = CIfaddrMsg;
+
+    fn validate_strict_request_body(body: &Self::CType) -> Result<()> {
+        if body.prefix_len != 0 || body.flags != 0 || body.scope != 0 {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the address request header contains nonzero prefix length, flags, or scope"
+            );
+        }
+        Ok(())
+    }
 }
 
 /// `ifaddrmsg` in Linux.
@@ -44,22 +56,25 @@ pub(crate) struct AddrSegmentBody {
     pub index: Option<NonZeroU32>,
 }
 
-impl TryFrom<CIfaddrMsg> for AddrSegmentBody {
-    type Error = Error;
-
-    fn try_from(value: CIfaddrMsg) -> Result<Self> {
+impl From<CIfaddrMsg> for AddrSegmentBody {
+    fn from(value: CIfaddrMsg) -> Self {
         // TODO: If the attribute IFA_FLAGS exists, the flags in header should be ignored.
         let flags = AddrMessageFlags::from_bits_truncate(value.flags as u32);
-        let scope = RtScope::try_from(value.scope)?;
+        // Non-strict GETADDR dumps ignore the requested scope.
+        // Strict checking rejects nonzero scopes before this conversion.
+        // FIXME: Linux allows user-defined scope values.
+        // Extend `RtScope` with a `UserDefined(u8)` variant and implement integer conversions
+        // to preserve these values instead of mapping them to `UNIVERSE`.
+        let scope = RtScope::try_from(value.scope).unwrap_or(RtScope::UNIVERSE);
         let index = NonZeroU32::new(value.index);
 
-        Ok(Self {
+        Self {
             family: value.family as i32,
             prefix_len: value.prefix_len,
             flags,
             scope,
             index,
-        })
+        }
     }
 }
 

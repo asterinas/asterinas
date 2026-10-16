@@ -2,6 +2,8 @@
 
 //! General netlink message types for all netlink protocols.
 
+#![short_vis_path::add(netlink)]
+
 use align_ext::AlignExt;
 
 use crate::{net::socket::netlink::message::NLMSG_ALIGN, prelude::*, util::MultiRead};
@@ -26,7 +28,7 @@ pub(crate) struct CMsgSegHdr {
 
 impl CMsgSegHdr {
     /// Returns the payload length (including padding) in the reader that contains the payload.
-    pub(crate) fn calc_payload_len_with_padding(
+    pub(in netlink) fn calc_payload_len_with_padding(
         &self,
         reader: &mut dyn MultiRead,
     ) -> Result<usize> {

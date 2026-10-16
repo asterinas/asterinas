@@ -8,6 +8,8 @@
 //! 2. Error Segment: Indicates that an error occurred while the kernel processed the user space request.
 //!
 
+#![short_vis_path::add(netlink)]
+
 use super::{
     CSegmentType, SegmentBody,
     common::SegmentCommon,
@@ -25,10 +27,14 @@ pub(crate) struct DoneSegmentBody {
 
 impl SegmentBody for DoneSegmentBody {
     type CType = DoneSegmentBody;
+
+    fn validate_strict_request_body(_body: &Self::CType) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl DoneSegment {
-    pub(crate) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
+    pub(in netlink) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
         let header = CMsgSegHdr {
             len: 0,
             type_: CSegmentType::DONE as _,
@@ -57,10 +63,14 @@ pub(crate) struct ErrorSegmentBody {
 
 impl SegmentBody for ErrorSegmentBody {
     type CType = ErrorSegmentBody;
+
+    fn validate_strict_request_body(_body: &Self::CType) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl ErrorSegment {
-    pub(crate) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
+    pub(in netlink) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
         let header = CMsgSegHdr {
             len: 0,
             type_: CSegmentType::ERROR as _,

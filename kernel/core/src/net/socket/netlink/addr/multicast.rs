@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(netlink)]
+
 use crate::prelude::*;
 
 /// A set of group IDs.
@@ -8,7 +10,7 @@ pub(crate) struct GroupIdSet(u32);
 
 impl GroupIdSet {
     /// Creates a new empty `GroupIdSet`.
-    pub(crate) const fn new_empty() -> Self {
+    pub(in netlink) const fn new_empty() -> Self {
         Self(0)
     }
 
@@ -20,35 +22,35 @@ impl GroupIdSet {
     }
 
     /// Creates an iterator over all group IDs.
-    pub(crate) const fn ids_iter(&self) -> GroupIdIter {
+    pub(in netlink) const fn ids_iter(&self) -> GroupIdIter {
         GroupIdIter::new(self)
     }
 
     /// Adds some new groups.
-    pub(crate) fn add_groups(&mut self, groups: GroupIdSet) {
+    pub(in netlink) fn add_groups(&mut self, groups: GroupIdSet) {
         self.0 |= groups.0;
     }
 
     /// Drops some groups.
-    pub(crate) fn drop_groups(&mut self, groups: GroupIdSet) {
+    pub(in netlink) fn drop_groups(&mut self, groups: GroupIdSet) {
         self.0 &= !groups.0;
     }
 
     /// Sets new groups.
     #[expect(dead_code)]
-    pub(crate) fn set_groups(&mut self, new_groups: u32) {
+    fn set_groups(&mut self, new_groups: u32) {
         self.0 = new_groups;
     }
 
     /// Clears all groups.
     #[expect(dead_code)]
-    pub(crate) fn clear(&mut self) {
+    fn clear(&mut self) {
         self.0 = 0;
     }
 
     /// Checks if the set of group IDs is empty.
     #[expect(dead_code)]
-    pub(crate) fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.0 == 0
     }
 
@@ -59,7 +61,7 @@ impl GroupIdSet {
 }
 
 /// Iterator over a set of group IDs.
-pub(crate) struct GroupIdIter {
+pub(in netlink) struct GroupIdIter {
     groups: u32,
 }
 
@@ -83,5 +85,5 @@ impl Iterator for GroupIdIter {
     }
 }
 
-pub(crate) const MAX_GROUPS: u32 = 32;
-pub(crate) type GroupId = u32;
+pub(in netlink) const MAX_GROUPS: u32 = 32;
+pub(in netlink) type GroupId = u32;

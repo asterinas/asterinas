@@ -31,10 +31,10 @@
 //!
 //! [`NLMSG_ALIGN`]: crate::net::socket::netlink::message::NLMSG_ALIGN
 
-pub(crate) mod addr;
+pub(super) mod addr;
 mod legacy;
-pub(crate) mod link;
-pub(crate) mod route;
+pub(super) mod link;
+mod route;
 
 use addr::AddrSegment;
 use link::LinkSegment;
@@ -85,20 +85,28 @@ impl ProtocolSegment for RtnlSegment {
         }
     }
 
-    fn read_from(reader: &mut dyn MultiRead) -> Result<ContinueRead<Self, ErrorSegment>> {
+    fn read_from(
+        reader: &mut dyn MultiRead,
+        strict_check: bool,
+    ) -> Result<ContinueRead<Self, ErrorSegment>> {
         let header = reader
             .read_val_opt::<CMsgSegHdr>()?
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "the reader length is too small"))?;
 
+        let payload_len = header.calc_payload_len_with_padding(reader)?;
+        if payload_len < size_of::<legacy::CRtGenMsg>() {
+            reader.skip_some(payload_len);
+            return Ok(ContinueRead::Skipped);
+        }
+
         let segment = match CSegmentType::try_from(header.type_) {
             Ok(CSegmentType::GETLINK) => {
-                LinkSegment::read_from(&header, reader)?.map(RtnlSegment::GetLink)
+                LinkSegment::read_from(&header, reader, strict_check)?.map(RtnlSegment::GetLink)
             }
             Ok(CSegmentType::GETADDR) => {
-                AddrSegment::read_from(&header, reader)?.map(RtnlSegment::GetAddr)
+                AddrSegment::read_from(&header, reader, strict_check)?.map(RtnlSegment::GetAddr)
             }
             _ => {
-                let payload_len = header.calc_payload_len_with_padding(reader)?;
                 reader.skip_some(payload_len);
                 ContinueRead::skipped_with_error(
                     Errno::EOPNOTSUPP,

@@ -82,7 +82,10 @@ pub(crate) trait ProtocolSegment: Sized {
     ///
     /// This method will skip the padding bytes, so it can be called multiple times to read
     /// multiple segments.
-    fn read_from(reader: &mut dyn MultiRead) -> Result<ContinueRead<Self, ErrorSegment>>;
+    fn read_from(
+        reader: &mut dyn MultiRead,
+        strict_check: bool,
+    ) -> Result<ContinueRead<Self, ErrorSegment>>;
 
     /// Writes the segment to the `writer`.
     ///

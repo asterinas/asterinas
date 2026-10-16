@@ -110,7 +110,7 @@ impl DatagramSocket {
                     .bind_ephemeral(remote_endpoint, &self.pollee)
             },
             |bound_datagram, remote_endpoint| {
-                let sent_bytes = bound_datagram.try_send(reader, remote_endpoint, flags)?;
+                let sent_bytes = bound_datagram.try_send(reader, remote_endpoint, flags, ())?;
                 let iface_to_poll = bound_datagram.iface().clone();
                 Ok((sent_bytes, iface_to_poll))
             },

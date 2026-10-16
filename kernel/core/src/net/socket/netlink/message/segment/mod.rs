@@ -9,9 +9,9 @@ use crate::{
     util::{MultiRead, MultiWrite},
 };
 
-pub(crate) mod ack;
-pub(crate) mod common;
-pub(crate) mod header;
+pub(super) mod ack;
+pub(super) mod common;
+pub(super) mod header;
 
 pub(crate) trait SegmentBody: Sized + Clone + Copy {
     // The actual message body should be `Self::CType`,
@@ -21,7 +21,14 @@ pub(crate) trait SegmentBody: Sized + Clone + Copy {
     // Reference: <https://elixir.bootlin.com/linux/v6.13/source/net/core/rtnetlink.c#L2393>.
     // FIXME: Verify whether the legacy type includes any types other than `CRtGenMsg`.
     type CLegacyType: Pod = Self::CType;
-    type CType: Pod + From<Self::CLegacyType> + TryInto<Self> + From<Self>;
+    type CType: Pod + From<Self::CLegacyType> + Into<Self> + From<Self>;
+
+    /// Validates the request body under strict checking rules.
+    ///
+    /// This method is called only when strict checking is enabled.
+    /// It runs before conversion to the internal representation,
+    /// which can discard fields needed for validation.
+    fn validate_strict_request_body(body: &Self::CType) -> Result<()>;
 
     /// Reads the segment body from the `reader`.
     ///
@@ -29,13 +36,24 @@ pub(crate) trait SegmentBody: Sized + Clone + Copy {
     fn read_from(
         header: &CMsgSegHdr,
         reader: &mut dyn MultiRead,
-    ) -> Result<ContinueRead<(Self, usize)>>
-    where
-        Error: From<<Self::CType as TryInto<Self>>::Error>,
-    {
+        strict_check: bool,
+    ) -> Result<ContinueRead<(Self, usize)>> {
         let mut remaining_len = header.calc_payload_len_with_padding(reader)?;
 
         // Read the body.
+        // Strict checking requires a full message body.
+        // Accept the legacy `rtgenmsg` body only when strict checking is disabled,
+        // for compatibility with older versions of iproute2.
+        // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/core/rtnetlink.c#L2430>.
+        let payload_len = header.len as usize - size_of::<CMsgSegHdr>();
+        if strict_check && payload_len < size_of::<Self::CType>() {
+            reader.skip_some(remaining_len);
+            return Ok(ContinueRead::skipped_with_error(
+                Errno::EINVAL,
+                "the message body is too short",
+            ));
+        }
+
         let (c_type, padding_len) = if remaining_len >= size_of::<Self::CType>() {
             let c_type = reader.read_val_opt::<Self::CType>()?.unwrap();
             remaining_len -= size_of_val(&c_type);
@@ -59,13 +77,11 @@ pub(crate) trait SegmentBody: Sized + Clone + Copy {
         reader.skip_some(padding_len);
         remaining_len -= padding_len;
 
-        match c_type.try_into() {
-            Ok(body) => Ok(ContinueRead::Parsed((body, remaining_len))),
-            Err(err) => {
-                reader.skip_some(remaining_len);
-                Ok(ContinueRead::SkippedErr(err.into()))
-            }
+        if strict_check && let Err(err) = Self::validate_strict_request_body(&c_type) {
+            reader.skip_some(remaining_len);
+            return Ok(ContinueRead::SkippedErr(err));
         }
+        Ok(ContinueRead::Parsed((c_type.into(), remaining_len)))
     }
 
     /// Writes the segment body to the `writer`.

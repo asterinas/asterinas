@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(netlink)]
+
 use core::num::NonZeroU32;
 
 use aster_bigtcp::iface::{InterfaceFlags, InterfaceType};
@@ -14,11 +16,21 @@ use crate::{
     util::net::CSocketAddrFamily,
 };
 
-pub(crate) type LinkSegment = SegmentCommon<LinkSegmentBody, LinkAttr>;
+pub(in netlink) type LinkSegment = SegmentCommon<LinkSegmentBody, LinkAttr>;
 
 impl SegmentBody for LinkSegmentBody {
     type CLegacyType = CRtGenMsg;
     type CType = CIfinfoMsg;
+
+    fn validate_strict_request_body(body: &Self::CType) -> Result<()> {
+        if body._pad != 0 || body.type_ != 0 || body.flags != 0 || body.change != 0 {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the link request header contains nonzero padding, type, flags, or change"
+            );
+        }
+        Ok(())
+    }
 }
 
 /// `ifinfomsg` in Linux.
@@ -49,21 +61,25 @@ pub(crate) struct LinkSegmentBody {
     pub flags: InterfaceFlags,
 }
 
-impl TryFrom<CIfinfoMsg> for LinkSegmentBody {
-    type Error = Error;
-
-    fn try_from(value: CIfinfoMsg) -> Result<Self> {
-        let family = CSocketAddrFamily::try_from(value.family as i32)?;
-        let type_ = InterfaceType::try_from(value.type_)?;
+impl From<CIfinfoMsg> for LinkSegmentBody {
+    fn from(value: CIfinfoMsg) -> Self {
+        // The current GETLINK handler does not use the requested address family,
+        // so unknown families can fall back to `AF_UNSPEC`.
+        let family = CSocketAddrFamily::try_from(value.family as i32)
+            .unwrap_or(CSocketAddrFamily::AF_UNSPEC);
+        // Non-strict GETLINK requests ignore the interface type.
+        // Strict checking rejects nonzero types before this conversion.
+        // `NETROM` represents zero here and does not select a NET/ROM interface.
+        let type_ = InterfaceType::try_from(value.type_).unwrap_or(InterfaceType::NETROM);
         let index = NonZeroU32::new(value.index);
         let flags = InterfaceFlags::from_bits_truncate(value.flags);
 
-        Ok(Self {
+        Self {
             family,
             type_,
             index,
             flags,
-        })
+        }
     }
 }
 
