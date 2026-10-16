@@ -466,6 +466,8 @@ impl DirDentry<'_> {
         Ok(self.inode.metadata()?.mode.has_sticky_bit())
     }
 
+    /// Checks whether the sticky-bit rule permits the current thread to remove
+    /// or rename the entry for `child_inode` in this directory.
     fn check_sticky_bit_permission(&self, child_inode: &Arc<dyn Inode>) -> Result<()> {
         let current_thread = current_thread!();
         let Some(posix_thread) = current_thread.as_posix_thread() else {
@@ -752,6 +754,10 @@ impl DirDentry<'_> {
                 DentryOptions::Named((String::from(name), self.this())),
             ),
         };
+
+        if self.has_sticky_bit()? {
+            self.check_sticky_bit_permission(child_dentry.inode())?;
+        }
 
         remove_child_fn(dir_inode.as_ref(), &child_dentry)?;
         if cached_child.is_some() {
