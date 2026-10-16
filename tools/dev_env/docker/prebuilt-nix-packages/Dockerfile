@@ -9,27 +9,35 @@ SHELL ["/bin/bash", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install Nix package manager and other Nix tools
-#
-# The nixpkgs and nixos channels are pinned to a particular commit (NixOS 26.05, 2026-07-19) for reproducibility.
-# FIXME: Installing Nix as root is not supported in single-user mode.
-RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
-    && . /etc/profile.d/nix.sh \
-    && nix-channel --add https://github.com/NixOS/nixpkgs/archive/fd1462031fdee08f65fd0b4c6b64e22239a77870.tar.gz nixpkgs \
-    && nix-channel --add https://github.com/NixOS/nixpkgs/archive/fd1462031fdee08f65fd0b4c6b64e22239a77870.tar.gz nixos \
-    && nix-channel --update \
-    && nix-env -iA nixpkgs.nixfmt \
-    && nix-env -iA nixpkgs.nixos-install-tools \
-    && nix-env -iA cachix -f https://cachix.org/api/v1/install \
-    && rm /nix/var/nix/gcroots/auto/* \
-    && nix-collect-garbage -d
+# Register channels so `nix-shell -p` works in the image.
+COPY flake.lock /tmp/asterinas/flake.lock
+RUN <<'EOF'
+set -e
+nixpkgs_url="$(python3 - <<'PYTHON'
+import json
+
+with open("/tmp/asterinas/flake.lock") as f:
+    lock = json.load(f)
+node = lock["nodes"][lock["root"]]["inputs"]["nixpkgs"]
+source = lock["nodes"][node]["locked"]
+print(f"https://github.com/{source['owner']}/{source['repo']}/archive/{source['rev']}.tar.gz")
+PYTHON
+)"
+nix-channel --add "$nixpkgs_url" nixpkgs
+nix-channel --add "$nixpkgs_url" nixos
+nix-channel --update
+nix-env -iA nixpkgs.nixfmt
+nix-env -iA nixpkgs.nixos-install-tools
+nix-env -iA cachix -f https://cachix.org/api/v1/install
+rm /nix/var/nix/gcroots/auto/*
+nix-collect-garbage -d
+EOF
 
 #= Build Nix packages ======================================================
 
 COPY test/initramfs /tmp/asterinas/test/initramfs
 COPY distro/nixpkgs.nix /tmp/asterinas/distro/nixpkgs.nix
 WORKDIR /tmp/asterinas/test/initramfs
-ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
 
 # Build aarch64 packages
 RUN make aarch64_pkgs VERBOSE=0 \

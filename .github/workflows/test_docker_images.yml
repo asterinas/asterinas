@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: MPL-2.0
+name: Test Docker images
+
+# Keep full image builds manual until CI can reuse their build cache.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidate-images:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build and test candidate images
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/docker-images"
+          bash tools/github_workflows/test_docker_images.sh 2>&1 \
+            | tee "$RUNNER_TEMP/docker-images/validation.log"
+      - name: Upload build and test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images-${{ matrix.runner }}
+          path: ${{ runner.temp }}/docker-images
+          if-no-files-found: error
