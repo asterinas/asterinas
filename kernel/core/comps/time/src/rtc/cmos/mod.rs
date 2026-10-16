@@ -15,13 +15,17 @@
 
 use core::num::NonZeroU8;
 
+mod nvram;
+#[cfg(ktest)]
+mod test;
+
 use ostd::{
     arch::{
         device::io_port::{ReadWriteAccess, WriteOnlyAccess},
         kernel::ACPI_INFO,
     },
     io::IoPort,
-    sync::SpinLock,
+    sync::{LocalIrqDisabled, SpinLock},
     warn,
 };
 
@@ -29,7 +33,13 @@ use super::Driver;
 use crate::SystemTime;
 
 pub(super) struct RtcCmos {
-    access: SpinLock<CmosAccess>,
+    // RTC and NVRAM must serialize complete index/data-port transactions.
+    // Disable local IRQs before acquiring the lock to prevent same-CPU IRQ
+    // reentry. Linux uses rtc_lock with spin_lock_irq/spin_lock_irqsave for
+    // these accesses too; this does not protect against NMI access.
+    // <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/nvram.c>.
+    // <https://elixir.bootlin.com/linux/v6.18/source/drivers/rtc/rtc-mc146818-lib.c>.
+    access: SpinLock<CmosAccess, LocalIrqDisabled>,
     status_b: StatusB,
 }
 
@@ -92,6 +102,10 @@ impl Driver for RtcCmos {
 
     fn read_rtc(&self) -> SystemTime {
         CmosData::read_rtc(self).into()
+    }
+
+    fn nvram(&self) -> Option<&dyn crate::nvram::Backend> {
+        Some(self)
     }
 }
 

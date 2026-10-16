@@ -149,7 +149,10 @@ impl Device for DrmMinor {
         }
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+    fn open(
+        &self,
+        _context: &aster_core::device::DeviceOpenContext,
+    ) -> Result<Box<dyn PerOpenFileOps>> {
         let drm_minor = self.weak_self.upgrade().unwrap();
         Ok(Box::new(DrmFile::new(drm_minor)))
     }

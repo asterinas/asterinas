@@ -143,6 +143,7 @@ impl Inode for Ext2Inode {
         _self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
+        creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         match self.inode_type() {
             inode_type @ (InodeType::BlockDevice | InodeType::CharDevice) => {
@@ -163,7 +164,7 @@ impl Inode for Ext2Inode {
                     )));
                 };
 
-                Some(device.open())
+                Some(device.open(&device::DeviceOpenContext::new(access_mode, creation_flags)))
             }
             InodeType::NamedPipe => {
                 let pipe = self.pipe().expect("NamedPipe inode must have a pipe");
