@@ -20,6 +20,31 @@ type BitStore = u8;
 
 const BITS_PER_BYTE: usize = 8;
 
+trait BitmapClusterChain: Sized {
+    fn cluster_size(&self) -> usize;
+    fn walk_to_cluster_at_offset(&self, offset: usize) -> Result<(Self, usize)>;
+    fn walk(&self, steps: u32) -> Result<Self>;
+    fn physical_cluster_start_offset(&self) -> Result<usize>;
+}
+
+impl BitmapClusterChain for ExfatChain {
+    fn cluster_size(&self) -> usize {
+        ExfatChain::cluster_size(self)
+    }
+
+    fn walk_to_cluster_at_offset(&self, offset: usize) -> Result<(Self, usize)> {
+        ExfatChain::walk_to_cluster_at_offset(self, offset)
+    }
+
+    fn walk(&self, steps: u32) -> Result<Self> {
+        ExfatChain::walk(self, steps)
+    }
+
+    fn physical_cluster_start_offset(&self) -> Result<usize> {
+        ExfatChain::physical_cluster_start_offset(self)
+    }
+}
+
 #[derive(Debug, Default)]
 pub(super) struct ExfatBitmap {
     // Start cluster of allocation bitmap.
@@ -38,6 +63,9 @@ impl ExfatBitmap {
         dentry: &ExfatBitmapDentry,
     ) -> Result<Self> {
         let fs = fs_weak.upgrade().unwrap();
+        if !fs.is_valid_cluster(dentry.start_cluster) {
+            return_errno_with_message!(Errno::EINVAL, "invalid bitmap start cluster");
+        }
         let num_clusters = (dentry.size as usize).align_up(fs.cluster_size()) / fs.cluster_size();
 
         let chain = ExfatChain::new(
@@ -48,7 +76,7 @@ impl ExfatBitmap {
         )?;
         let mut buf = vec![0; dentry.size as usize];
 
-        fs.read_meta_at(chain.physical_cluster_start_offset(), &mut buf)?;
+        Self::read_from_chain(&fs, &chain, 0, &mut buf)?;
         let mut free_cluster_num = 0;
         for idx in 0..fs.super_block().num_clusters - EXFAT_RESERVED_CLUSTERS {
             if (buf[idx as usize / BITS_PER_BYTE] & (1 << (idx % BITS_PER_BYTE as u32))) == 0 {
@@ -61,6 +89,61 @@ impl ExfatBitmap {
             dirty_bytes: VecDeque::new(),
             num_free_cluster: free_cluster_num,
             fs: fs_weak,
+        })
+    }
+
+    /// Visits the physical segments backing a logical range in the bitmap cluster chain.
+    ///
+    /// Section 7.1.3 of the exFAT specification defines the Allocation Bitmap as a cluster
+    /// chain described by the FAT, so consecutive logical segments need not be physically
+    /// adjacent.
+    fn for_each_chain_segment<C: BitmapClusterChain>(
+        chain: &C,
+        offset: usize,
+        len: usize,
+        mut visit: impl FnMut(Range<usize>, Range<usize>) -> Result<()>,
+    ) -> Result<()> {
+        if len == 0 {
+            return Ok(());
+        }
+
+        let cluster_size = chain.cluster_size();
+        let (mut current_chain, mut offset_in_cluster) = chain.walk_to_cluster_at_offset(offset)?;
+        let mut buffer_offset = 0;
+
+        while buffer_offset < len {
+            let segment_len = (cluster_size - offset_in_cluster).min(len - buffer_offset);
+            let Some(physical_start) = current_chain
+                .physical_cluster_start_offset()?
+                .checked_add(offset_in_cluster)
+            else {
+                return_errno_with_message!(Errno::EIO, "bitmap physical offset overflow");
+            };
+            let Some(physical_end) = physical_start.checked_add(segment_len) else {
+                return_errno_with_message!(Errno::EIO, "bitmap physical range overflow");
+            };
+            let buffer_end = buffer_offset + segment_len;
+
+            visit(buffer_offset..buffer_end, physical_start..physical_end)?;
+
+            buffer_offset = buffer_end;
+            if buffer_offset < len {
+                current_chain = current_chain.walk(1)?;
+                offset_in_cluster = 0;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn read_from_chain(
+        fs: &ExfatFs,
+        chain: &ExfatChain,
+        offset: usize,
+        buf: &mut [u8],
+    ) -> Result<()> {
+        Self::for_each_chain_segment(chain, offset, buf.len(), |buffer_range, physical_range| {
+            fs.read_meta_at(physical_range.start, &mut buf[buffer_range])
         })
     }
 
@@ -341,21 +424,24 @@ impl ExfatBitmap {
 
         let bytes: &[BitStore] = self.bitvec.as_raw_slice();
         let byte_chunk = &bytes[start_byte_off..end_byte_off];
+        let fs = self.fs();
+        let chain = &self.chain;
+        let dirty_bytes = &mut self.dirty_bytes;
 
-        let pos = self.chain.walk_to_cluster_at_offset(start_byte_off)?;
-
-        let phys_offset = pos.0.physical_cluster_start_offset() + pos.1;
-        self.fs().write_meta_at(phys_offset, byte_chunk)?;
-
-        let byte_range = phys_offset..phys_offset + byte_chunk.len();
-
-        if sync {
-            self.fs().sync_meta_at(byte_range.clone())?;
-        } else {
-            self.dirty_bytes.push_back(byte_range.clone());
-        }
-
-        Ok(())
+        Self::for_each_chain_segment(
+            chain,
+            start_byte_off,
+            byte_chunk.len(),
+            |buffer_range, physical_range| {
+                fs.write_meta_at(physical_range.start, &byte_chunk[buffer_range])?;
+                if sync {
+                    fs.sync_meta_at(physical_range)?;
+                } else {
+                    dirty_bytes.push_back(physical_range);
+                }
+                Ok(())
+            },
+        )
     }
 
     pub(super) fn sync(&mut self) -> Result<()> {
@@ -363,5 +449,76 @@ impl ExfatBitmap {
             self.fs().sync_meta_at(range)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use alloc::vec;
+
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    #[derive(Clone)]
+    struct TestClusterChain {
+        cluster_size: usize,
+        physical_starts: Arc<Vec<usize>>,
+        current: usize,
+    }
+
+    impl BitmapClusterChain for TestClusterChain {
+        fn cluster_size(&self) -> usize {
+            self.cluster_size
+        }
+
+        fn walk_to_cluster_at_offset(&self, offset: usize) -> Result<(Self, usize)> {
+            let steps = offset / self.cluster_size;
+            let Ok(steps) = u32::try_from(steps) else {
+                return_errno!(Errno::EIO);
+            };
+            let chain = self.walk(steps)?;
+            Ok((chain, offset % self.cluster_size))
+        }
+
+        fn walk(&self, steps: u32) -> Result<Self> {
+            let Some(current) = self.current.checked_add(steps as usize) else {
+                return_errno!(Errno::EIO);
+            };
+            if current >= self.physical_starts.len() {
+                return_errno!(Errno::EIO);
+            }
+            Ok(Self {
+                cluster_size: self.cluster_size,
+                physical_starts: self.physical_starts.clone(),
+                current,
+            })
+        }
+
+        fn physical_cluster_start_offset(&self) -> Result<usize> {
+            Ok(self.physical_starts[self.current])
+        }
+    }
+
+    #[ktest]
+    fn visits_fragmented_bitmap_chain_in_fat_order() {
+        // Regression test for exFAT section 7.1.3: logical neighbors may be physically separate.
+        let chain = TestClusterChain {
+            cluster_size: 4,
+            physical_starts: Arc::new(vec![20, 36, 48]),
+            current: 0,
+        };
+        let mut segments = Vec::new();
+
+        ExfatBitmap::for_each_chain_segment(&chain, 2, 7, |buffer_range, physical_range| {
+            segments.push((buffer_range, physical_range));
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(
+            segments,
+            vec![(0..2, 22..24), (2..6, 36..40), (6..7, 48..49)]
+        );
     }
 }
