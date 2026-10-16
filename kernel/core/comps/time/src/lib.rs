@@ -12,6 +12,7 @@ use core::time::Duration;
 
 pub use clocksource::{ClockSource, Instant};
 use component::{ComponentInitError, init_component};
+pub use nvram::{Backend as NvramBackend, Error as NvramError, backend as nvram_backend};
 use rtc::Driver;
 use spin::Once;
 
@@ -23,6 +24,7 @@ macro_rules! __log_prefix {
 }
 
 mod clocksource;
+mod nvram;
 mod rtc;
 mod tsc;
 
