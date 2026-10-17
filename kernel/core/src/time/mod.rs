@@ -16,7 +16,7 @@ pub(crate) mod cpu_time_stats;
 mod softirq;
 mod system_time;
 pub(crate) mod timerfd;
-pub(crate) mod wait;
+pub mod wait;
 
 pub(crate) type clockid_t = i32;
 pub(crate) type time_t = i64;
