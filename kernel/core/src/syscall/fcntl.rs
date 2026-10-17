@@ -13,7 +13,7 @@ use crate::{
         vfs::range_lock::{FileRange, OFFSET_MAX, RangeLockItem, RangeLockType},
     },
     prelude::*,
-    process::{Pid, pid_table},
+    process::{Pid, ResourceType, pid_table},
 };
 
 pub(super) fn sys_fcntl(
@@ -46,9 +46,19 @@ pub(super) fn sys_fcntl(
 }
 
 fn handle_dupfd(fd: FileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result<SyscallReturn> {
-    let ceil_fd = (arg as RawFileDesc)
+    let ceil_fd: FileDesc = (arg as RawFileDesc)
         .try_into()
         .map_err(|_| Error::with_message(Errno::EINVAL, "invalid fd"))?;
+
+    if u64::from(ceil_fd)
+        >= ctx
+            .process
+            .resource_limits()
+            .get_rlimit(ResourceType::RLIMIT_NOFILE)
+            .get_cur()
+    {
+        return_errno_with_message!(Errno::EINVAL, "the FD exceeds the `RLIMIT_NOFILE` limit");
+    }
 
     let file_table = ctx.thread_local.borrow_file_table();
     let new_fd = file_table.unwrap().write().dup_ceil(fd, ceil_fd, flags)?;

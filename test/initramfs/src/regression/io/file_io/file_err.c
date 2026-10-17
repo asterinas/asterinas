@@ -5,7 +5,9 @@
 #include "../../common/test.h"
 #include <stdint.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -36,6 +38,29 @@ FN_TEST(dup_invalid_old_preserves_new)
 	TEST_RES(read(new_fd, buf, sizeof(buf)), _ret == 1);
 
 	TEST_SUCC(close(new_fd));
+}
+END_TEST()
+
+FN_TEST(dupfd_exceeds_rlimit)
+{
+	struct rlimit old_rlim, rlim;
+
+	// `F_DUPFD` and `F_DUPFD_CLOEXEC` fail with `EINVAL` if the minimum FD is
+	// not below `RLIMIT_NOFILE`, instead of growing the FD table to that size.
+	// See <https://github.com/asterinas/asterinas/issues/4025>.
+	TEST_SUCC(getrlimit(RLIMIT_NOFILE, &old_rlim));
+	rlim = old_rlim;
+	rlim.rlim_cur = 64;
+	TEST_SUCC(setrlimit(RLIMIT_NOFILE, &rlim));
+
+	TEST_ERRNO(fcntl(fd, F_DUPFD, 64), EINVAL);
+	TEST_ERRNO(fcntl(fd, F_DUPFD_CLOEXEC, 64), EINVAL);
+	TEST_ERRNO(fcntl(fd, F_DUPFD, INT_MAX), EINVAL);
+
+	TEST_RES(fcntl(fd, F_DUPFD, 63), _ret == 63);
+	TEST_SUCC(close(63));
+
+	TEST_SUCC(setrlimit(RLIMIT_NOFILE, &old_rlim));
 }
 END_TEST()
 
