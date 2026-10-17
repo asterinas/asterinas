@@ -13,7 +13,7 @@ use ostd::{
 };
 use x86_64::registers::rflags::RFlags;
 
-use crate::prelude::*;
+use crate::{prelude::*, process::posix_thread::SuppUserContext};
 
 // =====================================================================
 // Public ABI mirror.
@@ -59,7 +59,7 @@ impl CUserRegsStruct {
     ///
     /// `orig_rax` is left at zero. Callers needing the syscall-entry
     /// value should assign it from `ThreadLocal::orig_syscall_ret`.
-    pub(crate) fn from_regs(user_context: &UserContext, fs_base: FsBase, gs_base: GsBase) -> Self {
+    fn from_regs(user_context: &UserContext, fs_base: FsBase, gs_base: GsBase) -> Self {
         let mut out = Self::default();
         let bytes = out.as_mut_bytes();
         for rule in REG_RULES {
@@ -95,7 +95,7 @@ impl CUserRegsStruct {
     /// # Errors
     ///
     /// Returns `EIO` on any invalid value.
-    pub(crate) fn apply_to(
+    fn apply_to(
         &self,
         user_context: &mut UserContext,
         fs_base: &mut FsBase,
@@ -129,102 +129,145 @@ impl CUserRegsStruct {
     }
 }
 
-/// Reads one word from the x86-64 USER area at `offset`.
-pub(crate) fn read_user_word(
-    user_context: &UserContext,
+/// x86-64 register state saved while a tracee is stopped.
+pub(crate) struct PtraceState {
+    user_context: UserContext,
     fs_base: FsBase,
     gs_base: GsBase,
-    orig_rax: usize,
-    offset: usize,
-) -> Result<usize> {
-    check_user_offset(offset)?;
-    if offset == core::mem::offset_of!(CUserRegsStruct, rflags) {
-        return Ok(user_context.rflags());
-    }
-    if offset == core::mem::offset_of!(CUserRegsStruct, fsbase) {
-        return Ok(fs_base.addr());
-    }
-    if offset == core::mem::offset_of!(CUserRegsStruct, gsbase) {
-        return Ok(gs_base.addr());
-    }
-    if offset == core::mem::offset_of!(CUserRegsStruct, orig_rax) {
-        return Ok(orig_rax);
-    }
-
-    // FIXME: This emulates the default state of the x86 debug registers,
-    // so it can correctly respond when a tracer reads the tracee’s debug
-    // registers via `PTRACE_PEEKUSER`.
-    // Currently, the tracee’s x86 debug registers are never actually modified,
-    // so they always remain at their default values.
-    if let Some(index) = debug_register_index(offset) {
-        let value = match index {
-            6 => DEBUG_STATUS_DEFAULT_VALUE,
-            0..=5 | 7 => 0,
-            _ => unreachable!(),
-        };
-        return Ok(value);
-    }
-
-    let rule =
-        RegRule::for_offset(offset).expect("offset has been validated by `check_user_offset`");
-    Ok(match rule.policy {
-        Policy::Fixed(value) => value,
-        _ => (rule.get.unwrap())(user_context.general_regs()),
-    })
+    orig_syscall_ret: usize,
 }
 
-/// Writes one word to the x86-64 USER area at `offset`.
-pub(crate) fn write_user_word(
-    user_context: &mut UserContext,
-    fs_base: &mut FsBase,
-    gs_base: &mut GsBase,
-    orig_rax: &mut usize,
-    offset: usize,
-    value: usize,
-) -> Result<()> {
-    check_user_offset(offset)?;
-    if offset == core::mem::offset_of!(CUserRegsStruct, rflags) {
-        user_context.set_rflags(value);
-        return Ok(());
-    }
-    if offset == core::mem::offset_of!(CUserRegsStruct, fsbase) {
-        if !is_user_addr(value) {
-            return_errno_with_message!(Errno::EIO, "invalid register value");
+impl PtraceState {
+    const NOT_A_SYSCALL: usize = usize::MAX;
+
+    /// Creates the x86-64 ptrace state from saved registers.
+    pub(crate) fn new(
+        user_context: &UserContext,
+        supp_context: &SuppUserContext,
+        orig_syscall_ret: Option<usize>,
+    ) -> Self {
+        Self {
+            user_context: user_context.clone(),
+            fs_base: supp_context.fs_base().get(),
+            gs_base: supp_context.gs_base().get(),
+            orig_syscall_ret: orig_syscall_ret.unwrap_or(Self::NOT_A_SYSCALL),
         }
-        *fs_base = FsBase::new(value);
-        return Ok(());
     }
-    if offset == core::mem::offset_of!(CUserRegsStruct, gsbase) {
-        if !is_user_addr(value) {
-            return_errno_with_message!(Errno::EIO, "invalid register value");
+
+    /// Restores the possibly modified registers when the tracee resumes.
+    pub(crate) fn restore(self, user_context: &mut UserContext, supp_context: &SuppUserContext) {
+        *user_context = self.user_context;
+        supp_context.fs_base().set(self.fs_base);
+        supp_context.gs_base().set(self.gs_base);
+    }
+
+    /// Returns the saved syscall-return register value, including any tracer modifications.
+    ///
+    /// Returns `None` if the value indicates a non-syscall entry.
+    pub(crate) fn orig_syscall_ret(&self) -> Option<usize> {
+        (self.orig_syscall_ret != Self::NOT_A_SYSCALL).then_some(self.orig_syscall_ret)
+    }
+
+    /// Returns the x86-64 general-purpose register ABI snapshot.
+    pub(crate) fn get_user_regs(&self) -> CUserRegsStruct {
+        let mut regs = CUserRegsStruct::from_regs(&self.user_context, self.fs_base, self.gs_base);
+        regs.orig_rax = self.orig_syscall_ret;
+        regs
+    }
+
+    /// Applies an x86-64 general-purpose register ABI snapshot.
+    pub(crate) fn set_user_regs(&mut self, regs: CUserRegsStruct) -> Result<()> {
+        regs.apply_to(&mut self.user_context, &mut self.fs_base, &mut self.gs_base)?;
+        self.orig_syscall_ret = regs.orig_rax;
+        Ok(())
+    }
+
+    /// Reads one word from the x86-64 USER area.
+    pub(crate) fn peek_user(&self, offset: usize) -> Result<usize> {
+        check_user_offset(offset)?;
+        if offset == core::mem::offset_of!(CUserRegsStruct, rflags) {
+            return Ok(self.user_context.rflags());
         }
-        *gs_base = GsBase::new(value);
-        return Ok(());
-    }
-    if offset == core::mem::offset_of!(CUserRegsStruct, orig_rax) {
-        *orig_rax = value;
-        return Ok(());
-    }
-    if debug_register_index(offset).is_some() {
-        return_errno_with_message!(
-            Errno::EOPNOTSUPP,
-            "writing x86 debug registers is not supported currently"
-        );
+        if offset == core::mem::offset_of!(CUserRegsStruct, fsbase) {
+            return Ok(self.fs_base.addr());
+        }
+        if offset == core::mem::offset_of!(CUserRegsStruct, gsbase) {
+            return Ok(self.gs_base.addr());
+        }
+        if offset == core::mem::offset_of!(CUserRegsStruct, orig_rax) {
+            return Ok(self.orig_syscall_ret);
+        }
+
+        // FIXME: This emulates the default state of the x86 debug registers,
+        // so it can correctly respond when a tracer reads the tracee’s debug
+        // registers via `PTRACE_PEEKUSER`.
+        // Currently, the tracee’s x86 debug registers are never actually modified,
+        // so they always remain at their default values.
+        if let Some(index) = debug_register_index(offset) {
+            let value = match index {
+                6 => DEBUG_STATUS_DEFAULT_VALUE,
+                0..=5 | 7 => 0,
+                _ => unreachable!(),
+            };
+            return Ok(value);
+        }
+
+        let rule =
+            RegRule::for_offset(offset).expect("offset has been validated by `check_user_offset`");
+        Ok(match rule.policy {
+            Policy::Fixed(value) => value,
+            _ => (rule.get.unwrap())(self.user_context.general_regs()),
+        })
     }
 
-    let rule =
-        RegRule::for_offset(offset).expect("offset has been validated by `check_user_offset`");
-    rule.apply(user_context.general_regs_mut(), value)
-}
+    /// Writes one word to the x86-64 USER area.
+    pub(crate) fn poke_user(&mut self, offset: usize, value: usize) -> Result<()> {
+        check_user_offset(offset)?;
+        if offset == core::mem::offset_of!(CUserRegsStruct, rflags) {
+            self.user_context.set_rflags(value);
+            return Ok(());
+        }
+        if offset == core::mem::offset_of!(CUserRegsStruct, fsbase) {
+            if !is_user_addr(value) {
+                return_errno_with_message!(Errno::EIO, "invalid register value");
+            }
+            self.fs_base = FsBase::new(value);
+            return Ok(());
+        }
+        if offset == core::mem::offset_of!(CUserRegsStruct, gsbase) {
+            if !is_user_addr(value) {
+                return_errno_with_message!(Errno::EIO, "invalid register value");
+            }
+            self.gs_base = GsBase::new(value);
+            return Ok(());
+        }
+        if offset == core::mem::offset_of!(CUserRegsStruct, orig_rax) {
+            self.orig_syscall_ret = value;
+            return Ok(());
+        }
+        if debug_register_index(offset).is_some() {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "writing x86 debug registers is not supported currently"
+            );
+        }
 
-/// Enables x86-64 single-step execution by setting the trap flag.
-pub(crate) fn enable_single_step(user_context: &mut UserContext) {
-    user_context.set_rflags(user_context.rflags() | RFlags::TRAP_FLAG.bits() as usize);
-}
+        let rule =
+            RegRule::for_offset(offset).expect("offset has been validated by `check_user_offset`");
+        rule.apply(self.user_context.general_regs_mut(), value)
+    }
 
-/// Disables x86-64 single-step execution by clearing the trap flag.
-pub(crate) fn disable_single_step(user_context: &mut UserContext) {
-    user_context.set_rflags(user_context.rflags() & !(RFlags::TRAP_FLAG.bits() as usize));
+    /// Enables single-step execution.
+    pub(crate) fn enable_single_step(&mut self) {
+        self.user_context
+            .set_rflags(self.user_context.rflags() | RFlags::TRAP_FLAG.bits() as usize);
+    }
+
+    /// Disables single-step execution.
+    pub(crate) fn disable_single_step(&mut self) {
+        self.user_context
+            .set_rflags(self.user_context.rflags() & !(RFlags::TRAP_FLAG.bits() as usize));
+    }
 }
 
 // =====================================================================
