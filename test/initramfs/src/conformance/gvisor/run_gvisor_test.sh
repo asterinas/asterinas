@@ -108,6 +108,12 @@ else
         -exec basename {} \; | sort -u > "$SELECTED_TESTS"
 fi
 
+# Some gVisor tests assume a soft `RLIMIT_NOFILE` above 1024, as in the
+# container environments where they usually run. For example,
+# `ProcSelfFd.GetdentsDuplicates` duplicates an FD to 1024. Raise the soft
+# limit to the default hard limit.
+ulimit -n 4096
+
 rm -f "$FAIL_CASES" && touch "$FAIL_CASES"
 rm -rf "$TEST_TMP_DIR"/*
 
