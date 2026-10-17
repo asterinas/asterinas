@@ -8,8 +8,11 @@
 //! the need for separate per-type lookup tables.
 
 use alloc::collections::btree_map::Entry;
+use core::sync::atomic::{AtomicU32, Ordering};
 
-use super::{Pgid, Pid, Process, ProcessGroup, Session, Sid};
+use sparse_id_alloc::CyclicIdAlloc;
+
+use super::{INIT_PROCESS_PID, Pgid, Pid, Process, ProcessGroup, Session, Sid};
 use crate::{
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -18,12 +21,29 @@ use crate::{
 
 static PID_TABLE: Mutex<PidTable> = Mutex::new(PidTable::new());
 
+/// The PID allocation wrap value.
+///
+/// This matches Linux's `PID_MAX_LIMIT` on 64-bit architectures.
+/// Reference: <https://elixir.bootlin.com/linux/v6.16/source/include/linux/threads.h#L34>.
+// FIXME: This value cannot yet be modified by the user by writing to
+// `/proc/sys/kernel/pid_max`.
+pub(crate) const PID_MAX: u32 = 4 * 1024 * 1024;
+
+/// The lowest TID that may be reused after the allocator wraps.
+///
+/// Linux reserves the lower 300 PIDs after the initial allocation pass.
+/// Reference: <https://elixir.bootlin.com/linux/v6.16/source/include/linux/pid.h#L48>.
+const PID_RECYCLE_MIN: Tid = 300;
+
+static LAST_ALLOCATED_TID: AtomicU32 = AtomicU32::new(0);
+
 /// The unified PID table.
 ///
 /// Combines the process, process-group, session, and thread tables into a
 /// single structure.
 pub(crate) struct PidTable {
     entries: BTreeMap<u32, Arc<PidEntry>>,
+    tid_allocator: CyclicIdAlloc,
     process_count: usize,
 }
 
@@ -31,76 +51,136 @@ impl PidTable {
     const fn new() -> Self {
         Self {
             entries: BTreeMap::new(),
+            tid_allocator: CyclicIdAlloc::new(INIT_PROCESS_PID, PID_RECYCLE_MIN, PID_MAX - 1),
             process_count: 0,
         }
     }
 
-    /// Returns the entry for the given ID, or creates a new one if absent.
-    fn get_or_create_entry(&mut self, id: u32) -> &Arc<PidEntry> {
-        self.entries
-            .entry(id)
-            .or_insert_with(|| Arc::new(PidEntry::new()))
+    /// Returns the allocated entry for an associated process group or session.
+    ///
+    /// ID zero is used by the bootstrap process group and session but is never
+    /// handed out by the TID allocator.
+    fn associated_entry(&mut self, id: u32) -> &Arc<PidEntry> {
+        if id == 0 {
+            return self
+                .entries
+                .entry(id)
+                .or_insert_with(|| Arc::new(PidEntry::new(id, false)));
+        }
+
+        let entry = self
+            .entries
+            .get(&id)
+            .expect("a nonzero associated ID must already be allocated");
+        debug_assert!(!entry.lock().is_reserved());
+        entry
+    }
+
+    /// Reserves a new TID and creates an invisible [`PidEntry`] for it.
+    fn reserve_tid(&mut self) -> Result<PidReservation> {
+        let tid = self
+            .tid_allocator
+            .alloc()
+            .ok_or_else(|| Error::with_message(Errno::EAGAIN, "the PID space is exhausted"))?;
+        let entry = Arc::new(PidEntry::new(tid, true));
+        let old_entry = self.entries.insert(tid, entry.clone());
+        debug_assert!(old_entry.is_none());
+        LAST_ALLOCATED_TID.store(tid, Ordering::Relaxed);
+
+        Ok(PidReservation {
+            tid,
+            entry,
+            active: true,
+        })
+    }
+
+    /// Commits a reserved TID as a non-main thread.
+    fn commit_thread(&mut self, reservation: &PidReservation, thread: &Arc<Thread>) {
+        debug_assert_eq!(reservation.tid, thread.as_posix_thread().unwrap().tid());
+        let entry = self.entries.get(&reservation.tid).unwrap();
+        debug_assert!(Arc::ptr_eq(entry, &reservation.entry));
+
+        let mut entry = entry.lock();
+        entry.commit_reservation();
+        debug_assert!(!entry.has_live_process());
+        entry.set_thread(thread);
+    }
+
+    /// Commits a reserved TID as a process and its main thread.
+    fn commit_process(&mut self, reservation: &PidReservation, process: &Arc<Process>) {
+        debug_assert_eq!(reservation.tid, process.pid());
+        let entry = self.entries.get(&reservation.tid).unwrap();
+        debug_assert!(Arc::ptr_eq(entry, &reservation.entry));
+
+        self.process_count += 1;
+        let mut entry = entry.lock();
+        entry.commit_reservation();
+        entry.set_process(process);
+        entry.set_thread(&process.main_thread());
+    }
+
+    /// Cancels a reservation that was not committed.
+    fn cancel_reservation(&mut self, reservation: &PidReservation) {
+        let entry = self.entries.get(&reservation.tid).unwrap();
+        debug_assert!(Arc::ptr_eq(entry, &reservation.entry));
+        debug_assert!(entry.lock().is_reserved());
+
+        self.entries.remove(&reservation.tid);
+        self.tid_allocator.free(reservation.tid);
+    }
+
+    /// Removes an empty PID entry and returns its number to the allocator.
+    fn remove_entry_if_empty(&mut self, id: Tid) {
+        let should_remove = self
+            .entries
+            .get(&id)
+            .is_some_and(|entry| entry.lock().is_empty());
+        if should_remove {
+            self.entries.remove(&id);
+            if id != 0 {
+                self.tid_allocator.free(id);
+            }
+        }
     }
 
     // ---- Thread operations ----
-
-    /// Inserts a non-main thread into the table.
-    ///
-    /// This method requires the target entry not to track a process. A
-    /// process's main thread must be inserted with [`Self::insert_process`].
-    pub(super) fn insert_thread(&mut self, tid: Tid, thread: &Arc<Thread>) {
-        debug_assert_eq!(tid, thread.as_posix_thread().unwrap().tid());
-
-        let mut entry = self.get_or_create_entry(tid).lock();
-        debug_assert!(!entry.has_live_process());
-
-        entry.set_thread(thread);
-    }
 
     /// Removes a non-main thread from the table.
     ///
     /// This method requires the target entry not to track a process. A
     /// process's main thread must be removed with [`Self::remove_process`].
     pub(super) fn remove_thread(&mut self, tid: Tid) {
-        let Entry::Occupied(map_entry) = self.entries.entry(tid) else {
-            return;
-        };
+        {
+            let Entry::Occupied(map_entry) = self.entries.entry(tid) else {
+                return;
+            };
 
-        let should_remove = {
             let mut pid_entry = map_entry.get().lock();
             debug_assert!(!pid_entry.has_live_process());
 
             pid_entry.clear_thread();
-            // Drop the locked PID entry before removing the B-tree entry.
-            pid_entry.is_empty()
-        };
-
-        if should_remove {
-            map_entry.remove();
         }
+        self.remove_entry_if_empty(tid);
     }
 
     /// Removes a non-main thread from the table and returns it.
     ///
     /// This method requires the target entry not to track a process.
     pub(super) fn take_thread(&mut self, tid: Tid) -> Option<Arc<Thread>> {
-        let Entry::Occupied(map_entry) = self.entries.entry(tid) else {
-            return None;
-        };
+        let thread = {
+            let Entry::Occupied(map_entry) = self.entries.entry(tid) else {
+                return None;
+            };
 
-        let (thread, should_remove) = {
             let mut pid_entry = map_entry.get().lock();
             debug_assert!(!pid_entry.has_live_process());
 
             let thread = pid_entry.thread()?;
             pid_entry.clear_thread();
-            // Drop the locked PID entry before removing the B-tree entry.
-            (thread, pid_entry.is_empty())
+            thread
         };
 
-        if should_remove {
-            map_entry.remove();
-        }
+        self.remove_entry_if_empty(tid);
 
         Some(thread)
     }
@@ -109,7 +189,7 @@ impl PidTable {
     pub(super) fn replace_thread(&mut self, tid: Tid, thread: &Arc<Thread>) {
         debug_assert_eq!(tid, thread.as_posix_thread().unwrap().tid());
 
-        let entry = self.get_or_create_entry(tid);
+        let entry = self.entries.get(&tid).unwrap();
         entry.lock().replace_thread(thread);
     }
 
@@ -129,28 +209,17 @@ impl PidTable {
 
     // ---- Process operations ----
 
-    /// Inserts a process and its main thread into the table.
-    pub(super) fn insert_process(&mut self, pid: Pid, process: &Arc<Process>) {
-        // `set_process` will assert the process slot is empty.
-        self.process_count += 1;
-
-        let entry = self.get_or_create_entry(pid);
-        let mut entry = entry.lock();
-        entry.set_process(process);
-        entry.set_thread(&process.main_thread());
-    }
-
     /// Removes a process and its main thread from the table.
     //
     // TODO: Add an active reclamation mechanism for dentries corresponding to `PidEntry`
     // in the procfs `DentryCache`, so that invalid dentries can be released as promptly
     // as possible.
     pub(super) fn remove_process(&mut self, pid: Pid) {
-        let Entry::Occupied(map_entry) = self.entries.entry(pid) else {
-            return;
-        };
+        {
+            let Entry::Occupied(map_entry) = self.entries.entry(pid) else {
+                return;
+            };
 
-        let should_remove = {
             let mut pid_entry = map_entry.get().lock();
 
             // `clear_process` will assert the process slot is not empty.
@@ -158,13 +227,8 @@ impl PidTable {
 
             pid_entry.clear_process();
             pid_entry.clear_thread();
-            // Drop the locked PID entry before removing the B-tree entry.
-            pid_entry.is_empty()
-        };
-
-        if should_remove {
-            map_entry.remove();
         }
+        self.remove_entry_if_empty(pid);
     }
 
     /// Gets a process by a PID.
@@ -190,26 +254,21 @@ impl PidTable {
 
     /// Inserts a process group into the table.
     pub(super) fn insert_process_group(&mut self, pgid: Pgid, group: &Arc<ProcessGroup>) {
-        let entry = self.get_or_create_entry(pgid);
+        let entry = self.associated_entry(pgid);
         entry.lock().set_process_group(group);
     }
 
     /// Removes a process group from the table.
     pub(super) fn remove_process_group(&mut self, pgid: Pgid) {
-        let Entry::Occupied(map_entry) = self.entries.entry(pgid) else {
-            return;
-        };
+        {
+            let Entry::Occupied(map_entry) = self.entries.entry(pgid) else {
+                return;
+            };
 
-        let should_remove = {
             let mut pid_entry = map_entry.get().lock();
             pid_entry.clear_process_group();
-            // Drop the locked PID entry before removing the B-tree entry.
-            pid_entry.is_empty()
-        };
-
-        if should_remove {
-            map_entry.remove();
         }
+        self.remove_entry_if_empty(pgid);
     }
 
     /// Gets a process group by a PGID.
@@ -230,32 +289,82 @@ impl PidTable {
 
     /// Inserts a session into the table.
     pub(super) fn insert_session(&mut self, sid: Sid, session: &Arc<Session>) {
-        let entry = self.get_or_create_entry(sid);
+        let entry = self.associated_entry(sid);
         entry.lock().set_session(session);
     }
 
     /// Removes a session from the table.
     pub(super) fn remove_session(&mut self, sid: Sid) {
-        let Entry::Occupied(map_entry) = self.entries.entry(sid) else {
-            return;
-        };
+        {
+            let Entry::Occupied(map_entry) = self.entries.entry(sid) else {
+                return;
+            };
 
-        let should_remove = {
             let mut pid_entry = map_entry.get().lock();
             pid_entry.clear_session();
-            // Drop the locked PID entry before removing the B-tree entry.
-            pid_entry.is_empty()
-        };
+        }
+        self.remove_entry_if_empty(sid);
+    }
 
-        if should_remove {
-            map_entry.remove();
+    /// Returns the visible entry for the given numeric identifier.
+    pub(crate) fn get_entry(&self, id: u32) -> Option<Arc<PidEntry>> {
+        self.entries
+            .get(&id)
+            .filter(|entry| !entry.lock().is_reserved())
+            .cloned()
+    }
+}
+
+/// A TID reserved for a process or thread that is still being constructed.
+///
+/// The reservation is invisible to PID lookups. Dropping it before it is
+/// committed returns the number to the allocator.
+pub(super) struct PidReservation {
+    tid: Tid,
+    entry: Arc<PidEntry>,
+    active: bool,
+}
+
+impl PidReservation {
+    /// Returns the reserved TID.
+    pub(super) fn tid(&self) -> Tid {
+        self.tid
+    }
+
+    /// Returns the stable PID entry associated with the reservation.
+    pub(super) fn pid_entry(&self) -> Arc<PidEntry> {
+        self.entry.clone()
+    }
+
+    /// Commits the reservation as a non-main thread while the caller holds the PID table.
+    pub(super) fn commit_thread(mut self, pid_table: &mut PidTable, thread: &Arc<Thread>) {
+        pid_table.commit_thread(&self, thread);
+        self.active = false;
+    }
+
+    /// Commits the reservation as a process while the caller holds the PID table.
+    pub(super) fn commit_process(mut self, pid_table: &mut PidTable, process: &Arc<Process>) {
+        pid_table.commit_process(&self, process);
+        self.active = false;
+    }
+}
+
+impl Drop for PidReservation {
+    fn drop(&mut self) {
+        if self.active {
+            pid_table_mut().cancel_reservation(self);
         }
     }
+}
 
-    /// Returns the entry for the given numeric identifier.
-    pub(crate) fn get_entry(&self, id: u32) -> Option<Arc<PidEntry>> {
-        self.entries.get(&id).cloned()
-    }
+/// Reserves a new TID from the global PID table.
+pub(super) fn reserve_tid() -> Result<PidReservation> {
+    pid_table_mut().reserve_tid()
+}
+
+/// Returns the most recently reserved TID.
+pub(crate) fn last_tid() -> Tid {
+    LAST_ALLOCATED_TID.load(Ordering::Relaxed)
 }
 
 /// An entry in the unified PID table.
@@ -278,10 +387,12 @@ impl PidTable {
 /// there will never be a `PidEntry` in the [`PidTable`] that is associated with
 /// a [`Process`], but at some intermediate moment has only an associated [`Thread`].
 pub(crate) struct PidEntry {
+    id: Tid,
     inner: Mutex<PidEntryInner>,
 }
 
 struct PidEntryInner {
+    reserved: bool,
     thread: Weak<Thread>,
     process: Weak<Process>,
     process_group: Weak<ProcessGroup>,
@@ -302,11 +413,17 @@ pub(crate) enum PidEntryType {
 }
 
 impl PidEntry {
-    /// Creates a new empty `PidEntry`.
-    fn new() -> Self {
+    /// Creates a new PID entry.
+    fn new(id: Tid, reserved: bool) -> Self {
         Self {
-            inner: Mutex::new(PidEntryInner::new()),
+            id,
+            inner: Mutex::new(PidEntryInner::new(reserved)),
         }
+    }
+
+    /// Returns the numeric identifier represented by this entry.
+    pub(super) fn id(&self) -> Tid {
+        self.id
     }
 
     /// Locks and returns access to the entry internals.
@@ -362,13 +479,25 @@ impl PidEntry {
 
 impl PidEntryInner {
     /// Creates a new empty `PidEntryInner`.
-    fn new() -> Self {
+    fn new(reserved: bool) -> Self {
         Self {
+            reserved,
             thread: Weak::new(),
             process: Weak::new(),
             process_group: Weak::new(),
             session: Weak::new(),
         }
+    }
+
+    /// Marks a reserved entry as ready to expose its associated object.
+    fn commit_reservation(&mut self) {
+        debug_assert!(self.reserved);
+        self.reserved = false;
+    }
+
+    /// Returns whether this entry is reserved for an object under construction.
+    fn is_reserved(&self) -> bool {
+        self.reserved
     }
 
     /// Sets the thread reference.
@@ -462,7 +591,8 @@ impl PidEntryInner {
 
     /// Returns `true` if the entry no longer tracks any live object.
     fn is_empty(&self) -> bool {
-        !self.has_live_thread()
+        !self.reserved
+            && !self.has_live_thread()
             && !self.has_live_process()
             && !self.has_live_process_group()
             && !self.has_live_session()
