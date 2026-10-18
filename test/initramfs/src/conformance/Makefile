@@ -10,7 +10,7 @@ VALID_SUITES := ltp gvisor kselftest xfstests
 SUITE_DIR := $(INITRAMFS)/opt/$(CONFORMANCE_TEST_SUITE)
 
 $(if $(filter $(CONFORMANCE_TEST_SUITE),$(VALID_SUITES)),,\
-  $(error CONFORMANCE_TEST_SUITE='$(CONFORMANCE_TEST_SUITE)' not one of: $(VALID_SUITES)))
+	$(error CONFORMANCE_TEST_SUITE='$(CONFORMANCE_TEST_SUITE)' not one of: $(VALID_SUITES)))
 
 .PHONY: all
 all: $(TARGET_DIR)
