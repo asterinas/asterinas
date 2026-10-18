@@ -363,6 +363,7 @@ else ifeq ($(AUTO_TEST), vsock)
 endif
 
 # Build the Asterinas NixOS ISO installer image
+.PHONY: iso
 iso: BOOT_PROTOCOL = linux-efi-handover64
 iso:
 	@make kernel
@@ -373,11 +374,13 @@ iso:
 	fi
 
 # Build the Asterinas NixOS ISO installer image and then do installation
+.PHONY: run_iso
 run_iso: OVMF = off
 run_iso:
 	@./tools/nixos/run.sh iso
 
 # Create an Asterinas NixOS installation on host
+.PHONY: nixos
 nixos: BOOT_PROTOCOL = linux-efi-handover64
 nixos:
 	@make kernel
@@ -389,6 +392,7 @@ nixos:
 
 # After creating a Asterinas NixOS installation (via either the `run_iso` or `nixos` target),
 # run the NixOS
+.PHONY: run_nixos
 run_nixos: OVMF = off
 run_nixos:
 	@if [ -n "$(NIXOS_TEST_SUITE)" ]; then \
@@ -398,6 +402,7 @@ run_nixos:
 	fi
 
 # Build the Asterinas NixOS patched packages
+.PHONY: cachix
 cachix:
 	@nix-build distro/cachix \
 		--option extra-substituters "${RELEASE_SUBSTITUTER} ${DEV_SUBSTITUTER}" \
