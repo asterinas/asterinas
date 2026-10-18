@@ -30,7 +30,15 @@ CMDLINE ?=
 # Asterinas will automatically fall back to tty0 if hvc0 is not available.
 # Note that currently the virtual terminal (tty0) can only work with
 # linux-efi-handover64 and linux-efi-pe64 boot protocol.
-ifeq ($(SCHEME), sifive_u)
+ACCESSIBLE ?= 0
+CONSOLE_MODE ?= default
+ifeq ($(ACCESSIBLE), 1)
+CONSOLE ?= ttyS0
+QEMU_DISPLAY ?= none
+else ifeq ($(CONSOLE_MODE), terminal)
+CONSOLE ?= ttyS0
+QEMU_DISPLAY ?= none
+else ifeq ($(SCHEME), sifive_u)
 CONSOLE ?= ttyS0
 else
 CONSOLE ?= hvc0
@@ -249,6 +257,12 @@ ifeq ($(ENABLE_KVM), 1)
 	ifeq ($(shell [ -e /dev/kvm ] && [ "$$(uname -m)" = "$(TARGET_ARCH)" ] && echo yes),yes)
 	CARGO_OSDK_COMMON_ARGS += --qemu-args="-accel kvm"
 	endif
+endif
+
+ifeq ($(ACCESSIBLE), 1)
+CARGO_OSDK_COMMON_ARGS += --qemu-args="-display none" --qemu-args="-serial chardev:mux"
+else ifeq ($(CONSOLE_MODE), terminal)
+CARGO_OSDK_COMMON_ARGS += --qemu-args="-display none" --qemu-args="-serial chardev:mux"
 endif
 
 # Skip GZIP to make encoding and decoding of initramfs faster

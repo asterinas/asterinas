@@ -91,3 +91,24 @@ fn parse_quoted_daemon_arguments() {
         ]
     );
 }
+
+#[test]
+fn apply_terminal_accessible_qemu_args() {
+    let mut qemu = scheme::Qemu {
+        args: "-display vnc=0.0.0.0:42 -serial chardev:mux".to_string(),
+        bootdev_append_options: None,
+        path: PathBuf::from("qemu-system-x86_64"),
+        with_monitor: false,
+        log_file: None,
+        with_daemons: Vec::new(),
+    };
+
+    let terminal_args = vec![
+        "-display none".to_string(),
+        "-serial chardev:mux".to_string(),
+    ];
+    qemu.apply_qemu_args(&terminal_args);
+
+    assert!(qemu.args.contains("-display none"));
+    assert!(qemu.args.contains("-serial chardev:mux"));
+}
