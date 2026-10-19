@@ -41,5 +41,6 @@ sleep 0.2
 
 ./netlink_padding
 ./netlink_route
+./netlink_sockoption
 ./rtnl_err
 ./uevent_err
