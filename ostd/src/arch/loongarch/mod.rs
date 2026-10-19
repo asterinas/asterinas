@@ -42,6 +42,10 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     irq::chip::init();
 
+    // SAFETY: This is called once on the BSP with local IRQs disabled, after trap
+    // handling is initialized and before timer interrupts can occur.
+    unsafe { timer::init_on_bsp() };
+
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
