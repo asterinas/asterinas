@@ -29,7 +29,7 @@ pub(crate) struct PagingConsts {}
 #[cfg(not(feature = "riscv_sv39_mode"))]
 impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
-    const NR_LEVELS: PagingLevel = 4;
+    const VPN_BITS: &'static [usize] = &[9; 4];
     const ADDRESS_WIDTH: usize = 48;
     const VA_SIGN_EXT: bool = true;
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 4;
@@ -39,7 +39,7 @@ impl PagingConstsTrait for PagingConsts {
 #[cfg(feature = "riscv_sv39_mode")]
 impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
-    const NR_LEVELS: PagingLevel = 3;
+    const VPN_BITS: &'static [usize] = &[9; 3];
     const ADDRESS_WIDTH: usize = 39;
     const VA_SIGN_EXT: bool = true;
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 2;

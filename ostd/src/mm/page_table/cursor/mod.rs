@@ -21,11 +21,19 @@
 //! entries that may be visited by this cursor. Then, [`CursorMut::new`] finds
 //! an intermediate page table (not necessarily the last-level or the top-
 //! level) which represents an address range that fully contains the whole
-//! specified address range. Then it locks all the nodes in the sub-tree rooted
-//! at the intermediate page table node, with a pre-order DFS order. The cursor
-//! will only be able to access the page table entries in the locked range.
-//! Upon destruction, the cursor will release the locks in the reverse order of
-//! acquisition.
+//! specified address range. In each visited node, it locks only the backing
+//! pages intersecting that range. Nodes are visited in pre-order DFS; pages
+//! within a node are locked in increasing index order. Thus disjoint parts of
+//! a multi-page node can be accessed concurrently. Ranges sharing a backing
+//! page may still serialize even when their virtual addresses do not overlap.
+//!
+//! The cursor retains these locks until destruction and releases descendants
+//! before ancestors, reversing the acquisition order. Newly allocated or split
+//! nodes are initialized before publication and retain only the locks needed
+//! for the cursor's original range. Guards are never widened after publication.
+//! Detaching a subtree requires its entire range to be locked. Every backing
+//! page is marked stray before release, so optimistic walkers can detect a
+//! detached node even when they subsequently lock only part of it.
 
 mod locking;
 
@@ -39,7 +47,7 @@ use super::{
 };
 use crate::{
     mm::{
-        PageProperty, Vaddr,
+        PageProperty, Vaddr, nr_levels, nr_ptes,
         page_table::{PageTableNode, is_valid_range},
     },
     sync::RcuDrop,
@@ -75,7 +83,7 @@ pub(crate) struct Cursor<'rcu, C: PageTableConfig> {
     _phantom: PhantomData<&'rcu PageTable<C>>,
 }
 
-/// The maximum value of `PagingConstsTrait::NR_LEVELS`.
+/// The maximum value of [`nr_levels`].
 const MAX_NR_LEVELS: usize = 4;
 
 /// A fragment of a page table that can be taken out of the page table.
@@ -108,7 +116,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
         va: &Range<Vaddr>,
         min_level: PagingLevel,
     ) -> Result<Self, PageTableError> {
-        assert!((1..=C::NR_LEVELS).contains(&min_level));
+        assert!((1..=nr_levels::<C>()).contains(&min_level));
 
         if !is_valid_range::<C>(va) {
             return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
@@ -118,7 +126,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
             return Err(PageTableError::UnalignedVaddr);
         }
 
-        const { assert!(C::NR_LEVELS as usize <= MAX_NR_LEVELS) };
+        const { assert!(nr_levels::<C>() as usize <= MAX_NR_LEVELS) };
 
         Ok(locking::lock_range(pt, guard, va, min_level))
     }
@@ -140,11 +148,13 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
         let rcu_guard = self.rcu_guard;
 
         loop {
+            let child_entries = self.child_entry_range();
             let cur_entry = self.cur_entry();
             let item = match cur_entry.to_ref() {
                 PteStateRef::PageTable(pt) => {
-                    // SAFETY: The `pt` must be locked and no other guards exist.
-                    let guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
+                    // SAFETY: The cursor owns the pages intersecting its barrier,
+                    // and their guard is forgotten while outside the current path.
+                    let guard = unsafe { pt.make_guard_unchecked(rcu_guard, child_entries) };
                     self.push_level(guard);
                     continue;
                 }
@@ -208,18 +218,20 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
             let cur_va_range = self.cur_va_range();
             let cur_entry_fits_range = cur_va == cur_va_range.start && cur_va_range.end <= end;
 
+            let child_entries = self.child_entry_range();
             let mut cur_entry = self.cur_entry();
             match cur_entry.to_ref() {
                 PteStateRef::PageTable(pt) => {
                     if find_unmap_subtree
                         && cur_entry_fits_range
-                        && (C::TOP_LEVEL_CAN_UNMAP || self.level != C::NR_LEVELS)
+                        && (C::TOP_LEVEL_CAN_UNMAP || self.level != nr_levels::<C>())
                     {
                         return Some(cur_va);
                     }
 
-                    // SAFETY: The `pt` must be locked and no other guards exist.
-                    let pt_guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
+                    // SAFETY: The cursor owns the pages intersecting its barrier,
+                    // and their guard is forgotten while outside the current path.
+                    let pt_guard = unsafe { pt.make_guard_unchecked(rcu_guard, child_entries) };
                     // If there's no mapped PTEs in the next level, we can
                     // skip to save time.
                     if pt_guard.nr_children() != 0 {
@@ -240,7 +252,7 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
                     }
 
                     let split_child = cur_entry
-                        .split_if_mapped_huge(rcu_guard)
+                        .split_if_mapped_huge(rcu_guard, child_entries)
                         .expect("the entry must be a huge page");
                     self.push_level(split_child);
                     continue;
@@ -326,6 +338,16 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
 
         let old = self.path[self.level as usize - 1].replace(child_pt);
         debug_assert!(old.is_none());
+    }
+
+    /// Returns the child node's entry range covered by the cursor's entire barrier.
+    fn child_entry_range(&self) -> Range<usize> {
+        // At level 1 no child exists. Avoid calculating an invalid level when
+        // the caller is about to inspect a leaf entry.
+        if self.level == 1 {
+            return 0..0;
+        }
+        node_entry_range::<C>(self.va, self.level - 1, &self.barrier_va)
     }
 
     fn cur_entry(&mut self) -> Entry<'_, 'rcu, C> {
@@ -454,19 +476,23 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
                 continue;
             }
             // We are at a higher level, go down.
+            let child_entries = self.0.child_entry_range();
             let mut cur_entry = self.0.cur_entry();
             match cur_entry.to_ref() {
                 PteStateRef::PageTable(pt) => {
-                    // SAFETY: The `pt` must be locked and no other guards exist.
-                    let pt_guard = unsafe { pt.make_guard_unchecked(rcu_guard) };
+                    // SAFETY: The cursor owns the pages intersecting its barrier,
+                    // and their guard is forgotten while outside the current path.
+                    let pt_guard = unsafe { pt.make_guard_unchecked(rcu_guard, child_entries) };
                     self.0.push_level(pt_guard);
                 }
                 PteStateRef::Absent => {
-                    let child_guard = cur_entry.alloc_if_none(rcu_guard).unwrap();
+                    let child_guard = cur_entry.alloc_if_none(rcu_guard, child_entries).unwrap();
                     self.0.push_level(child_guard);
                 }
                 PteStateRef::Mapped(_) => {
-                    let split_child = cur_entry.split_if_mapped_huge(rcu_guard).unwrap();
+                    let split_child = cur_entry
+                        .split_if_mapped_huge(rcu_guard, child_entries)
+                        .unwrap();
                     self.0.push_level(split_child);
                 }
             }
@@ -577,13 +603,15 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
             PteState::PageTable(pt) => {
                 debug_assert_eq!(pt.level(), level - 1);
 
-                if !C::TOP_LEVEL_CAN_UNMAP && level == C::NR_LEVELS {
+                if !C::TOP_LEVEL_CAN_UNMAP && level == nr_levels::<C>() {
                     let _ = ManuallyDrop::new(pt); // leak it to make shared PTs stay `'static`.
                     panic!("unmapping shared kernel page table nodes");
                 }
 
-                // SAFETY: We must have locked this node.
-                let locked_pt = unsafe { pt.borrow().make_guard_unchecked(rcu_guard) };
+                let entries = 0..nr_ptes::<C>(pt.level());
+                // SAFETY: `take_next` only detaches nodes wholly covered by the barrier,
+                // so every page in this child is locked and its guard is forgotten.
+                let locked_pt = unsafe { pt.borrow().make_guard_unchecked(rcu_guard, entries) };
                 // SAFETY:
                 //  - We checked that we are not unmapping shared kernel page table nodes.
                 //  - We must have locked the entire sub-tree since the range is locked.
@@ -599,4 +627,21 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
             }
         }
     }
+}
+
+/// Selects the node containing `va` at `level`, then calculates the node's entry range
+/// that is covered by `barrier`.
+fn node_entry_range<C: PagingConstsTrait>(
+    va: Vaddr,
+    level: PagingLevel,
+    barrier: &Range<Vaddr>,
+) -> Range<usize> {
+    debug_assert!(barrier.contains(&va));
+    let node_size = page_size::<C>(level + 1);
+    let node_start = va.align_down(node_size);
+    // Use the last valid address because the exclusive end can exceed Vaddr::MAX.
+    let node_last = node_start | (node_size - 1);
+    let start = barrier.start.max(node_start);
+    let last = (barrier.end - 1).min(node_last);
+    pte_index::<C>(start, level)..pte_index::<C>(last, level) + 1
 }

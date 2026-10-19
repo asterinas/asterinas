@@ -17,15 +17,17 @@ use crate::{
     cpu::num_cpus,
     cpu_local_cell,
     mm::{
-        Frame, FrameAllocOptions, PAGE_SIZE, Paddr, PageProperty, PagingConstsTrait, PagingLevel,
+        FrameAllocOptions, PAGE_SIZE, Paddr, PageProperty, PagingConstsTrait, PagingLevel, Segment,
         Vaddr,
         frame::{
             self,
             allocator::{self, EarlyAllocatedFrameMeta},
         },
-        nr_subpage_per_huge, paddr_to_vaddr,
+        nr_levels, nr_ptes, paddr_to_vaddr,
         page_prop::PageTableFlags,
+        page_size,
         page_table::PteScalar,
+        page_table_node_size,
     },
     sync::SpinLock,
 };
@@ -77,11 +79,12 @@ pub(crate) unsafe fn dismiss() {
 
         dfs_walk_on_leave::<PageTableEntry, PagingConsts>(
             boot_pt.root_pt,
-            PagingConsts::NR_LEVELS,
-            &mut |pte, pa, _, flags| {
+            nr_levels::<PagingConsts>(),
+            &mut |pte, pa, level, flags| {
                 if !flags.contains(PTE_POINTS_TO_FIRMWARE_PT) {
-                    // SAFETY: The pointed frame is allocated and forgotten with `into_raw`.
-                    drop(unsafe { Frame::<EarlyAllocatedFrameMeta>::from_raw(pa) })
+                    let size = page_table_node_size::<PagingConsts>(level - 1);
+                    // SAFETY: All frames were allocated and forgotten together.
+                    drop(unsafe { Segment::<EarlyAllocatedFrameMeta>::from_raw(pa..pa + size) })
                 }
                 // Firmware provided page tables may be a DAG instead of a tree.
                 // Clear it to avoid double-free when we meet it the second time.
@@ -134,7 +137,7 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         // Make sure the 2 available bits are not set for firmware page tables.
         dfs_walk_on_leave::<E, C>(
             root_pt,
-            C::NR_LEVELS,
+            nr_levels::<C>(),
             &mut |pte: &mut E, pa, level, mut flags| {
                 flags |= PTE_POINTS_TO_FIRMWARE_PT;
                 *pte = E::from_repr(&PteScalar::PageTable(pa, flags), level);
@@ -168,7 +171,7 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         prop: PageProperty,
     ) {
         let mut pt = self.root_pt;
-        let mut level = C::NR_LEVELS;
+        let mut level = nr_levels::<C>();
         // Walk to the last level of the page table.
         while level > 1 {
             let index = pte_index::<C>(from, level);
@@ -225,7 +228,7 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         mut op: impl FnMut(&mut PageProperty),
     ) {
         let mut pt = self.root_pt;
-        let mut level = C::NR_LEVELS;
+        let mut level = nr_levels::<C>();
         // Walk to the last level of the page table.
         while level > 1 {
             let index = pte_index::<C>(virt_addr, level);
@@ -243,13 +246,13 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
                 PteScalar::Mapped(huge_pa, prop) => {
                     // Split the huge page.
                     let (child_pte, child_frame_pa) = self.alloc_child(level);
-                    for i in 0..nr_subpage_per_huge::<C>() {
+                    for i in 0..nr_ptes::<C>(level - 1) {
                         // SAFETY: The result pointer is within the new PT frame.
                         let nxt_ptr = unsafe { (paddr_to_vaddr(child_frame_pa) as *mut E).add(i) };
                         // SAFETY: The pointer to the entry is valid to write.
                         unsafe {
                             nxt_ptr.write(E::from_repr(
-                                &PteScalar::Mapped(huge_pa + i * C::BASE_PAGE_SIZE, prop),
+                                &PteScalar::Mapped(huge_pa + i * page_size::<C>(level - 1), prop),
                                 level - 1,
                             ))
                         };
@@ -276,23 +279,22 @@ impl<E: PteTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 
     fn alloc_child(&mut self, level: PagingLevel) -> (E, Paddr) {
+        let size = page_table_node_size::<C>(level - 1);
         let frame_paddr = if frame::meta::is_initialized() {
             let frame = FrameAllocOptions::new()
                 .zeroed(false)
-                .alloc_frame_with(EarlyAllocatedFrameMeta)
+                .alignment(size)
+                .alloc_segment_with(size / PAGE_SIZE, |_| EarlyAllocatedFrameMeta)
                 .unwrap();
-            frame.into_raw()
+            frame.into_raw().start
         } else {
-            allocator::early_alloc(
-                Layout::from_size_align(C::BASE_PAGE_SIZE, C::BASE_PAGE_SIZE).unwrap(),
-            )
-            .unwrap()
+            allocator::early_alloc(Layout::from_size_align(size, size).unwrap()).unwrap()
         };
 
         // Zero it out.
         let vaddr = paddr_to_vaddr(frame_paddr) as *mut u8;
         // SAFETY: The allocated frame is valid to write.
-        unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
+        unsafe { core::ptr::write_bytes(vaddr, 0, size) };
 
         (
             E::from_repr(
@@ -323,7 +325,7 @@ fn dfs_walk_on_leave<E: PteTrait, C: PagingConstsTrait>(
 ) {
     if level >= 2 {
         let pt_vaddr = paddr_to_vaddr(pt) as *mut E;
-        for offset in 0..nr_subpage_per_huge::<C>() {
+        for offset in 0..nr_ptes::<C>(level) {
             // SAFETY: The result pointer is within the PT frame.
             let pte_ptr = unsafe { pt_vaddr.add(offset) };
             // SAFETY: The pointer to the entry is valid to read.

@@ -14,7 +14,7 @@ use crate::{
     task::disable_preempt,
 };
 
-mod test_utils {
+pub(super) mod test_utils {
     use core::marker::PhantomData;
 
     use super::*;
@@ -75,10 +75,10 @@ mod test_utils {
     }
 
     #[derive(Clone, Debug, Default)]
-    pub(super) struct VeryHugePagingConsts;
+    pub(in crate::mm::page_table) struct VeryHugePagingConsts;
 
     impl PagingConstsTrait for VeryHugePagingConsts {
-        const NR_LEVELS: PagingLevel = 4;
+        const VPN_BITS: &'static [usize] = &[9; 4];
         const BASE_PAGE_SIZE: usize = PAGE_SIZE;
         const ADDRESS_WIDTH: usize = 48;
         const VA_SIGN_EXT: bool = true;
@@ -87,16 +87,22 @@ mod test_utils {
     }
 
     #[derive(Clone, Debug)]
-    pub(super) struct TestPtConfig;
+    pub(in crate::mm::page_table) struct TestPtConfig<
+        C = VeryHugePagingConsts,
+        const START: usize = 0,
+        const END: usize = 256,
+    >(PhantomData<C>);
 
     // SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
     // `item_ref_from_raw` are correctly implemented with respect to the `Item`
     // and `ItemRef` types.
-    unsafe impl PageTableConfig for TestPtConfig {
-        const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..256;
+    unsafe impl<C: PagingConstsTrait, const START: usize, const END: usize> PageTableConfig
+        for TestPtConfig<C, START, END>
+    {
+        const TOP_LEVEL_INDEX_RANGE: Range<usize> = START..END;
 
         type E = PageTableEntry;
-        type C = VeryHugePagingConsts;
+        type C = C;
 
         /// All mappings are untracked.
         type Item = TestPtItem;
@@ -124,7 +130,7 @@ mod test_utils {
     }
 
     pub(super) type TestPtItem = (Paddr, PagingLevel, PageProperty);
-    pub(super) struct TestPtItemRef<'a>(pub TestPtItem, pub PhantomData<&'a ()>);
+    pub(in crate::mm::page_table) struct TestPtItemRef<'a>(pub TestPtItem, pub PhantomData<&'a ()>);
 
     /// A subset iterator for bitflags.
     ///
@@ -214,10 +220,16 @@ mod create_page_table {
         let user_pt = kernel_pt.create_user_page_table();
         let guard = disable_preempt();
 
-        let mut kernel_root = kernel_pt.root.borrow().lock(&guard);
-        let mut user_root = user_pt.root.borrow().lock(&guard);
+        let mut kernel_root = kernel_pt.root.borrow().lock(
+            &guard,
+            0..nr_ptes::<PagingConsts>(nr_levels::<PagingConsts>()),
+        );
+        let mut user_root = user_pt.root.borrow().lock(
+            &guard,
+            0..nr_ptes::<PagingConsts>(nr_levels::<PagingConsts>()),
+        );
 
-        const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
+        const NR_PTES_PER_NODE: usize = nr_ptes::<PagingConsts>(nr_levels::<PagingConsts>());
         for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
             let kernel_entry = kernel_root.entry(i);
             let user_entry = user_root.entry(i);
@@ -225,12 +237,12 @@ mod create_page_table {
             let PteStateRef::PageTable(kernel_node) = kernel_entry.to_ref() else {
                 panic!("expected a node reference at {} of kernel root PT", i);
             };
-            assert_eq!(kernel_node.level(), PagingConsts::NR_LEVELS - 1);
+            assert_eq!(kernel_node.level(), nr_levels::<PagingConsts>() - 1);
 
             let PteStateRef::PageTable(user_node) = user_entry.to_ref() else {
                 panic!("expected a node reference at {} of user root PT", i);
             };
-            assert_eq!(user_node.level(), PagingConsts::NR_LEVELS - 1);
+            assert_eq!(user_node.level(), nr_levels::<PagingConsts>() - 1);
 
             assert_eq!(kernel_node.paddr(), user_node.paddr());
         }
@@ -241,12 +253,15 @@ mod create_page_table {
         let kernel_pt = PageTable::<KernelPtConfig>::new_kernel_page_table();
 
         // Make sure the kernel half is created with new page tables.
-        let shared_range =
-            (nr_subpage_per_huge::<PagingConsts>() / 2)..nr_subpage_per_huge::<PagingConsts>();
+        let shared_range = (nr_ptes::<PagingConsts>(nr_levels::<PagingConsts>()) / 2)
+            ..nr_ptes::<PagingConsts>(nr_levels::<PagingConsts>());
 
         // Marks the specified root node index range as shared.
         let preempt_guard = disable_preempt();
-        let mut root_node = kernel_pt.root.borrow().lock(&preempt_guard);
+        let mut root_node = kernel_pt.root.borrow().lock(
+            &preempt_guard,
+            0..nr_ptes::<PagingConsts>(nr_levels::<PagingConsts>()),
+        );
         for i in shared_range {
             assert!(matches!(
                 root_node.entry(i).to_ref(),
@@ -434,7 +449,7 @@ mod arch_pte_impls {
     #[ktest]
     fn zeroed_pte_is_absent_pte() {
         let pte = PageTableEntry::new_zeroed();
-        for level in 1..=PagingConsts::NR_LEVELS {
+        for level in 1..=nr_levels::<PagingConsts>() {
             let repr = pte.to_repr(level);
             assert_eq!(repr, PteScalar::Absent);
         }
@@ -462,7 +477,7 @@ mod arch_pte_impls {
 
     #[ktest]
     fn cast_pt_pte_preserves_repr() {
-        for level in 2..=PagingConsts::NR_LEVELS {
+        for level in 2..=nr_levels::<PagingConsts>() {
             let paddr = 0xff_c000_0000;
             let pt_flags_iter = SubsetIter::new(PageTableFlags::all().bits())
                 .map(|f| PageTableFlags::from_bits(f).unwrap());
@@ -478,7 +493,7 @@ mod arch_pte_impls {
 
     #[ktest]
     fn cast_absent_pte_preserves_repr() {
-        for level in 1..=PagingConsts::NR_LEVELS {
+        for level in 1..=nr_levels::<PagingConsts>() {
             let repr = PteScalar::Absent;
             let pte = PageTableEntry::from_repr(&repr, level);
             let parsed_repr = pte.to_repr(level);
