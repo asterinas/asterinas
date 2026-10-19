@@ -51,33 +51,68 @@ mod test {
     use super::*;
     use crate::{
         fs::fs_impls::ext4::{
+            fs::MountFlavor,
             inode::{
                 RAW_BLOCK_PTRS_LEN,
                 block_mapping::{BlockMapping, RawBlockPtrs},
             },
-            test_utils::Ext4FixtureBuilder,
+            test_utils::{BlockBitmapInit, Ext4FixtureBuilder},
         },
         time::clocks,
     };
 
+    fn expect_hole_runs(iter: &mut IoRangeIter<'_>, expected: Range<Iblock>) {
+        let mut cursor = expected.start;
+        while cursor < expected.end {
+            let Some(IoRange::Hole(hole)) = iter.next().unwrap() else {
+                panic!("expected a hole at logical block {cursor}");
+            };
+            assert_eq!(hole.start, cursor);
+            assert!(hole.end > cursor && hole.end <= expected.end);
+            cursor = hole.end;
+        }
+    }
+
     #[ktest]
-    fn io_range_iter_yields_mapped_and_holes() {
+    fn io_range_iter_preserves_mapping_and_hole_boundaries_for_both_formats() {
         clocks::init_for_ktest();
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
-        let mut block_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
-        block_ptrs[0] = 50;
-        block_ptrs[1] = 51;
-        block_ptrs[2] = 52;
-        block_ptrs[7] = 60;
-        block_ptrs[8] = 61;
+        for flavor in [MountFlavor::Ext2, MountFlavor::Ext4] {
+            let f = Ext4FixtureBuilder::new(2, 256)
+                .with_mount_flavor(flavor)
+                .block_bitmap(BlockBitmapInit::MetadataPlus(vec![50, 51, 52, 60, 61]))
+                .build()
+                .unwrap();
+            let mapping = if flavor == MountFlavor::Ext2 {
+                let mut block_ptrs = [0u32; RAW_BLOCK_PTRS_LEN];
+                block_ptrs[0..3].copy_from_slice(&[50, 51, 52]);
+                block_ptrs[7..9].copy_from_slice(&[60, 61]);
+                BlockMapping::new_indirect(
+                    RawBlockPtrs::new(40, block_ptrs),
+                    Arc::downgrade(&f.fs),
+                    9,
+                )
+            } else {
+                // Inline header followed by (logical, length, physical) records:
+                // [0, 3) -> [50, 53), [7, 9) -> [60, 62).
+                let root = [0x0002_f30a, 4, 0, 0, 3, 50, 7, 2, 60, 0, 0, 0, 0, 0, 0];
+                BlockMapping::new_extent(RawBlockPtrs::new(40, root), Arc::downgrade(&f.fs), 9)
+                    .unwrap()
+            };
+            let mut iter = mapping.iter_io_ranges(0..9).unwrap();
+            assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(50..53)));
+            expect_hole_runs(&mut iter, 3..7);
+            assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(60..62)));
+            assert_eq!(iter.next().unwrap(), None);
+            drop(iter);
 
-        let mapping =
-            BlockMapping::new_indirect(RawBlockPtrs::new(0, block_ptrs), Arc::downgrade(&f.fs), 0);
-        let mut iter = mapping.iter_io_ranges(0..9).unwrap();
-
-        assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(50..53)));
-        assert_eq!(iter.next().unwrap(), Some(IoRange::Hole(3..7)));
-        assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(60..62)));
-        assert!(iter.next().unwrap().is_none());
+            // Both ends of a requested subrange must clip the mapped runs.
+            let mut iter = mapping.iter_io_ranges(2..8).unwrap();
+            assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(52..53)));
+            expect_hole_runs(&mut iter, 3..7);
+            assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(60..61)));
+            assert_eq!(iter.next().unwrap(), None);
+            drop(iter);
+            assert_eq!(mapping.iter_io_ranges(4..4).unwrap().next().unwrap(), None);
+        }
     }
 }
