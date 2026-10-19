@@ -13,6 +13,24 @@ use crate::{
     common_device::{BarManager, PciCommonDevice},
 };
 
+// Offsets within the MSI-X capability.
+const MSIX_MSG_CTRL_OFFSET: u16 = 0x02;
+const MSIX_TABLE_INFO_OFFSET: u16 = 0x04;
+const MSIX_PBA_INFO_OFFSET: u16 = 0x08;
+
+// Bit masks for Message Control and the table/PBA descriptors.
+const MSIX_ENABLE: u16 = 1 << 15;
+const MSIX_TABLE_SIZE_MASK: u16 = 0x07ff;
+const MSIX_BAR_INDEX_MASK: u32 = 0x7;
+
+// MSI-X table entry layout, in bytes.
+const MSIX_ENTRY_SIZE: usize = 16;
+const MSIX_ENTRY_ADDR_OFFSET: usize = 0x00;
+const MSIX_ENTRY_UPPER_ADDR_OFFSET: usize = 0x04;
+const MSIX_ENTRY_DATA_OFFSET: usize = 0x08;
+const MSIX_ENTRY_CTRL_OFFSET: usize = 0x0c;
+const MSIX_VECTOR_MASK: u32 = 1;
+
 /// Raw information about MSI-X capability.
 #[derive(Debug)]
 pub(super) struct RawCapabilityMsix {
@@ -24,9 +42,9 @@ pub(super) struct RawCapabilityMsix {
 
 impl RawCapabilityMsix {
     pub(super) fn parse(dev: &PciCommonDevice, cap_ptr: u16) -> Self {
-        let msg_ctrl = dev.location().read16(cap_ptr + 2);
-        let table_info = dev.location().read32(cap_ptr + 4);
-        let pba_info = dev.location().read32(cap_ptr + 8);
+        let msg_ctrl = dev.location().read16(cap_ptr + MSIX_MSG_CTRL_OFFSET);
+        let table_info = dev.location().read32(cap_ptr + MSIX_TABLE_INFO_OFFSET);
+        let pba_info = dev.location().read32(cap_ptr + MSIX_PBA_INFO_OFFSET);
 
         Self {
             cap_ptr,
@@ -64,46 +82,50 @@ impl CapabilityMsixData {
         raw_cap: &RawCapabilityMsix,
     ) -> Result<Self> {
         let pba_bar = match bar_manager
-            .bar_mut((raw_cap.pba_info & 0b111) as u8)
+            .bar_mut((raw_cap.pba_info & MSIX_BAR_INDEX_MASK) as u8)
             .ok_or(Error::InvalidArgs)?
             .acquire()?
         {
             BarAccess::Memory(io_mem) => io_mem,
             BarAccess::Io => return Err(Error::InvalidArgs),
         };
-        let pba_offset = (raw_cap.pba_info & !(0b111u32)) as usize;
+        let pba_offset = (raw_cap.pba_info & !MSIX_BAR_INDEX_MASK) as usize;
 
         let table_bar = match bar_manager
-            .bar_mut((raw_cap.table_info & 0b111) as u8)
+            .bar_mut((raw_cap.table_info & MSIX_BAR_INDEX_MASK) as u8)
             .ok_or(Error::InvalidArgs)?
             .acquire()?
         {
             BarAccess::Memory(io_mem) => io_mem,
             BarAccess::Io => return Err(Error::InvalidArgs),
         };
-        let table_offset = (raw_cap.table_info & !(0b111u32)) as usize;
+        let table_offset = (raw_cap.table_info & !MSIX_BAR_INDEX_MASK) as usize;
 
-        let table_size = (raw_cap.msg_ctrl & 0b11_1111_1111) + 1;
+        let table_size = (raw_cap.msg_ctrl & MSIX_TABLE_SIZE_MASK) + 1;
 
         // Set the message address and disable all MSI-X vectors.
         let message_address = MSIX_DEFAULT_MSG_ADDR;
         let message_upper_address = 0u32;
         for i in 0..table_size {
+            let entry_offset = table_offset + usize::from(i) * MSIX_ENTRY_SIZE;
             table_bar
-                .write_once((16 * i) as usize + table_offset, &message_address)
+                .write_once(entry_offset + MSIX_ENTRY_ADDR_OFFSET, &message_address)
                 .unwrap();
             table_bar
-                .write_once((16 * i + 4) as usize + table_offset, &message_upper_address)
+                .write_once(
+                    entry_offset + MSIX_ENTRY_UPPER_ADDR_OFFSET,
+                    &message_upper_address,
+                )
                 .unwrap();
             table_bar
-                .write_once((16 * i + 12) as usize + table_offset, &1_u32)
+                .write_once(entry_offset + MSIX_ENTRY_CTRL_OFFSET, &MSIX_VECTOR_MASK)
                 .unwrap();
         }
 
-        // Enable MSI-X (bit 15: MSI-X Enable).
+        // Enable MSI-X.
         loc.write16(
-            raw_cap.cap_ptr + 2,
-            loc.read16(raw_cap.cap_ptr + 2) | 0x8000,
+            raw_cap.cap_ptr + MSIX_MSG_CTRL_OFFSET,
+            loc.read16(raw_cap.cap_ptr + MSIX_MSG_CTRL_OFFSET) | MSIX_ENABLE,
         );
         // Disable INTx. Enable bus master.
         loc.write16(
@@ -142,29 +164,28 @@ impl CapabilityMsixData {
             return;
         }
 
+        let entry_offset = self.table_offset + usize::from(index) * MSIX_ENTRY_SIZE;
+
         // If interrupt remapping is enabled, then we need to change the value of the message address.
         if let Some(remapping_index) = irq.remapping_index() {
             let address = construct_remappable_msix_address(remapping_index as u32);
 
             self.table_bar
-                .write_once((16 * index) as usize + self.table_offset, &address)
+                .write_once(entry_offset + MSIX_ENTRY_ADDR_OFFSET, &address)
                 .unwrap();
             self.table_bar
-                .write_once((16 * index + 8) as usize + self.table_offset, &0)
+                .write_once(entry_offset + MSIX_ENTRY_DATA_OFFSET, &0)
                 .unwrap();
         } else {
             self.table_bar
-                .write_once(
-                    (16 * index + 8) as usize + self.table_offset,
-                    &(irq.num() as u32),
-                )
+                .write_once(entry_offset + MSIX_ENTRY_DATA_OFFSET, &(irq.num() as u32))
                 .unwrap();
         }
 
         let _old_irq = self.irqs[index as usize].replace(irq);
         // Enable this MSI-X vector.
         self.table_bar
-            .write_once((16 * index + 12) as usize + self.table_offset, &0_u32)
+            .write_once(entry_offset + MSIX_ENTRY_CTRL_OFFSET, &0_u32)
             .unwrap();
     }
 
@@ -177,7 +198,7 @@ impl CapabilityMsixData {
 
     /// Returns true if the MSI-X Enable bit is set.
     pub fn is_enabled(&self) -> bool {
-        let msg_ctrl = self.loc.read16(self.ptr + 2);
-        msg_ctrl & 0x8000 != 0
+        let msg_ctrl = self.loc.read16(self.ptr + MSIX_MSG_CTRL_OFFSET);
+        msg_ctrl & MSIX_ENABLE != 0
     }
 }
