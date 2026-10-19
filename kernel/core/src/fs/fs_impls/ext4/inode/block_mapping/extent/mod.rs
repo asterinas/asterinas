@@ -1,41 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Per-inode EXT4 extent mapping and I/O backend.
-//!
-//! [`ExtentState`] stores the format-specific state of an on-disk extent tree.
-//! The parent [`BlockMapping`](super::BlockMapping) owns synchronization, the
-//! filesystem reference, and page-cache bounds, then delegates extent lookup
-//! and mutation here.
-//!
-//! # State and locking
-//!
-//! The parent mapping lock serializes tree replacement, block allocation or
-//! release, sector accounting, and the mapping dirty flag. Read-side lookup
-//! holds the corresponding read lock.
-//!
-//! # Invariants
-//!
-//! - Extents are ordered by logical block and do not overlap logically or
-//!   physically.
-//! - Extent metadata blocks are valid data-area blocks and are not also owned by
-//!   a data extent.
-//! - Newly allocated data blocks are zeroed before the new mapping is published.
-//! - `sector_count` accounts for both mapped data blocks and external extent
-//!   tree blocks, in 512-byte sectors.
-//! - `dirty` means that the inode-resident root or sector count must be written
-//!   back; it does not describe dirty file data.
-//!
-//! # Current write limits
-//!
-//! Mutations flatten the supported tree and build a replacement tree. The
-//! writer emits either an inline depth-zero root or a depth-one root with
-//! external leaves. Deeper trees, unwritten extents, and 48-bit physical block
-//! numbers are rejected on paths that cannot preserve them. Tree replacement
-//! is not journaled, so this module does not provide crash-atomic metadata
-//! updates. A replacement that needs external leaves writes those new leaves
-//! before publishing the inode-resident root because there is no extent-metadata
-//! buffer cache yet. Inline-root mutations perform no metadata device I/O, and
-//! these writes do not issue a device-wide flush.
+//! Per-inode EXT4 extent mapping.
 
 use ostd::mm::io::util::HasVmReaderWriter;
 
@@ -45,102 +10,52 @@ use crate::fs::fs_impls::ext4::{fs::Ext4, inode::RAW_BLOCK_PTRS_LEN, prelude::*}
 mod node;
 mod tree;
 
-const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
-const ZERO_BATCH_BLOCKS: usize = 256;
-
-fn ranges_overlap<T: Ord>(left: &Range<T>, right: &Range<T>) -> bool {
-    left.start < right.end && right.start < left.end
-}
-
-impl Ext4 {
-    /// Validates a physical range referenced by an inode extent tree.
-    pub(super) fn validate_extent_block_range(&self, start: Ext4Bid, count: u32) -> Result<()> {
-        let sb = self.super_block();
-        if !sb.is_data_block_valid(start, count) {
-            return_errno_with_message!(Errno::EUCLEAN, "extent block range is outside filesystem");
-        }
-
-        let end = start
-            .checked_add(count)
-            .ok_or_else(|| Error::with_message(Errno::EUCLEAN, "extent block range overflow"))?;
-        let blocks_per_group = sb.nr_blocks_per_group();
-        let first_data_block = sb.first_data_block();
-        let mut current = start;
-        while current < end {
-            let group_idx = ((current - first_data_block) / blocks_per_group) as usize;
-            if group_idx >= sb.nr_block_groups() as usize {
-                return_errno_with_message!(
-                    Errno::EUCLEAN,
-                    "extent block group is outside filesystem"
-                );
-            }
-            let group = self.block_group(group_idx);
-            let group_end = end.min(group.last_block() + 1);
-            let range = current..group_end;
-            if sb.has_super_block(group_idx) {
-                let super_block = sb.bid(group_idx)..sb.bid(group_idx) + 1;
-                let descriptors_start = sb.group_descriptors_bid(group_idx);
-                let descriptors =
-                    descriptors_start..descriptors_start + sb.group_descriptor_blocks_count();
-                if ranges_overlap(&range, &super_block) || ranges_overlap(&range, &descriptors) {
-                    return_errno_with_message!(
-                        Errno::EUCLEAN,
-                        "extent block range overlaps superblock metadata"
-                    );
-                }
-            }
-            if !group.is_allocated_data_range(range) {
-                return_errno_with_message!(
-                    Errno::EUCLEAN,
-                    "extent block range is free or overlaps filesystem metadata"
-                );
-            }
-            current = group_end;
-        }
-        Ok(())
-    }
-}
-
-pub(in crate::fs::fs_impls::ext4::inode) fn empty_extent_root() -> [u32; RAW_BLOCK_PTRS_LEN] {
-    let header = node::RawExtentHeader {
-        magic: node::EXTENT_MAGIC,
-        entries: 0,
-        max: 4,
-        depth: 0,
-        generation: 0,
-    };
-    let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
-    root.as_mut_bytes()[..tree::ENTRY_SIZE].copy_from_slice(header.as_bytes());
-    root
-}
-
-pub(in crate::fs::fs_impls::ext4::inode) fn validate_extent_root(
-    root: [u32; RAW_BLOCK_PTRS_LEN],
-) -> Result<()> {
-    tree::ExtentTree::try_from_root(root).map(|_| ())
-}
-
+/// An inode's EXT4 extent mapping and sector accounting.
+///
+/// The root occupies the inode's 60-byte `i_block` field. A depth-zero root
+/// contains extents directly; a deeper root contains indexes to child nodes.
+/// The layouts supported by the current writer are:
+///
+/// ```text
+/// inode.i_block
+/// +------------------+     depth = 0
+/// | header | extents |--------------------------> data blocks
+/// +------------------+
+///
+/// +------------------+     depth = 1     leaf blocks
+/// | header | indexes |--------------> +------------------+
+/// +------------------+                | header | extents |--> data blocks
+///                                     +------------------+
+/// ```
+///
+/// Extents are ordered and do not overlap logically or physically; metadata
+/// blocks must be allocated data-area blocks distinct from extent data blocks.
+/// New data blocks are zeroed before their mappings become visible.
+/// `raw_block_ptrs` holds the root and the count of data and tree blocks in
+/// 512-byte sectors; `dirty` tracks changes to this inode metadata, not file data.
+/// The parent [`BlockMapping`](super::BlockMapping) lock protects queries and
+/// serializes mapping changes, block allocation/release, and accounting updates.
+///
+/// Writes rebuild depth-zero or depth-one trees with initialized extents and
+/// 32-bit physical block addresses. Metadata updates are not journaled or
+/// crash-atomic.
 #[derive(Debug)]
-pub(in crate::fs::fs_impls::ext4::inode) struct ExtentState {
+pub(in crate::fs::fs_impls::ext4::inode) struct ExtentTree {
     raw_block_ptrs: RawBlockPtrs,
     dirty: bool,
 }
 
-impl ExtentState {
+impl ExtentTree {
     /// Creates an extent mapping from an inode-resident root and sector count.
     ///
     /// This validates the inline root. External nodes are loaded and validated
     /// when an operation traverses or rewrites the tree.
     pub(super) fn new(raw_block_ptrs: RawBlockPtrs) -> Result<Self> {
-        tree::ExtentTree::try_from_root(raw_block_ptrs.block_ptrs)?;
+        Self::validate_root(&raw_block_ptrs.block_ptrs)?;
         Ok(Self {
             raw_block_ptrs,
             dirty: false,
         })
-    }
-
-    fn tree(&self) -> Result<tree::ExtentTree> {
-        tree::ExtentTree::try_from_root(self.raw_block_ptrs.block_ptrs)
     }
 
     /// Resolves one logical block to a physical block.
@@ -148,7 +63,6 @@ impl ExtentState {
     /// Returns `None` when the logical block lies in a hole.
     pub(super) fn map_block(&self, fs: &Ext4, iblock: Iblock) -> Result<Option<Ext4Bid>> {
         Ok(self
-            .tree()?
             .find(fs, iblock)?
             .map(|extent| extent.physical_block(iblock)))
     }
@@ -163,7 +77,7 @@ impl ExtentState {
         iblock: Iblock,
         max_blocks: u32,
     ) -> Result<Option<Range<Ext4Bid>>> {
-        let Some(extent) = self.tree()?.find(fs, iblock)? else {
+        let Some(extent) = self.find(fs, iblock)? else {
             return Ok(None);
         };
         let offset = iblock - extent.block();
@@ -206,8 +120,7 @@ impl ExtentState {
             return Ok(());
         }
 
-        let mut tree = self.tree()?;
-        let existing = tree.extents(fs)?;
+        let existing = self.extents(fs)?;
         let mut allocated = Vec::new();
         let mut additions = Vec::new();
         for hole in holes(&existing, start, end) {
@@ -251,7 +164,7 @@ impl ExtentState {
         replacement.extend_from_slice(&additions);
         replacement.sort_by_key(|extent| extent.block());
         replacement = merge_adjacent_extents(replacement);
-        let anticipated = match tree.anticipated_rebuild_delta(&replacement) {
+        let anticipated = match self.anticipated_rebuild_delta(&replacement) {
             Ok(delta) => delta,
             Err(error) => {
                 free_ranges(fs, &allocated);
@@ -271,7 +184,7 @@ impl ExtentState {
             free_ranges(fs, &allocated);
             return Err(error);
         }
-        let delta = match tree.rebuild(fs, &replacement) {
+        let (root, delta) = match self.rebuild(fs, &replacement) {
             Ok(delta) => delta,
             Err(error) => {
                 free_ranges(fs, &allocated);
@@ -280,23 +193,22 @@ impl ExtentState {
         };
         sector_count = self.raw_block_ptrs.sector_count;
         add_sectors(&mut sector_count, data_blocks, delta)?;
-        self.raw_block_ptrs = RawBlockPtrs::new(sector_count, tree.root());
+        self.raw_block_ptrs = RawBlockPtrs::new(sector_count, root);
         self.dirty = true;
         Ok(())
     }
 
     /// Removes mappings beyond the block containing `new_size`.
     ///
-    /// The tree is replaced before obsolete data blocks are released. A release
-    /// failure is returned after the successful releases and sector accounting
-    /// have been recorded, leaving the mapping dirty for inode writeback. Unlike
+    /// Replacement metadata is prepared before obsolete data blocks are released.
+    /// The candidate root and sector accounting are recorded after the release
+    /// attempts, leaving the mapping dirty even if a release fails. Unlike
     /// the legacy block-pointer implementation, this path propagates errors so a
     /// foreground truncate cannot report success while extent replacement failed.
     pub(super) fn truncate_to_byte_len(&mut self, fs: &Ext4, new_size: usize) -> Result<()> {
         let keep_blocks = Iblock::try_from(new_size.div_ceil(BLOCK_SIZE))
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
-        let mut tree = self.tree()?;
-        let extents = tree.extents(fs)?;
+        let extents = self.extents(fs)?;
         let mut kept = Vec::new();
         let mut freed = Vec::new();
         for extent in extents {
@@ -315,12 +227,12 @@ impl ExtentState {
             return Ok(());
         }
 
-        let anticipated = tree.anticipated_rebuild_delta(&kept)?;
+        let anticipated = self.anticipated_rebuild_delta(&kept)?;
         let planned_data_blocks = freed.iter().map(|range| range.len() as u32).sum();
         let mut sector_count = self.raw_block_ptrs.sector_count;
         subtract_sectors(&mut sector_count, planned_data_blocks, anticipated)?;
 
-        let delta = tree.rebuild(fs, &kept)?;
+        let (root, delta) = self.rebuild(fs, &kept)?;
         let mut data_blocks = 0;
         let mut release_error = None;
         for range in &freed {
@@ -333,13 +245,35 @@ impl ExtentState {
         }
         sector_count = self.raw_block_ptrs.sector_count;
         subtract_sectors(&mut sector_count, data_blocks, delta)?;
-        self.raw_block_ptrs = RawBlockPtrs::new(sector_count, tree.root());
+        self.raw_block_ptrs = RawBlockPtrs::new(sector_count, root);
         self.dirty = true;
         if let Some(error) = release_error {
             return Err(error);
         }
         Ok(())
     }
+}
+
+const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
+const ZERO_BATCH_BLOCKS: usize = 256;
+
+pub(in crate::fs::fs_impls::ext4::inode) fn empty_extent_root() -> [u32; RAW_BLOCK_PTRS_LEN] {
+    let header = node::RawExtentHeader {
+        magic: node::EXTENT_MAGIC,
+        entries: 0,
+        max: 4,
+        depth: 0,
+        generation: 0,
+    };
+    let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
+    root.as_mut_bytes()[..tree::ENTRY_SIZE].copy_from_slice(header.as_bytes());
+    root
+}
+
+pub(in crate::fs::fs_impls::ext4::inode) fn validate_extent_root(
+    root: [u32; RAW_BLOCK_PTRS_LEN],
+) -> Result<()> {
+    ExtentTree::validate_root(&root)
 }
 
 fn holes(extents: &[node::Extent], start: Iblock, end: Iblock) -> Vec<Range<Iblock>> {
@@ -429,9 +363,9 @@ mod tests {
     use ostd::prelude::*;
 
     use super::{
-        ExtentState, RawBlockPtrs, ZERO_BATCH_BLOCKS,
-        node::{EXTENT_MAGIC, Extent, RawExtent, RawExtentHeader, RawExtentIdx},
-        tree::{ENTRY_SIZE, ExtentTree},
+        ExtentTree, RawBlockPtrs, SECTORS_PER_BLOCK, ZERO_BATCH_BLOCKS,
+        node::{EXTENT_MAGIC, RawExtent, RawExtentHeader, RawExtentIdx},
+        tree::ENTRY_SIZE,
     };
     use crate::{
         fs::fs_impls::ext4::{
@@ -439,7 +373,7 @@ mod tests {
             inode::RAW_BLOCK_PTRS_LEN,
             prelude::*,
             test_utils::{
-                BlockBitmapInit, Ext4FixtureBuilder, assert_errno, group0_layout,
+                BlockBitmapInit, Ext4FixtureBuilder, Ext4MemoryDisk, assert_errno, group0_layout,
                 make_valid_super_block,
             },
         },
@@ -450,13 +384,14 @@ mod tests {
         Ext4FixtureBuilder::new(groups, nblocks).with_mount_flavor(MountFlavor::Ext4)
     }
 
-    fn test_extent_state(
-        root: [u32; RAW_BLOCK_PTRS_LEN],
-        sector_count: u32,
-        _fs: Weak<crate::fs::fs_impls::ext4::fs::Ext4>,
-        _npages: usize,
-    ) -> crate::prelude::Result<ExtentState> {
-        ExtentState::new(RawBlockPtrs::new(sector_count, root))
+    fn leaf_header(entries: u16) -> RawExtentHeader {
+        RawExtentHeader {
+            magic: EXTENT_MAGIC,
+            entries,
+            max: 4,
+            depth: 0,
+            generation: 0,
+        }
     }
 
     fn inline_root(header: RawExtentHeader, entries: &[RawExtent]) -> [u32; RAW_BLOCK_PTRS_LEN] {
@@ -470,197 +405,41 @@ mod tests {
         root
     }
 
-    fn leaf_header(entries: u16) -> RawExtentHeader {
-        RawExtentHeader {
-            magic: EXTENT_MAGIC,
-            entries,
-            max: 4,
-            depth: 0,
-            generation: 0,
-        }
-    }
-
-    #[ktest]
-    fn inline_lookup_distinguishes_mappings_and_holes() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 41, 42, 45, 46]))
-            .build()
-            .unwrap();
-        let root = inline_root(
-            leaf_header(2),
-            &[RawExtent::new(2, 3, 40), RawExtent::new(8, 2, 45)],
+    fn index_root(indexes: &[(Iblock, Ext4Bid)]) -> [u32; RAW_BLOCK_PTRS_LEN] {
+        let mut root = inline_root(
+            RawExtentHeader {
+                entries: indexes.len() as u16,
+                depth: 1,
+                ..leaf_header(0)
+            },
+            &[],
         );
-        let tree = ExtentTree::try_from_root(root).unwrap();
-
-        let extent = tree.find(&fixture.fs, 3).unwrap().unwrap();
-        assert_eq!(extent.physical_block(3), 41);
-        assert!(tree.find(&fixture.fs, 6).unwrap().is_none());
+        for (index, &(logical, physical)) in indexes.iter().enumerate() {
+            let offset = ENTRY_SIZE * (index + 1);
+            root.as_mut_bytes()[offset..offset + ENTRY_SIZE]
+                .copy_from_slice(RawExtentIdx::new(logical, physical).as_bytes());
+        }
+        root
     }
 
-    #[ktest]
-    fn lookup_descends_into_an_external_leaf() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 45, 46, 47, 48]))
-            .build()
-            .unwrap();
-        let leaf_bid = 40;
-        let mut leaf = [0u8; BLOCK_SIZE];
+    fn write_leaf(disk: &Ext4MemoryDisk, bid: Ext4Bid, depth: u16, data_bid: Ext4Bid) {
+        let mut bytes = [0u8; BLOCK_SIZE];
         let header = RawExtentHeader {
-            magic: EXTENT_MAGIC,
             entries: 1,
             max: ((BLOCK_SIZE - ENTRY_SIZE) / ENTRY_SIZE) as u16,
-            depth: 0,
-            generation: 0,
+            depth,
+            ..leaf_header(0)
         };
-        leaf[..ENTRY_SIZE].copy_from_slice(header.as_bytes());
-        leaf[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtent::new(4, 4, 45).as_bytes());
-        fixture
-            .disk
-            .segment()
-            .write_bytes(Bid::new(leaf_bid.into()).to_offset(), &leaf)
-            .unwrap();
-
-        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
-        let bytes = root.as_mut_bytes();
-        let root_header = RawExtentHeader {
-            magic: EXTENT_MAGIC,
-            entries: 1,
-            max: 4,
-            depth: 1,
-            generation: 0,
-        };
-        bytes[..ENTRY_SIZE].copy_from_slice(root_header.as_bytes());
+        bytes[..ENTRY_SIZE].copy_from_slice(header.as_bytes());
         bytes[ENTRY_SIZE..2 * ENTRY_SIZE]
-            .copy_from_slice(RawExtentIdx::new(0, leaf_bid).as_bytes());
-
-        let tree = ExtentTree::try_from_root(root).unwrap();
-        let extent = tree.find(&fixture.fs, 6).unwrap().unwrap();
-        assert_eq!(extent.physical_block(6), 47);
-    }
-
-    #[ktest]
-    fn rejects_invalid_headers_and_leaf_ordering() {
-        let bad_magic = inline_root(
-            RawExtentHeader {
-                magic: 0,
-                ..leaf_header(0)
-            },
-            &[],
-        );
-        assert!(ExtentTree::try_from_root(bad_magic).is_err());
-
-        let overlap = inline_root(
-            leaf_header(2),
-            &[RawExtent::new(2, 4, 100), RawExtent::new(5, 1, 200)],
-        );
-        assert!(ExtentTree::try_from_root(overlap).is_err());
-    }
-
-    #[ktest]
-    fn rejects_unsupported_depth_and_48_bit_blocks() {
-        let too_deep = inline_root(
-            RawExtentHeader {
-                depth: 6,
-                ..leaf_header(0)
-            },
-            &[],
-        );
-        assert!(ExtentTree::try_from_root(too_deep).is_err());
-
-        let high_block = inline_root(
-            leaf_header(1),
-            &[RawExtent {
-                block: 0,
-                len: 1,
-                start_hi: 1,
-                start_lo: 0,
-            }],
-        );
-        assert!(ExtentTree::try_from_root(high_block).is_err());
-    }
-
-    #[ktest]
-    fn rejects_external_child_with_wrong_depth() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40]))
-            .build()
+            .copy_from_slice(RawExtent::new(0, 1, data_bid).as_bytes());
+        disk.segment()
+            .write_bytes(Bid::new(bid.into()).to_offset(), &bytes)
             .unwrap();
-        let leaf_bid = 40;
-        let mut child = [0u8; BLOCK_SIZE];
-        let child_header = RawExtentHeader {
-            magic: EXTENT_MAGIC,
-            entries: 0,
-            max: ((BLOCK_SIZE - ENTRY_SIZE) / ENTRY_SIZE) as u16,
-            depth: 1,
-            generation: 0,
-        };
-        child[..ENTRY_SIZE].copy_from_slice(child_header.as_bytes());
-        fixture
-            .disk
-            .segment()
-            .write_bytes(Bid::new(leaf_bid.into()).to_offset(), &child)
-            .unwrap();
-
-        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
-        let bytes = root.as_mut_bytes();
-        let root_header = RawExtentHeader {
-            magic: EXTENT_MAGIC,
-            entries: 1,
-            max: 4,
-            depth: 1,
-            generation: 0,
-        };
-        bytes[..ENTRY_SIZE].copy_from_slice(root_header.as_bytes());
-        bytes[ENTRY_SIZE..2 * ENTRY_SIZE]
-            .copy_from_slice(RawExtentIdx::new(0, leaf_bid).as_bytes());
-
-        let tree = ExtentTree::try_from_root(root).unwrap();
-        assert!(tree.find(&fixture.fs, 0).is_err());
     }
 
     #[ktest]
-    fn inline_overflow_grows_a_depth_one_tree() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .with_free_blocks(64, 64)
-            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 42, 44, 46, 48]))
-            .build()
-            .unwrap();
-        let mut tree = ExtentTree::try_from_root(inline_root(leaf_header(0), &[])).unwrap();
-
-        let extents: Vec<_> = (0..5)
-            .map(|index| Extent::new(index * 2, 1, 40 + index * 2))
-            .collect();
-        tree.rebuild(&fixture.fs, &extents).unwrap();
-
-        for index in 0..5 {
-            let extent = tree.find(&fixture.fs, index * 2).unwrap().unwrap();
-            assert_eq!(extent.physical_block(index * 2), 40 + index * 2);
-        }
-    }
-
-    #[ktest]
-    fn allocation_and_truncate_restore_free_blocks() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .with_free_blocks(64, 64)
-            .build()
-            .unwrap();
-        let mut state = test_extent_state(
-            inline_root(leaf_header(0), &[]),
-            0,
-            Arc::downgrade(&fixture.fs),
-            8,
-        )
-        .unwrap();
-        let free_before = fixture.fs.super_block().free_blocks_count();
-
-        state.allocate_range_blocks(&fixture.fs, 0, 8).unwrap();
-        assert!(fixture.fs.super_block().free_blocks_count() < free_before);
-        state.truncate_to_byte_len(&fixture.fs, 0).unwrap();
-        assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
-    }
-
-    #[ktest]
-    fn repeated_contiguous_allocations_merge_into_one_extent() {
+    fn extent_tree_allocation_lookup_reload_and_truncate() {
         clocks::init_for_ktest();
         let layout = group0_layout(&make_valid_super_block(1));
         let fixture = extent_fixture_builder(1, 2048)
@@ -671,177 +450,267 @@ mod tests {
             ]))
             .build()
             .unwrap();
-        let mut state = test_extent_state(
-            inline_root(leaf_header(0), &[]),
-            0,
-            Arc::downgrade(&fixture.fs),
-            8,
-        )
-        .unwrap();
-
-        for block in 0..8 {
-            state
-                .allocate_range_blocks(&fixture.fs, block, block + 1)
+        let first_bid = layout.first_data_bid + 2;
+        let stale = [0xa5; BLOCK_SIZE];
+        for bid in first_bid..first_bid + 4 {
+            fixture
+                .disk
+                .segment()
+                .write_bytes(Bid::new(bid.into()).to_offset(), &stale)
                 .unwrap();
         }
+        let free_before = fixture.fs.super_block().free_blocks_count();
+        let mut tree =
+            ExtentTree::new(RawBlockPtrs::new(0, inline_root(leaf_header(0), &[]))).unwrap();
+        assert!(!tree.is_dirty());
+        assert_eq!(tree.map_block(&fixture.fs, 0).unwrap(), None);
 
-        let extents = state.tree().unwrap().extents(&fixture.fs).unwrap();
-        assert_eq!(extents.len(), 1);
-        assert_eq!(extents[0].len(), 8);
+        // Adjacent allocations merge, preserve existing mappings, and zero data.
+        tree.allocate_range_blocks(&fixture.fs, 0, 2).unwrap();
+        tree.allocate_range_blocks(&fixture.fs, 2, 4).unwrap();
+        assert_eq!(tree.extents(&fixture.fs).unwrap().len(), 1);
+        assert_eq!(
+            tree.mapped_run(&fixture.fs, 1, 100).unwrap(),
+            Some(first_bid + 1..first_bid + 4)
+        );
+        assert_eq!(
+            tree.mapped_run(&fixture.fs, 1, 1).unwrap(),
+            Some(first_bid + 1..first_bid + 2)
+        );
+        for logical in 0..4 {
+            assert_eq!(
+                tree.map_block(&fixture.fs, logical).unwrap(),
+                Some(first_bid + logical)
+            );
+            let mut contents = [0xff; BLOCK_SIZE];
+            fixture
+                .disk
+                .segment()
+                .read_bytes(
+                    Bid::new((first_bid + logical).into()).to_offset(),
+                    &mut contents,
+                )
+                .unwrap();
+            assert_eq!(contents, [0; BLOCK_SIZE]);
+        }
+
+        // Sparse allocations cross the inline-root boundary and require a leaf.
+        let mut sparse = Vec::new();
+        for logical in [8u32, 12, 16, 20] {
+            tree.allocate_range_blocks(&fixture.fs, logical as usize, logical as usize + 1)
+                .unwrap();
+            sparse.push((
+                logical,
+                tree.map_block(&fixture.fs, logical).unwrap().unwrap(),
+            ));
+        }
+        assert_eq!(tree.extents(&fixture.fs).unwrap().len(), 5);
+        assert_eq!(tree.raw_block_ptrs().sector_count, 9 * SECTORS_PER_BLOCK);
+        assert_eq!(
+            fixture.fs.super_block().free_blocks_count(),
+            free_before - 9
+        );
+        assert!(tree.is_dirty());
+        for hole in [4, 7, 9, 11, 13, 19, 21] {
+            assert_eq!(tree.map_block(&fixture.fs, hole).unwrap(), None);
+        }
+        // Reconstruct from the inode root and external leaf on the fixture disk.
+        let mut restored = ExtentTree::new(tree.raw_block_ptrs()).unwrap();
+        for (logical, physical) in sparse {
+            assert_eq!(
+                restored.map_block(&fixture.fs, logical).unwrap(),
+                Some(physical)
+            );
+        }
+        assert_eq!(
+            restored.mapped_run(&fixture.fs, 0, 100).unwrap(),
+            Some(first_bid..first_bid + 4)
+        );
+
+        // Shrinking releases the leaf, preserves the partial final block, then
+        // releases all remaining data and restores the original free count.
+        restored
+            .truncate_to_byte_len(&fixture.fs, 2 * BLOCK_SIZE + 1)
+            .unwrap();
+        assert_eq!(
+            restored.raw_block_ptrs().sector_count,
+            3 * SECTORS_PER_BLOCK
+        );
+        assert_eq!(
+            fixture.fs.super_block().free_blocks_count(),
+            free_before - 3
+        );
+        assert_eq!(
+            restored.map_block(&fixture.fs, 2).unwrap(),
+            Some(first_bid + 2)
+        );
+        for logical in [3, 8, 12, 16, 20] {
+            assert_eq!(restored.map_block(&fixture.fs, logical).unwrap(), None);
+        }
+        restored.clear_dirty();
+        assert!(!restored.is_dirty());
+        restored.truncate_to_byte_len(&fixture.fs, 0).unwrap();
+        assert!(restored.is_dirty());
+        assert_eq!(restored.raw_block_ptrs().sector_count, 0);
+        assert_eq!(restored.map_block(&fixture.fs, 0).unwrap(), None);
+        assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
     }
 
     #[ktest]
-    fn allocation_zeroes_data_blocks_before_mapping_them() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .with_free_blocks(64, 64)
-            .build()
-            .unwrap();
-        let mut state = test_extent_state(
-            inline_root(leaf_header(0), &[]),
-            0,
-            Arc::downgrade(&fixture.fs),
-            1,
-        )
-        .unwrap();
-        let expected_bid = group0_layout(&fixture.sb).first_data_bid;
-        let stale = [0xa5; BLOCK_SIZE];
-        fixture
-            .disk
-            .segment()
-            .write_bytes(Bid::new(expected_bid.into()).to_offset(), &stale)
-            .unwrap();
-
-        state.allocate_range_blocks(&fixture.fs, 0, 1).unwrap();
-        let mapped = state.map_block(&fixture.fs, 0).unwrap().unwrap();
-        assert_eq!(mapped, expected_bid);
-        let mut contents = [0xff; BLOCK_SIZE];
-        fixture
-            .disk
-            .segment()
-            .read_bytes(Bid::new(mapped.into()).to_offset(), &mut contents)
-            .unwrap();
-        assert_eq!(contents, [0; BLOCK_SIZE]);
-    }
-
-    #[ktest]
-    fn allocation_zeroes_large_ranges_in_bounded_write_batches() {
+    fn extent_tree_large_allocation_zeroing_and_reclamation() {
         let fixture = extent_fixture_builder(1, 512)
             .with_blocks_per_group(512)
             .with_free_blocks(300, 300)
             .build()
             .unwrap();
-        let mut state = test_extent_state(
-            inline_root(leaf_header(0), &[]),
-            0,
-            Arc::downgrade(&fixture.fs),
-            257,
-        )
-        .unwrap();
-
-        state.allocate_range_blocks(&fixture.fs, 0, 257).unwrap();
-
+        let free_before = fixture.fs.super_block().free_blocks_count();
+        let mut tree =
+            ExtentTree::new(RawBlockPtrs::new(0, inline_root(leaf_header(0), &[]))).unwrap();
+        tree.allocate_range_blocks(&fixture.fs, 0, 257).unwrap();
         assert!(fixture.disk.max_write_blocks() <= ZERO_BATCH_BLOCKS);
+        assert_eq!(tree.raw_block_ptrs().sector_count, 257 * SECTORS_PER_BLOCK);
+        for logical in [0, 255, 256] {
+            let physical = tree.map_block(&fixture.fs, logical).unwrap().unwrap();
+            let mut contents = [0xff; BLOCK_SIZE];
+            fixture
+                .disk
+                .segment()
+                .read_bytes(Bid::new(physical.into()).to_offset(), &mut contents)
+                .unwrap();
+            assert_eq!(contents, [0; BLOCK_SIZE]);
+        }
+        tree.truncate_to_byte_len(&fixture.fs, 0).unwrap();
+        assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
+        assert_eq!(tree.raw_block_ptrs().sector_count, 0);
     }
 
     #[ktest]
-    fn rejects_extent_blocks_outside_the_filesystem() {
-        let fixture = extent_fixture_builder(1, 2048).build().unwrap();
-        let outside = fixture.sb.total_blocks();
-        let root = inline_root(leaf_header(1), &[RawExtent::new(0, 1, outside)]);
-        let state = test_extent_state(root, 8, Arc::downgrade(&fixture.fs), 1).unwrap();
-
-        assert!(state.map_block(&fixture.fs, 0).is_err());
+    fn extent_tree_rejects_invalid_root_formats() {
+        let cases = [
+            (
+                inline_root(
+                    RawExtentHeader {
+                        magic: 0,
+                        ..leaf_header(0)
+                    },
+                    &[],
+                ),
+                Errno::EUCLEAN,
+            ),
+            (
+                inline_root(
+                    leaf_header(2),
+                    &[RawExtent::new(2, 4, 100), RawExtent::new(5, 1, 200)],
+                ),
+                Errno::EUCLEAN,
+            ),
+            (
+                inline_root(
+                    RawExtentHeader {
+                        depth: 6,
+                        ..leaf_header(0)
+                    },
+                    &[],
+                ),
+                Errno::EUCLEAN,
+            ),
+            (
+                inline_root(
+                    leaf_header(1),
+                    &[RawExtent {
+                        block: 0,
+                        len: 1,
+                        start_hi: 1,
+                        start_lo: 0,
+                    }],
+                ),
+                Errno::EOPNOTSUPP,
+            ),
+        ];
+        for (root, error) in cases {
+            assert_errno!(ExtentTree::new(RawBlockPtrs::new(0, root)), error);
+        }
     }
 
     #[ktest]
-    fn rejects_extent_blocks_in_filesystem_metadata() {
-        let fixture = extent_fixture_builder(1, 2048).build().unwrap();
-        let metadata_bid = group0_layout(&fixture.sb).block_bitmap_bid;
-        let root = inline_root(leaf_header(1), &[RawExtent::new(0, 1, metadata_bid)]);
-        let state = test_extent_state(root, 8, Arc::downgrade(&fixture.fs), 1).unwrap();
-
-        assert!(state.map_block(&fixture.fs, 0).is_err());
-    }
-
-    #[ktest]
-    fn rejects_inline_extent_in_primary_group_descriptor_table() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .block_bitmap(BlockBitmapInit::MetadataOnly)
-            .build()
-            .unwrap();
-        let descriptor_bid = fixture.sb.group_descriptors_bid(0);
-        let root = inline_root(leaf_header(1), &[RawExtent::new(0, 1, descriptor_bid)]);
-        let tree = ExtentTree::try_from_root(root).unwrap();
-
-        assert_errno!(tree.find(&fixture.fs, 0), Errno::EUCLEAN);
-    }
-
-    #[ktest]
-    fn rejects_extent_index_in_primary_group_descriptor_table() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40]))
-            .build()
-            .unwrap();
-        let descriptor_bid = fixture.sb.group_descriptors_bid(0);
-        let mut leaf = [0u8; BLOCK_SIZE];
-        leaf[..ENTRY_SIZE].copy_from_slice(
-            RawExtentHeader {
-                magic: EXTENT_MAGIC,
-                entries: 1,
-                max: ((BLOCK_SIZE - ENTRY_SIZE) / ENTRY_SIZE) as u16,
-                depth: 0,
-                generation: 0,
+    fn extent_tree_rejects_invalid_data_and_metadata_references() {
+        // Validate both inline data references and index references before use.
+        for index in [false, true] {
+            for location in 0..3 {
+                let fixture = extent_fixture_builder(1, 2048)
+                    .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40]))
+                    .build()
+                    .unwrap();
+                let bid = match location {
+                    0 => fixture.sb.total_blocks(),
+                    1 => group0_layout(&fixture.sb).block_bitmap_bid,
+                    _ => fixture.sb.group_descriptors_bid(0),
+                };
+                let root = if index {
+                    // A syntactically valid node must still be rejected when its
+                    // address points outside data space or into system metadata.
+                    write_leaf(&fixture.disk, bid, 0, 40);
+                    index_root(&[(0, bid)])
+                } else {
+                    inline_root(leaf_header(1), &[RawExtent::new(0, 1, bid)])
+                };
+                let mut tree = ExtentTree::new(RawBlockPtrs::new(8, root)).unwrap();
+                let free_before = fixture.fs.super_block().free_blocks_count();
+                assert_errno!(tree.map_block(&fixture.fs, 0), Errno::EUCLEAN);
+                assert_errno!(
+                    tree.allocate_range_blocks(&fixture.fs, 2, 3),
+                    Errno::EUCLEAN
+                );
+                assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
+                assert_eq!(tree.raw_block_ptrs().block_ptrs, root);
+                assert_eq!(tree.raw_block_ptrs().sector_count, 8);
+                assert!(!tree.is_dirty());
             }
-            .as_bytes(),
-        );
-        leaf[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtent::new(0, 1, 40).as_bytes());
-        fixture
-            .disk
-            .segment()
-            .write_bytes(Bid::new(descriptor_bid.into()).to_offset(), &leaf)
-            .unwrap();
-
-        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
-        let bytes = root.as_mut_bytes();
-        bytes[..ENTRY_SIZE].copy_from_slice(
-            RawExtentHeader {
-                magic: EXTENT_MAGIC,
-                entries: 1,
-                max: 4,
-                depth: 1,
-                generation: 0,
-            }
-            .as_bytes(),
-        );
-        bytes[ENTRY_SIZE..2 * ENTRY_SIZE]
-            .copy_from_slice(RawExtentIdx::new(0, descriptor_bid).as_bytes());
-        let tree = ExtentTree::try_from_root(root).unwrap();
-
-        assert_errno!(tree.find(&fixture.fs, 0), Errno::EUCLEAN);
+        }
     }
 
     #[ktest]
-    fn rejects_extent_index_blocks_outside_the_filesystem() {
-        let fixture = extent_fixture_builder(1, 2048).build().unwrap();
-        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
-        let bytes = root.as_mut_bytes();
-        let header = RawExtentHeader {
-            magic: EXTENT_MAGIC,
-            entries: 1,
-            max: 4,
-            depth: 1,
-            generation: 0,
-        };
-        bytes[..ENTRY_SIZE].copy_from_slice(header.as_bytes());
-        bytes[ENTRY_SIZE..2 * ENTRY_SIZE]
-            .copy_from_slice(RawExtentIdx::new(0, fixture.sb.total_blocks()).as_bytes());
-        let state = test_extent_state(root, 8, Arc::downgrade(&fixture.fs), 1).unwrap();
-
-        assert!(state.map_block(&fixture.fs, 0).is_err());
+    fn extent_tree_rejects_corrupt_ownership_and_child_depth() {
+        for case in 0..4 {
+            let fixture = extent_fixture_builder(1, 2048)
+                .with_free_blocks(64, 64)
+                .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 41]))
+                .build()
+                .unwrap();
+            let root = match case {
+                0 => inline_root(
+                    leaf_header(2),
+                    &[RawExtent::new(0, 2, 40), RawExtent::new(4, 1, 41)],
+                ),
+                1 => {
+                    write_leaf(&fixture.disk, 40, 0, 41);
+                    index_root(&[(0, 40), (1, 40)])
+                }
+                2 => {
+                    write_leaf(&fixture.disk, 40, 0, 40);
+                    index_root(&[(0, 40)])
+                }
+                _ => {
+                    write_leaf(&fixture.disk, 40, 1, 41);
+                    index_root(&[(0, 40)])
+                }
+            };
+            let mut tree = ExtentTree::new(RawBlockPtrs::new(24, root)).unwrap();
+            let free_before = fixture.fs.super_block().free_blocks_count();
+            assert_errno!(tree.map_block(&fixture.fs, 0), Errno::EUCLEAN);
+            assert_errno!(
+                tree.allocate_range_blocks(&fixture.fs, 6, 7),
+                Errno::EUCLEAN
+            );
+            assert_eq!(tree.raw_block_ptrs().block_ptrs, root);
+            assert_eq!(tree.raw_block_ptrs().sector_count, 24);
+            assert!(!tree.is_dirty());
+            assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
+        }
     }
 
     #[ktest]
-    fn failed_tree_growth_reclaims_the_new_data_block() {
+    fn extent_tree_growth_failure_preserves_mapping_and_accounting() {
         let fixture = extent_fixture_builder(1, 2048)
             .with_free_blocks(1, 1)
             .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 42, 44, 46]))
@@ -856,122 +725,19 @@ mod tests {
                 RawExtent::new(6, 1, 46),
             ],
         );
-        let mut state = test_extent_state(root, 32, Arc::downgrade(&fixture.fs), 9).unwrap();
+        let mut tree = ExtentTree::new(RawBlockPtrs::new(32, root)).unwrap();
         let free_before = fixture.fs.super_block().free_blocks_count();
-
-        assert!(state.allocate_range_blocks(&fixture.fs, 8, 9).is_err());
+        assert_errno!(tree.allocate_range_blocks(&fixture.fs, 8, 9), Errno::ENOSPC);
         assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
-        assert!(state.map_block(&fixture.fs, 8).unwrap().is_none());
-    }
-
-    #[ktest]
-    fn rejects_extent_data_overlap_before_allocation() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .with_free_blocks(64, 64)
-            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 41]))
-            .build()
-            .unwrap();
-        let mut state = test_extent_state(
-            inline_root(
-                leaf_header(2),
-                &[RawExtent::new(0, 2, 40), RawExtent::new(4, 1, 41)],
-            ),
-            24,
-            Arc::downgrade(&fixture.fs),
-            8,
-        )
-        .unwrap();
-        let free_before = fixture.fs.super_block().free_blocks_count();
-        let root_before = state.raw_block_ptrs().block_ptrs;
-
-        assert_errno!(
-            state.allocate_range_blocks(&fixture.fs, 6, 7),
-            Errno::EUCLEAN
-        );
-        assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
-        assert_eq!(state.raw_block_ptrs().block_ptrs, root_before);
-    }
-
-    #[ktest]
-    fn rejects_duplicate_external_extent_nodes_before_lookup() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40, 41]))
-            .build()
-            .unwrap();
-        let mut leaf = [0u8; BLOCK_SIZE];
-        leaf[..ENTRY_SIZE].copy_from_slice(
-            RawExtentHeader {
-                magic: EXTENT_MAGIC,
-                entries: 1,
-                max: ((BLOCK_SIZE - ENTRY_SIZE) / ENTRY_SIZE) as u16,
-                depth: 0,
-                generation: 0,
-            }
-            .as_bytes(),
-        );
-        leaf[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtent::new(0, 1, 41).as_bytes());
-        fixture
-            .disk
-            .segment()
-            .write_bytes(Bid::new(40).to_offset(), &leaf)
-            .unwrap();
-        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
-        let bytes = root.as_mut_bytes();
-        bytes[..ENTRY_SIZE].copy_from_slice(
-            RawExtentHeader {
-                magic: EXTENT_MAGIC,
-                entries: 2,
-                max: 4,
-                depth: 1,
-                generation: 0,
-            }
-            .as_bytes(),
-        );
-        bytes[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtentIdx::new(0, 40).as_bytes());
-        bytes[2 * ENTRY_SIZE..3 * ENTRY_SIZE].copy_from_slice(RawExtentIdx::new(1, 40).as_bytes());
-        let state = test_extent_state(root, 16, Arc::downgrade(&fixture.fs), 2).unwrap();
-
-        assert_errno!(state.map_block(&fixture.fs, 0), Errno::EUCLEAN);
-    }
-
-    #[ktest]
-    fn rejects_extent_node_that_is_also_data_before_lookup() {
-        let fixture = extent_fixture_builder(1, 2048)
-            .block_bitmap(BlockBitmapInit::MetadataPlus(vec![40]))
-            .build()
-            .unwrap();
-        let mut leaf = [0u8; BLOCK_SIZE];
-        leaf[..ENTRY_SIZE].copy_from_slice(
-            RawExtentHeader {
-                magic: EXTENT_MAGIC,
-                entries: 1,
-                max: ((BLOCK_SIZE - ENTRY_SIZE) / ENTRY_SIZE) as u16,
-                depth: 0,
-                generation: 0,
-            }
-            .as_bytes(),
-        );
-        leaf[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtent::new(0, 1, 40).as_bytes());
-        fixture
-            .disk
-            .segment()
-            .write_bytes(Bid::new(40).to_offset(), &leaf)
-            .unwrap();
-        let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
-        let bytes = root.as_mut_bytes();
-        bytes[..ENTRY_SIZE].copy_from_slice(
-            RawExtentHeader {
-                magic: EXTENT_MAGIC,
-                entries: 1,
-                max: 4,
-                depth: 1,
-                generation: 0,
-            }
-            .as_bytes(),
-        );
-        bytes[ENTRY_SIZE..2 * ENTRY_SIZE].copy_from_slice(RawExtentIdx::new(0, 40).as_bytes());
-        let state = test_extent_state(root, 8, Arc::downgrade(&fixture.fs), 1).unwrap();
-
-        assert_errno!(state.map_block(&fixture.fs, 0), Errno::EUCLEAN);
+        assert_eq!(tree.raw_block_ptrs().block_ptrs, root);
+        assert_eq!(tree.raw_block_ptrs().sector_count, 32);
+        assert!(!tree.is_dirty());
+        for (logical, physical) in [(0, 40), (2, 42), (4, 44), (6, 46)] {
+            assert_eq!(
+                tree.map_block(&fixture.fs, logical).unwrap(),
+                Some(physical)
+            );
+        }
+        assert_eq!(tree.map_block(&fixture.fs, 8).unwrap(), None);
     }
 }

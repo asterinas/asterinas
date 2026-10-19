@@ -23,7 +23,7 @@ use device_id::{decode_device_numbers, encode_device_numbers};
 
 use self::{
     block_manager::{BlockPtrTree, ResolvedBlockRange},
-    extent::ExtentState,
+    extent::ExtentTree,
 };
 use super::{
     Iblock, RAW_BLOCK_PTRS_LEN,
@@ -46,7 +46,7 @@ pub(super) struct BlockMapping {
 #[derive(Debug)]
 pub(super) enum InodeBlockManager {
     /// An EXT4 extent tree rooted in the inode's `i_block` field.
-    ExtentTree(ExtentState),
+    ExtentTree(ExtentTree),
     /// A classic EXT direct/indirect block-pointer tree.
     BlockPtrTree(BlockPtrTree),
 }
@@ -158,7 +158,7 @@ impl BlockMapping {
         npages: usize,
     ) -> Result<Self> {
         Ok(Self {
-            manager: RwMutex::new(InodeBlockManager::ExtentTree(ExtentState::new(
+            manager: RwMutex::new(InodeBlockManager::ExtentTree(ExtentTree::new(
                 raw_block_ptrs,
             )?)),
             npages: AtomicUsize::new(npages),

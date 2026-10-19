@@ -1,41 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Validated traversal and replacement of an EXT4 extent tree.
-//!
-//! [`ExtentTree`] keeps the inode-resident root in memory. Lookup follows index
-//! entries to a leaf, while mutation obtains a flat, validated extent sequence
-//! and serializes a replacement tree. Replacement is intentionally bounded to
-//! depth zero or one; it is a correctness-first implementation rather than the
-//! local node splitting and rebalancing used by a full EXT4 extent writer.
-
-use super::node::{Extent, ExtentHeader, ExtentIdx, RawExtent, RawExtentHeader, RawExtentIdx};
+use super::{
+    ExtentTree,
+    node::{Extent, ExtentHeader, ExtentIdx, RawExtent, RawExtentHeader, RawExtentIdx},
+};
 use crate::fs::fs_impls::ext4::{fs::Ext4, inode::RAW_BLOCK_PTRS_LEN, prelude::*};
 
 pub(super) const ENTRY_SIZE: usize = 12;
 const INLINE_CAPACITY: usize = (RAW_BLOCK_PTRS_LEN * size_of::<u32>() - ENTRY_SIZE) / ENTRY_SIZE;
 const BLOCK_CAPACITY: usize = (BLOCK_SIZE - ENTRY_SIZE) / ENTRY_SIZE;
 
-/// An EXT4 extent tree rooted in an inode's 60-byte `i_block` field.
-///
-/// `depth` always matches the root header. Every parsed node has ordered keys;
-/// leaf extents do not overlap logically, and full-tree validation also rejects
-/// duplicate or overlapping physical ownership.
-#[derive(Debug)]
-pub(super) struct ExtentTree {
-    root: [u32; RAW_BLOCK_PTRS_LEN],
-    depth: u16,
-}
-
 impl ExtentTree {
-    /// Creates a tree after validating the inode-resident root node.
-    pub(super) fn try_from_root(root: [u32; RAW_BLOCK_PTRS_LEN]) -> Result<Self> {
+    /// Validates the inode-resident root before constructing a tree.
+    pub(super) fn validate_root(root: &[u32; RAW_BLOCK_PTRS_LEN]) -> Result<()> {
         let bytes = root.as_bytes();
         let header = ExtentHeader::parse(bytes, None)?;
-        Self::validate_entries(bytes, header)?;
-        Ok(Self {
-            root,
-            depth: header.depth(),
-        })
+        Self::validate_entries(bytes, header)
     }
 
     /// Finds the extent containing `iblock`.
@@ -47,11 +27,12 @@ impl ExtentTree {
         // Validate every supported leaf before trusting the lookup path. A point
         // lookup alone cannot detect ownership corruption in a sibling leaf.
         self.flatten(fs)?;
-        let mut step = Self::search_node(self.root.as_bytes(), self.depth, iblock)?;
-        let mut expected_depth = self.depth;
+        let depth = ExtentHeader::parse(self.raw_block_ptrs.block_ptrs.as_bytes(), None)?.depth();
+        let mut step = Self::search_node(self.raw_block_ptrs.block_ptrs.as_bytes(), depth, iblock)?;
+        let mut expected_depth = depth;
 
         while let Step::Descend(block) = step {
-            fs.validate_extent_block_range(block, 1)?;
+            Self::validate_extent_block_range(fs, block, 1)?;
             expected_depth = expected_depth.checked_sub(1).ok_or_else(|| {
                 Error::with_message(Errno::EUCLEAN, "extent leaf contains an index")
             })?;
@@ -63,17 +44,12 @@ impl ExtentTree {
 
         match step {
             Step::Found(extent) => {
-                fs.validate_extent_block_range(extent.start(), u32::from(extent.len()))?;
+                Self::validate_extent_block_range(fs, extent.start(), u32::from(extent.len()))?;
                 Ok(Some(extent))
             }
             Step::Hole => Ok(None),
             Step::Descend(_) => unreachable!(),
         }
-    }
-
-    /// Returns the inode-resident extent root.
-    pub(super) const fn root(&self) -> [u32; RAW_BLOCK_PTRS_LEN] {
-        self.root
     }
 
     /// Returns all extents in logical-block order after full-tree validation.
@@ -83,12 +59,17 @@ impl ExtentTree {
         Ok(extents)
     }
 
-    /// Replaces the tree with `extents` and reports metadata block changes.
+    /// Builds a replacement root and reports metadata block changes.
     ///
     /// `extents` must be in logical-block order and obey the non-overlap
-    /// invariants. New external leaves are written before the in-memory root is
-    /// replaced; old external leaves are released afterwards.
-    pub(super) fn rebuild(&mut self, fs: &Ext4, extents: &[Extent]) -> Result<TreeDelta> {
+    /// invariants. The caller publishes the returned root with updated sector
+    /// accounting. This operation writes new leaves and releases old leaves;
+    /// an error does not roll back those device-side effects.
+    pub(super) fn rebuild(
+        &self,
+        fs: &Ext4,
+        extents: &[Extent],
+    ) -> Result<([u32; RAW_BLOCK_PTRS_LEN], TreeDelta)> {
         let (_, external) = self.flatten(fs)?;
         self.replace(fs, extents, &external)
     }
@@ -99,14 +80,15 @@ impl ExtentTree {
     /// tree. The result assumes the subsequent rebuild receives the same extent
     /// sequence while the caller retains exclusive access to the tree.
     pub(super) fn anticipated_rebuild_delta(&self, extents: &[Extent]) -> Result<TreeDelta> {
-        if self.depth > 1 {
+        let header = ExtentHeader::parse(self.raw_block_ptrs.block_ptrs.as_bytes(), None)?;
+        if header.depth() > 1 {
             return_errno_with_message!(Errno::EOPNOTSUPP, "writable extent depth exceeds one");
         }
         let allocated = Self::required_external_blocks(extents.len())?;
-        let freed = if self.depth == 0 {
+        let freed = if header.depth() == 0 {
             0
         } else {
-            ExtentHeader::parse(self.root.as_bytes(), Some(1))?.entries() as u32
+            header.entries() as u32
         };
         Ok(TreeDelta { allocated, freed })
     }
@@ -123,12 +105,12 @@ impl ExtentTree {
     }
 
     fn flatten(&self, fs: &Ext4) -> Result<(Vec<Extent>, Vec<Ext4Bid>)> {
-        let root_header = ExtentHeader::parse(self.root.as_bytes(), Some(self.depth))?;
+        let root_header = ExtentHeader::parse(self.raw_block_ptrs.block_ptrs.as_bytes(), None)?;
         if root_header.is_leaf() {
             let mut extents = Vec::with_capacity(root_header.entries());
             for index in 0..root_header.entries() {
-                let extent = Self::extent_at(self.root.as_bytes(), index)?;
-                fs.validate_extent_block_range(extent.start(), u32::from(extent.len()))?;
+                let extent = Self::extent_at(self.raw_block_ptrs.block_ptrs.as_bytes(), index)?;
+                Self::validate_extent_block_range(fs, extent.start(), u32::from(extent.len()))?;
                 extents.push(extent);
             }
             return Self::validate_ownership(extents, Vec::new());
@@ -140,9 +122,9 @@ impl ExtentTree {
         let mut extents = Vec::new();
         let mut external = Vec::with_capacity(root_header.entries());
         for index in 0..root_header.entries() {
-            let entry = Self::index_at(self.root.as_bytes(), index)?;
+            let entry = Self::index_at(self.raw_block_ptrs.block_ptrs.as_bytes(), index)?;
             let block = entry.leaf();
-            fs.validate_extent_block_range(block, 1)?;
+            Self::validate_extent_block_range(fs, block, 1)?;
             let bytes = fs
                 .block_device()
                 .read_val::<[u8; BLOCK_SIZE]>(Bid::new(block.into()).to_offset())?;
@@ -150,7 +132,7 @@ impl ExtentTree {
             Self::validate_entries(&bytes, header)?;
             for child_index in 0..header.entries() {
                 let extent = Self::extent_at(&bytes, child_index)?;
-                fs.validate_extent_block_range(extent.start(), u32::from(extent.len()))?;
+                Self::validate_extent_block_range(fs, extent.start(), u32::from(extent.len()))?;
                 extents.push(extent);
             }
             external.push(block);
@@ -189,20 +171,27 @@ impl ExtentTree {
         Ok((extents, external))
     }
 
+    /// Writes replacement leaves and returns the candidate inode-resident root.
+    ///
+    /// External leaves are written directly because there is no extent metadata
+    /// cache; inline roots need no metadata I/O. These writes issue no device
+    /// flush. Old external blocks are released before the candidate root is returned.
     fn replace(
-        &mut self,
+        &self,
         fs: &Ext4,
         extents: &[Extent],
         old_external: &[Ext4Bid],
-    ) -> Result<TreeDelta> {
+    ) -> Result<([u32; RAW_BLOCK_PTRS_LEN], TreeDelta)> {
         if extents.len() <= INLINE_CAPACITY {
-            self.root = Self::leaf_root(extents);
-            self.depth = 0;
+            let root = Self::leaf_root(extents);
             let freed = free_old_external_blocks(fs, old_external)?;
-            return Ok(TreeDelta {
-                allocated: 0,
-                freed,
-            });
+            return Ok((
+                root,
+                TreeDelta {
+                    allocated: 0,
+                    freed,
+                },
+            ));
         }
 
         let leaf_count = Self::required_external_blocks(extents.len())? as usize;
@@ -250,13 +239,14 @@ impl ExtentTree {
             bytes[offset..offset + ENTRY_SIZE]
                 .copy_from_slice(RawExtentIdx::new(chunk[0].block(), block).as_bytes());
         }
-        self.root = root;
-        self.depth = 1;
         let freed = free_old_external_blocks(fs, old_external)?;
-        Ok(TreeDelta {
-            allocated: new_blocks.len() as u32,
-            freed,
-        })
+        Ok((
+            root,
+            TreeDelta {
+                allocated: new_blocks.len() as u32,
+                freed,
+            },
+        ))
     }
 
     fn leaf_root(extents: &[Extent]) -> [u32; RAW_BLOCK_PTRS_LEN] {
@@ -346,6 +336,53 @@ impl ExtentTree {
         Ok(())
     }
 
+    /// Validates a physical range referenced by an inode extent tree.
+    fn validate_extent_block_range(fs: &Ext4, start: Ext4Bid, count: u32) -> Result<()> {
+        let sb = fs.super_block();
+        if !sb.is_data_block_valid(start, count) {
+            return_errno_with_message!(Errno::EUCLEAN, "extent block range is outside filesystem");
+        }
+
+        let end = start
+            .checked_add(count)
+            .ok_or_else(|| Error::with_message(Errno::EUCLEAN, "extent block range overflow"))?;
+        let blocks_per_group = sb.nr_blocks_per_group();
+        let first_data_block = sb.first_data_block();
+        let mut current = start;
+        while current < end {
+            let group_idx = ((current - first_data_block) / blocks_per_group) as usize;
+            if group_idx >= sb.nr_block_groups() as usize {
+                return_errno_with_message!(
+                    Errno::EUCLEAN,
+                    "extent block group is outside filesystem"
+                );
+            }
+            let group = fs.block_group(group_idx);
+            let group_end = end.min(group.last_block() + 1);
+            let range = current..group_end;
+            if sb.has_super_block(group_idx) {
+                let super_block = sb.bid(group_idx)..sb.bid(group_idx) + 1;
+                let descriptors_start = sb.group_descriptors_bid(group_idx);
+                let descriptors =
+                    descriptors_start..descriptors_start + sb.group_descriptor_blocks_count();
+                if ranges_overlap(&range, &super_block) || ranges_overlap(&range, &descriptors) {
+                    return_errno_with_message!(
+                        Errno::EUCLEAN,
+                        "extent block range overlaps superblock metadata"
+                    );
+                }
+            }
+            if !group.is_allocated_data_range(range) {
+                return_errno_with_message!(
+                    Errno::EUCLEAN,
+                    "extent block range is free or overlaps filesystem metadata"
+                );
+            }
+            current = group_end;
+        }
+        Ok(())
+    }
+
     fn extent_at(bytes: &[u8], index: usize) -> Result<Extent> {
         let offset = ENTRY_SIZE * (index + 1);
         Extent::try_from(&RawExtent::from_bytes(&bytes[offset..offset + ENTRY_SIZE]))
@@ -379,4 +416,8 @@ fn free_old_external_blocks(fs: &Ext4, blocks: &[Ext4Bid]) -> Result<u32> {
         freed += 1;
     }
     Ok(freed)
+}
+
+fn ranges_overlap<T: Ord>(left: &Range<T>, right: &Range<T>) -> bool {
+    left.start < right.end && right.start < left.end
 }
