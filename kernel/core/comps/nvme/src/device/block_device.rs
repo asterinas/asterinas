@@ -979,7 +979,6 @@ mod test {
     };
 
     use super::{BioType, IoOp, NvmeBlockDevice};
-    use crate::nvme_init;
 
     const TEST_CHAR: u8 = b'B';
     const TEST_BUF_LENGTH: usize = 8192;
@@ -996,8 +995,6 @@ mod test {
                 component::parse_metadata!(),
             )
             .unwrap();
-
-            nvme_init().expect("`nvme_init` returned an error");
         }
     }
 
