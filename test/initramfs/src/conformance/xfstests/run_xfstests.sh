@@ -7,6 +7,13 @@ set -eu
 # RUNTIME_PATH is substituted by the Nix build.
 export PATH=__RUNTIME_PATH__
 
+# Bash process substitution, used by xfstests for exclude lists, opens files
+# through /dev/fd. The minimal initramfs does not create this conventional
+# procfs link for us.
+if [ ! -e /dev/fd ] && [ -d /proc/self/fd ]; then
+    ln -s /proc/self/fd /dev/fd
+fi
+
 XFSTESTS_FS_TYPE=${XFSTESTS_FS_TYPE:-ext2}
 export FSTYP="$XFSTESTS_FS_TYPE"
 

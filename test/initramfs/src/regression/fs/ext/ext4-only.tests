@@ -1,0 +1,2 @@
+# Operations intentionally unsupported by the initial ext4 feature set.
+fallocate_unsupported
