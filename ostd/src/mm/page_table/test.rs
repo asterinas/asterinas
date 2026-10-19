@@ -1204,3 +1204,332 @@ mod boot_pt {
         );
     }
 }
+
+pub(super) mod variable_vpn_width {
+    use core::marker::PhantomData;
+
+    use super::{test_utils::TestPtConfig, *};
+    use crate::mm::{Frame, page_table_node_size};
+
+    #[derive(Clone, Debug)]
+    pub(in crate::mm::page_table) struct WidePagingConsts<
+        const MIDDLE_BITS: usize,
+        const LEAF_BITS: usize = 9,
+    >;
+
+    impl<const MIDDLE_BITS: usize, const LEAF_BITS: usize> PagingConstsTrait
+        for WidePagingConsts<MIDDLE_BITS, LEAF_BITS>
+    {
+        const BASE_PAGE_SIZE: usize = PAGE_SIZE;
+        const VPN_BITS: &'static [usize] = &[LEAF_BITS, MIDDLE_BITS, 11];
+        const ADDRESS_WIDTH: usize = 12 + LEAF_BITS + MIDDLE_BITS + 11;
+        const VA_SIGN_EXT: bool = false;
+        const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 3;
+        const PTE_SIZE: usize = size_of::<PageTableEntry>();
+    }
+
+    pub(in crate::mm::page_table) type WideConfig<
+        const MIDDLE_BITS: usize = 9,
+        const LEAF_BITS: usize = 9,
+    > = TestPtConfig<WidePagingConsts<MIDDLE_BITS, LEAF_BITS>, 0, 2048>;
+
+    #[ktest]
+    fn maps_all_root_frames_without_aliasing() {
+        type C = WideConfig;
+        let pt = PageTable::<C>::empty();
+        assert_eq!(pt.root_paddr() % (4 * PAGE_SIZE), 0);
+        assert_eq!(page_table_node_size::<C>(3), 4 * PAGE_SIZE);
+        assert_eq!(page_table_node_size::<C>(2), PAGE_SIZE);
+        assert_eq!(page_size::<C>(3), 1 << 30);
+        assert_eq!(vaddr_range::<C>(), 0..=((1 << 41) - 1));
+
+        // Include both sides of every boundary between root frames and the
+        // last root entry. Their lower VPN fields are deliberately identical.
+        let indices = [0, 511, 512, 1023, 1024, 1535, 1536, 2047];
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let guard = disable_preempt();
+        let range = 0..(1 << 41);
+        let mut cursor = pt.cursor_mut(&guard, &range).unwrap();
+        for (i, index) in indices.iter().enumerate() {
+            let va = index * page_size::<C>(3);
+            cursor.jump(va).unwrap();
+            // SAFETY: The test table is never activated and mappings are untracked.
+            unsafe { cursor.map(((i + 1) * PAGE_SIZE, 1, prop)) };
+        }
+        drop(cursor);
+        for (i, index) in indices.iter().enumerate() {
+            let va = index * page_size::<C>(3);
+            assert_eq!(
+                pt.page_walk(va + 17),
+                Some(((i + 1) * PAGE_SIZE + 17, prop))
+            );
+        }
+        assert!(
+            pt.cursor(&guard, &((1 << 41)..((1 << 41) + PAGE_SIZE)))
+                .is_err()
+        );
+
+        let mut cursor = pt.cursor_mut(&guard, &range).unwrap();
+        for index in indices {
+            let va = index * page_size::<C>(3);
+            assert_eq!(cursor.find_next(range.end - cursor.virt_addr()), Some(va));
+            assert_eq!(
+                cursor.query().unwrap().1.unwrap().0.0,
+                pt.page_walk(va).unwrap().0
+            );
+            // SAFETY: The test table is never activated or used for memory accesses.
+            let removed = unsafe { cursor.take_next(page_size::<C>(3)) }.unwrap();
+            drop(removed);
+            assert_eq!(pt.page_walk(va), None);
+        }
+        assert_eq!(cursor.find_next(range.end - cursor.virt_addr()), None);
+    }
+
+    #[ktest]
+    fn splits_huge_mapping_into_a_large_intermediate_node() {
+        type C = WideConfig<10>;
+        let pt = PageTable::<C>::empty();
+        let huge_size = page_size::<C>(3);
+        let small_size = page_size::<C>(2);
+        assert_eq!(huge_size, 1 << 31);
+        assert_eq!(small_size, 1 << 21);
+        assert_eq!(page_table_node_size::<C>(2), 2 * PAGE_SIZE);
+        let va = 1536 * huge_size;
+        let pa = huge_size;
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let guard = disable_preempt();
+        let mut cursor = pt
+            .cursor_mut_with_min_level(&guard, &(va..va + huge_size), 3)
+            .unwrap();
+        // SAFETY: The test table is never activated and mappings are untracked.
+        unsafe { cursor.map((pa, 3, prop)) };
+        drop(cursor);
+
+        // Protect an entry in the second frame of the intermediate node.
+        let offset = 700 * small_size;
+        let range = va + offset..va + offset + small_size;
+        let mut cursor = pt.cursor_mut(&guard, &range).unwrap();
+        // SAFETY: The test table is never activated or used for memory accesses.
+        assert_eq!(
+            unsafe { cursor.protect_next(small_size, &mut |prop| prop.flags -= PageFlags::W) },
+            Some(range.clone())
+        );
+        drop(cursor);
+        let mut read_only = prop;
+        read_only.flags -= PageFlags::W;
+        assert_eq!(
+            pt.page_walk(range.start + 13),
+            Some((pa + offset + 13, read_only))
+        );
+        assert_eq!(pt.page_walk(range.start - 1), Some((pa + offset - 1, prop)));
+        assert_eq!(
+            pt.page_walk(va + huge_size - 1),
+            Some((pa + huge_size - 1, prop))
+        );
+
+        let mut cursor = pt
+            .cursor_mut_with_min_level(&guard, &(va..va + huge_size), 3)
+            .unwrap();
+        // SAFETY: The test table is never activated or used for memory accesses.
+        drop(unsafe { cursor.take_next(huge_size) }.unwrap());
+        assert_eq!(pt.page_walk(range.start), None);
+    }
+
+    #[derive(Clone, Debug)]
+    struct TrackedWideConfig<const START: usize>(PhantomData<()>);
+
+    // SAFETY: Each item owns one frame; the raw conversions transfer precisely
+    // that reference, and borrowed items do not change its reference count.
+    unsafe impl<const START: usize> PageTableConfig for TrackedWideConfig<START> {
+        const TOP_LEVEL_INDEX_RANGE: Range<usize> = START..2048;
+        type E = PageTableEntry;
+        type C = WidePagingConsts<9>;
+        type Item = (Frame<()>, PageProperty);
+        type ItemRef<'a> = (Paddr, PageProperty);
+
+        fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+            (item.0.paddr(), 1, item.1)
+        }
+
+        unsafe fn item_from_raw(pa: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item {
+            assert_eq!(level, 1);
+            // SAFETY: The caller transfers ownership of this forgotten frame.
+            (unsafe { Frame::from_raw(pa) }, prop)
+        }
+
+        unsafe fn item_ref_from_raw<'a>(
+            pa: Paddr,
+            _: PagingLevel,
+            prop: PageProperty,
+        ) -> Self::ItemRef<'a> {
+            (pa, prop)
+        }
+    }
+
+    fn check_drop<const START: usize>() {
+        type Paging = WidePagingConsts<9>;
+        let pt = PageTable::<TrackedWideConfig<START>>::empty();
+        let frame = FrameAllocOptions::new().alloc_frame().unwrap();
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let indices = [START, 1024, 1536, 2047];
+        {
+            let guard = disable_preempt();
+            for index in indices {
+                let va = index * page_size::<Paging>(3);
+                let mut cursor = pt.cursor_mut(&guard, &(va..va + PAGE_SIZE)).unwrap();
+                // SAFETY: The test table owns a valid frame and is never activated.
+                unsafe { cursor.map((frame.clone(), prop)) };
+            }
+        }
+        assert_eq!(frame.reference_count(), 5);
+        // SAFETY: This test table contains no shared kernel mappings.
+        let clone = unsafe { pt.shallow_copy() };
+        drop(pt);
+        assert_eq!(frame.reference_count(), 5);
+        drop(clone);
+        assert_eq!(frame.reference_count(), 1);
+    }
+
+    #[ktest]
+    fn drops_children_in_every_root_frame() {
+        check_drop::<0>();
+    }
+
+    #[ktest]
+    fn drops_children_when_managed_range_starts_after_first_frame() {
+        check_drop::<512>();
+        // Also intersect a managed range starting inside a backing frame.
+        check_drop::<513>();
+    }
+
+    #[ktest]
+    fn disjoint_root_pages_allow_simultaneous_cursors() {
+        type C = WideConfig;
+        let pt = PageTable::<C>::empty();
+        let guard = disable_preempt();
+        let size = page_size::<C>(3);
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let left_va = 511 * size;
+        let right_va = 512 * size;
+        let mut left = pt
+            .cursor_mut_with_min_level(&guard, &(left_va..left_va + size), 3)
+            .unwrap();
+        let mut right = pt
+            .cursor_mut_with_min_level(&guard, &(right_va..right_va + size), 3)
+            .unwrap();
+        // SAFETY: This test table is never activated and its mappings are untracked.
+        unsafe {
+            left.map((size, 3, prop));
+            right.map((2 * size, 3, prop));
+        }
+        drop(left);
+        // Releasing the first cursor must make only its pages available again.
+        let mut left = pt
+            .cursor_mut_with_min_level(&guard, &(left_va..left_va + size), 3)
+            .unwrap();
+        assert_eq!(left.query().unwrap().1.unwrap().0.0, size);
+        right.jump(right_va).unwrap();
+        assert_eq!(right.query().unwrap().1.unwrap().0.0, 2 * size);
+    }
+
+    #[ktest]
+    fn splitting_retains_only_requested_child_pages() {
+        type C = WideConfig<10>;
+        let pt = PageTable::<C>::empty();
+        let guard = disable_preempt();
+        let size = page_size::<C>(3);
+        let small_size = page_size::<C>(2);
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        // SAFETY: This test table is never activated and its mappings are untracked.
+        unsafe {
+            pt.cursor_mut_with_min_level(&guard, &(0..size), 3)
+                .unwrap()
+                .map((size, 3, prop));
+        }
+
+        let right_range = 700 * small_size..702 * small_size;
+        let mut right = pt.cursor_mut(&guard, &right_range).unwrap();
+        // SAFETY: The mapping is never used for memory accesses.
+        unsafe { right.protect_next(small_size, &mut |prop| prop.flags -= PageFlags::W) };
+        // The splitting cursor still holds the parent entry and the child's
+        // second backing page. A walker can descend to the first backing page.
+        let left_range = small_size..3 * small_size;
+        let mut left = pt.cursor_mut(&guard, &left_range).unwrap();
+        assert_eq!(left.query().unwrap().1.unwrap().0.0, size + small_size);
+        // Reconstruct the right guard after moving within its original barrier.
+        right.jump(right_range.start).unwrap();
+        assert_eq!(right.find_next(small_size), Some(right_range.start));
+        assert!(
+            !right
+                .query()
+                .unwrap()
+                .1
+                .unwrap()
+                .0
+                .2
+                .flags
+                .contains(PageFlags::W)
+        );
+        drop(right);
+        let mut right = pt.cursor_mut(&guard, &right_range).unwrap();
+        assert_eq!(right.find_next(small_size), Some(right_range.start));
+        assert!(
+            left.query()
+                .unwrap()
+                .1
+                .unwrap()
+                .0
+                .2
+                .flags
+                .contains(PageFlags::W)
+        );
+    }
+
+    #[ktest]
+    fn large_leaf_pages_have_independent_counts_and_reclaim_together() {
+        type C = WideConfig<9, 10>;
+        let pt = PageTable::<C>::empty();
+        let guard = disable_preempt();
+        let size = page_size::<C>(2);
+        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let left_range = 0..2 * PAGE_SIZE;
+        let right_range = 512 * PAGE_SIZE..514 * PAGE_SIZE;
+        let mut left = pt.cursor_mut(&guard, &left_range).unwrap();
+        let mut right = pt.cursor_mut(&guard, &right_range).unwrap();
+        // SAFETY: This test table is never activated and its mappings are untracked.
+        unsafe {
+            left.map((PAGE_SIZE, 1, prop));
+            right.map((2 * PAGE_SIZE, 1, prop));
+            right.map((3 * PAGE_SIZE, 1, prop));
+        }
+        left.jump(0).unwrap();
+        // SAFETY: The mapping is never used for memory accesses.
+        drop(unsafe { left.take_next(PAGE_SIZE) }.unwrap());
+        left.jump(0).unwrap();
+        assert_eq!(left.find_next(left_range.len()), None);
+        drop(left);
+        drop(right);
+
+        let mut parent = pt.cursor_mut_with_min_level(&guard, &(0..size), 2).unwrap();
+        // SAFETY: The mappings are never used for memory accesses.
+        let removed = unsafe { parent.take_next(size) }.unwrap();
+        let PageTableFrag::StrayPageTable {
+            pt: detached,
+            num_frames,
+            ..
+        } = removed
+        else {
+            panic!("expected the entire leaf node to be detached");
+        };
+        assert_eq!(num_frames, 2);
+        assert_eq!(page_table_node_size::<C>(detached.level()), 2 * PAGE_SIZE);
+        // An optimistic walker holding an old node reference must detect stray
+        // status regardless of which backing page it locks after detachment.
+        for index in [0, 512] {
+            let stale = detached.borrow().lock(&guard, index..index + 1);
+            assert!(stale.is_stray());
+            assert_eq!(stale.nr_children(), if index == 0 { 0 } else { 2 });
+        }
+        assert_eq!(pt.page_walk(right_range.start), None);
+    }
+}
