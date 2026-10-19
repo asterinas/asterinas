@@ -310,12 +310,12 @@ fn do_netlink_setsockopt<P: SupportedNetlinkProtocol>(
 ) -> Result<()> {
     sock_option_ref!(match option {
         add_membership @ AddMembership => {
-            let groups = add_membership.get().unwrap();
-            inner.add_groups(GroupIdSet::new(*groups));
+            let group_id = add_membership.get().unwrap();
+            inner.add_groups(GroupIdSet::from_group_id(*group_id)?);
         }
         drop_membership @ DropMembership => {
-            let groups = drop_membership.get().unwrap();
-            inner.drop_groups(GroupIdSet::new(*groups));
+            let group_id = drop_membership.get().unwrap();
+            inner.drop_groups(GroupIdSet::from_group_id(*group_id)?);
         }
         _ =>
             return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown"),
