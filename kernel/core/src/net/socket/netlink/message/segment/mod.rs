@@ -25,7 +25,8 @@ pub(crate) trait SegmentBody: Sized + Clone + Copy {
 
     /// Reads the segment body from the `reader`.
     ///
-    /// This method returns the body and the remaining length to be read from the `reader`.
+    /// Returns the body and the remaining payload length after body alignment padding,
+    /// excluding trailing message alignment padding.
     fn read_from(
         header: &CMsgSegHdr,
         reader: &mut dyn MultiRead,
@@ -33,7 +34,7 @@ pub(crate) trait SegmentBody: Sized + Clone + Copy {
     where
         Error: From<<Self::CType as TryInto<Self>>::Error>,
     {
-        let mut remaining_len = header.calc_payload_len_with_padding(reader)?;
+        let mut remaining_len = header.calc_payload_len(reader)?;
 
         // Read the body.
         let (c_type, padding_len) = if remaining_len >= size_of::<Self::CType>() {
@@ -54,7 +55,7 @@ pub(crate) trait SegmentBody: Sized + Clone + Copy {
             ));
         };
 
-        // Skip the padding bytes.
+        // Skip the body alignment padding.
         let padding_len = padding_len.min(remaining_len);
         reader.skip_some(padding_len);
         remaining_len -= padding_len;

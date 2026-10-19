@@ -27,11 +27,8 @@ pub(crate) struct CMsgSegHdr {
 }
 
 impl CMsgSegHdr {
-    /// Returns the payload length (including padding) in the reader that contains the payload.
-    pub(in netlink) fn calc_payload_len_with_padding(
-        &self,
-        reader: &mut dyn MultiRead,
-    ) -> Result<usize> {
+    /// Returns the payload length (excluding padding) in the reader that contains the payload.
+    pub(in netlink) fn calc_payload_len(&self, reader: &dyn MultiRead) -> Result<usize> {
         // Validate `self.len`.
         let payload_len = (self.len as usize)
             .checked_sub(size_of::<Self>())
@@ -43,8 +40,16 @@ impl CMsgSegHdr {
             return_errno_with_message!(Errno::EINVAL, "the reader length is too small");
         }
 
-        // Align `payload_len` up to `NLMSG_ALIGN`.
-        Ok(payload_len.align_up(NLMSG_ALIGN).min(reader_len))
+        Ok(payload_len)
+    }
+
+    /// Returns the payload length (including padding) in the reader that contains the payload.
+    pub(in netlink) fn calc_payload_len_with_padding(
+        &self,
+        reader: &dyn MultiRead,
+    ) -> Result<usize> {
+        let payload_len = self.calc_payload_len(reader)?;
+        Ok(payload_len.align_up(NLMSG_ALIGN).min(reader.sum_lens()))
     }
 }
 

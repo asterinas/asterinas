@@ -2,9 +2,11 @@
 
 #![short_vis_path::add(netlink)]
 
+use align_ext::AlignExt;
+
 use super::{SegmentBody, header::CMsgSegHdr};
 use crate::{
-    net::socket::netlink::message::{ContinueRead, attr::Attribute},
+    net::socket::netlink::message::{ContinueRead, NLMSG_ALIGN, attr::Attribute},
     prelude::*,
     util::{MultiRead, MultiWrite},
 };
@@ -53,6 +55,20 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
         header: &CMsgSegHdr,
         reader: &mut dyn MultiRead,
     ) -> Result<ContinueRead<Self>>
+    where
+        Error: From<<Body::CType as TryInto<Body>>::Error>,
+    {
+        let segment = Self::read_payload(header, reader)?;
+
+        // Message padding is outside the payload;
+        // even invalid messages must leave the reader at the next header.
+        let len = header.len as usize;
+        reader.skip_some(len.align_up(NLMSG_ALIGN) - len);
+
+        Ok(segment)
+    }
+
+    fn read_payload(header: &CMsgSegHdr, reader: &mut dyn MultiRead) -> Result<ContinueRead<Self>>
     where
         Error: From<<Body::CType as TryInto<Body>>::Error>,
     {
