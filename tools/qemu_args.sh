@@ -49,7 +49,8 @@ fi
 
 # Draw all host ports from a single `shuf` invocation,
 # so that none of them will conflict with others.
-mapfile -t RAND_PORTS < <(shuf -i 1024-65535 -n 7)
+# Stay below 32768, where Linux's default ephemeral port range starts.
+mapfile -t RAND_PORTS < <(shuf -i 1024-32767 -n 7)
 SSH_RAND_PORT=${SSH_PORT:-${RAND_PORTS[0]}}
 NGINX_RAND_PORT=${NGINX_PORT:-${RAND_PORTS[1]}}
 REDIS_RAND_PORT=${REDIS_PORT:-${RAND_PORTS[2]}}
