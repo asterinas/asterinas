@@ -72,7 +72,7 @@ pub fn alloc_at(addr: usize, size: usize) -> &'static mut [MaybeUninit<u8>] {
     assert!(
         state.e820.iter().any(|entry| {
             let typ = entry.typ;
-            typ == linux_boot_params::E820Type::Ram
+            typ == linux_boot_params::E820Type::RAM
                 && entry.addr as usize <= range.start
                 && range.end <= (entry.addr + entry.size) as usize
         }),

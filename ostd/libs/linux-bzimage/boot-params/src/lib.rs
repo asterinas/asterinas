@@ -220,18 +220,20 @@ impl EfiInfo {
 ///
 /// Originally defined in the linux source tree:
 /// `linux/arch/x86/include/asm/e820/types.h`
-#[repr(u32)]
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum E820Type {
-    Ram = 1,
-    Reserved = 2,
-    Acpi = 3,
-    Nvs = 4,
-    Unusable = 5,
-    Pmem = 7,
-    Pram = 12,
-    SoftReserved = 0xefffffff,
-    ReservedKern = 128,
+pub struct E820Type(pub u32);
+
+impl E820Type {
+    pub const RAM: Self = Self(1);
+    pub const RESERVED: Self = Self(2);
+    pub const ACPI: Self = Self(3);
+    pub const NVS: Self = Self(4);
+    pub const UNUSABLE: Self = Self(5);
+    pub const PMEM: Self = Self(7);
+    pub const PRAM: Self = Self(12);
+    pub const SOFT_RESERVED: Self = Self(0xefffffff);
+    pub const RESERVED_KERN: Self = Self(128);
 }
 
 #[repr(C, packed)]
