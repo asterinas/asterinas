@@ -153,6 +153,10 @@ let
   };
 in
 package.overrideAttrs (oldAttrs: {
+  patches = (oldAttrs.patches or [ ]) ++ [
+    ./0004-gvisor-Use-kernel-termios-definitions-for-PTY-tests.patch
+  ];
+
   postPatch = (oldAttrs.postPatch or "") + ''
     patchShebangs tools/workspace_status.sh
   '';

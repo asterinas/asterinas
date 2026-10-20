@@ -1,0 +1,85 @@
+From 98125ef1330ccd926a77d39b3ee33bc2ff1e1138 Mon Sep 17 00:00:00 2001
+From: Qingsong Chen <changxian.cqs@antgroup.com>
+Date: Fri, 16 Oct 2026 03:26:05 +0000
+Subject: [PATCH] gvisor: use kernel termios definitions for PTY tests
+
+The PTY tests use termios ioctls directly, but take their constants from
+libc's `<termios.h>`. The glibc headers used by the Nix build define baud
+rates as numeric speeds rather than the bit encodings required by the
+Linux ioctl ABI.
+
+Use `<asm/termbits.h>` to obtain the kernel definitions and remove the
+conflicting libc includes.
+
+---
+ test/syscalls/linux/host_pty.cc | 1 -
+ test/syscalls/linux/pty.cc      | 1 -
+ test/syscalls/linux/pty_root.cc | 1 -
+ test/util/pty_util.cc           | 1 -
+ test/util/pty_util.h            | 2 +-
+ 5 files changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/test/syscalls/linux/host_pty.cc b/test/syscalls/linux/host_pty.cc
+index 65333e9..c6a6eb2 100644
+--- a/test/syscalls/linux/host_pty.cc
++++ b/test/syscalls/linux/host_pty.cc
+@@ -17,7 +17,6 @@
+ #include <sys/ioctl.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
+-#include <termios.h>
+ #include <unistd.h>
+ 
+ #include <ctime>
+diff --git a/test/syscalls/linux/pty.cc b/test/syscalls/linux/pty.cc
+index 0a2eb31..d99c40e 100644
+--- a/test/syscalls/linux/pty.cc
++++ b/test/syscalls/linux/pty.cc
+@@ -28,7 +28,6 @@
+ #include <sys/sysmacros.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
+-#include <termios.h>
+ #include <unistd.h>
+ 
+ #include <csignal>
+diff --git a/test/syscalls/linux/pty_root.cc b/test/syscalls/linux/pty_root.cc
+index 4ac6487..6ef578b 100644
+--- a/test/syscalls/linux/pty_root.cc
++++ b/test/syscalls/linux/pty_root.cc
+@@ -13,7 +13,6 @@
+ // limitations under the License.
+ 
+ #include <sys/ioctl.h>
+-#include <termios.h>
+ 
+ #include "gtest/gtest.h"
+ #include "absl/base/macros.h"
+diff --git a/test/util/pty_util.cc b/test/util/pty_util.cc
+index f94d846..ec58f6c 100644
+--- a/test/util/pty_util.cc
++++ b/test/util/pty_util.cc
+@@ -17,7 +17,6 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ #include <sys/ioctl.h>
+-#include <termios.h>
+ 
+ #include <cctype>
+ #include <cstring>
+diff --git a/test/util/pty_util.h b/test/util/pty_util.h
+index 2ac2f69..2aefbdb 100644
+--- a/test/util/pty_util.h
++++ b/test/util/pty_util.h
+@@ -15,7 +15,7 @@
+ #ifndef GVISOR_TEST_UTIL_PTY_UTIL_H_
+ #define GVISOR_TEST_UTIL_PTY_UTIL_H_
+ 
+-#include <termios.h>
++#include <asm/termbits.h>
+ 
+ #include <ostream>
+ 
+-- 
+2.43.0
+
