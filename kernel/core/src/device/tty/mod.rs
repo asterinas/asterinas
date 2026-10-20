@@ -34,6 +34,7 @@ mod vt;
 pub(crate) use device::CONSOLE_DEVICE_ID;
 pub(super) use driver::TtyDriver;
 pub(super) use flags::TtyFlags;
+pub(super) use line_discipline::EchoUnit;
 
 pub(super) fn init_in_first_process() -> Result<()> {
     hvc::init_in_first_process()?;
@@ -124,32 +125,37 @@ impl<D> Tty<D> {
 }
 
 impl<D: TtyDriver> Tty<D> {
-    /// Pushes characters into the output buffer.
+    /// Pushes characters into the input buffer.
     ///
     /// This method returns the number of bytes pushed or fails with an error if no bytes can be
     /// pushed because the buffer is full.
     pub(crate) fn push_input(&self, chs: &[u8]) -> Result<usize> {
         let mut ldisc = self.ldisc.lock();
-        let mut echo = self.driver.echo_callback();
 
         let mut len = 0;
         for ch in chs {
-            let res = ldisc.push_char(
-                *ch,
-                |signum| {
-                    if let Some(foreground) = self.job_control.foreground() {
-                        broadcast_signal_async(Arc::downgrade(&foreground), signum);
-                    }
-                },
-                &mut echo,
-            );
-            if res.is_err() && len == 0 {
-                return_errno_with_message!(Errno::EAGAIN, "the line discipline is full");
-            } else if res.is_err() {
-                break;
-            } else {
-                len += 1;
+            // A backlog left by a full output buffer may fill the echo buffer mid-batch.
+            if ldisc.is_echo_buffer_full() {
+                ldisc.commit_echoes(|units| self.driver.push_echo(units));
             }
+
+            let res = ldisc.push_char(*ch, |signum| {
+                if let Some(foreground) = self.job_control.foreground() {
+                    broadcast_signal_async(Arc::downgrade(&foreground), signum);
+                }
+            });
+            if res.is_err() {
+                break;
+            }
+            len += 1;
+        }
+
+        // Echoes are committed once per batch, so the driver takes its output lock once and never
+        // holds it across the loop above.
+        ldisc.commit_echoes(|units| self.driver.push_echo(units));
+
+        if len == 0 && !chs.is_empty() {
+            return_errno_with_message!(Errno::EAGAIN, "the line discipline is full");
         }
 
         self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
@@ -216,12 +222,17 @@ impl<D: TtyDriver> Tty<D> {
 
         // TODO: Add support for timeout.
         let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
+        let try_push = || {
+            // Echoes deferred by a full output buffer go out before new output.
+            self.ldisc
+                .lock()
+                .commit_echoes(|units| self.driver.push_echo(units));
+            self.driver.push_output(&buf[..write_len])
+        };
         let len = if is_nonblocking {
-            self.driver.push_output(&buf[..write_len])?
+            try_push()?
         } else {
-            self.wait_events(IoEvents::OUT, None, || {
-                self.driver.push_output(&buf[..write_len])
-            })?
+            self.wait_events(IoEvents::OUT, None, try_push)?
         };
         self.pollee.invalidate();
         Ok(len)
