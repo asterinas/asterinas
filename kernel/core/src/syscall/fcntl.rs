@@ -34,10 +34,7 @@ pub(super) fn sys_fcntl(
         FcntlCmd::F_SETFL => handle_setfl(fd, arg, ctx),
         FcntlCmd::F_GETLK => handle_getlk(fd, arg, ctx),
         FcntlCmd::F_SETLK => handle_setlk(fd, arg, true, ctx),
-        FcntlCmd::F_SETLKW => handle_setlk(fd, arg, false, ctx).map_err(|err| match err.error() {
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
-            _ => err,
-        }),
+        FcntlCmd::F_SETLKW => handle_setlk(fd, arg, false, ctx),
         FcntlCmd::F_GETOWN => handle_getown(fd, ctx),
         FcntlCmd::F_SETOWN => handle_setown(fd, arg, ctx),
         FcntlCmd::F_ADD_SEALS => handle_addseal(fd, arg, ctx),
