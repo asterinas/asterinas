@@ -4,7 +4,10 @@ use chrono::DateTime;
 use fdt_util::AcquireIoMems;
 use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
 
-use crate::{SystemTime, rtc::Driver};
+use crate::{
+    SystemTime,
+    rtc::{Driver, RtcError},
+};
 
 pub(super) struct RtcGoldfish {
     io_mem: IoMem,
@@ -23,7 +26,7 @@ impl Driver for RtcGoldfish {
         Some(Self { io_mem })
     }
 
-    fn read_rtc(&self) -> SystemTime {
+    fn read_rtc(&self) -> Result<SystemTime, RtcError> {
         let mut last_time_high = self.io_mem.read_once(HIGHER_HALF_OFFSET).unwrap();
         let timestamp = loop {
             let time_low: u32 = self.io_mem.read_once(LOWER_HALF_OFFSET).unwrap();
@@ -35,7 +38,7 @@ impl Driver for RtcGoldfish {
         };
 
         let time = DateTime::from_timestamp_nanos(timestamp as i64).naive_utc();
-        SystemTime::from(time)
+        Ok(SystemTime::from(time))
     }
 }
 
