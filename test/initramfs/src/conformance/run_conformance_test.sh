@@ -8,6 +8,7 @@ CONFORMANCE_TEST_SUITE=${CONFORMANCE_TEST_SUITE:-ltp}
 LTP_DIR=/opt/ltp
 GVISOR_DIR=/opt/gvisor
 KSELFTEST_DIR=/opt/kselftest
+KVMTEST_DIR=/opt/kvmtest
 PJDFSTEST_DIR=/opt/pjdfstest
 XFSTESTS_DIR=/opt/xfstests
 
@@ -45,6 +46,12 @@ elif [ "${CONFORMANCE_TEST_SUITE}" = "xfstests" ]; then
     if ! "${XFSTESTS_DIR}/run_xfstests.sh" "$@"; then
         echo "Error: xfstests failed." >&2
         exit 5
+    fi
+elif [ "${CONFORMANCE_TEST_SUITE}" = "kvmtest" ]; then
+    echo "Running kvmtest..."
+    if ! "${KVMTEST_DIR}/run_kvm_hello_world.sh"; then
+        echo "Error: kvmtest failed." >&2
+        exit 6
     fi
 else
     echo "Error: Unknown test suite '${CONFORMANCE_TEST_SUITE}'." >&2
