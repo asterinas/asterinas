@@ -50,6 +50,8 @@ pub mod events;
 pub mod fs;
 mod init;
 mod ipc;
+#[cfg(target_arch = "x86_64")]
+mod kvm;
 mod net;
 pub mod power;
 pub mod prelude;
