@@ -163,7 +163,7 @@ impl VcpuSregs {
 ///
 /// Refer to: Intel SDM Vol. 3A, 3.4.5 "Segment Descriptors".
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Pod)]
 pub struct VcpuSegment {
     /// The segment base address.
     pub base: u64,
@@ -195,7 +195,7 @@ pub struct VcpuSegment {
 
 /// Guest descriptor-table state.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Pod)]
 pub struct VcpuDescTable {
     /// The linear base address of the descriptor table.
     pub base: u64,
