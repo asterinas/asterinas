@@ -52,6 +52,12 @@ jobs:
           fi
       - name: Check flake
         run: nix flake check --no-build --all-systems --no-update-lock-file
+      - name: Check benchmark clients
+        run: |
+          for system in x86_64-linux aarch64-linux; do
+            nix-instantiate --eval --strict --argstr system "$system" \
+              test/initramfs/nix/check-host-clients.nix > /dev/null
+          done
 
   dev-shell-smoke:
     name: dev-shell-smoke (${{ matrix.runs_on }})
