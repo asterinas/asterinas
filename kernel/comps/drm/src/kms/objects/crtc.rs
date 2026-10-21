@@ -78,28 +78,50 @@ pub(super) struct DrmCrtcConfig {
     pub cursor_plane: Weak<DrmPlane>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct DrmCrtcState {
-    display_mode: Option<DrmDisplayMode>,
-    is_enabled: bool,
-    #[expect(dead_code)]
-    is_active: bool,
+    enable_state: CrtcEnableState,
+}
+
+impl Default for DrmCrtcState {
+    fn default() -> Self {
+        Self {
+            enable_state: CrtcEnableState::Disabled,
+        }
+    }
 }
 
 impl DrmCrtcState {
     pub(crate) fn new(display_mode: DrmDisplayMode) -> Self {
         Self {
-            display_mode: Some(display_mode),
-            is_enabled: true,
-            is_active: true,
+            enable_state: CrtcEnableState::Enabled {
+                display_mode,
+                is_active: true,
+            },
         }
     }
 
     pub(crate) fn display_mode(&self) -> Option<DrmDisplayMode> {
-        self.display_mode
+        match self.enable_state {
+            CrtcEnableState::Disabled => None,
+            CrtcEnableState::Enabled { display_mode, .. } => Some(display_mode),
+        }
     }
 
-    pub(crate) fn is_enabled(&self) -> bool {
-        self.is_enabled
+    fn is_active(&self) -> bool {
+        match self.enable_state {
+            CrtcEnableState::Disabled => false,
+            CrtcEnableState::Enabled { is_active, .. } => is_active,
+        }
     }
+}
+
+/// The CRTC's enable state, requiring a mode when enabled and preventing activity when disabled.
+#[derive(Clone, Debug)]
+enum CrtcEnableState {
+    Disabled,
+    Enabled {
+        display_mode: DrmDisplayMode,
+        is_active: bool,
+    },
 }
