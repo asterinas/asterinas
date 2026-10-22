@@ -34,6 +34,8 @@ fi
 
 ./getpid/getpid
 
+./set_tid_address
+
 ./personality/personality
 
 ./prctl/capbset
