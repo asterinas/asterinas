@@ -10,7 +10,9 @@ use ostd::sync::RwArc;
 
 use super::file_handle::FileLike;
 use crate::{
-    fs::vfs::range_lock::RangeLockOwner, prelude::*, process::posix_thread::FileTableRefMut,
+    fs::vfs::range_lock::RangeLockOwner,
+    prelude::*,
+    process::{ResourceType, posix_thread::FileTableRefMut},
 };
 
 /// Represents a validated, non-negative file descriptor.
@@ -36,11 +38,6 @@ pub(crate) struct FileDesc(RangedU32<0, { i32::MAX as _ }>);
 /// It may hold negative sentinel values like `AT_FDCWD` (-100).
 /// Convert to [`FileDesc`] via `TryFrom` before use.
 pub(crate) type RawFileDesc = i32;
-
-impl FileDesc {
-    /// File descriptor 0.
-    pub(crate) const ZERO: Self = Self(RangedU32::new(0));
-}
 
 impl Display for FileDesc {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -134,33 +131,49 @@ impl FileTable {
         self.table.slots_len()
     }
 
-    /// Duplicates `fd` onto the lowest-numbered available descriptor equal to
-    /// or greater than `ceil_fd`.
+    /// Duplicates `file` onto the lowest-numbered available descriptor below the current
+    /// process's soft `RLIMIT_NOFILE` limit.
+    ///
+    /// If `ceil_fd` is specified, searches from that descriptor (inclusive).
+    /// Otherwise, searches from zero.
+    ///
+    /// Returns `EINVAL` if `ceil_fd` is at or above the limit, or `EMFILE` if no
+    /// descriptor is available in the search range.
     pub(crate) fn dup_ceil(
         &mut self,
-        fd: FileDesc,
-        ceil_fd: FileDesc,
+        file: Arc<dyn FileLike>,
+        ceil_fd: Option<FileDesc>,
         flags: FdFlags,
-    ) -> Result<FileDesc> {
-        let entry = self.duplicate_entry(fd, flags)?;
+    ) -> Result<FileDesc, (Error, Arc<dyn FileLike>)> {
+        let fd_limit = current!()
+            .resource_limits()
+            .get_rlimit(ResourceType::RLIMIT_NOFILE)
+            .get_cur() as usize;
 
-        // Get the lowest-numbered available fd equal to or greater than `ceil_fd`.
-        let get_min_free_fd = || -> usize {
-            let ceil_fd = ceil_fd.into();
-            if self.table.get(ceil_fd).is_none() {
-                return ceil_fd;
+        let fd_range = if let Some(ceil_fd) = ceil_fd {
+            let ceil_fd = usize::from(ceil_fd);
+            if ceil_fd >= fd_limit {
+                return Err((
+                    Error::with_message(Errno::EINVAL, "the minimum FD reaches the FD limit"),
+                    file,
+                ));
             }
-
-            for idx in ceil_fd + 1..self.len() {
-                if self.table.get(idx).is_none() {
-                    return idx;
-                }
-            }
-            self.len()
+            ceil_fd..fd_limit
+        } else {
+            0..fd_limit
         };
 
-        let min_free_fd = get_min_free_fd();
-        self.table.put_at(min_free_fd, entry);
+        let entry = FileTableEntry::new(file, flags);
+        let min_free_fd = self.table.try_put_in(entry, fd_range).map_err(|entry| {
+            (
+                Error::with_message(
+                    Errno::EMFILE,
+                    "no file descriptor is available in the range",
+                ),
+                entry.file,
+            )
+        })?;
+
         // Resource limits guarantee the table never exceeds `i32::MAX` entries.
         Ok((min_free_fd as RawFileDesc).try_into().unwrap())
     }
@@ -172,19 +185,15 @@ impl FileTable {
         new_fd: FileDesc,
         flags: FdFlags,
     ) -> Result<Option<ClosedFile>> {
-        let entry = self.duplicate_entry(fd, flags)?;
-        let closed_file = self.close_file(new_fd);
-        self.table.put_at(new_fd.into(), entry);
-        Ok(closed_file)
-    }
-
-    fn duplicate_entry(&self, fd: FileDesc, flags: FdFlags) -> Result<FileTableEntry> {
         let file = self
             .table
             .get(fd.into())
             .map(|entry| entry.file.clone())
             .ok_or_else(|| Error::with_message(Errno::EBADF, "the FD does not exist"))?;
-        Ok(FileTableEntry::new(file, flags))
+        let entry = FileTableEntry::new(file, flags);
+        let closed_file = self.close_file(new_fd);
+        self.table.put_at(new_fd.into(), entry);
+        Ok(closed_file)
     }
 
     pub(crate) fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {

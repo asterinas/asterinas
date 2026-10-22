@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::vec::Vec;
+use core::ops::Range;
 
 /// A `SlotVec` is a type of vector that retains the index of an item, even when items are added to
 /// or removed from the vector.
@@ -66,16 +67,35 @@ impl<T> SlotVec<T> {
     ///
     /// Returns the index of the inserted item.
     pub fn put(&mut self, entry: T) -> usize {
+        match self.try_put_in(entry, 0..usize::MAX) {
+            Ok(index) => index,
+            Err(_) => unreachable!("a `SlotVec` cannot occupy every index below `usize::MAX`"),
+        }
+    }
+
+    /// Puts an item at the lowest available index in `range`.
+    ///
+    /// The range includes its start and excludes its end. The vector grows if
+    /// the selected index is beyond the existing slots.
+    ///
+    /// Returns the index of the inserted item, or returns `entry` unchanged if
+    /// the range is empty or has no available index. On failure, the vector is
+    /// unchanged.
+    pub fn try_put_in(&mut self, entry: T, range: Range<usize>) -> Result<usize, T> {
+        let append_idx = self.slots.len().max(range.start);
         let idx = if self.num_occupied == self.slots.len() {
-            self.slots.push(Some(entry));
-            self.slots.len() - 1
+            append_idx
         } else {
-            let idx = self.slots.iter().position(|x| x.is_none()).unwrap();
-            self.slots[idx] = Some(entry);
-            idx
+            (range.start..range.end.min(self.slots.len()))
+                .find(|&idx| self.slots[idx].is_none())
+                .unwrap_or(append_idx)
         };
-        self.num_occupied += 1;
-        idx
+        if idx >= range.end {
+            return Err(entry);
+        }
+
+        self.put_at(idx, entry);
+        Ok(idx)
     }
 
     /// Puts and returns the item at position `idx`.
