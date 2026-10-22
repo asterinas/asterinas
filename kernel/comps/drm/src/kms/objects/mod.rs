@@ -11,7 +11,7 @@
 //! [`builder::DrmKmsObjectStoreBuilder`] constructs and validates the static KMS topology
 //! before materializing the objects in the store.
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::{sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
 use aster_core::prelude::*;
@@ -26,7 +26,10 @@ use crate::kms::objects::{
     crtc::DrmCrtc,
     encoder::DrmEncoder,
     plane::DrmPlane,
-    property::{DrmProperty, DrmPropertyAttachments, DrmStandardProperty, blob::DrmPropertyBlob},
+    property::{
+        DrmProperty, DrmPropertyAttachments, DrmStandardProperty,
+        blob::{DrmPropertyBlob, DrmPropertyBlobEntry},
+    },
 };
 
 pub mod builder;
@@ -69,9 +72,10 @@ pub struct DrmKmsObjectStore {
     /// Provides a semantic index for standard properties;
     /// driver-specific properties remain accessible through `properties` by object ID.
     standard_property_ids: HashMap<DrmStandardProperty, KmsObjectId>,
-    // TODO: Support both device-lifetime blobs created by the kernel and
-    // per-file blobs created and owned by userspace clients.
-    property_blobs: HashMap<KmsObjectId, Arc<DrmPropertyBlob>>,
+    /// User blobs are owned by their creating files and any states referencing them.
+    /// Destroying a user blob releases only the file's creator reference; the global
+    /// entry is removed when the blob's last strong reference is released.
+    property_blobs: HashMap<KmsObjectId, DrmPropertyBlobEntry>,
 }
 
 impl DrmKmsObjectStore {
@@ -89,6 +93,8 @@ impl DrmKmsObjectStore {
     }
 
     pub(crate) fn alloc_object_id(&mut self) -> Result<KmsObjectId> {
+        self.reclaim_dead_property_blobs();
+
         let id = self
             .id_allocator
             .alloc()
@@ -115,6 +121,35 @@ impl DrmKmsObjectStore {
 
     fn insert_connector(&mut self, connector: Arc<DrmConnector>) {
         self.connectors.insert(connector.id(), connector);
+    }
+
+    pub(crate) fn insert_kernel_prop_blob(&mut self, prop_blob: Arc<DrmPropertyBlob>) {
+        let id = prop_blob.id();
+        let blob_entry = DrmPropertyBlobEntry::Kernel(prop_blob);
+        self.property_blobs.insert(id, blob_entry);
+    }
+
+    pub(crate) fn insert_user_prop_blob(&mut self, prop_blob: Arc<DrmPropertyBlob>) {
+        let id = prop_blob.id();
+        let blob_entry = DrmPropertyBlobEntry::User(Arc::downgrade(&prop_blob));
+        self.property_blobs.insert(id, blob_entry);
+    }
+
+    fn reclaim_dead_property_blobs(&mut self) {
+        let id_allocator = &mut self.id_allocator;
+
+        self.property_blobs.retain(|&id, entry| {
+            let is_dead = matches!(
+                entry,
+                DrmPropertyBlobEntry::User(blob) if blob.strong_count() == 0
+            );
+
+            if is_dead {
+                id_allocator.free(id);
+            }
+
+            !is_dead
+        });
     }
 
     pub(crate) fn collect_sorted_crtc_ids(&self) -> Vec<KmsObjectId> {
@@ -190,8 +225,11 @@ impl DrmKmsObjectStore {
         self.properties.get(&id)
     }
 
-    pub(crate) fn lookup_property_blob(&self, id: KmsObjectId) -> Option<&Arc<DrmPropertyBlob>> {
-        self.property_blobs.get(&id)
+    pub(crate) fn lookup_property_blob(&self, id: KmsObjectId) -> Option<Arc<DrmPropertyBlob>> {
+        match self.property_blobs.get(&id)? {
+            DrmPropertyBlobEntry::Kernel(blob) => Some(Arc::clone(blob)),
+            DrmPropertyBlobEntry::User(blob) => blob.upgrade(),
+        }
     }
 
     /// Looks up a KMS mode object's property table without specifying its type.
@@ -240,20 +278,9 @@ impl DrmKmsObjectStore {
         let id = self.alloc_object_id()?;
         let property = Arc::new(standard.create_property(id));
 
-        let previous = self.properties.insert(id, property.clone());
-        debug_assert!(previous.is_none());
-        let previous = self.standard_property_ids.insert(standard, id);
-        debug_assert!(previous.is_none());
+        self.properties.insert(id, property.clone());
+        self.standard_property_ids.insert(standard, id);
         Ok(property)
-    }
-
-    fn create_property_blob(&mut self, data: Box<[u8]>) -> Result<Arc<DrmPropertyBlob>> {
-        let id = self.alloc_object_id()?;
-        let blob = Arc::new(DrmPropertyBlob::new(id, data));
-
-        let previous = self.property_blobs.insert(id, blob.clone());
-        debug_assert!(previous.is_none());
-        Ok(blob)
     }
 }
 

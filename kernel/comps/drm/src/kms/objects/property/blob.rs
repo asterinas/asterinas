@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::boxed::Box;
+use alloc::{
+    boxed::Box,
+    sync::{Arc, Weak},
+};
 
 use crate::kms::objects::KmsObjectId;
 
@@ -33,4 +36,10 @@ impl DrmPropertyBlob {
     pub(crate) fn len(&self) -> usize {
         self.data.len()
     }
+}
+
+#[derive(Debug)]
+pub(crate) enum DrmPropertyBlobEntry {
+    Kernel(Arc<DrmPropertyBlob>),
+    User(Weak<DrmPropertyBlob>),
 }
