@@ -34,7 +34,7 @@ use crate::{
     device::{DrmDevice, DrmMaster},
     gem::object::DrmGemObject,
     has_current_sys_admin,
-    kms::objects::{KmsObjectId, framebuffer::DrmFramebuffer},
+    kms::objects::{KmsObjectId, framebuffer::DrmFramebuffer, property::blob::DrmPropertyBlob},
     minor::{DrmMinor, DrmMinorType},
 };
 
@@ -55,6 +55,8 @@ pub(super) struct DrmFile {
     gem_handles: Mutex<DrmGemHandleTable>,
     /// Framebuffers created through this open file.
     framebuffers: Mutex<Vec<Arc<DrmFramebuffer>>>,
+    /// Creator references to property blobs created through this open file.
+    property_blobs: Mutex<Vec<Arc<DrmPropertyBlob>>>,
 }
 
 impl DrmFile {
@@ -94,6 +96,7 @@ impl DrmFile {
 
             gem_handles: Mutex::new(DrmGemHandleTable::new()),
             framebuffers: Mutex::new(Vec::new()),
+            property_blobs: Mutex::new(Vec::new()),
         }
     }
 
@@ -216,6 +219,31 @@ impl DrmFile {
             .iter()
             .position(|framebuffer| framebuffer.id() == id)?;
         Some(framebuffers.swap_remove(position))
+    }
+
+    pub(super) fn add_property_blob(&self, blob: Arc<DrmPropertyBlob>) {
+        self.property_blobs.lock().push(blob);
+    }
+
+    /// Releases this file's creator reference without affecting other owners.
+    pub(super) fn remove_property_blob(&self, blob: &Arc<DrmPropertyBlob>) -> Result<()> {
+        let removed = {
+            let mut blobs = self.property_blobs.lock();
+            let index = blobs
+                .iter()
+                .position(|owned| Arc::ptr_eq(owned, blob))
+                .ok_or_else(|| {
+                    Error::with_message(
+                        Errno::EPERM,
+                        "the DRM property blob was not created by this file",
+                    )
+                })?;
+            blobs.swap_remove(index)
+        };
+
+        // Blob cleanup takes the registry lock, so release the file-list lock first.
+        drop(removed);
+        Ok(())
     }
 
     /// Keeps tracking the ioctl caller while this file has never been master,

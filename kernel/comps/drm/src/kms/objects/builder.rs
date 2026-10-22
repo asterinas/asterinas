@@ -15,7 +15,10 @@ use crate::kms::{
         crtc::{DrmCrtc, DrmCrtcConfig},
         encoder::{DrmEncoder, DrmEncoderConfig, DrmEncoderType},
         plane::{DrmPlane, DrmPlaneConfig, DrmPlaneType},
-        property::{DrmPropertyAttachments, KmsObjectPropValue, in_formats::DrmInFormats},
+        property::{
+            DrmPropertyAttachments, KmsObjectPropValue, blob::DrmPropertyBlob,
+            in_formats::DrmInFormats,
+        },
     },
     pixel_format::DrmPixelFormat,
 };
@@ -363,13 +366,15 @@ fn build_plane_properties(
     object_store: &mut DrmKmsObjectStore,
     config: &DrmPlaneConfig,
 ) -> Result<DrmPropertyAttachments> {
-    let in_formats = object_store.create_property_blob(config.in_formats.encode_blob())?;
+    let id = object_store.alloc_object_id()?;
+    let in_formats_blob = Arc::new(DrmPropertyBlob::new(id, config.in_formats.encode_blob()));
+    object_store.insert_kernel_prop_blob(in_formats_blob);
 
     build_object_properties(
         object_store,
         &[
             (DrmStandardProperty::PlaneType, config.type_ as u64),
-            (DrmStandardProperty::InFormats, in_formats.id() as u64),
+            (DrmStandardProperty::InFormats, id as u64),
             (DrmStandardProperty::SrcX, 0),
             (DrmStandardProperty::SrcY, 0),
             (DrmStandardProperty::SrcW, 0),
