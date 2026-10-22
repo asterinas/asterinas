@@ -360,13 +360,13 @@ impl CrtcSpec {
 }
 
 fn build_plane_properties(
-    store: &mut DrmKmsObjectStore,
+    object_store: &mut DrmKmsObjectStore,
     config: &DrmPlaneConfig,
 ) -> Result<DrmPropertyAttachments> {
-    let in_formats = store.create_property_blob(config.in_formats.encode_blob())?;
+    let in_formats = object_store.create_property_blob(config.in_formats.encode_blob())?;
 
     build_object_properties(
-        store,
+        object_store,
         &[
             (DrmStandardProperty::PlaneType, config.type_ as u64),
             (DrmStandardProperty::InFormats, in_formats.id() as u64),
@@ -384,9 +384,9 @@ fn build_plane_properties(
     )
 }
 
-fn build_crtc_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
+fn build_crtc_properties(object_store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
     build_object_properties(
-        store,
+        object_store,
         &[
             (DrmStandardProperty::Active, 0),
             // A zero `MODE_ID` means that the CRTC has no active mode.
@@ -395,18 +395,20 @@ fn build_crtc_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAtt
     )
 }
 
-fn build_connector_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
-    build_object_properties(store, &[(DrmStandardProperty::CrtcId, 0)])
+fn build_connector_properties(
+    object_store: &mut DrmKmsObjectStore,
+) -> Result<DrmPropertyAttachments> {
+    build_object_properties(object_store, &[(DrmStandardProperty::CrtcId, 0)])
 }
 
 fn build_object_properties(
-    store: &mut DrmKmsObjectStore,
+    object_store: &mut DrmKmsObjectStore,
     property_values: &[(DrmStandardProperty, KmsObjectPropValue)],
 ) -> Result<DrmPropertyAttachments> {
     let mut object_properties = DrmPropertyAttachments::default();
 
     for &(standard, value) in property_values {
-        let property = store.get_or_create_standard_property(standard)?;
+        let property = object_store.get_or_create_standard_property(standard)?;
         object_properties.attach(&property, value)?;
     }
 

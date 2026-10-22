@@ -895,9 +895,7 @@ impl DrmFile {
             let id = property.id();
             let value = attachment.value();
 
-            if property.flags().contains(DrmPropertyFlags::ATOMIC)
-                && !self.has_client_caps(DrmClientCaps::ATOMIC)
-            {
+            if property.is_atomic() && !self.has_client_caps(DrmClientCaps::ATOMIC) {
                 continue;
             }
 

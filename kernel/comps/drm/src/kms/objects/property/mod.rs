@@ -41,6 +41,10 @@ impl DrmProperty {
         &self.name
     }
 
+    pub(crate) fn is_atomic(&self) -> bool {
+        self.is_atomic
+    }
+
     pub(crate) fn flags(&self) -> DrmPropertyFlags {
         let mut flags = match &self.value_type {
             DrmPropertyValueType::Plain => DrmPropertyFlags::empty(),

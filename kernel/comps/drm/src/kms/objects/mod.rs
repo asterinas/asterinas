@@ -240,10 +240,8 @@ impl DrmKmsObjectStore {
         let id = self.alloc_object_id()?;
         let property = Arc::new(standard.create_property(id));
 
-        let previous = self.properties.insert(id, property.clone());
-        debug_assert!(previous.is_none());
-        let previous = self.standard_property_ids.insert(standard, id);
-        debug_assert!(previous.is_none());
+        self.properties.insert(id, property.clone());
+        self.standard_property_ids.insert(standard, id);
         Ok(property)
     }
 
