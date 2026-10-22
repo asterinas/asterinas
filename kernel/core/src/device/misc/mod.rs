@@ -9,6 +9,7 @@ use spin::Once;
 
 use super::registry::char::{MajorIdOwner, acquire_major};
 
+mod dm_control;
 mod hwrng;
 #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
 pub(crate) mod tdxguest;
@@ -18,6 +19,7 @@ static MISC_MAJOR: Once<MajorIdOwner> = Once::new();
 pub(super) fn init_in_first_kthread() {
     MISC_MAJOR.call_once(|| acquire_major(MajorId::new(10)).unwrap());
 
+    dm_control::init_in_first_kthread();
     hwrng::init_in_first_kthread();
 
     #[cfg(target_arch = "x86_64")]
