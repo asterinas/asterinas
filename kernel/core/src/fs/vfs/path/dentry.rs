@@ -12,7 +12,7 @@ use super::{RenameMode, is_dot, is_dot_or_dotdot, is_dotdot};
 use crate::{
     fs::{
         self,
-        file::{InodeMode, InodeType},
+        file::{InodeMode, InodeType, Permission},
         vfs::{
             inode::{Inode, MknodType, RevalidationPolicy},
             inode_ext::InodeExt,
@@ -885,6 +885,10 @@ impl DirDentry<'_> {
                 && let Some(replaced_inode) = replaced_inode
             {
                 new_dir.check_sticky_bit_permission(replaced_inode)?;
+            }
+
+            if old_inode.type_() == InodeType::Dir {
+                old_inode.check_permission(Permission::MAY_WRITE)?;
             }
 
             old_dir_inode.rename(&old_dentry, new_dir, new_name, replaced_inode, mode)?;
