@@ -281,25 +281,15 @@ impl RawInodeBuilder {
     }
 
     pub(super) fn build(self) -> RawInode {
-        RawInode {
-            mode: self.mode,
-            uid: 0,
-            size_lo: self.size_lo,
-            atime: 0,
-            ctime: 0,
-            mtime: 0,
-            dtime: self.dtime,
-            gid: 0,
-            link_count: self.link_count,
-            sector_count: self.sector_count,
-            flags: self.flags,
-            osd1: 0,
-            block: self.block,
-            generation: 0,
-            file_acl: 0,
-            size_high: 0,
-            ..Default::default()
-        }
+        let mut raw = RawInode::default();
+        raw.mode = self.mode;
+        raw.size_lo = self.size_lo;
+        raw.dtime = self.dtime;
+        raw.link_count = self.link_count;
+        raw.sector_count = self.sector_count;
+        raw.flags = self.flags;
+        raw.block = self.block;
+        raw
     }
 }
 

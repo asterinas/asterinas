@@ -35,16 +35,22 @@ use crate::{
 };
 
 /// A data-backed inode's logical-to-physical block mapping.
+///
+/// Owns synchronization and the page-cache backend interface for both mapping
+/// formats. The selected tree and its mutable state reside in [`MappingTreeType`].
 #[derive(Debug)]
 pub(super) struct BlockMapping {
-    manager: RwMutex<InodeBlockManager>,
+    manager: RwMutex<MappingTreeType>,
     npages: AtomicUsize,
     fs: Weak<Ext4>,
 }
 
-/// Format-specific mutable mapping state.
+/// The selected mapping-tree representation and its mutable state.
+///
+/// Dispatches tree operations while [`BlockMapping`] owns synchronization and
+/// the page-cache backend interface.
 #[derive(Debug)]
-pub(super) enum InodeBlockManager {
+pub(super) enum MappingTreeType {
     /// An EXT4 extent tree rooted in the inode's `i_block` field.
     ExtentTree(ExtentTree),
     /// A classic EXT direct/indirect block-pointer tree.
@@ -96,7 +102,7 @@ impl RawBlockPtrs {
     }
 }
 
-impl InodeBlockManager {
+impl MappingTreeType {
     pub(super) fn next_io_range(
         &self,
         fs: &Ext4,
@@ -142,7 +148,7 @@ impl BlockMapping {
         npages: usize,
     ) -> Self {
         Self {
-            manager: RwMutex::new(InodeBlockManager::BlockPtrTree(BlockPtrTree::new(
+            manager: RwMutex::new(MappingTreeType::BlockPtrTree(BlockPtrTree::new(
                 raw_block_ptrs,
                 fs.clone(),
             ))),
@@ -158,7 +164,7 @@ impl BlockMapping {
         npages: usize,
     ) -> Result<Self> {
         Ok(Self {
-            manager: RwMutex::new(InodeBlockManager::ExtentTree(ExtentTree::new(
+            manager: RwMutex::new(MappingTreeType::ExtentTree(ExtentTree::new(
                 raw_block_ptrs,
             )?)),
             npages: AtomicUsize::new(npages),
@@ -170,8 +176,8 @@ impl BlockMapping {
     pub(super) fn raw_block_ptrs(&self) -> RawBlockPtrs {
         let manager = self.manager.read();
         match &*manager {
-            InodeBlockManager::ExtentTree(state) => state.raw_block_ptrs(),
-            InodeBlockManager::BlockPtrTree(tree) => *tree.raw_block_ptrs(),
+            MappingTreeType::ExtentTree(state) => state.raw_block_ptrs(),
+            MappingTreeType::BlockPtrTree(tree) => *tree.raw_block_ptrs(),
         }
     }
 
@@ -179,8 +185,8 @@ impl BlockMapping {
     pub(super) fn is_dirty(&self) -> bool {
         let manager = self.manager.read();
         match &*manager {
-            InodeBlockManager::ExtentTree(state) => state.is_dirty(),
-            InodeBlockManager::BlockPtrTree(tree) => tree.is_dirty(),
+            MappingTreeType::ExtentTree(state) => state.is_dirty(),
+            MappingTreeType::BlockPtrTree(tree) => tree.is_dirty(),
         }
     }
 
@@ -188,8 +194,8 @@ impl BlockMapping {
     pub(super) fn clear_dirty(&self) {
         let mut manager = self.manager.write();
         match &mut *manager {
-            InodeBlockManager::ExtentTree(state) => state.clear_dirty(),
-            InodeBlockManager::BlockPtrTree(tree) => tree.clear_dirty(),
+            MappingTreeType::ExtentTree(state) => state.clear_dirty(),
+            MappingTreeType::BlockPtrTree(tree) => tree.clear_dirty(),
         }
     }
 
@@ -207,8 +213,8 @@ impl BlockMapping {
         let fs = self.fs()?;
         let mut manager = self.manager.write();
         match &mut *manager {
-            InodeBlockManager::ExtentTree(state) => state.truncate_to_byte_len(&fs, new_size),
-            InodeBlockManager::BlockPtrTree(tree) => {
+            MappingTreeType::ExtentTree(state) => state.truncate_to_byte_len(&fs, new_size),
+            MappingTreeType::BlockPtrTree(tree) => {
                 tree.truncate_to_byte_len(&fs, new_size);
                 Ok(())
             }
@@ -219,8 +225,8 @@ impl BlockMapping {
     pub(super) fn sync_metadata(&self) -> Result<()> {
         let manager = self.manager.read();
         match &*manager {
-            InodeBlockManager::ExtentTree(_) => Ok(()),
-            InodeBlockManager::BlockPtrTree(tree) => tree.sync_indirect_blocks(),
+            MappingTreeType::ExtentTree(_) => Ok(()),
+            MappingTreeType::BlockPtrTree(tree) => tree.sync_indirect_blocks(),
         }
     }
 
@@ -228,10 +234,10 @@ impl BlockMapping {
     pub(super) fn allocate_range_blocks(&self, start_block: usize, end_block: usize) -> Result<()> {
         let fs = self.fs()?;
         let mut manager = self.manager.write();
-        if let InodeBlockManager::ExtentTree(state) = &mut *manager {
+        if let MappingTreeType::ExtentTree(state) = &mut *manager {
             return state.allocate_range_blocks(&fs, start_block, end_block);
         }
-        let InodeBlockManager::BlockPtrTree(tree) = &mut *manager else {
+        let MappingTreeType::BlockPtrTree(tree) = &mut *manager else {
             unreachable!()
         };
         let mut current_block = start_block;
@@ -266,8 +272,8 @@ impl BlockMapping {
         let fs = self.fs()?;
         let manager = self.manager.read();
         match &*manager {
-            InodeBlockManager::ExtentTree(state) => state.map_block(&fs, iblock),
-            InodeBlockManager::BlockPtrTree(tree) => tree.lookup_block(iblock),
+            MappingTreeType::ExtentTree(state) => state.map_block(&fs, iblock),
+            MappingTreeType::BlockPtrTree(tree) => tree.lookup_block(iblock),
         }
     }
 }

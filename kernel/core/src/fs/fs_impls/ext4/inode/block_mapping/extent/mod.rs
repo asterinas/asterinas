@@ -459,7 +459,7 @@ mod tests {
                 .write_bytes(Bid::new(bid.into()).to_offset(), &stale)
                 .unwrap();
         }
-        let free_before = fixture.fs.super_block().free_blocks_count();
+        let free_before = fixture.fs.super_block().read_state().free_blocks_count();
         let mut tree =
             ExtentTree::new(RawBlockPtrs::new(0, inline_root(leaf_header(0), &[]))).unwrap();
         assert!(!tree.is_dirty());
@@ -468,6 +468,13 @@ mod tests {
         // Adjacent allocations merge, preserve existing mappings, and zero data.
         tree.allocate_range_blocks(&fixture.fs, 0, 2).unwrap();
         tree.allocate_range_blocks(&fixture.fs, 2, 4).unwrap();
+        // Mapping validation only needs immutable geometry and group-local
+        // allocation state, even while the global counters are write-locked.
+        {
+            let _state = fixture.fs.super_block().write_state();
+            assert_eq!(tree.map_block(&fixture.fs, 2).unwrap(), Some(first_bid + 2));
+            assert_eq!(fixture.fs.max_file_size(), fixture.sb.max_file_size());
+        }
         assert_eq!(tree.extents(&fixture.fs).unwrap().len(), 1);
         assert_eq!(
             tree.mapped_run(&fixture.fs, 1, 100).unwrap(),
@@ -507,7 +514,7 @@ mod tests {
         assert_eq!(tree.extents(&fixture.fs).unwrap().len(), 5);
         assert_eq!(tree.raw_block_ptrs().sector_count, 9 * SECTORS_PER_BLOCK);
         assert_eq!(
-            fixture.fs.super_block().free_blocks_count(),
+            fixture.fs.super_block().read_state().free_blocks_count(),
             free_before - 9
         );
         assert!(tree.is_dirty());
@@ -537,7 +544,7 @@ mod tests {
             3 * SECTORS_PER_BLOCK
         );
         assert_eq!(
-            fixture.fs.super_block().free_blocks_count(),
+            fixture.fs.super_block().read_state().free_blocks_count(),
             free_before - 3
         );
         assert_eq!(
@@ -553,7 +560,10 @@ mod tests {
         assert!(restored.is_dirty());
         assert_eq!(restored.raw_block_ptrs().sector_count, 0);
         assert_eq!(restored.map_block(&fixture.fs, 0).unwrap(), None);
-        assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
+        assert_eq!(
+            fixture.fs.super_block().read_state().free_blocks_count(),
+            free_before
+        );
     }
 
     #[ktest]
@@ -563,7 +573,7 @@ mod tests {
             .with_free_blocks(300, 300)
             .build()
             .unwrap();
-        let free_before = fixture.fs.super_block().free_blocks_count();
+        let free_before = fixture.fs.super_block().read_state().free_blocks_count();
         let mut tree =
             ExtentTree::new(RawBlockPtrs::new(0, inline_root(leaf_header(0), &[]))).unwrap();
         tree.allocate_range_blocks(&fixture.fs, 0, 257).unwrap();
@@ -580,7 +590,10 @@ mod tests {
             assert_eq!(contents, [0; BLOCK_SIZE]);
         }
         tree.truncate_to_byte_len(&fixture.fs, 0).unwrap();
-        assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
+        assert_eq!(
+            fixture.fs.super_block().read_state().free_blocks_count(),
+            free_before
+        );
         assert_eq!(tree.raw_block_ptrs().sector_count, 0);
     }
 
@@ -655,13 +668,16 @@ mod tests {
                     inline_root(leaf_header(1), &[RawExtent::new(0, 1, bid)])
                 };
                 let mut tree = ExtentTree::new(RawBlockPtrs::new(8, root)).unwrap();
-                let free_before = fixture.fs.super_block().free_blocks_count();
+                let free_before = fixture.fs.super_block().read_state().free_blocks_count();
                 assert_errno!(tree.map_block(&fixture.fs, 0), Errno::EUCLEAN);
                 assert_errno!(
                     tree.allocate_range_blocks(&fixture.fs, 2, 3),
                     Errno::EUCLEAN
                 );
-                assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
+                assert_eq!(
+                    fixture.fs.super_block().read_state().free_blocks_count(),
+                    free_before
+                );
                 assert_eq!(tree.raw_block_ptrs().block_ptrs, root);
                 assert_eq!(tree.raw_block_ptrs().sector_count, 8);
                 assert!(!tree.is_dirty());
@@ -696,7 +712,7 @@ mod tests {
                 }
             };
             let mut tree = ExtentTree::new(RawBlockPtrs::new(24, root)).unwrap();
-            let free_before = fixture.fs.super_block().free_blocks_count();
+            let free_before = fixture.fs.super_block().read_state().free_blocks_count();
             assert_errno!(tree.map_block(&fixture.fs, 0), Errno::EUCLEAN);
             assert_errno!(
                 tree.allocate_range_blocks(&fixture.fs, 6, 7),
@@ -705,7 +721,10 @@ mod tests {
             assert_eq!(tree.raw_block_ptrs().block_ptrs, root);
             assert_eq!(tree.raw_block_ptrs().sector_count, 24);
             assert!(!tree.is_dirty());
-            assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
+            assert_eq!(
+                fixture.fs.super_block().read_state().free_blocks_count(),
+                free_before
+            );
         }
     }
 
@@ -726,9 +745,12 @@ mod tests {
             ],
         );
         let mut tree = ExtentTree::new(RawBlockPtrs::new(32, root)).unwrap();
-        let free_before = fixture.fs.super_block().free_blocks_count();
+        let free_before = fixture.fs.super_block().read_state().free_blocks_count();
         assert_errno!(tree.allocate_range_blocks(&fixture.fs, 8, 9), Errno::ENOSPC);
-        assert_eq!(fixture.fs.super_block().free_blocks_count(), free_before);
+        assert_eq!(
+            fixture.fs.super_block().read_state().free_blocks_count(),
+            free_before
+        );
         assert_eq!(tree.raw_block_ptrs().block_ptrs, root);
         assert_eq!(tree.raw_block_ptrs().sector_count, 32);
         assert!(!tree.is_dirty());

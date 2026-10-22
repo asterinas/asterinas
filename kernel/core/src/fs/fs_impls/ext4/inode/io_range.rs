@@ -2,7 +2,7 @@
 
 //! Classification of logical block ranges as mapped runs or sparse holes.
 
-use super::block_mapping::InodeBlockManager;
+use super::block_mapping::MappingTreeType;
 use crate::fs::ext4::{fs::Ext4, prelude::*};
 
 /// EXT block-range classification for the current logical interval.
@@ -18,17 +18,17 @@ pub(super) enum IoRange {
 ///
 /// The iterator retains a read guard while the mapping plan is consumed, so
 /// both classic block pointers and extents are traversed against a stable
-/// mapping. Format-specific dispatch remains inside [`InodeBlockManager`].
+/// mapping. Format-specific dispatch remains inside [`MappingTreeType`].
 pub(super) struct IoRangeIter<'a> {
     range: Range<Iblock>,
-    manager: RwMutexReadGuard<'a, InodeBlockManager>,
+    manager: RwMutexReadGuard<'a, MappingTreeType>,
     fs: Arc<Ext4>,
 }
 
 impl<'a> IoRangeIter<'a> {
     pub(super) fn new(
         range: Range<Iblock>,
-        manager: RwMutexReadGuard<'a, InodeBlockManager>,
+        manager: RwMutexReadGuard<'a, MappingTreeType>,
         fs: Arc<Ext4>,
     ) -> Self {
         Self { range, manager, fs }
