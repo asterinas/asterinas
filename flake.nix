@@ -53,7 +53,10 @@
     {
       # rust-overlay is composed in so the overlay is usable on its own.
       overlays.default = nixpkgs.lib.composeExtensions (import rust-overlay) (
-        import ./tools/dev_env/nix/overlay.nix
+        nixpkgs.lib.composeManyExtensions [
+          (import ./distro/coreutils-overlay.nix)
+          (import ./tools/dev_env/nix/overlay.nix)
+        ]
       );
 
       devShells = forAllSystems (pkgs: {

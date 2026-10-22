@@ -15,8 +15,8 @@ import
   {
     inherit
       config
-      overlays
       system
       crossSystem
       ;
+    overlays = [ (import ./coreutils-overlay.nix) ] ++ overlays;
   }
