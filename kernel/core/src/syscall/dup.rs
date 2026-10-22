@@ -12,8 +12,8 @@ pub(super) fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallRetur
 
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
-    let new_fd =
-        file_table_locked.dup_ceil(old_fd.try_into()?, FileDesc::ZERO, FdFlags::empty())?;
+    let file = file_table_locked.get_file(old_fd.try_into()?)?.clone();
+    let new_fd = file_table_locked.dup_ceil(file, None, FdFlags::empty())?;
 
     Ok(SyscallReturn::Return(new_fd.into()))
 }
