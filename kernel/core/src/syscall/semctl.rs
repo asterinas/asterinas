@@ -34,12 +34,8 @@ pub(super) fn sys_semctl(
 
     match cmd {
         IpcControlCmd::IPC_RMID => {
-            let euid = ctx.posix_thread.credentials().euid();
             ipc_ns.remove_sem_set(semid, |sem_set| {
-                // TODO: Consider capabilities in addition to UIDs.
-                let permission = sem_set.permission();
-                let can_remove = (euid == permission.uid()) || (euid == permission.cuid());
-                if !can_remove {
+                if !ipc_ns.may_remove_sem_set(sem_set, ctx) {
                     return_errno_with_message!(
                         Errno::EPERM,
                         "the process does not have permission to remove the semaphore set"
