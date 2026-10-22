@@ -478,15 +478,6 @@ impl FileLike for InodeHandle {
                 "the flags do not work on the append-only file"
             );
         }
-        if status_flags.contains(StatusFlags::O_DIRECT)
-            || status_flags.contains(StatusFlags::O_PATH)
-        {
-            return_errno_with_message!(
-                Errno::EBADF,
-                "currently fallocate file with O_DIRECT or O_PATH is not supported"
-            );
-        }
-
         clear_file_priv(dentry)?;
         inode.fallocate(mode, offset, len)
     }
