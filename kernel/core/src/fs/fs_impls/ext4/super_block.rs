@@ -9,7 +9,8 @@
 //! # Types
 //!
 //! - `RawSuperBlock` — the `#[repr(C)]` on-disk layout.
-//! - `SuperBlock` — a validated, in-memory representation.
+//! - `SuperBlock` — validated geometry, features, and preserved fields.
+//! - `SuperBlockState` — separately locked runtime metadata and counters.
 //!
 //! # Mount validation
 //!
@@ -43,8 +44,11 @@ pub(super) const SUPER_BLOCK_OFFSET: usize = 1024;
 
 const SUPER_BLOCK_SIZE: usize = 1024;
 
-/// Validated, Rust-typed in-memory representation of the ext2 superblock.
-#[derive(Clone, Copy, Debug)]
+/// Validated superblock geometry, features, and preserved on-disk fields.
+///
+/// These fields are fixed for the lifetime of a mount. Only runtime metadata
+/// in `SuperBlockState` requires locking; serialization combines both parts.
+#[derive(Debug)]
 pub(super) struct SuperBlock {
     /// Total number of inodes.
     inodes_count: u32,
@@ -52,10 +56,6 @@ pub(super) struct SuperBlock {
     blocks_count: u32,
     /// Total number of reserved blocks.
     reserved_blocks_count: u32,
-    /// Total number of free blocks.
-    free_blocks_count: u32,
-    /// Total number of free inodes.
-    free_inodes_count: u32,
     /// First data block.
     first_data_block: Ext4Bid,
     /// Block size.
@@ -70,24 +70,8 @@ pub(super) struct SuperBlock {
     nr_inodes_per_group: u32,
     /// Number of inode table blocks in each group.
     nr_inode_table_blocks_per_group: u32,
-    /// Mount time.
-    mtime: Duration,
-    /// Write time.
-    wtime: Duration,
-    /// Mount count.
-    mnt_count: u16,
-    /// Maximal mount count.
-    max_mnt_count: u16,
     /// Magic signature.
     magic: u16,
-    /// File system state.
-    state: FsState,
-    /// Behavior when detecting errors.
-    errors_behavior: ErrorsBehavior,
-    /// Time of last check.
-    last_check_time: Duration,
-    /// Interval between checks.
-    check_interval: Duration,
     /// Creator OS ID.
     creator_os: OsId,
     /// Revision level.
@@ -114,8 +98,6 @@ pub(super) struct SuperBlock {
     uuid: [u8; 16],
     /// Volume name.
     volume_name: Str16,
-    /// Directory where last mounted.
-    last_mounted_dir: Str64,
 
     // These fields are valid if the FeatureCompatSet::DIR_PREALLOC is set.
     /// Number of blocks to preallocate for files.
@@ -130,7 +112,6 @@ pub(super) struct SuperBlock {
     journal_uuid: [u8; 16],
     journal_ino: u32,
     journal_dev: u32,
-    last_orphan: u32,
     hash_seed: [u32; 4],
     def_hash_version: u8,
     reserved_char_pad: u8,
@@ -138,6 +119,41 @@ pub(super) struct SuperBlock {
     default_mount_opts: u32,
     first_meta_bg: u32,
     reserved: Reserved,
+
+    /// Mutable metadata and its writeback state.
+    state: RwMutex<Dirty<SuperBlockState>>,
+}
+
+/// Superblock metadata that may change while the filesystem is mounted.
+///
+/// Allocation and reclamation update the free counters; sync updates the write
+/// time. Mount, check, and recovery fields remain here for their mutable roles.
+#[derive(Debug)]
+pub(super) struct SuperBlockState {
+    /// Total number of free blocks.
+    free_blocks_count: u32,
+    /// Total number of free inodes.
+    free_inodes_count: u32,
+    /// Mount time.
+    mtime: Duration,
+    /// Write time.
+    wtime: Duration,
+    /// Mount count.
+    mnt_count: u16,
+    /// Maximal mount count.
+    max_mnt_count: u16,
+    /// File system state.
+    state: FsState,
+    /// Behavior when detecting errors.
+    errors_behavior: ErrorsBehavior,
+    /// Time of last check.
+    last_check_time: Duration,
+    /// Interval between checks.
+    check_interval: Duration,
+    /// Directory where last mounted.
+    last_mounted_dir: Str64,
+    /// Head of the on-disk orphan inode list.
+    last_orphan: u32,
 }
 
 impl TryFrom<RawSuperBlock> for SuperBlock {
@@ -260,8 +276,6 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             inodes_count: sb.inodes_count,
             blocks_count: sb.blocks_count,
             reserved_blocks_count: sb.reserved_blocks_count,
-            free_blocks_count: sb.free_blocks_count,
-            free_inodes_count: sb.free_inodes_count,
             first_data_block: sb.first_data_block,
             block_size,
             frag_size,
@@ -269,15 +283,7 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             nr_frags_per_group: sb.frags_per_group,
             nr_inodes_per_group: sb.inodes_per_group,
             nr_inode_table_blocks_per_group,
-            mtime: Duration::from(sb.mtime),
-            wtime: Duration::from(sb.wtime),
-            mnt_count: sb.mnt_count,
-            max_mnt_count: sb.max_mnt_count,
             magic: MAGIC_NUM,
-            state,
-            errors_behavior,
-            last_check_time: Duration::from(sb.last_check_time),
-            check_interval: Duration::from_secs(sb.check_interval as _),
             creator_os,
             rev_level,
             default_reserved_uid: sb.default_reserved_uid as _,
@@ -290,7 +296,6 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             feature_ro_compat,
             uuid: sb.uuid,
             volume_name: sb.volume_name,
-            last_mounted_dir: sb.last_mounted_dir,
             prealloc_file_blocks: sb.prealloc_file_blocks,
             prealloc_dir_blocks: sb.prealloc_dir_blocks,
             min_rev_level: sb.min_rev_level,
@@ -299,7 +304,6 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             journal_uuid: sb.journal_uuid,
             journal_ino: sb.journal_ino,
             journal_dev: sb.journal_dev,
-            last_orphan: sb.last_orphan,
             hash_seed: sb.hash_seed,
             def_hash_version: sb.def_hash_version,
             reserved_char_pad: sb.reserved_char_pad,
@@ -307,11 +311,35 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             default_mount_opts: sb.default_mount_opts,
             first_meta_bg: sb.first_meta_bg,
             reserved: sb.reserved,
+            state: RwMutex::new(Dirty::new(SuperBlockState {
+                free_blocks_count: sb.free_blocks_count,
+                free_inodes_count: sb.free_inodes_count,
+                mtime: Duration::from(sb.mtime),
+                wtime: Duration::from(sb.wtime),
+                mnt_count: sb.mnt_count,
+                max_mnt_count: sb.max_mnt_count,
+                state,
+                errors_behavior,
+                last_check_time: Duration::from(sb.last_check_time),
+                check_interval: Duration::from_secs(sb.check_interval as _),
+                last_mounted_dir: sb.last_mounted_dir,
+                last_orphan: sb.last_orphan,
+            })),
         })
     }
 }
 
 impl SuperBlock {
+    /// Returns a read guard for mutable superblock metadata.
+    pub(super) fn read_state(&self) -> RwMutexReadGuard<'_, Dirty<SuperBlockState>> {
+        self.state.read()
+    }
+
+    /// Returns a write guard for mutable superblock metadata.
+    pub(super) fn write_state(&self) -> RwMutexWriteGuard<'_, Dirty<SuperBlockState>> {
+        self.state.write()
+    }
+
     /// Returns the block size.
     pub(super) const fn block_size(&self) -> usize {
         self.block_size
@@ -469,11 +497,6 @@ impl SuperBlock {
         group_desc_bytes.div_ceil(self.block_size) as u32
     }
 
-    /// Returns the number of free blocks.
-    pub(super) const fn free_blocks_count(&self) -> u32 {
-        self.free_blocks_count
-    }
-
     /// Returns the number of reserved blocks.
     pub(super) const fn reserved_blocks_count(&self) -> u32 {
         self.reserved_blocks_count
@@ -487,62 +510,6 @@ impl SuperBlock {
     /// Returns the default GID for reserved blocks.
     pub(super) const fn default_reserved_gid(&self) -> u32 {
         self.default_reserved_gid
-    }
-
-    /// Increases the number of free blocks.
-    pub(super) fn inc_free_blocks(&mut self, count: u32) -> Result<()> {
-        self.free_blocks_count = self
-            .free_blocks_count
-            .checked_add(count)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "free block counter overflow"))?;
-        Ok(())
-    }
-
-    /// Overwrites the free blocks counter with a recomputed value.
-    pub(super) const fn set_free_blocks_count(&mut self, count: u32) {
-        self.free_blocks_count = count;
-    }
-
-    /// Decreases the number of free blocks.
-    pub(super) fn dec_free_blocks(&mut self, count: u32) -> Result<()> {
-        self.free_blocks_count = self
-            .free_blocks_count
-            .checked_sub(count)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "free block counter underflow"))?;
-        Ok(())
-    }
-
-    /// Returns the number of free inodes.
-    pub(super) const fn free_inodes_count(&self) -> u32 {
-        self.free_inodes_count
-    }
-
-    /// Overwrites the free inodes counter with a recomputed value.
-    pub(super) const fn set_free_inodes_count(&mut self, count: u32) {
-        self.free_inodes_count = count;
-    }
-
-    /// Increases the number of free inodes.
-    pub(super) fn inc_free_inodes(&mut self) -> Result<()> {
-        self.free_inodes_count = self
-            .free_inodes_count
-            .checked_add(1)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "free inode counter overflow"))?;
-        Ok(())
-    }
-
-    /// Sets the last write time.
-    pub(super) const fn set_wtime(&mut self, time: Duration) {
-        self.wtime = time;
-    }
-
-    /// Decreases the number of free inodes.
-    pub(super) fn dec_free_inodes(&mut self) -> Result<()> {
-        self.free_inodes_count = self
-            .free_inodes_count
-            .checked_sub(1)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "free inode counter underflow"))?;
-        Ok(())
     }
 
     /// Checks if the block group will backup the super block.
@@ -605,11 +572,6 @@ impl SuperBlock {
     }
 
     #[expect(dead_code)]
-    const fn state(&self) -> FsState {
-        self.state
-    }
-
-    #[expect(dead_code)]
     const fn rev_level(&self) -> RevLevel {
         self.rev_level
     }
@@ -629,6 +591,74 @@ impl SuperBlock {
     #[expect(dead_code)]
     const fn feature_ro_compat(&self) -> FeatureRoCompatSet {
         self.feature_ro_compat
+    }
+}
+
+impl SuperBlockState {
+    /// Returns the number of free blocks.
+    pub(super) const fn free_blocks_count(&self) -> u32 {
+        self.free_blocks_count
+    }
+
+    /// Increases the number of free blocks.
+    pub(super) fn inc_free_blocks(&mut self, count: u32) -> Result<()> {
+        self.free_blocks_count = self
+            .free_blocks_count
+            .checked_add(count)
+            .ok_or_else(|| Error::with_message(Errno::EIO, "free block counter overflow"))?;
+        Ok(())
+    }
+
+    /// Overwrites the free blocks counter with a recomputed value.
+    pub(super) const fn set_free_blocks_count(&mut self, count: u32) {
+        self.free_blocks_count = count;
+    }
+
+    /// Decreases the number of free blocks.
+    pub(super) fn dec_free_blocks(&mut self, count: u32) -> Result<()> {
+        self.free_blocks_count = self
+            .free_blocks_count
+            .checked_sub(count)
+            .ok_or_else(|| Error::with_message(Errno::EIO, "free block counter underflow"))?;
+        Ok(())
+    }
+
+    /// Returns the number of free inodes.
+    pub(super) const fn free_inodes_count(&self) -> u32 {
+        self.free_inodes_count
+    }
+
+    /// Overwrites the free inodes counter with a recomputed value.
+    pub(super) const fn set_free_inodes_count(&mut self, count: u32) {
+        self.free_inodes_count = count;
+    }
+
+    /// Increases the number of free inodes.
+    pub(super) fn inc_free_inodes(&mut self) -> Result<()> {
+        self.free_inodes_count = self
+            .free_inodes_count
+            .checked_add(1)
+            .ok_or_else(|| Error::with_message(Errno::EIO, "free inode counter overflow"))?;
+        Ok(())
+    }
+
+    /// Sets the last write time.
+    pub(super) const fn set_wtime(&mut self, time: Duration) {
+        self.wtime = time;
+    }
+
+    /// Decreases the number of free inodes.
+    pub(super) fn dec_free_inodes(&mut self) -> Result<()> {
+        self.free_inodes_count = self
+            .free_inodes_count
+            .checked_sub(1)
+            .ok_or_else(|| Error::with_message(Errno::EIO, "free inode counter underflow"))?;
+        Ok(())
+    }
+
+    #[expect(dead_code)]
+    const fn state(&self) -> FsState {
+        self.state
     }
 }
 
@@ -810,58 +840,59 @@ pub(super) struct RawSuperBlock {
     reserved: Reserved,
 }
 
-impl From<&SuperBlock> for RawSuperBlock {
-    fn from(sb: &SuperBlock) -> Self {
-        Self {
-            inodes_count: sb.inodes_count,
-            blocks_count: sb.blocks_count,
-            reserved_blocks_count: sb.reserved_blocks_count,
-            free_blocks_count: sb.free_blocks_count,
-            free_inodes_count: sb.free_inodes_count,
-            first_data_block: sb.first_data_block,
-            log_block_size: (sb.block_size / SUPER_BLOCK_SIZE).trailing_zeros(),
-            log_frag_size: (sb.frag_size / SUPER_BLOCK_SIZE).trailing_zeros(),
-            blocks_per_group: sb.nr_blocks_per_group,
-            frags_per_group: sb.nr_frags_per_group,
-            inodes_per_group: sb.nr_inodes_per_group,
-            mtime: UnixTime::from(sb.mtime),
-            wtime: UnixTime::from(sb.wtime),
-            mnt_count: sb.mnt_count,
-            max_mnt_count: sb.max_mnt_count,
-            magic: sb.magic,
-            state: sb.state.bits(),
-            errors: sb.errors_behavior as u16,
-            min_rev_level: sb.min_rev_level,
-            last_check_time: UnixTime::from(sb.last_check_time),
-            check_interval: utils::duration_to_ext2_secs(sb.check_interval),
-            creator_os: sb.creator_os as u32,
-            rev_level: sb.rev_level as u32,
-            default_reserved_uid: sb.default_reserved_uid as u16,
-            default_reserved_gid: sb.default_reserved_gid as u16,
-            first_ino: sb.first_ino,
-            inode_size: sb.inode_size as u16,
-            block_group_idx: sb.block_group_idx as u16,
-            feature_compat: sb.feature_compat.bits(),
-            feature_incompat: sb.feature_incompat.bits(),
-            feature_ro_compat: sb.feature_ro_compat.bits(),
-            uuid: sb.uuid,
-            volume_name: sb.volume_name,
-            last_mounted_dir: sb.last_mounted_dir,
-            algorithm_usage_bitmap: sb.algorithm_usage_bitmap,
-            prealloc_file_blocks: sb.prealloc_file_blocks,
-            prealloc_dir_blocks: sb.prealloc_dir_blocks,
-            padding1: sb.padding1,
-            journal_uuid: sb.journal_uuid,
-            journal_ino: sb.journal_ino,
-            journal_dev: sb.journal_dev,
-            last_orphan: sb.last_orphan,
-            hash_seed: sb.hash_seed,
-            def_hash_version: sb.def_hash_version,
-            reserved_char_pad: sb.reserved_char_pad,
-            reserved_word_pad: sb.reserved_word_pad,
-            default_mount_opts: sb.default_mount_opts,
-            first_meta_bg: sb.first_meta_bg,
-            reserved: sb.reserved,
+impl SuperBlock {
+    /// Combines immutable fields and locked runtime metadata for writeback.
+    pub(super) fn to_raw(&self, state: &SuperBlockState) -> RawSuperBlock {
+        RawSuperBlock {
+            inodes_count: self.inodes_count,
+            blocks_count: self.blocks_count,
+            reserved_blocks_count: self.reserved_blocks_count,
+            free_blocks_count: state.free_blocks_count,
+            free_inodes_count: state.free_inodes_count,
+            first_data_block: self.first_data_block,
+            log_block_size: (self.block_size / SUPER_BLOCK_SIZE).trailing_zeros(),
+            log_frag_size: (self.frag_size / SUPER_BLOCK_SIZE).trailing_zeros(),
+            blocks_per_group: self.nr_blocks_per_group,
+            frags_per_group: self.nr_frags_per_group,
+            inodes_per_group: self.nr_inodes_per_group,
+            mtime: UnixTime::from(state.mtime),
+            wtime: UnixTime::from(state.wtime),
+            mnt_count: state.mnt_count,
+            max_mnt_count: state.max_mnt_count,
+            magic: self.magic,
+            state: state.state.bits(),
+            errors: state.errors_behavior as u16,
+            min_rev_level: self.min_rev_level,
+            last_check_time: UnixTime::from(state.last_check_time),
+            check_interval: utils::duration_to_ext2_secs(state.check_interval),
+            creator_os: self.creator_os as u32,
+            rev_level: self.rev_level as u32,
+            default_reserved_uid: self.default_reserved_uid as u16,
+            default_reserved_gid: self.default_reserved_gid as u16,
+            first_ino: self.first_ino,
+            inode_size: self.inode_size as u16,
+            block_group_idx: self.block_group_idx as u16,
+            feature_compat: self.feature_compat.bits(),
+            feature_incompat: self.feature_incompat.bits(),
+            feature_ro_compat: self.feature_ro_compat.bits(),
+            uuid: self.uuid,
+            volume_name: self.volume_name,
+            last_mounted_dir: state.last_mounted_dir,
+            algorithm_usage_bitmap: self.algorithm_usage_bitmap,
+            prealloc_file_blocks: self.prealloc_file_blocks,
+            prealloc_dir_blocks: self.prealloc_dir_blocks,
+            padding1: self.padding1,
+            journal_uuid: self.journal_uuid,
+            journal_ino: self.journal_ino,
+            journal_dev: self.journal_dev,
+            last_orphan: state.last_orphan,
+            hash_seed: self.hash_seed,
+            def_hash_version: self.def_hash_version,
+            reserved_char_pad: self.reserved_char_pad,
+            reserved_word_pad: self.reserved_word_pad,
+            default_mount_opts: self.default_mount_opts,
+            first_meta_bg: self.first_meta_bg,
+            reserved: self.reserved,
         }
     }
 }

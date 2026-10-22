@@ -1494,10 +1494,10 @@ mod test {
         let ext2 = &f.fs;
 
         let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
-        let free_before = ext2.super_block().free_blocks_count();
+        let free_before = ext2.super_block().read_state().free_blocks_count();
         let allocated_range =
             expect_allocated(block_ptr_tree.resolve_block_range(ext2, 0, 3).unwrap());
-        let free_after = ext2.super_block().free_blocks_count();
+        let free_after = ext2.super_block().read_state().free_blocks_count();
 
         assert_eq!(allocated_range.end - allocated_range.start, 3);
         assert_eq!(
@@ -1536,10 +1536,10 @@ mod test {
         let ext2 = &f.fs;
 
         let mut block_ptr_tree = make_block_ptr_tree([0u32; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
-        let free_before = ext2.super_block().free_blocks_count();
+        let free_before = ext2.super_block().read_state().free_blocks_count();
         let allocated_range =
             expect_allocated(block_ptr_tree.resolve_block_range(ext2, 12, 4).unwrap());
-        let free_after = ext2.super_block().free_blocks_count();
+        let free_after = ext2.super_block().read_state().free_blocks_count();
 
         assert_ne!(block_ptr_tree.raw_block_ptrs.block_ptrs[12], 0);
         assert_eq!(allocated_range.end - allocated_range.start, 4);
@@ -1649,10 +1649,10 @@ mod test {
             SECTORS_PER_BLOCK * 4
         );
 
-        let free_before = ext2.super_block().free_blocks_count();
+        let free_before = ext2.super_block().read_state().free_blocks_count();
         block_ptr_tree.free_block_subtree(ext2, root, 3);
         block_ptr_tree.raw_block_ptrs.block_ptrs[14] = 0;
-        let free_after = ext2.super_block().free_blocks_count();
+        let free_after = ext2.super_block().read_state().free_blocks_count();
 
         assert_eq!(free_after - free_before, 4);
         assert_eq!(block_ptr_tree.raw_block_ptrs.sector_count, 0);
