@@ -63,7 +63,7 @@
 //! full cross-layer ordering is:
 //!
 //! ```text
-//! Inode::inner → BlockPtrTree → Ext4::super_block → BlockGroup::metadata
+//! Inode::inner → BlockMapping → SuperBlock::state → BlockGroup::metadata
 //! ```
 //!
 //! `BlockGroup::inode_cache` is independent: it is never held while
@@ -412,7 +412,7 @@ impl From<&InodeDesc> for RawInode {
 /// The first 128 bytes are layout-compatible with ext2. Callers must honor the
 /// filesystem's actual inode slot size when transferring this structure.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Pod)]
+#[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct RawInode {
     pub mode: u16,                        // i_mode
     pub uid: u16,                         // i_uid (low 16 bits)
@@ -446,17 +446,13 @@ pub(super) struct RawInode {
     pub crtime_extra: u32,                // i_crtime_extra
     pub version_hi: u32,                  // i_version_hi
     pub projid: u32,                      // i_projid
-    pub tail: InodeTail,
+    /// Unmodeled bytes preserved during inode writeback.
+    tail: [u8; 96],
 }
 
-/// Unmodeled bytes in a 256-byte ext4 inode.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
-pub(super) struct InodeTail([u8; 96]);
-
-impl Default for InodeTail {
+impl Default for RawInode {
     fn default() -> Self {
-        Self([0; 96])
+        Self::new_zeroed()
     }
 }
 

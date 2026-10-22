@@ -794,7 +794,7 @@ mod test {
         let mut payload_reader = VmReader::from(payload.as_slice()).to_fallible();
         old.write_direct_at(0, &mut payload_reader).unwrap();
 
-        let free_blocks_before = f.fs.super_block().free_blocks_count();
+        let free_blocks_before = f.fs.super_block().read_state().free_blocks_count();
         root.unlink("old", old.as_ref()).unwrap();
         assert_errno!(f.fs.read_inode(old_ino), Errno::ESTALE);
         assert!(
@@ -825,7 +825,7 @@ mod test {
         assert_eq!(raw_after_drop.sector_count, 0);
         assert_eq!(raw_after_drop.block[0], 0);
         assert_eq!(
-            f.fs.super_block().free_blocks_count(),
+            f.fs.super_block().read_state().free_blocks_count(),
             free_blocks_before + 1
         );
     }

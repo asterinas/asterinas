@@ -40,6 +40,7 @@ impl FileSystem for Ext4 {
 
     fn sb(&self) -> SuperBlock {
         let sb = self.super_block();
+        let state = sb.read_state();
         let blocks = if self.uses_minix_df() {
             sb.total_blocks()
         } else {
@@ -49,12 +50,12 @@ impl FileSystem for Ext4 {
             magic: MAGIC_NUM as u64,
             bsize: BLOCK_SIZE,
             blocks: blocks as usize,
-            bfree: sb.free_blocks_count() as usize,
-            bavail: sb
+            bfree: state.free_blocks_count() as usize,
+            bavail: state
                 .free_blocks_count()
                 .saturating_sub(sb.reserved_blocks_count()) as usize,
             files: sb.total_inodes() as usize,
-            ffree: sb.free_inodes_count() as usize,
+            ffree: state.free_inodes_count() as usize,
             fsid: 0,
             namelen: NAME_MAX,
             frsize: sb.fragment_size(),

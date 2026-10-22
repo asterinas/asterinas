@@ -194,7 +194,7 @@ impl BlockGroup {
         let filesystem = fs
             .upgrade()
             .ok_or_else(|| Error::with_message(Errno::EIO, "filesystem already dropped"))?;
-        if inode_desc.uses_extents() && !filesystem.super_block().has_extents() {
+        if inode_desc.uses_extents() && !filesystem.has_extents() {
             return_errno_with_message!(
                 Errno::EUCLEAN,
                 "extent inode found on a filesystem without the extents feature"
