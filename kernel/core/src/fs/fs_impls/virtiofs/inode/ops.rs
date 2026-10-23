@@ -38,6 +38,7 @@ use crate::{
     prelude::*,
     thread::work_queue::{self, WorkPriority},
     time::clocks::MonotonicCoarseClock,
+    util::ReadWithLen,
 };
 
 /// Use one page for each `FUSE_READDIR` request.
@@ -67,15 +68,9 @@ impl VirtioFsInode {
         let start = file_size.min(offset);
         let end = file_size.min(offset.saturating_add(writer.avail()));
         let read_len = end - start;
-        if read_len == 0 {
-            return Ok(0);
-        }
 
-        let mut limited_writer = writer.clone_exclusive();
-        limited_writer.limit(read_len);
         let page_cache = inner.page_cache().unwrap();
-        page_cache.read(start, &mut limited_writer)?;
-        writer.skip(read_len);
+        page_cache.read_with_len(start, writer, read_len)?;
 
         Ok(read_len)
     }
