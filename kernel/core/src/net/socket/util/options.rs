@@ -208,19 +208,19 @@ impl SocketOptionSet {
                 self.set_broadcast(*broadcast);
             }
             socket_send_buf @ SendBuf => {
-                let send_buf = socket_send_buf.get().unwrap();
-                if *send_buf <= MIN_SENDBUF {
+                let send_buf = clamp_socket_buf(socket_send_buf.get().unwrap());
+                if send_buf <= MIN_SENDBUF {
                     self.set_send_buf(MIN_SENDBUF);
                 } else {
-                    self.set_send_buf(*send_buf);
+                    self.set_send_buf(send_buf);
                 }
             }
             socket_recv_buf @ RecvBuf => {
-                let recv_buf = socket_recv_buf.get().unwrap();
-                if *recv_buf <= MIN_RECVBUF {
+                let recv_buf = clamp_socket_buf(socket_recv_buf.get().unwrap());
+                if recv_buf <= MIN_RECVBUF {
                     self.set_recv_buf(MIN_RECVBUF);
                 } else {
-                    self.set_recv_buf(*recv_buf);
+                    self.set_recv_buf(recv_buf);
                 }
             }
             socket_keepalive @ KeepAlive => {
@@ -258,20 +258,20 @@ impl SocketOptionSet {
             }
             socket_sendbuf_force @ SendBufForce => {
                 check_current_privileged()?;
-                let send_buf = socket_sendbuf_force.get().unwrap();
-                if *send_buf <= MIN_SENDBUF {
+                let send_buf = clamp_socket_buf(socket_sendbuf_force.get().unwrap());
+                if send_buf <= MIN_SENDBUF {
                     self.set_send_buf(MIN_SENDBUF);
                 } else {
-                    self.set_send_buf(*send_buf);
+                    self.set_send_buf(send_buf);
                 }
             }
             socket_recvbuf_force @ RecvBufForce => {
                 check_current_privileged()?;
-                let recv_buf = socket_recvbuf_force.get().unwrap();
-                if *recv_buf <= MIN_RECVBUF {
+                let recv_buf = clamp_socket_buf(socket_recvbuf_force.get().unwrap());
+                if recv_buf <= MIN_RECVBUF {
                     self.set_recv_buf(MIN_RECVBUF);
                 } else {
-                    self.set_recv_buf(*recv_buf);
+                    self.set_recv_buf(recv_buf);
                 }
             }
             _ => return_errno_with_message!(
@@ -377,6 +377,14 @@ fn check_priority(priority: i32) -> Result<()> {
 }
 
 pub(crate) const MIN_SENDBUF: u32 = 2304;
+
+/// Clamps a user-supplied socket buffer size so that
+/// `getsockopt(SO_SNDBUF/SO_RCVBUF)` never reports a negative size, as Linux
+/// does since CVE-2016-9793.
+/// Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/net/core/sock.c#L1437-L1440>
+fn clamp_socket_buf(val: &u32) -> u32 {
+    (*val).min(i32::MAX as u32)
+}
 pub(crate) const MIN_RECVBUF: u32 = 2304;
 
 /// A trait used for getting socket level options on actual sockets.
