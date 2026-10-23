@@ -204,6 +204,10 @@ impl PerOpenFileOps for VirtioFsFile {
 
         Ok(())
     }
+
+    fn supports_readahead(&self) -> bool {
+        self.cache_policy == CachePolicy::Cached
+    }
 }
 
 /// The virtio-fs file I/O caching policy.
