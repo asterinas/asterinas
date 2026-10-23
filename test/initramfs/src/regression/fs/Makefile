@@ -12,6 +12,7 @@ SUBDIRS := \
 	procfs \
 	pseudofs \
 	ramfs \
+	read_eof \
 	rename \
 	statx \
 	symlink \
