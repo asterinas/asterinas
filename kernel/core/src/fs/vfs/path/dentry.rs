@@ -891,6 +891,13 @@ impl DirDentry<'_> {
                 old_inode.check_permission(Permission::MAY_WRITE)?;
             }
 
+            if mode == RenameMode::Exchange
+                && let Some(replaced_inode) = &replaced_inode
+                && replaced_inode.type_() == InodeType::Dir
+            {
+                replaced_inode.check_permission(Permission::MAY_WRITE)?;
+            }
+
             old_dir_inode.rename(&old_dentry, new_dir, new_name, replaced_inode, mode)?;
 
             match mode {
