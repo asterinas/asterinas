@@ -47,6 +47,7 @@ fi
 ./pthread/pthread_test
 
 ./ptrace/ptrace
+./ptrace/syscall_restart
 ./ptrace/set_options
 
 if [ "$(uname -m)" = "x86_64" ]; then

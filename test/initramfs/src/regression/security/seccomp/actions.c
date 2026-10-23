@@ -13,6 +13,17 @@ static void errno_boundaries(void)
 	CHECK_WITH(syscall(SYS_getppid), _ret == -1 && errno == 4094);
 }
 
+static void errno_restart_values_are_returned(void)
+{
+	alarm(5);
+	no_new_privs();
+	deny_syscall(SYS_getppid, SECCOMP_RET_ERRNO | 512);
+	CHECK_WITH(syscall(SYS_getppid), _ret == -1 && errno == 512);
+	deny_syscall(SYS_getppid, SECCOMP_RET_ERRNO | 513);
+	CHECK_WITH(syscall(SYS_getppid), _ret == -1 && errno == 513);
+	alarm(0);
+}
+
 static void unknown_syscall_is_filtered(void)
 {
 	no_new_privs();
@@ -75,6 +86,7 @@ static void kill_all_threads(void)
 FN_TEST(actions)
 {
 	TEST_RES(run_child(errno_boundaries, 0), _ret == 0);
+	TEST_RES(run_child(errno_restart_values_are_returned, 0), _ret == 0);
 	TEST_RES(run_child(unknown_syscall_is_filtered, 0), _ret == 0);
 	TEST_RES(run_child(rejected_write_has_no_side_effect, 0), _ret == 0);
 	TEST_RES(run_child(kill_process, SIGSYS), _ret == 0);

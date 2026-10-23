@@ -52,6 +52,8 @@ pub(crate) struct ThreadLocal {
     /// Original syscall-return register value captured
     /// at the most recent kernel entry, or `None` for non-syscall entries.
     orig_syscall_ret: Cell<Option<usize>>,
+    /// A syscall implementation requested restart after interruption.
+    syscall_restart_requested: Cell<bool>,
 
     // Namespaces.
     user_ns: RefCell<Arc<UserNamespace>>,
@@ -82,6 +84,7 @@ impl ThreadLocal {
             sig_stack: RefCell::new(SigStack::default()),
             sig_mask_saved: Cell::new(None),
             orig_syscall_ret: Cell::new(None),
+            syscall_restart_requested: Cell::new(false),
             user_ns: RefCell::new(user_ns),
             ns_proxy: RefCell::new(Some(ns_proxy)),
         }
@@ -204,6 +207,16 @@ impl ThreadLocal {
     /// for the most recent kernel entry.
     pub(crate) fn set_orig_syscall_ret(&self, value: Option<usize>) {
         self.orig_syscall_ret.set(value);
+    }
+
+    /// Records a restart requested by a syscall implementation, before ptrace exit.
+    pub(crate) fn request_syscall_restart(&self) {
+        self.syscall_restart_requested.set(true);
+    }
+
+    /// Consumes the syscall implementation's restart request for this kernel entry.
+    pub(in crate::process) fn take_syscall_restart_request(&self) -> bool {
+        self.syscall_restart_requested.take()
     }
 
     pub(crate) fn borrow_user_ns(&self) -> Ref<'_, Arc<UserNamespace>> {
