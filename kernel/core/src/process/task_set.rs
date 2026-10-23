@@ -97,7 +97,7 @@ impl TaskSet {
     }
 
     /// Returns whether an `exit_group` has been initiated.
-    pub(super) fn has_exited_group(&self) -> bool {
+    pub(crate) fn has_exited_group(&self) -> bool {
         self.has_exited_group
     }
 

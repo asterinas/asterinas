@@ -42,6 +42,21 @@ impl SeccompState {
         if self.head.is_some() { MODE_FILTER } else { 0 }
     }
 
+    /// Checks whether this policy is an ancestor of (or identical to) `other`.
+    pub(super) fn is_ancestor_of(&self, other: &Self) -> bool {
+        let Some(head) = &self.head else {
+            return true;
+        };
+        let mut node = other.head.as_ref();
+        while let Some(filter) = node {
+            if Arc::ptr_eq(head, filter) {
+                return true;
+            }
+            node = filter.previous.as_ref();
+        }
+        false
+    }
+
     pub(super) fn append(&self, program: VerifiedProgram) -> Result<Self> {
         let path_insns = program.len()
             + self

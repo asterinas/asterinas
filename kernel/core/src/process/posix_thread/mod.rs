@@ -124,6 +124,18 @@ impl PosixThread {
         drop(previous);
     }
 
+    /// Inherits a thread's seccomp policy and its monotonic privilege restriction.
+    ///
+    /// The caller must hold the source process's task-set lock to exclude TSYNC.
+    /// The destination must be an unpublished child or a validated TSYNC target;
+    /// TSYNC must also hold the credential guard to exclude concurrent exec.
+    pub(crate) fn inherit_seccomp(&self, source: &Self) {
+        if source.credentials.no_new_privs() {
+            self.credentials.set_no_new_privs();
+        }
+        self.set_seccomp(source.seccomp_snapshot());
+    }
+
     pub(crate) fn process(&self) -> Arc<Process> {
         self.process.upgrade().unwrap()
     }
@@ -256,6 +268,7 @@ impl PosixThread {
             (Some((_, PauseReason::Sleep)), true) => SleepingState::Interruptible,
             (Some((_, PauseReason::StopBySignal)), true) => SleepingState::StopBySignal,
             (Some((_, PauseReason::StopByPtrace)), true) => SleepingState::StopByPtrace,
+            (Some((_, PauseReason::Killable)), true) => SleepingState::Uninterruptible,
             (None, true) => SleepingState::Uninterruptible,
             (_, false) => SleepingState::Running,
         }

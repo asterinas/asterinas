@@ -457,8 +457,7 @@ fn clone_child_task(
         .fpu_context(child_fpu_context)
         .user_ns(child_user_ns)
         .ns_proxy(child_ns_proxy)
-        .default_timer_slack_ns(default_timer_slack_ns)
-        .seccomp(posix_thread.seccomp_snapshot());
+        .default_timer_slack_ns(default_timer_slack_ns);
         #[cfg(target_arch = "x86_64")]
         {
             thread_builder = thread_builder.fs_base(child_fs_base).gs_base(child_gs_base);
@@ -472,16 +471,21 @@ fn clone_child_task(
         thread_builder.build()
     };
 
-    process
-        .tasks()
-        .lock()
-        .insert(child_task.clone())
-        .map_err(|_| {
+    {
+        let mut tasks = process.tasks().lock();
+        // Refresh both policy and NNP immediately before publication, under
+        // the same lock used by TSYNC (Linux copy_seccomp()).
+        child_task
+            .as_posix_thread()
+            .unwrap()
+            .inherit_seccomp(posix_thread);
+        tasks.insert(child_task.clone()).map_err(|_| {
             Error::with_message(
                 Errno::EINTR,
                 "the process has exited or has already executed a new program",
             )
         })?;
+    }
 
     let child_thread = child_task.as_thread().unwrap();
     pid_table::pid_table_mut().insert_thread(child_tid, child_thread);
@@ -594,7 +598,6 @@ fn clone_child_process(
             .user_ns(child_user_ns.clone())
             .ns_proxy(child_ns_proxy)
             .default_timer_slack_ns(default_timer_slack_ns)
-            .seccomp(posix_thread.seccomp_snapshot())
         };
         #[cfg(target_arch = "x86_64")]
         {
@@ -623,6 +626,17 @@ fn clone_child_process(
     };
 
     clone_pidfd(ctx, &child, clone_flags, clone_args.pidfd)?;
+
+    {
+        let _parent_tasks = process.tasks().lock();
+        child
+            .tasks()
+            .lock()
+            .main()
+            .as_posix_thread()
+            .unwrap()
+            .inherit_seccomp(posix_thread);
+    }
 
     if let Some(sig) = clone_args.exit_signal {
         child.set_exit_signal(sig);

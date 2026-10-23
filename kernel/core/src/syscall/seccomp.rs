@@ -9,6 +9,6 @@ pub(super) fn sys_seccomp(
     args_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    seccomp::seccomp(operation, flags, args_addr, ctx)?;
-    Ok(SyscallReturn::Return(0))
+    let result = seccomp::seccomp(operation, flags, args_addr, ctx)?;
+    Ok(SyscallReturn::Return(result))
 }

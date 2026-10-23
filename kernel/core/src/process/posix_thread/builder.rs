@@ -151,11 +151,6 @@ impl PosixThreadBuilder {
         self
     }
 
-    pub(crate) fn seccomp(mut self, seccomp: SeccompState) -> Self {
-        self.seccomp = seccomp;
-        self
-    }
-
     pub(crate) fn build(self) -> Arc<Task> {
         let Self {
             tid,

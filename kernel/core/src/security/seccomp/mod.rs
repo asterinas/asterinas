@@ -31,7 +31,12 @@ const GET_ACTION_AVAIL: u32 = 2;
 const GET_NOTIF_SIZES: u32 = 3;
 
 /// Handles the supported seccomp operations.
-pub(crate) fn seccomp(operation: u32, flags: u32, args_addr: Vaddr, ctx: &Context) -> Result<()> {
+pub(crate) fn seccomp(
+    operation: u32,
+    flags: u32,
+    args_addr: Vaddr,
+    ctx: &Context,
+) -> Result<isize> {
     match operation {
         SET_MODE_FILTER => install::install_filter(ctx, flags, args_addr),
         GET_NOTIF_SIZES => {
@@ -46,7 +51,7 @@ pub(crate) fn seccomp(operation: u32, flags: u32, args_addr: Vaddr, ctx: &Contex
                     seccomp_data: size_of::<SeccompData>() as u16,
                 },
             )?;
-            Ok(())
+            Ok(0)
         }
         GET_ACTION_AVAIL => {
             if flags != 0 {
@@ -55,7 +60,7 @@ pub(crate) fn seccomp(operation: u32, flags: u32, args_addr: Vaddr, ctx: &Contex
             let action: u32 = ctx.user_space().read_val(args_addr)?;
             match action {
                 RET_ALLOW | RET_ERRNO | RET_KILL_PROCESS | RET_KILL_THREAD | RET_TRAP
-                | RET_TRACE => Ok(()),
+                | RET_TRACE => Ok(0),
                 _ => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported seccomp action"),
             }
         }
@@ -77,5 +82,5 @@ pub(crate) fn prctl_set_seccomp(mode: u64, fprog_addr: Vaddr, ctx: &Context) -> 
     if mode != MODE_FILTER as u64 {
         return_errno_with_message!(Errno::EINVAL, "unsupported seccomp mode");
     }
-    install::install_filter(ctx, 0, fprog_addr)
+    install::install_filter(ctx, 0, fprog_addr).map(|_| ())
 }
