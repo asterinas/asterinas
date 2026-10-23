@@ -21,7 +21,7 @@ use crate::{
     cpu::LinuxAbi,
     fs::{
         cgroupfs::{CgroupMembership, CgroupSysNode},
-        file::file_table::{FdFlags, FileTable, RawFileDesc},
+        file::file_table::{FdFlags, FileTable, FileTableInsert, RawFileDesc},
         thread_info::ThreadFsInfo,
     },
     prelude::*,
@@ -782,8 +782,9 @@ fn clone_pidfd(
     let fd = {
         let pid_file = PidFile::new(child.clone(), false);
         let file_table = ctx.thread_local.borrow_file_table();
-        let mut file_table_locked = file_table.unwrap().write();
-        file_table_locked.insert(Arc::new(pid_file), FdFlags::CLOEXEC)
+        file_table
+            .unwrap()
+            .lock_and_insert(Arc::new(pid_file), FdFlags::CLOEXEC)?
     };
 
     // Since `write_val` may sleep, we cannot hold the file table lock during its execution.

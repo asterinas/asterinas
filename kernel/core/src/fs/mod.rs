@@ -86,9 +86,18 @@ pub(crate) fn init_in_first_process(ctx: &Context) {
     let mut file_table_ref = ctx.thread_local.borrow_file_table_mut();
     let mut file_table = file_table_ref.unwrap().write();
 
-    file_table.insert(Arc::new(stdin), FdFlags::empty());
-    file_table.insert(Arc::new(stdout), FdFlags::empty());
-    file_table.insert(Arc::new(stderr), FdFlags::empty());
+    file_table
+        .insert(Arc::new(stdin), FdFlags::empty())
+        .map_err(|(err, _)| err)
+        .unwrap();
+    file_table
+        .insert(Arc::new(stdout), FdFlags::empty())
+        .map_err(|(err, _)| err)
+        .unwrap();
+    file_table
+        .insert(Arc::new(stderr), FdFlags::empty())
+        .map_err(|(err, _)| err)
+        .unwrap();
 }
 
 fn lookup_or_create_dev(path_resolver: &PathResolver) -> Result<Path> {

@@ -3,7 +3,10 @@
 use super::{SyscallReturn, constants::MAX_FILENAME_LEN};
 use crate::{
     fs::{
-        file::{FileLike, FsConfigFile, file_table::FdFlags},
+        file::{
+            FileLike, FsConfigFile,
+            file_table::{FdFlags, FileTableInsert},
+        },
         vfs::registry::look_up,
     },
     prelude::*,
@@ -27,12 +30,10 @@ pub(super) fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Resu
     })?;
 
     let file = Arc::new(FsConfigFile::new(fs_type)) as Arc<dyn FileLike>;
-    let fd = ctx
-        .thread_local
-        .borrow_file_table()
+    let file_table = ctx.thread_local.borrow_file_table();
+    let fd = file_table
         .unwrap()
-        .write()
-        .insert(file, FdFlags::from(flags));
+        .lock_and_insert(file, FdFlags::from(flags))?;
     Ok(SyscallReturn::Return(fd.into()))
 }
 

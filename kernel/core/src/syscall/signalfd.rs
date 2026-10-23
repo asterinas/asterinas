@@ -19,7 +19,7 @@ use crate::{
     fs::{
         file::{
             AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags,
-            file_table::{FdFlags, RawFileDesc, get_file_fast},
+            file_table::{FdFlags, FileTableInsert, RawFileDesc, get_file_fast},
         },
         pseudofs::AnonInodeFs,
     },
@@ -99,7 +99,7 @@ fn create_new_signalfd(
     };
 
     let file_table = ctx.thread_local.borrow_file_table();
-    let fd = file_table.unwrap().write().insert(signal_file, fd_flags);
+    let fd = file_table.unwrap().lock_and_insert(signal_file, fd_flags)?;
     Ok(fd.into())
 }
 

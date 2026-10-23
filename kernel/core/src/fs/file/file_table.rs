@@ -131,7 +131,19 @@ impl FileTable {
         self.table.slots_len()
     }
 
-    /// Duplicates `file` onto the lowest-numbered available descriptor below the current
+    /// Inserts `file` at the lowest-numbered available descriptor below the current
+    /// process's soft `RLIMIT_NOFILE` limit.
+    ///
+    /// Returns `EMFILE` if no descriptor is available.
+    pub(crate) fn insert(
+        &mut self,
+        file: Arc<dyn FileLike>,
+        flags: FdFlags,
+    ) -> Result<FileDesc, (Error, Arc<dyn FileLike>)> {
+        self.insert_ceil(file, None, flags)
+    }
+
+    /// Inserts `file` at the lowest-numbered available descriptor below the current
     /// process's soft `RLIMIT_NOFILE` limit.
     ///
     /// If `ceil_fd` is specified, searches from that descriptor (inclusive).
@@ -139,7 +151,7 @@ impl FileTable {
     ///
     /// Returns `EINVAL` if `ceil_fd` is at or above the limit, or `EMFILE` if no
     /// descriptor is available in the search range.
-    pub(crate) fn dup_ceil(
+    pub(crate) fn insert_ceil(
         &mut self,
         file: Arc<dyn FileLike>,
         ceil_fd: Option<FileDesc>,
@@ -185,6 +197,14 @@ impl FileTable {
         new_fd: FileDesc,
         flags: FdFlags,
     ) -> Result<Option<ClosedFile>> {
+        let fd_limit = current!()
+            .resource_limits()
+            .get_rlimit(ResourceType::RLIMIT_NOFILE)
+            .get_cur();
+        if u64::from(new_fd) >= fd_limit {
+            return_errno_with_message!(Errno::EBADF, "the new FD reaches the FD limit");
+        }
+
         let file = self
             .table
             .get(fd.into())
@@ -194,12 +214,6 @@ impl FileTable {
         let closed_file = self.close_file(new_fd);
         self.table.put_at(new_fd.into(), entry);
         Ok(closed_file)
-    }
-
-    pub(crate) fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {
-        let entry = FileTableEntry::new(item, flags);
-        // Resource limits guarantee the table never exceeds `i32::MAX` entries.
-        (self.table.put(entry) as RawFileDesc).try_into().unwrap()
     }
 
     pub(crate) fn close_file(&mut self, fd: FileDesc) -> Option<ClosedFile> {
@@ -277,6 +291,59 @@ impl Drop for FileTable {
                 inode_handle.release_range_locks(self.as_range_lock_owner());
             }
         }
+    }
+}
+
+/// Operations that acquire the file table's lock internally.
+pub(crate) trait FileTableInsert {
+    /// Inserts `file` at the lowest available descriptor
+    /// below the current process's soft `RLIMIT_NOFILE` limit.
+    ///
+    /// Returns `EMFILE` if no descriptor is available.
+    fn lock_and_insert(&self, file: Arc<dyn FileLike>, flags: FdFlags) -> Result<FileDesc> {
+        let [fd] = self.lock_and_insert_multiple([file], flags)?;
+        Ok(fd)
+    }
+
+    /// Inserts `files` in order at the lowest available descriptors
+    /// below the current process's soft `RLIMIT_NOFILE` limit,
+    /// applying `flags` to each.
+    ///
+    /// Returns the descriptors in input order.
+    ///
+    /// If any insertion fails,
+    /// removes all files inserted by this call and returns `EMFILE`.
+    fn lock_and_insert_multiple<const N: usize>(
+        &self,
+        files: [Arc<dyn FileLike>; N],
+        flags: FdFlags,
+    ) -> Result<[FileDesc; N]>;
+}
+
+impl FileTableInsert for RwArc<FileTable> {
+    fn lock_and_insert_multiple<const N: usize>(
+        &self,
+        files: [Arc<dyn FileLike>; N],
+        flags: FdFlags,
+    ) -> Result<[FileDesc; N]> {
+        let mut fds = [None; N];
+        let mut table = self.write();
+        for (idx, file) in files.into_iter().enumerate() {
+            match table.insert(file, flags) {
+                Ok(fd) => fds[idx] = Some(fd),
+                Err((err, file)) => {
+                    let closed_files = fds.map(|fd| fd.and_then(|fd| table.close_file(fd)));
+                    // File destructors may acquire other locks.
+                    // Release the table lock before dropping any of the files,
+                    // including those remaining in the iterator.
+                    drop(table);
+                    drop(closed_files);
+                    drop(file);
+                    return Err(err);
+                }
+            }
+        }
+        Ok(fds.map(Option::unwrap))
     }
 }
 
