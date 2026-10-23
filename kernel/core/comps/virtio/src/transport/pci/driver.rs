@@ -1,69 +1,80 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, collections::vec_deque::VecDeque, sync::Arc};
+use alloc::{boxed::Box, sync::Arc};
 
-use aster_pci::{
-    bus::{PciDevice, PciDriver},
-    common_device::PciCommonDevice,
+use aster_device::{
+    bus::Driver,
+    common::{Attr, Error, Result},
 };
-use ostd::{bus::BusProbeError, sync::SpinLock};
+use aster_pci::bus::{PciBus, PciDevice, PciMatch};
 
-use super::device::VirtioPciModernTransport;
-use crate::transport::{
-    VirtioTransport,
-    pci::{device::VirtioPciDevice, legacy::VirtioPciLegacyTransport},
-};
+use super::{device::VirtioPciModernTransport, legacy::VirtioPciLegacyTransport};
+use crate::transport::VirtioTransport;
 
-#[derive(Debug)]
-pub(crate) struct VirtioPciDriver {
-    devices: SpinLock<VecDeque<Box<dyn VirtioTransport>>>,
-}
+// PCI device discovery identifiers (Virtio 1.2, section 4.1.2).
+// Reference: <https://docs.oasis-open.org/virtio/virtio/v1.2/virtio-v1.2.html>
+const VIRTIO_PCI_VENDOR_ID: u16 = 0x1af4;
+const TRANSITIONAL_DEVICE_ID_MIN: u16 = 0x1000;
+const TRANSITIONAL_DEVICE_ID_MAX: u16 = 0x103f;
+const MODERN_DEVICE_ID_MIN: u16 = 0x1040;
+const MODERN_DEVICE_ID_MAX: u16 = 0x107f;
 
-impl VirtioPciDriver {
-    pub(crate) fn pop_device_transport(&self) -> Option<Box<dyn VirtioTransport>> {
-        self.devices.lock().pop_front()
+pub(crate) struct VirtioPciDriver;
+
+impl Driver<PciBus> for VirtioPciDriver {
+    fn name(&self) -> &str {
+        "virtio-pci"
     }
 
-    pub(super) fn new() -> Self {
-        VirtioPciDriver {
-            devices: SpinLock::new(VecDeque::new()),
-        }
+    fn match_data(&self) -> &[PciMatch] {
+        &[PciMatch::Device {
+            vendor: VIRTIO_PCI_VENDOR_ID,
+            first: TRANSITIONAL_DEVICE_ID_MIN,
+            last: MODERN_DEVICE_ID_MAX,
+        }]
     }
-}
 
-impl PciDriver for VirtioPciDriver {
-    fn probe(
-        &self,
-        device: PciCommonDevice,
-    ) -> Result<Arc<dyn PciDevice>, (BusProbeError, PciCommonDevice)> {
-        const VIRTIO_DEVICE_VENDOR_ID: u16 = 0x1af4;
-        if device.device_id().vendor_id != VIRTIO_DEVICE_VENDOR_ID {
-            return Err((BusProbeError::DeviceNotMatch, device));
-        }
-
+    fn on_probe(&self, device: &Arc<PciDevice>) -> Result<()> {
         let has_vendor_cap = device.iter_vndr_capability().next().is_some();
-        let device_id = *device.device_id();
+        let device_id = device.device_id();
         let transport: Box<dyn VirtioTransport> = match device_id.device_id {
-            0x1000..0x1040 if (device.device_id().revision_id == 0) => {
+            TRANSITIONAL_DEVICE_ID_MIN..=TRANSITIONAL_DEVICE_ID_MAX
+                if device_id.revision_id == 0 =>
+            {
                 if has_vendor_cap {
-                    let modern = VirtioPciModernTransport::new(device)?;
+                    let modern = VirtioPciModernTransport::new(device.clone())
+                        .map_err(|_| Error::ProbeFailed)?;
                     Box::new(modern)
                 } else {
-                    let legacy = VirtioPciLegacyTransport::new(device)?;
+                    let legacy = VirtioPciLegacyTransport::new(device.clone())
+                        .map_err(|_| Error::ProbeFailed)?;
                     Box::new(legacy)
                 }
             }
-            0x1040..0x107f => {
+            MODERN_DEVICE_ID_MIN..=MODERN_DEVICE_ID_MAX => {
                 if !has_vendor_cap {
-                    return Err((BusProbeError::DeviceNotMatch, device));
+                    return Err(Error::NoDriver);
                 }
-                let modern = VirtioPciModernTransport::new(device)?;
+                let modern = VirtioPciModernTransport::new(device.clone())
+                    .map_err(|_| Error::ProbeFailed)?;
                 Box::new(modern)
             }
-            _ => return Err((BusProbeError::DeviceNotMatch, device)),
+            _ => return Err(Error::NoDriver),
         };
-        self.devices.lock().push_back(transport);
+        super::push_device_transport(transport);
+        Ok(())
+    }
 
-        Ok(Arc::new(VirtioPciDevice::new(device_id)))
+    fn on_release(&self, _device: &Arc<PciDevice>) {
+        // FIXME: Stop the virtio device and release its transport resources before removal.
+        panic!("virtio-pci driver removal is not supported");
+    }
+
+    fn dev_attrs(&self) -> &'static [Attr<PciDevice>] {
+        &[]
+    }
+
+    fn suppress_bind_attrs(&self) -> bool {
+        true
     }
 }

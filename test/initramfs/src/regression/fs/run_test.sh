@@ -171,6 +171,10 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 
 ./sync/sync
 
+if [ "$(uname -m)" = "x86_64" ]; then
+    ./sysfs/device/run_test.sh
+fi
+
 ./tmpfile/tmpfile
 
 ./utimensat/utimensat
