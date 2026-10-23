@@ -15,6 +15,7 @@ use crate::{
         },
     },
     prelude::*,
+    process::Uid,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -31,6 +32,8 @@ pub(super) fn sys_openat(
         dirfd, path, flags, mode
     );
 
+    let fsuid = ctx.posix_thread.credentials().fsuid();
+
     let file_handle = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::from_fd_at(dirfd, path.as_ref(), EmptyPathStr::Reject)?;
@@ -44,6 +47,7 @@ pub(super) fn sys_openat(
             &fs_path,
             flags,
             InodeMode::from_bits_truncate(mask_mode),
+            fsuid,
         )
         .map_err(|err| match err.error() {
             Errno::EINTR => Error::new(Errno::ERESTARTSYS),
@@ -86,6 +90,7 @@ fn do_open(
     fs_path: &FsPath,
     flags: u32,
     mode: InodeMode,
+    fsuid: Uid,
 ) -> Result<Arc<dyn FileLike>> {
     let open_args = OpenArgs::from_flags_and_mode(flags, mode)?;
 
@@ -100,7 +105,23 @@ fn do_open(
     };
 
     let file_handle: Arc<dyn FileLike> = match lookup_res {
-        LookupResult::Resolved(path) => Arc::new(path.open(open_args)?),
+        LookupResult::Resolved(path) => {
+            // Linux rejects `O_NOATIME` unless the caller is the file owner
+            // or holds `CAP_FOWNER`. As Asterinas has no capability
+            // infrastructure yet, fsuid 0 is treated as holding all
+            // capabilities. Reference:
+            // <https://elixir.bootlin.com/linux/v6.16.9/source/fs/namei.c#L3095-L3098>
+            if open_args.status_flags.contains(StatusFlags::O_NOATIME)
+                && fsuid != path.owner()?
+                && !fsuid.is_root()
+            {
+                return_errno_with_message!(
+                    Errno::EPERM,
+                    "O_NOATIME is only allowed for the file owner"
+                );
+            }
+            Arc::new(path.open(open_args)?)
+        }
         LookupResult::AtParent(result) => {
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT)
                 || open_args.status_flags.contains(StatusFlags::O_PATH)
