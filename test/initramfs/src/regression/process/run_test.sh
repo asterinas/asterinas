@@ -34,8 +34,6 @@ fi
 
 ./getpid/getpid
 
-./set_tid_address
-
 ./personality/personality
 
 ./prctl/capbset
@@ -80,4 +78,5 @@ fi
 ./job_control
 ./pidfd
 ./pidfd_getfd
+./set_tid_address
 ./wait4

@@ -6,6 +6,7 @@ use crate::prelude::*;
 pub(super) fn sys_set_tid_address(tidptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("tidptr = 0x{:x}", tidptr);
 
+    // The pointer is cleared and a futex wake is performed when the thread exits.
     ctx.thread_local.clear_child_tid().set(tidptr);
 
     let tid = ctx.posix_thread.tid();
