@@ -6,6 +6,7 @@ CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 INITRAMFS ?= $(CUR_DIR)/../../../build/initramfs
 TARGET_DIR := $(INITRAMFS)/opt/kselftest
 RUN_BASH := $(CUR_DIR)/run_kselftest.sh
+SECCOMP_BASIC_RUN := $(CUR_DIR)/seccomp_basic.sh
 BLOCK_LIST := $(CUR_DIR)/blocklists
 EXT2_BLOCK_LIST := $(CUR_DIR)/blocklists.ext2
 EXFAT_BLOCK_LIST := $(CUR_DIR)/blocklists.exfat
@@ -15,7 +16,7 @@ $(if $(wildcard $(BLOCK_LIST)),,$(error missing default blocklist: $(BLOCK_LIST)
 .PHONY: all
 all: $(TARGET_DIR)
 
-$(TARGET_DIR): $(RUN_BASH) $(BLOCK_LIST) $(EXT2_BLOCK_LIST) $(EXFAT_BLOCK_LIST)
+$(TARGET_DIR): $(RUN_BASH) $(SECCOMP_BASIC_RUN) $(BLOCK_LIST) $(EXT2_BLOCK_LIST) $(EXFAT_BLOCK_LIST)
 	@rm -rf $@ && mkdir -p $@
 	@# Copy testcases
 	@cp -rf $(KSELFTEST_PREBUILT_DIR)/* $@
@@ -25,6 +26,9 @@ $(TARGET_DIR): $(RUN_BASH) $(BLOCK_LIST) $(EXT2_BLOCK_LIST) $(EXFAT_BLOCK_LIST)
 	@cp -f $(EXFAT_BLOCK_LIST) $@/blocklists.exfat
 	@# Copy bash script
 	@cp -f $(RUN_BASH) $@
+	@chmod u+w $@/seccomp $@/kselftest-list.txt
+	@cp -f $(SECCOMP_BASIC_RUN) $@/seccomp/seccomp_basic.sh
+	@printf '%s\n' 'seccomp:seccomp_basic.sh' >> $@/kselftest-list.txt
 
 .PHONY: clean
 clean:

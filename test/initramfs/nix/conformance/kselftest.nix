@@ -43,6 +43,7 @@ stdenv.mkDerivation rec {
     "exec"
     "lsm"
     "proc"
+    "seccomp"
     "signal"
     "splice"
     "timers"
