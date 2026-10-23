@@ -109,7 +109,11 @@ impl StopDeliverySignal {
             Self::Injected(_) | Self::Empty => unreachable!(),
         };
 
-        signal.set_signal(new_signal);
+        // Resuming a signal-delivery stop with the same signal preserves its
+        // siginfo. Linux replaces it with SI_USER only when the number changes.
+        if signal.num() != new_signal.num() {
+            signal.set_signal(new_signal);
+        }
         *self = Self::Injected(signal);
     }
 
