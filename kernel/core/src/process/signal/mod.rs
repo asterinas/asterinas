@@ -46,6 +46,26 @@ pub(crate) trait SignalContext {
     fn set_arguments(&mut self, sig_num: SigNum, siginfo_addr: usize, ucontext_addr: usize);
 }
 
+/// Forces a synchronous signal, resetting an ignored or blocked disposition.
+pub(crate) fn force_signal(info: siginfo_t, ctx: &Context) {
+    let sig_num = SigNum::from_u8(info.si_signo as u8);
+    {
+        let dispositions = ctx.process.sig_dispositions().lock();
+        let mut dispositions = dispositions.lock();
+        let mask = ctx.posix_thread.sig_mask();
+        if mask.contains(sig_num) || matches!(dispositions.get(sig_num), SigAction::Ign) {
+            dispositions.set_default(sig_num);
+            ctx.set_sig_mask(mask - sig_num);
+        }
+        // Like Linux force_sig_info_to_task(), leave a traced init protected.
+        if matches!(dispositions.get(sig_num), SigAction::Dfl) && !ctx.posix_thread.is_traced() {
+            ctx.process.status().force_signal_exit();
+        }
+    }
+    ctx.posix_thread
+        .enqueue_signal(Box::new(signals::raw::RawSignal::new(info)));
+}
+
 /// Handles a pending signal for the current process.
 pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
     // FIXME: This function may handle or suppress only one signal per trap, delaying
@@ -181,7 +201,9 @@ pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
                 do_exit_group(TermStatus::Killed(SIGSEGV), ctx, user_ctx);
             }
         }
-        SigAction::Dfl if ctx.process.is_init_process() => {
+        SigAction::Dfl
+            if ctx.process.is_init_process() && !ctx.process.status().is_signal_exit_forced() =>
+        {
             // From Linux man pages "kill(2)":
             // "The only signals that can be sent to process ID 1, the init process, are those for
             // which init has explicitly installed signal handlers."
@@ -239,7 +261,12 @@ fn dequeue_pending_signal(ctx: &Context) -> Option<(DequeuedSignal, SigAction)> 
     let sig_dispositions = ctx.process.sig_dispositions().lock();
     let sig_dispositions = sig_dispositions.lock();
 
-    let sig_mask = posix_thread.sig_mask();
+    // Fatal group-exit signals take precedence over a thread-local trap.
+    let sig_mask = if ctx.has_pending_sigkill() {
+        SigMask::new_full() - SIGKILL
+    } else {
+        posix_thread.sig_mask()
+    };
     let (signal, sig_num, sig_action) = loop {
         let signal = ctx.dequeue_signal(&sig_mask)?;
         let sig_num = signal.num();

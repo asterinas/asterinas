@@ -145,6 +145,22 @@ impl Queues {
     }
 
     fn dequeue(&mut self, blocked: &SigMask) -> Option<Box<dyn Signal>> {
+        // Synchronous faults must reach their handler before asynchronous
+        // signals can replace the faulting context. Linux gives positive-code
+        // SIGILL/FPE/SEGV/BUS/TRAP/SYS this priority in get_signal().
+        for signum in [SIGILL, SIGTRAP, SIGBUS, SIGFPE, SIGSEGV, SIGSYS] {
+            if blocked.contains(signum) {
+                continue;
+            }
+            let queue = self.get_std_queue_mut(signum);
+            if queue
+                .as_ref()
+                .is_some_and(|signal| signal.to_info().si_code > 0)
+            {
+                return queue.take();
+            }
+        }
+
         // Deliver standard signals.
         //
         // According to signal(7):

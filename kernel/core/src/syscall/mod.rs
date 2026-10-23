@@ -15,7 +15,15 @@ pub(crate) use clock_gettime::ClockId;
 use ostd::arch::cpu::context::UserContext;
 pub(crate) use timer_create::create_timer_for_clock;
 
-use crate::{cpu::LinuxAbi, prelude::*};
+use crate::{
+    cpu::LinuxAbi,
+    prelude::*,
+    process::{TermStatus, posix_thread, signal::constants::SIGSYS},
+    security::{
+        self,
+        seccomp::{SeccompData, SeccompDecision},
+    },
+};
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv.rs")]
@@ -144,6 +152,7 @@ mod sched_setattr;
 mod sched_setparam;
 mod sched_setscheduler;
 mod sched_yield;
+mod seccomp;
 mod select;
 mod semctl;
 mod semget;
@@ -371,18 +380,57 @@ enum SyscallReturn {
 }
 
 impl SyscallArgument {
-    fn new_from_context(user_ctx: &UserContext) -> Self {
-        let syscall_number = user_ctx.syscall_num() as u64;
+    fn new_from_context(user_ctx: &UserContext, syscall_number: usize) -> Self {
         let args = user_ctx.syscall_args().map(|x| x as u64);
         Self {
-            syscall_number,
+            syscall_number: syscall_number as u64,
             args,
         }
     }
 }
 
 pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
-    let syscall_frame = SyscallArgument::new_from_context(user_ctx);
+    // Linux x86 dispatch uses an int syscall number. Ptrace can change
+    // orig_rax independently of the return register.
+    let syscall_number = if cfg!(target_arch = "x86_64") {
+        ctx.thread_local.orig_syscall_ret().unwrap_or(usize::MAX) as i32 as usize
+    } else {
+        user_ctx.syscall_num()
+    };
+
+    let policy = ctx.posix_thread.seccomp_snapshot();
+    if policy.mode() != 0 {
+        match policy.evaluate(&SeccompData::from_context(user_ctx, syscall_number as i32)) {
+            SeccompDecision::Allow => {}
+            SeccompDecision::Errno(errno) => {
+                user_ctx.set_syscall_ret((-(errno as isize)) as usize);
+                return;
+            }
+            SeccompDecision::Trap(reason) => {
+                security::seccomp::trap(ctx, user_ctx, syscall_number as i32, reason);
+                return;
+            }
+            SeccompDecision::KillThread => {
+                posix_thread::do_exit(TermStatus::Killed(SIGSYS), ctx, user_ctx);
+                return;
+            }
+            SeccompDecision::KillProcess => {
+                posix_thread::do_seccomp_exit_group(ctx, user_ctx);
+                return;
+            }
+        }
+    }
+    // Drop the snapshot before entering an arbitrary (possibly blocking) syscall.
+    drop(policy);
+
+    // A tracer can skip an x86 syscall with orig_rax = -1 and supply its
+    // result in rax. Seccomp still observes the skipped syscall number.
+    #[cfg(target_arch = "x86_64")]
+    if syscall_number == usize::MAX {
+        return;
+    }
+
+    let syscall_frame = SyscallArgument::new_from_context(user_ctx, syscall_number);
     let syscall_return = arch::syscall_dispatch(
         syscall_frame.syscall_number,
         syscall_frame.args,

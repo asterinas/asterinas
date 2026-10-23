@@ -24,6 +24,7 @@ use crate::{
         posix_thread::ptrace::TraceeStatus,
         signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
+    security::seccomp::SeccompState,
     thread::{Thread, Tid},
     time::{Timer, TimerManager, clocks::ProfClock, timer::TimerFn},
 };
@@ -41,7 +42,7 @@ mod thread_local;
 
 pub(crate) use builder::PosixThreadBuilder;
 pub(super) use exit::sigkill_other_threads;
-pub(crate) use exit::{do_exit, do_exit_group};
+pub(crate) use exit::{do_exit, do_exit_group, do_seccomp_exit_group};
 pub(crate) use personality::Personality;
 pub use posix_thread_ext::AsPosixThread;
 pub(crate) use robust_list::RobustListHead;
@@ -97,6 +98,9 @@ pub struct PosixThread {
     /// The default timer slack value for this thread.
     default_timer_slack_ns: AtomicU64,
 
+    /// The effective per-thread syscall filtering policy.
+    seccomp: Mutex<SeccompState>,
+
     // Ptrace
     /// Status of being traced.
     tracee_status: Once<TraceeStatus>,
@@ -111,6 +115,15 @@ pub struct PosixThread {
 }
 
 impl PosixThread {
+    pub(crate) fn seccomp_snapshot(&self) -> SeccompState {
+        self.seccomp.lock().clone()
+    }
+
+    pub(crate) fn set_seccomp(&self, state: SeccompState) {
+        let previous = core::mem::replace(&mut *self.seccomp.lock(), state);
+        drop(previous);
+    }
+
     pub(crate) fn process(&self) -> Arc<Process> {
         self.process.upgrade().unwrap()
     }

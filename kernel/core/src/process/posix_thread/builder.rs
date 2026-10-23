@@ -22,6 +22,7 @@ use crate::{
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
     sched::{Nice, SchedPolicy},
+    security::seccomp::SeccompState,
     thread::{Thread, Tid, task},
     time::{TimerManager, clocks::ProfClock},
     vm::vmar::VmarHandle,
@@ -49,6 +50,7 @@ pub(crate) struct PosixThreadBuilder {
     user_ns: Option<Arc<UserNamespace>>,
     ns_proxy: Option<Arc<NsProxy>>,
     default_timer_slack_ns: u64,
+    seccomp: SeccompState,
 }
 
 impl PosixThreadBuilder {
@@ -77,6 +79,7 @@ impl PosixThreadBuilder {
             user_ns: None,
             ns_proxy: None,
             default_timer_slack_ns: 50_000, // 50 usec default slack
+            seccomp: SeccompState::default(),
         }
     }
 
@@ -148,6 +151,11 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub(crate) fn seccomp(mut self, seccomp: SeccompState) -> Self {
+        self.seccomp = seccomp;
+        self
+    }
+
     pub(crate) fn build(self) -> Arc<Task> {
         let Self {
             tid,
@@ -167,6 +175,7 @@ impl PosixThreadBuilder {
             user_ns,
             ns_proxy,
             default_timer_slack_ns,
+            seccomp,
         } = self;
 
         let file_table = file_table.unwrap_or_else(FileTable::new);
@@ -202,6 +211,7 @@ impl PosixThreadBuilder {
                     ns_proxy: Mutex::new(Some(ns_proxy.clone())),
                     timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
                     default_timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
+                    seccomp: Mutex::new(seccomp),
                     tracee_status: Once::new(),
                     tracees: Once::new(),
                     exit_code: AtomicU32::new(0),

@@ -84,11 +84,18 @@ pub(crate) fn create_new_user_task(
                     ctx.thread_local
                         .set_orig_syscall_ret(Some(user_ctx.syscall_ret()));
 
+                    // On x86, orig_rax holds the syscall number while rax is the
+                    // result, including at a ptrace syscall-entry stop.
+                    #[cfg(target_arch = "x86_64")]
+                    user_ctx.set_syscall_ret((-(Errno::ENOSYS as isize)) as usize);
+
                     let res = ctx.posix_thread.ptrace_may_stop_on_syscall(&ctx, user_ctx);
                     if !matches!(res, PtraceStopResult::Interrupted) {
                         handle_syscall(&ctx, user_ctx);
 
-                        ctx.posix_thread.ptrace_may_stop_on_syscall(&ctx, user_ctx);
+                        if !current_thread.is_exited() {
+                            ctx.posix_thread.ptrace_may_stop_on_syscall(&ctx, user_ctx);
+                        }
                     }
                 }
                 ReturnReason::KernelEvent => {
