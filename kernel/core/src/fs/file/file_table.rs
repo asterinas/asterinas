@@ -131,11 +131,11 @@ impl FileTable {
         self.table.slots_len()
     }
 
-    /// Duplicates `file` onto the lowest-numbered available descriptor below `fd_limit`.
+    /// Inserts `file` at the lowest-numbered available descriptor below `fd_limit`.
     ///
     /// If `ceil_fd` is specified, searches from that descriptor and returns `EINVAL`
     /// if it reaches `fd_limit`. Otherwise, searches from zero.
-    pub(crate) fn dup_ceil(
+    pub(crate) fn insert_ceil(
         &mut self,
         file: Arc<dyn FileLike>,
         ceil_fd: Option<FileDesc>,
@@ -176,6 +176,14 @@ impl FileTable {
         new_fd: FileDesc,
         flags: FdFlags,
     ) -> Result<Option<ClosedFile>> {
+        let fd_limit = current!()
+            .resource_limits()
+            .get_rlimit(ResourceType::RLIMIT_NOFILE)
+            .get_cur();
+        if u64::from(new_fd) >= fd_limit {
+            return_errno_with_message!(Errno::EBADF, "the new FD reaches the FD limit");
+        }
+
         let file = self
             .table
             .get(fd.into())
@@ -187,10 +195,8 @@ impl FileTable {
         Ok(closed_file)
     }
 
-    pub(crate) fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> FileDesc {
-        let entry = FileTableEntry::new(item, flags);
-        // Resource limits guarantee the table never exceeds `i32::MAX` entries.
-        (self.table.put(entry) as RawFileDesc).try_into().unwrap()
+    pub(crate) fn insert(&mut self, item: Arc<dyn FileLike>, flags: FdFlags) -> Result<FileDesc> {
+        self.insert_ceil(item, None, flags)
     }
 
     pub(crate) fn close_file(&mut self, fd: FileDesc) -> Option<ClosedFile> {

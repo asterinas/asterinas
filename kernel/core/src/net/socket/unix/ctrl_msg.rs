@@ -136,12 +136,13 @@ impl FileMessage {
 
         let current = Task::current().unwrap();
         let file_table = current.as_thread_local().unwrap().borrow_file_table();
+        // TODO: Report the FDs already inserted and set MSG_CTRUNC if the FD limit is reached.
         for file in self.files[..nfiles].iter() {
             // TODO: Deal with the `O_CLOEXEC` flag.
             let fd = file_table
                 .unwrap()
                 .write()
-                .insert(file.clone(), FdFlags::empty());
+                .insert(file.clone(), FdFlags::empty())?;
             // Perhaps we should remove the inserted files from the file table if we cannot write
             // the file descriptor back to user space? However, even Linux cannot handle every
             // corner case (https://elixir.bootlin.com/linux/v6.15.2/source/net/core/scm.c#L357).

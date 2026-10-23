@@ -106,7 +106,7 @@ pub(super) fn sys_socket(
         } else {
             FdFlags::empty()
         };
-        file_table_locked.insert(file_like, fd_flags)
+        file_table_locked.insert(file_like, fd_flags)?
     };
 
     Ok(SyscallReturn::Return(fd.into()))

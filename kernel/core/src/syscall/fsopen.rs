@@ -32,7 +32,7 @@ pub(super) fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Resu
         .borrow_file_table()
         .unwrap()
         .write()
-        .insert(file, FdFlags::from(flags));
+        .insert(file, FdFlags::from(flags))?;
     Ok(SyscallReturn::Return(fd.into()))
 }
 

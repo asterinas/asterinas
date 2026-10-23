@@ -4,7 +4,6 @@ use super::SyscallReturn;
 use crate::{
     fs::file::file_table::{FdFlags, FileDesc, RawFileDesc, get_file_fast},
     prelude::*,
-    process::ResourceType,
 };
 
 pub(super) fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallReturn> {
@@ -13,7 +12,7 @@ pub(super) fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallRetur
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
     let file = file_table_locked.get_file(old_fd.try_into()?)?.clone();
-    let new_fd = file_table_locked.dup_ceil(file, None, FdFlags::empty())?;
+    let new_fd = file_table_locked.insert_ceil(file, None, FdFlags::empty())?;
 
     Ok(SyscallReturn::Return(new_fd.into()))
 }
@@ -61,17 +60,7 @@ fn do_dup3(
     let new_fd = FileDesc::try_from(new_fd)?;
 
     if old_fd == new_fd {
-        return_errno!(Errno::EINVAL);
-    }
-
-    if u64::from(new_fd)
-        >= ctx
-            .process
-            .resource_limits()
-            .get_rlimit(ResourceType::RLIMIT_NOFILE)
-            .get_cur()
-    {
-        return_errno!(Errno::EBADF);
+        return_errno_with_message!(Errno::EINVAL, "an FD cannot be duplicated to itself");
     }
 
     let file_table = ctx.thread_local.borrow_file_table();

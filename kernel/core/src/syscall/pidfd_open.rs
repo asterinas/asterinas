@@ -29,7 +29,7 @@ pub(super) fn sys_pidfd_open(pid: Pid, flags: u32, ctx: &Context) -> Result<Sysc
         let mut file_table_locked = file_table.unwrap().write();
         // "the close-on-exec flag is set on the file descriptor."
         // Reference: <https://man7.org/linux/man-pages/man2/pidfd_open.2.html>.
-        file_table_locked.insert(pid_file, FdFlags::CLOEXEC)
+        file_table_locked.insert(pid_file, FdFlags::CLOEXEC)?
     };
 
     Ok(SyscallReturn::Return(pid_fd.into()))
