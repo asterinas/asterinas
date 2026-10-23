@@ -12,14 +12,24 @@ PTE_W                  = 0x04
 PTE_X                  = 0x08
 PTE_A                  = 0x40
 PTE_D                  = 0x80
+PTE_VRWXAD             = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
 PTE_PPN_SHIFT          = 10
 PTE_SIZE               = 8
 
 PAGE_SHIFT             = 12
 
+L2_PAGE_SHIFT          = 21
+
 KERNEL_VMA_OFFSET      = 0xffffffff00000000
 
+# The Sv39 boot page table identity-maps the first 128 GiB.
+BOOT_IDENTITY_MAP_SIZE = 128 << 30
+
 .section ".boot", "awx", @progbits
+
+# Disable relaxation until GP is initialized.
+.option push
+.option norelax
 
 # `_start` is also the entrypoint specified in the linker script.
 .global _start
@@ -28,6 +38,48 @@ _start:
     #   a0 = hart id
     #   a1 = device tree paddr
     # We do not touch them here. They are passed to the Rust entrypoint `riscv_boot`.
+
+    # Discover the physical load address and require 2 MiB alignment for the
+    # kernel leaves. The whole image must fit in the first 128 GiB so that the
+    # Sv39 boot page table can identity-map it.
+    lla    t0, _start
+    li     t1, (1 << L2_PAGE_SHIFT) - 1
+    and    t1, t0, t1
+    bnez   t1, bsp_unreachable_pa
+    lla    t2, __kernel_end - KERNEL_VMA_OFFSET
+    li     t1, BOOT_IDENTITY_MAP_SIZE
+    bgtu   t2, t1, bsp_unreachable_pa
+
+    # Compute the offset from the physical load address to the fixed virtual address.
+    lui    t1, %hi(_start + KERNEL_VMA_OFFSET)
+    addi   t1, t1, %lo(_start + KERNEL_VMA_OFFSET)
+    sub    t1, t1, t0
+    lla    t3, __riscv_kernel_loaded_offset - KERNEL_VMA_OFFSET
+    sd     t1, 0(t3)
+
+    # Map the image at 0xffffffff80200000, starting at level-2 index 1.
+    lla    t3, bsp_boot_l2pt
+    addi   t3, t3, PTE_SIZE
+    li     t4, 1 << L2_PAGE_SHIFT
+bsp_map_kernel:
+    srli   t1, t0, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori    t1, t1, PTE_VRWXAD
+    sd     t1, 0(t3)
+    addi   t3, t3, PTE_SIZE
+    add    t0, t0, t4
+    bltu   t0, t2, bsp_map_kernel
+
+    # Both paging modes use the same level-2 kernel table.
+    lla    t0, bsp_boot_l2pt
+    srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
+    ori    t0, t0, PTE_V
+    li     t2, 510 * PTE_SIZE
+    lla    t1, sv39_boot_l3pt
+    add    t1, t1, t2
+    sd     t0, 0(t1)
+    lla    t1, sv48_boot_l3pt
+    add    t1, t1, t2
+    sd     t0, 0(t1)
 
     # Set up the Sv48 page table.
     #   sv48_boot_l4pt[511] = (PPN(sv48_boot_l3pt) << PTE_PPN_SHIFT) | PTE_V
@@ -38,6 +90,9 @@ _start:
     srli   t0, t0, PAGE_SHIFT - PTE_PPN_SHIFT
     ori    t0, t0, PTE_V
     sd     t0, 0(t1)
+
+    # Make the newly written page tables visible to the page-table walker.
+    sfence.vma
 
     # Try loading the Sv48 page table.
     lla    t0, sv48_boot_l4pt
@@ -70,14 +125,11 @@ bsp_flush_tlb:
     sfence.vma
 
     # Update SP/PC to use the virtual address.
-    li     t1, KERNEL_VMA_OFFSET
-    lla    sp, boot_stack_top
-    or     sp, sp, t1
-    lla    t0, bsp_boot_virt - KERNEL_VMA_OFFSET
-    or     t0, t0, t1
+    lui    sp, %hi(boot_stack_top + KERNEL_VMA_OFFSET)
+    addi   sp, sp, %lo(boot_stack_top + KERNEL_VMA_OFFSET)
+    lui    t0, %hi(bsp_boot_virt)
+    addi   t0, t0, %lo(bsp_boot_virt)
     jr     t0
-
-PTE_VRWXAD = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D
 
 .balign 4096
 sv48_boot_l4pt:
@@ -86,12 +138,8 @@ sv48_boot_l4pt:
     .quad (0x0 << PTE_PPN_SHIFT) | PTE_VRWXAD  # linear 0~512 GiB
     .zero 254 * PTE_SIZE
     .quad 0                                    # TBA (-> boot_l3pt)
-sv48_boot_l3pt:  # 0xffff_ffff_0000_0000 -> 0x0000_0000_0000_0000
-    .zero 508 * PTE_SIZE
-    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRWXAD  # code 0~1 GiB
-    .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRWXAD  # code 1~2 GiB
-    .quad (0x80000 << PTE_PPN_SHIFT) | PTE_VRWXAD  # code 2~3 GiB
-    .quad 0
+sv48_boot_l3pt:
+    .zero 512 * PTE_SIZE  # Entry 510 is filled with bsp_boot_l2pt.
 
 .balign 4096
 sv39_boot_l3pt:
@@ -106,10 +154,19 @@ sv39_boot_l3pt:
         .quad ((i * 0x40000) << PTE_PPN_SHIFT) | PTE_VRWXAD
         .set i, i + 1
     .endr
-    .zero 124 * PTE_SIZE
-    .quad (0x00000 << PTE_PPN_SHIFT) | PTE_VRWXAD  # code 0~1 GiB
-    .quad (0x40000 << PTE_PPN_SHIFT) | PTE_VRWXAD  # code 1~2 GiB
-    .quad (0x80000 << PTE_PPN_SHIFT) | PTE_VRWXAD  # code 2~3 GiB
+    .zero 128 * PTE_SIZE  # Entry 510 is filled with bsp_boot_l2pt.
+
+.balign 4096
+bsp_boot_l2pt:
+    .zero 512 * PTE_SIZE
+
+.data
+
+# Keep this in the high-address data section so Rust can reach it and BSS
+# clearing preserves it. Written once by the BSP; read by all harts afterwards.
+.balign 8
+.global __riscv_kernel_loaded_offset
+__riscv_kernel_loaded_offset:
     .quad 0
 
 .section ".boot.stack", "aw", @nobits
@@ -141,6 +198,8 @@ bsp_zero_bss_end:
     # Initialize GP to the CPU-local storage's base address.
 .extern __cpu_local_start
     lla    gp, __cpu_local_start
+
+.option pop
 
     # Jump into Rust code.
     lla    t0, riscv_boot
