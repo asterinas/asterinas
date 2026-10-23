@@ -37,8 +37,16 @@ pub(super) fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<Syscall
     let file_table = ctx.thread_local.borrow_file_table();
     let mut file_table_locked = file_table.unwrap().write();
 
-    let reader_fd = file_table_locked.insert(pipe_reader, fd_flags);
-    let writer_fd = file_table_locked.insert(pipe_writer, fd_flags);
+    let reader_fd = file_table_locked.insert(pipe_reader, fd_flags)?;
+    let writer_fd = match file_table_locked.insert(pipe_writer, fd_flags) {
+        Ok(fd) => fd,
+        Err(err) => {
+            let closed_file = file_table_locked.close_file(reader_fd);
+            drop(file_table_locked);
+            drop(closed_file);
+            return Err(err);
+        }
+    };
     let pipe_fds = PipeFds {
         reader_raw_fd: reader_fd.into(),
         writer_raw_fd: writer_fd.into(),

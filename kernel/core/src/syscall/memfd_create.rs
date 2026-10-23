@@ -50,7 +50,7 @@ pub(super) fn sys_memfd_create(
 
         let memfd_file = InodeHandle::new_memfd(name.to_string_lossy().into_owned(), memfd_flags)?;
 
-        file_table_locked.insert(Arc::new(memfd_file), fd_flags)
+        file_table_locked.insert(Arc::new(memfd_file), fd_flags)?
     };
 
     Ok(SyscallReturn::Return(fd.into()))

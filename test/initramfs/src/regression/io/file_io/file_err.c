@@ -19,6 +19,27 @@ FN_SETUP(open)
 }
 END_SETUP()
 
+FN_TEST(open_exceeds_rlimit)
+{
+	struct rlimit old_rlim, rlim;
+
+	TEST_SUCC(getrlimit(RLIMIT_NOFILE, &old_rlim));
+	int new_fd = TEST_SUCC(open("/etc/passwd", O_RDONLY));
+	rlim = old_rlim;
+	rlim.rlim_cur = new_fd + 1;
+	TEST_SUCC(setrlimit(RLIMIT_NOFILE, &rlim));
+
+	TEST_ERRNO(open("/etc/passwd", O_RDONLY), EMFILE);
+
+	// Closing an FD below the limit makes room for another open.
+	TEST_SUCC(close(new_fd));
+	TEST_RES(open("/etc/passwd", O_RDONLY), _ret == new_fd);
+
+	TEST_SUCC(setrlimit(RLIMIT_NOFILE, &old_rlim));
+	TEST_SUCC(close(new_fd));
+}
+END_TEST()
+
 FN_TEST(dup_out_of_range)
 {
 	// `-1` is out of the allowed range for file descriptors.
@@ -45,20 +66,56 @@ FN_TEST(dupfd_exceeds_rlimit)
 {
 	struct rlimit old_rlim, rlim;
 
-	// `F_DUPFD` and `F_DUPFD_CLOEXEC` fail with `EINVAL` if the minimum FD is
-	// not below `RLIMIT_NOFILE`, instead of growing the FD table to that size.
-	// See <https://github.com/asterinas/asterinas/issues/4025>.
 	TEST_SUCC(getrlimit(RLIMIT_NOFILE, &old_rlim));
 	rlim = old_rlim;
 	rlim.rlim_cur = 64;
 	TEST_SUCC(setrlimit(RLIMIT_NOFILE, &rlim));
 
+	// `F_DUPFD` and `F_DUPFD_CLOEXEC` fail with `EINVAL` if the minimum FD is
+	// not below `RLIMIT_NOFILE`, instead of growing the FD table to that size.
 	TEST_ERRNO(fcntl(fd, F_DUPFD, 64), EINVAL);
 	TEST_ERRNO(fcntl(fd, F_DUPFD_CLOEXEC, 64), EINVAL);
 	TEST_ERRNO(fcntl(fd, F_DUPFD, INT_MAX), EINVAL);
 
 	TEST_RES(fcntl(fd, F_DUPFD, 63), _ret == 63);
+	TEST_ERRNO(fcntl(fd, F_DUPFD, 63), EMFILE);
+	TEST_ERRNO(fcntl(fd, F_DUPFD_CLOEXEC, 63), EMFILE);
 	TEST_SUCC(close(63));
+	TEST_RES(fcntl(fd, F_DUPFD_CLOEXEC, 63), _ret == 63);
+	TEST_RES(fcntl(63, F_GETFD), _ret == FD_CLOEXEC);
+	TEST_SUCC(close(63));
+
+	// Source-FD validation takes precedence over either invalid minimum.
+	TEST_ERRNO(fcntl(63, F_DUPFD, 64), EBADF);
+	TEST_ERRNO(fcntl(63, F_DUPFD_CLOEXEC, 64), EBADF);
+	TEST_ERRNO(fcntl(63, F_DUPFD, -1), EBADF);
+	TEST_ERRNO(fcntl(63, F_DUPFD_CLOEXEC, -1), EBADF);
+	TEST_ERRNO(fcntl(fd, F_DUPFD, -1), EINVAL);
+	TEST_ERRNO(fcntl(fd, F_DUPFD_CLOEXEC, -1), EINVAL);
+
+	TEST_SUCC(setrlimit(RLIMIT_NOFILE, &old_rlim));
+}
+END_TEST()
+
+FN_TEST(dup_zero_rlimit)
+{
+	struct rlimit old_rlim, rlim;
+
+	int closed_fd = TEST_SUCC(dup(fd));
+	TEST_SUCC(close(closed_fd));
+
+	TEST_SUCC(getrlimit(RLIMIT_NOFILE, &old_rlim));
+	rlim = old_rlim;
+	rlim.rlim_cur = 0;
+	TEST_SUCC(setrlimit(RLIMIT_NOFILE, &rlim));
+
+	// Existing FDs remain valid, but no new FD can be allocated.
+	TEST_ERRNO(dup(fd), EMFILE);
+	TEST_ERRNO(fcntl(fd, F_DUPFD, 0), EINVAL);
+	TEST_ERRNO(fcntl(fd, F_DUPFD_CLOEXEC, 0), EINVAL);
+	TEST_ERRNO(dup(closed_fd), EBADF);
+	TEST_ERRNO(fcntl(closed_fd, F_DUPFD, 0), EBADF);
+	TEST_ERRNO(fcntl(closed_fd, F_DUPFD_CLOEXEC, 0), EBADF);
 
 	TEST_SUCC(setrlimit(RLIMIT_NOFILE, &old_rlim));
 }

@@ -201,7 +201,7 @@ impl PerOpenFileOps for PtyMaster {
                     let thread_local = current_task.as_thread_local().unwrap();
                     let file_table = thread_local.borrow_file_table();
                     let mut file_table_locked = file_table.unwrap().write();
-                    file_table_locked.insert(slave, fd_flags)
+                    file_table_locked.insert(slave, fd_flags)?
                 };
                 return Ok(fd.into());
             }

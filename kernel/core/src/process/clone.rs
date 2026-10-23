@@ -783,7 +783,7 @@ fn clone_pidfd(
         let pid_file = PidFile::new(child.clone(), false);
         let file_table = ctx.thread_local.borrow_file_table();
         let mut file_table_locked = file_table.unwrap().write();
-        file_table_locked.insert(Arc::new(pid_file), FdFlags::CLOEXEC)
+        file_table_locked.insert(Arc::new(pid_file), FdFlags::CLOEXEC)?
     };
 
     // Since `write_val` may sleep, we cannot hold the file table lock during its execution.
