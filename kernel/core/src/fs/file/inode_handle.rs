@@ -15,7 +15,7 @@ use crate::{
         vfs::{
             inode::{FallocMode, FileOps},
             inode_ext::InodeExt,
-            path::Path,
+            path::{Path, PerMountFlags},
             range_lock::{RangeLockItem, RangeLockOwner, RangeLockType},
             xattr::clear_file_priv,
         },
@@ -65,6 +65,17 @@ impl InodeHandle {
         status_flags: StatusFlags,
     ) -> Result<Self> {
         let inode = path.inode();
+        let inode_type = inode.type_();
+        if (inode_type == InodeType::CharDevice || inode_type == InodeType::BlockDevice)
+            && !status_flags.contains(StatusFlags::O_PATH)
+            && path.mount_node().flags().contains(PerMountFlags::NODEV)
+        {
+            return_errno_with_message!(
+                Errno::EACCES,
+                "the device special file is on a file system mounted with `nodev`"
+            );
+        }
+
         let open_file = if status_flags.contains(StatusFlags::O_PATH) {
             // The file is opened with `O_PATH`. We follow Linux to report `O_RDONLY` here (e.g.,
             // in `/proc/[pid]/fdinfo/[n]`).
