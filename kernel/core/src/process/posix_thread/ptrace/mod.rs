@@ -94,7 +94,21 @@ impl PosixThread {
         user_ctx: &mut UserContext,
     ) {
         if let Some(status) = self.tracee_status.get() {
-            status.ptrace_may_stop_on(event, ctx, user_ctx)
+            status.ptrace_may_stop_on(event, ctx, user_ctx);
+        }
+    }
+
+    /// Stops at a seccomp event if the tracer enabled `PTRACE_O_TRACESECCOMP`.
+    pub(crate) fn ptrace_may_stop_on_seccomp(
+        &self,
+        data: u32,
+        ctx: &Context,
+        user_ctx: &mut UserContext,
+    ) -> PtraceStopResult {
+        if let Some(status) = self.tracee_status.get() {
+            status.ptrace_may_stop_on(PtraceEvent::Seccomp(data), ctx, user_ctx)
+        } else {
+            PtraceStopResult::NotTraced(None)
         }
     }
 
@@ -405,12 +419,17 @@ impl TraceeStatus {
         self.do_ptrace_stop(state, tracer, signal, wait_status, None, ctx, user_ctx)
     }
 
-    fn ptrace_may_stop_on(&self, event: PtraceEvent, ctx: &Context, user_ctx: &mut UserContext) {
+    fn ptrace_may_stop_on(
+        &self,
+        event: PtraceEvent,
+        ctx: &Context,
+        user_ctx: &mut UserContext,
+    ) -> PtraceStopResult {
         // Hold the lock first to avoid race conditions.
         let state = self.state.lock();
 
         let Some(tracer) = state.tracer() else {
-            return;
+            return PtraceStopResult::NotTraced(None);
         };
 
         if !state.options.contains(event.option()) {
@@ -424,7 +443,7 @@ impl TraceeStatus {
                 ctx.posix_thread
                     .enqueue_signal(Box::new(UserSignal::new_kill(SIGTRAP, ctx)));
             }
-            return;
+            return PtraceStopResult::NotTraced(None);
         }
 
         let siginfo = event.siginfo(ctx);
@@ -440,7 +459,7 @@ impl TraceeStatus {
             Some(event),
             ctx,
             user_ctx,
-        );
+        )
     }
 
     fn ptrace_may_stop_on_syscall(

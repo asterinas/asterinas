@@ -147,6 +147,8 @@ bitflags! {
         const PTRACE_O_TRACEVFORKDONE = 1 << PtraceEvent::VforkDone(0).code();
         /// Stops the tracee at `exit`.
         const PTRACE_O_TRACEEXIT      = 1 << PtraceEvent::Exit(0).code();
+        /// Stops the tracee when a seccomp filter returns `SECCOMP_RET_TRACE`.
+        const PTRACE_O_TRACESECCOMP   = 1 << PtraceEvent::Seccomp(0).code();
         /// Send a `SIGKILL` signal to the tracee if the tracer exits.
         const PTRACE_O_EXITKILL       = 1 << 20;
     }
@@ -167,6 +169,8 @@ pub(crate) enum PtraceEvent {
     VforkDone(Tid),
     /// An `exit` event with the tracee's exit code.
     Exit(ExitCode),
+    /// A seccomp event with the selected filter's return data.
+    Seccomp(u32),
 }
 
 impl PtraceEvent {
@@ -179,6 +183,7 @@ impl PtraceEvent {
             Self::Exec(_) => 4,
             Self::VforkDone(_) => 5,
             Self::Exit(_) => 6,
+            Self::Seccomp(_) => 7,
         }
     }
 
@@ -196,6 +201,7 @@ impl PtraceEvent {
             | Self::Exec(tid)
             | Self::VforkDone(tid) => *tid as usize,
             Self::Exit(exit_code) => *exit_code as usize,
+            Self::Seccomp(data) => *data as usize,
         }
     }
 

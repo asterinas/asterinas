@@ -17,8 +17,8 @@ mod test;
 use ostd::{arch::cpu::context::UserContext, mm::VmIo};
 
 use self::abi::{
-    MODE_FILTER, RET_ALLOW, RET_ERRNO, RET_KILL_PROCESS, RET_KILL_THREAD, RET_TRAP, SeccompNotif,
-    SeccompNotifResp, SeccompNotifSizes,
+    MODE_FILTER, RET_ALLOW, RET_ERRNO, RET_KILL_PROCESS, RET_KILL_THREAD, RET_TRACE, RET_TRAP,
+    SeccompNotif, SeccompNotifResp, SeccompNotifSizes,
 };
 pub(crate) use self::{
     abi::SeccompData,
@@ -54,7 +54,8 @@ pub(crate) fn seccomp(operation: u32, flags: u32, args_addr: Vaddr, ctx: &Contex
             }
             let action: u32 = ctx.user_space().read_val(args_addr)?;
             match action {
-                RET_ALLOW | RET_ERRNO | RET_KILL_PROCESS | RET_KILL_THREAD | RET_TRAP => Ok(()),
+                RET_ALLOW | RET_ERRNO | RET_KILL_PROCESS | RET_KILL_THREAD | RET_TRAP
+                | RET_TRACE => Ok(()),
                 _ => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported seccomp action"),
             }
         }

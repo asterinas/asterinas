@@ -2,8 +2,8 @@
 
 use super::{
     abi::{
-        MODE_FILTER, RET_ACTION_FULL, RET_ALLOW, RET_DATA, RET_ERRNO, RET_KILL_THREAD, RET_TRAP,
-        SeccompData,
+        MODE_FILTER, RET_ACTION_FULL, RET_ALLOW, RET_DATA, RET_ERRNO, RET_KILL_THREAD, RET_TRACE,
+        RET_TRAP, SeccompData,
     },
     cbpf::VerifiedProgram,
 };
@@ -32,6 +32,7 @@ pub(crate) enum SeccompDecision {
     Allow,
     Errno(u32),
     Trap(u32),
+    Trace(u32),
     KillThread,
     KillProcess,
 }
@@ -78,6 +79,7 @@ impl SeccompState {
             RET_ALLOW => SeccompDecision::Allow,
             RET_ERRNO => SeccompDecision::Errno((result & RET_DATA).min(MAX_ERRNO)),
             RET_TRAP => SeccompDecision::Trap(result & RET_DATA),
+            RET_TRACE => SeccompDecision::Trace(result & RET_DATA),
             RET_KILL_THREAD => SeccompDecision::KillThread,
             // Unknown or unsupported actions must never permit a syscall.
             _ => SeccompDecision::KillProcess,
