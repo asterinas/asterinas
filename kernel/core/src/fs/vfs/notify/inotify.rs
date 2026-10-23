@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! The `inotify` API on top of the generic filesystem event notification.
+//!
+//! An `InotifyFile` (created by `inotify_init`) holds an event queue. A watch
+//! (`InotifySubscriber`) is registered on one inode's publisher and forwards
+//! matching events into the queue, where adjacent identical events are
+//! coalesced.
+
 use core::{
     fmt::Display,
     sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
@@ -227,8 +234,8 @@ impl InotifyFile {
     /// The event will be queued and can be read by users.
     /// If the event can be merged with the last event in the queue, it will be merged.
     /// The event is only queued if it matches one of the subscriber's interesting events.
-    fn receive_event(&self, wd: u32, event: FsEvents, name: Option<String>) {
-        let new_event = InotifyEvent::new(wd, event, 0, name);
+    fn receive_event(&self, wd: u32, event: FsEvents, cookie: u32, name: Option<String>) {
+        let new_event = InotifyEvent::new(wd, event, cookie, name);
 
         'notify: {
             let mut event_queue = self.event_queue.lock();
@@ -415,7 +422,14 @@ impl FileLike for InotifyFile {
 
 /// Checks if the event type is mergeable.
 fn is_mergeable_event_type(event: u32) -> bool {
-    event & (FsEvents::MODIFY | FsEvents::ATTRIB | FsEvents::ACCESS).bits() != 0
+    // Linux coalesces adjacent identical events for the same watch, which
+    // includes `IN_MOVE_SELF`: renaming the watched directory twice in a row
+    // (e.g. `a -> b` then `b -> a`) yields one `IN_MOVE_SELF`.
+    // Reference:
+    // <https://elixir.bootlin.com/linux/v6.16.9/source/fs/notify/inotify/inotify_user.c#L116-L121>
+    // (`inotify_merge`, applied after `inotify_handle_event` dedup).
+    event & (FsEvents::MODIFY | FsEvents::ATTRIB | FsEvents::ACCESS | FsEvents::MOVE_SELF).bits()
+        != 0
 }
 
 /// Checks if two inotify events can be merged.
@@ -515,7 +529,7 @@ impl InotifySubscriber {
 
 impl FsEventSubscriber for InotifySubscriber {
     /// Sends FS events to the inotify file.
-    fn deliver_event(&self, event: FsEvents, name: Option<String>) -> bool {
+    fn deliver_event(&self, event: FsEvents, name: Option<String>, cookie: u32) -> bool {
         let (interesting, options) = self.interesting_and_controls();
 
         if !event.contains(FsEvents::IN_IGNORED) && !is_interesting(interesting, event) {
@@ -534,10 +548,10 @@ impl FsEventSubscriber for InotifySubscriber {
         let inotify_file = self.inotify_file();
         let wd = self.wd();
 
-        inotify_file.receive_event(wd, event, name);
+        inotify_file.receive_event(wd, event, cookie, name);
 
         if !event.contains(FsEvents::IN_IGNORED) && is_oneshot {
-            inotify_file.receive_event(wd, FsEvents::IN_IGNORED, None);
+            inotify_file.receive_event(wd, FsEvents::IN_IGNORED, 0, None);
         }
 
         is_oneshot
