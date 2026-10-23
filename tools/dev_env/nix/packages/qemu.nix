@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 #
-# QEMU pinned to the version and softmmu target list used by the Docker image.
+# QEMU shared by the development shell and OSDK image.
 # The binary is host-native; guest architectures run through TCG.
 { qemu, fetchurl }:
 
@@ -15,6 +15,17 @@
   # fix-qemu-ga.patch (dropped below) it would exec FHS paths that do not
   # exist on NixOS. Skip it and its `ga` output entirely.
   guestAgentSupport = false;
+  # Asterinas shows the guest display over VNC or not at all, and it never
+  # forwards guest audio or host smart cards. These backends would add about
+  # 900 MiB of GTK, SDL, SPICE and PipeWire libraries to the closure.
+  gtkSupport = false;
+  sdlSupport = false;
+  spiceSupport = false;
+  pipewireSupport = false;
+  pulseSupport = false;
+  alsaSupport = false;
+  jackSupport = false;
+  smartcardSupport = false;
 }).overrideAttrs
   (old: rec {
     version = "10.2.1";
