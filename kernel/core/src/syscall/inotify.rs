@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file::{
             InodeType, Permission,
-            file_table::{FdFlags, RawFileDesc, get_file_fast},
+            file_table::{FdFlags, FileTableInsert, RawFileDesc, get_file_fast},
         },
         vfs::{
             notify::inotify::{InotifyControls, InotifyEvents, InotifyFile},
@@ -38,7 +38,7 @@ fn do_inotify_init(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
         FdFlags::empty()
     };
     let file_table = ctx.thread_local.borrow_file_table();
-    let fd = file_table.unwrap().write().insert(file, fd_flags);
+    let fd = file_table.unwrap().lock_and_insert(file, fd_flags)?;
     Ok(SyscallReturn::Return(fd.into()))
 }
 

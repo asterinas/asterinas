@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file::{
             DetachedMountFile, FileLike, FsConfigFile,
-            file_table::{FdFlags, RawFileDesc, get_file_fast},
+            file_table::{FdFlags, FileTableInsert, RawFileDesc, get_file_fast},
         },
         vfs::path::PerMountFlags,
     },
@@ -39,12 +39,10 @@ pub(super) fn sys_fsmount(
     let detached_mount =
         fs_config.create_detached_mount(per_mount_flags, Arc::downgrade(current_mnt_ns))?;
     let file = Arc::new(DetachedMountFile::new(detached_mount)) as Arc<dyn FileLike>;
-    let fd = ctx
-        .thread_local
-        .borrow_file_table()
+    let file_table = ctx.thread_local.borrow_file_table();
+    let fd = file_table
         .unwrap()
-        .write()
-        .insert(file, FdFlags::from(flags));
+        .lock_and_insert(file, FdFlags::from(flags))?;
     Ok(SyscallReturn::Return(fd.into()))
 }
 

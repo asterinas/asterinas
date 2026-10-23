@@ -3,7 +3,10 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::{InodeHandle, file_table::FdFlags},
+        file::{
+            InodeHandle,
+            file_table::{FdFlags, FileTableInsert},
+        },
         ramfs::memfd::{MAX_MEMFD_NAME_LEN, MemfdFlags, MemfdInodeHandle},
     },
     prelude::*,
@@ -33,8 +36,6 @@ pub(super) fn sys_memfd_create(
         } else {
             FdFlags::empty()
         };
-        let file_table = ctx.thread_local.borrow_file_table();
-        let mut file_table_locked = file_table.unwrap().write();
 
         // FIXME: Support `MFD_HUGETLB`.
         if memfd_flags.contains(MemfdFlags::MFD_HUGETLB) {
@@ -50,7 +51,10 @@ pub(super) fn sys_memfd_create(
 
         let memfd_file = InodeHandle::new_memfd(name.to_string_lossy().into_owned(), memfd_flags)?;
 
-        file_table_locked.insert(Arc::new(memfd_file), fd_flags)
+        let file_table = ctx.thread_local.borrow_file_table();
+        file_table
+            .unwrap()
+            .lock_and_insert(Arc::new(memfd_file), fd_flags)?
     };
 
     Ok(SyscallReturn::Return(fd.into()))

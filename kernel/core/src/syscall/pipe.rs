@@ -7,7 +7,7 @@ use crate::{
     fs::{
         file::{
             CreationFlags, StatusFlags,
-            file_table::{FdFlags, RawFileDesc},
+            file_table::{FdFlags, FileTableInsert, RawFileDesc},
         },
         pipe,
     },
@@ -35,18 +35,14 @@ pub(super) fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<Syscall
     };
 
     let file_table = ctx.thread_local.borrow_file_table();
-    let mut file_table_locked = file_table.unwrap().write();
-
-    let reader_fd = file_table_locked.insert(pipe_reader, fd_flags);
-    let writer_fd = file_table_locked.insert(pipe_writer, fd_flags);
+    let [reader_fd, writer_fd] = file_table
+        .unwrap()
+        .lock_and_insert_multiple([pipe_reader, pipe_writer], fd_flags)?;
     let pipe_fds = PipeFds {
         reader_raw_fd: reader_fd.into(),
         writer_raw_fd: writer_fd.into(),
     };
     debug!("pipe_fds: {:?}", pipe_fds);
-
-    // Since `write_val` may sleep, we cannot hold the file table lock during its execution.
-    drop(file_table_locked);
 
     if let Err(err) = ctx.user_space().write_val(fds, &pipe_fds) {
         // FIXME: Introduce reserved FDs to ensure that the files are never visible to user space

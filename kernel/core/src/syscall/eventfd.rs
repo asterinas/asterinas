@@ -8,7 +8,7 @@
 use super::SyscallReturn;
 use crate::{
     events::{EventFile, EventFileFlags},
-    fs::file::file_table::FdFlags,
+    fs::file::file_table::{FdFlags, FileTableInsert},
     prelude::*,
 };
 
@@ -36,7 +36,6 @@ fn do_sys_eventfd2(init_val: u32, flags: EventFileFlags, ctx: &Context) -> Resul
     };
 
     let file_table = ctx.thread_local.borrow_file_table();
-    let mut file_table_locked = file_table.unwrap().write();
-    let fd = file_table_locked.insert(event_file, fd_flags);
+    let fd = file_table.unwrap().lock_and_insert(event_file, fd_flags)?;
     Ok(SyscallReturn::Return(fd.into()))
 }

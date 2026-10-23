@@ -19,6 +19,27 @@ FN_SETUP(open)
 }
 END_SETUP()
 
+FN_TEST(open_exceeds_rlimit)
+{
+	struct rlimit old_rlim, rlim;
+
+	TEST_SUCC(getrlimit(RLIMIT_NOFILE, &old_rlim));
+	int new_fd = TEST_SUCC(open("/etc/passwd", O_RDONLY));
+	rlim = old_rlim;
+	rlim.rlim_cur = new_fd + 1;
+	TEST_SUCC(setrlimit(RLIMIT_NOFILE, &rlim));
+
+	TEST_ERRNO(open("/etc/passwd", O_RDONLY), EMFILE);
+
+	// Closing an FD below the limit makes room for another open.
+	TEST_SUCC(close(new_fd));
+	TEST_RES(open("/etc/passwd", O_RDONLY), _ret == new_fd);
+
+	TEST_SUCC(setrlimit(RLIMIT_NOFILE, &old_rlim));
+	TEST_SUCC(close(new_fd));
+}
+END_TEST()
+
 FN_TEST(dup_out_of_range)
 {
 	// `-1` is out of the allowed range for file descriptors.
