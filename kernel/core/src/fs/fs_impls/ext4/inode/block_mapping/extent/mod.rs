@@ -257,16 +257,12 @@ impl ExtentTree {
 const SECTORS_PER_BLOCK: u32 = (BLOCK_SIZE / SECTOR_SIZE) as u32;
 const ZERO_BATCH_BLOCKS: usize = 256;
 
-pub(in crate::fs::fs_impls::ext4::inode) fn empty_extent_root() -> [u32; RAW_BLOCK_PTRS_LEN] {
-    let header = node::RawExtentHeader {
-        magic: node::EXTENT_MAGIC,
-        entries: 0,
-        max: 4,
-        depth: 0,
-        generation: 0,
-    };
+pub(in crate::fs::fs_impls::ext4::inode) const fn empty_extent_root() -> [u32; RAW_BLOCK_PTRS_LEN] {
+    let magic = node::EXTENT_MAGIC.to_ne_bytes();
+    let max = 4u16.to_ne_bytes();
     let mut root = [0u32; RAW_BLOCK_PTRS_LEN];
-    root.as_mut_bytes()[..tree::ENTRY_SIZE].copy_from_slice(header.as_bytes());
+    root[0] = u32::from_ne_bytes([magic[0], magic[1], 0, 0]);
+    root[1] = u32::from_ne_bytes([max[0], max[1], 0, 0]);
     root
 }
 
