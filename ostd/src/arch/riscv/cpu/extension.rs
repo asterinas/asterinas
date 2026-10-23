@@ -227,6 +227,13 @@ define_isa_extensions! {
     ZVFBFWMA    = 96, "zvfbfwma",    "Vector BF16 widening mul-add";
     ZAAMO       = 97, "zaamo",       "Atomic memory operations";
     ZALRSC      = 98, "zalrsc",      "Load-reserved/store-conditional";
+    ZICBOP		= 99, "zicbop",      "Cache block prefetch operations";
+    SVRSW60T59B	= 100,"svrsw60t59b", "PTE reserved-for-software bits 60:59";
+    ZALASR		= 101,"zalasr",      "Atomic load-acquire and store-release instructions";
+    ZILSD		= 102,"zilsd",       "Load/store pair instructions for RV32";
+    ZCLSD		= 103,"zclsd",       "Compressed load/store pair instructions for RV32";
+    ZICFILP		= 104,"zicfilp",     "Control-flow integrity forward-edge landing pad protection";
+    ZICFISS		= 105,"zicfiss",     "Control-flow integrity backward-edge shadow stack protection";
 }
 
 #[cfg(ktest)]
