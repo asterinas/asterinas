@@ -30,6 +30,7 @@
     ./modules/core.nix
     ./modules/xfce/default.nix
     ./modules/container.nix
+    ./modules/kata-tcg.nix
     ./modules/systemd.nix
   ];
 
