@@ -108,11 +108,12 @@ else
         -exec basename {} \; | sort -u > "$SELECTED_TESTS"
 fi
 
-# Some gVisor tests assume a soft `RLIMIT_NOFILE` above 1024, as in the
-# container environments where they usually run. For example,
-# `ProcSelfFd.GetdentsDuplicates` duplicates an FD to 1024. Raise the soft
-# limit to the default hard limit.
-ulimit -n 4096
+# Some gVisor tests require a very large soft `RLIMIT_NOFILE` limit.
+# For example, `PipeTest.PipeFdCount` requires file descriptors above 66000.
+# Raise both the soft and hard limits to gVisor's recommended values.
+# Reference: https://github.com/google/gvisor/blob/release-20260622.0/runsc/boot/limits.go#L77
+ulimit -Hn 1048576 || exit 1
+ulimit -Sn 1048576 || exit 1
 
 rm -f "$FAIL_CASES" && touch "$FAIL_CASES"
 rm -rf "$TEST_TMP_DIR"/*
