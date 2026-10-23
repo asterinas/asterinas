@@ -152,6 +152,31 @@ impl PosixThreadBuilder {
     }
 
     pub(crate) fn build(self) -> Arc<Task> {
+        self.build_with_task(task::create_new_user_task)
+    }
+
+    /// Builds a POSIX task that runs a kernel test instead of entering user mode.
+    #[cfg(ktest)]
+    pub(in crate::process) fn build_for_test(
+        self,
+        entry: impl FnOnce() + Send + 'static,
+    ) -> Arc<Task> {
+        self.build_with_task(|_, thread, thread_local| {
+            ostd::task::TaskOptions::new(move || {
+                let _ = crate::thread::oops::catch_panics_as_oops(entry);
+                current_thread!().exit();
+            })
+            .data(thread)
+            .local_data(thread_local)
+            .build()
+            .unwrap()
+        })
+    }
+
+    fn build_with_task(
+        self,
+        build_task_fn: impl FnOnce(Box<UserContext>, Arc<Thread>, ThreadLocal) -> Task,
+    ) -> Arc<Task> {
         let Self {
             tid,
             user_ctx,
@@ -233,7 +258,7 @@ impl PosixThreadBuilder {
                 ns_proxy,
             );
 
-            task::create_new_user_task(user_ctx, thread, thread_local)
+            build_task_fn(user_ctx, thread, thread_local)
         })
     }
 }
