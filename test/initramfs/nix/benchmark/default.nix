@@ -27,6 +27,7 @@ rec {
     })).override
       { withSystemd = false; };
   schbench = callPackage ./schbench.nix { };
+  seccomp = callPackage ./seccomp.nix { };
   sqlite-speedtest1 = callPackage ./sqlite-speedtest1.nix { };
   sysbench = if hostPlatform.isx86_64 then pkgsHostTarget.sysbench else null;
 
@@ -69,6 +70,7 @@ rec {
     '');
     redis = packWith redis (p: "cp -r ${p}/bin/redis-server $out/bin/");
     schbench = packWith schbench (p: "cp -r ${p}/bin/schbench $out/bin/");
+    seccomp = packWith seccomp (p: "cp -r ${p}/bin/seccomp-bench $out/bin/");
     sqlite = packWith sqlite-speedtest1 (p: "cp -r ${p}/bin/sqlite-speedtest1 $out/bin/");
   }
   // lib.optionalAttrs (sysbench != null) {
