@@ -29,6 +29,15 @@ args = "$(./tools/qemu_args.sh test)"
 
 # Other Schemes
 
+[scheme."apparmor"]
+boot.kcmd_args = ["lsm=apparmor,yama"]
+
+[scheme."apparmor-legacy"]
+boot.kcmd_args = ["security=apparmor"]
+
+[scheme."apparmor-precedence"]
+boot.kcmd_args = ["lsm=apparmor,yama", "security=yama"]
+
 [scheme."microvm"]
 boot.method = "vmm-direct"
 build.strip_elf = true
