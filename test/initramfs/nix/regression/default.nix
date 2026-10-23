@@ -30,6 +30,13 @@ let
   allPkgs =
     lib.genAttrs subDirs commonBuild
     // {
+      security = callPackage ./common.nix (
+        commonArgs
+        // {
+          dir = "security";
+          extraBuildInputs = [ pkgs.libseccomp ];
+        }
+      );
       device = callPackage ./common.nix (
         commonArgs
         // {
