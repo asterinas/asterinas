@@ -994,7 +994,7 @@ nice03
 # nice05
 
 open01
-# open02
+open02
 open03
 # open04
 # open06
