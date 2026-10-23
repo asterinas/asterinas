@@ -71,11 +71,8 @@ impl VirtioFsInode {
             return Ok(0);
         }
 
-        let mut limited_writer = writer.clone_exclusive();
-        limited_writer.limit(read_len);
         let page_cache = inner.page_cache().unwrap();
-        page_cache.read(start, &mut limited_writer)?;
-        writer.skip(read_len);
+        page_cache.read_with_len(start, writer, read_len)?;
 
         Ok(read_len)
     }

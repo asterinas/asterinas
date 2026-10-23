@@ -77,6 +77,29 @@ pub trait VmIo {
     /// available, then the method shall return an error.
     fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()>;
 
+    /// Reads exactly `len` bytes at the specified offset into the given writer.
+    ///
+    /// Returns [`Error::InvalidArgs`] without reading if `len` exceeds the writer's
+    /// available space. Otherwise, this has the same no-short-read contract as
+    /// [`Self::read`], including delegating zero-length reads to that method.
+    ///
+    /// On success, advances the writer by `len` without changing its end boundary.
+    /// On error, leaves the writer's cursor and boundary unchanged, but bytes in
+    /// the destination may already have been modified.
+    fn read_with_len(&self, offset: usize, writer: &mut VmWriter, len: usize) -> Result<()> {
+        if len > writer.avail() {
+            return Err(Error::InvalidArgs);
+        }
+
+        {
+            let mut limited_writer = writer.clone_exclusive();
+            limited_writer.limit(len);
+            self.read(offset, &mut limited_writer)?;
+        }
+        writer.skip(len);
+        Ok(())
+    }
+
     /// Reads a specified number of bytes at a specified offset into a given buffer.
     ///
     /// # No short reads
