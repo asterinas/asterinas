@@ -84,22 +84,7 @@ struct SimpleDrmDevice {
 impl SimpleDrmDevice {
     fn new(boot_framebuffer: &Arc<FrameBuffer>) -> Result<Self> {
         let mut builder = DrmKmsObjectStoreBuilder::default();
-        let pixel_format = match boot_framebuffer.pixel_format() {
-            PixelFormat::BgrReserved => DrmPixelFormat::XRGB8888,
-            format => {
-                // TODO: Derive the exact DRM format once framebuffer initialization
-                // preserves the complete boot framebuffer layout.
-                // See `aster_framebuffer::framebuffer::init` for boot framebuffer initialization.
-                //
-                // Until then, advertise XRGB8888 so simpledrm remains available for
-                // KMS query tests. This may not match the actual framebuffer layout.
-                ostd::warn!(
-                    "Boot framebuffer format {:?} has no DRM mapping; assuming XRGB8888",
-                    format
-                );
-                DrmPixelFormat::XRGB8888
-            }
-        };
+        let pixel_format = drm_pixel_format(boot_framebuffer.pixel_format())?;
         let primary = builder.add_plane(DrmPlaneType::Primary, vec![pixel_format])?;
         let crtc = builder.add_crtc(0, primary, None)?;
         let encoder = builder.add_encoder(DrmEncoderType::Virtual)?;
@@ -230,17 +215,14 @@ impl DrmKmsOps for SimpleDrmDevice {
 
     fn probe_connector(&self, _connector: &DrmConnector) -> Result<DrmConnectorProbeState> {
         const SIMPLEDRM_VREFRESH_HZ: u32 = 60;
-        const SIMPLEDRM_ASSUMED_DPI: u32 = 96;
 
         let width = u32::try_from(self.boot_framebuffer.width())?;
         let height = u32::try_from(self.boot_framebuffer.height())?;
         let resolution = DrmSize::new(width, height);
 
         let display_mode = DrmDisplayMode::from_size(resolution, SIMPLEDRM_VREFRESH_HZ)?;
-        // `simpledrm` only has the boot framebuffer's pixel geometry here,
-        // so it relies on the shared physical-size fallback path.
         let display_info =
-            DrmDisplayInfo::from_dpi(resolution, SIMPLEDRM_ASSUMED_DPI, SubpixelOrder::Unknown)?;
+            display_info_from_boot(resolution, self.boot_framebuffer.physical_size_mm())?;
         Ok(DrmConnectorProbeState::new(
             DrmConnectorStatus::Connected,
             vec![display_mode],
@@ -274,5 +256,116 @@ impl DrmKmsOps for SimpleDrmDevice {
         }
 
         Ok(())
+    }
+}
+
+fn drm_pixel_format(format: PixelFormat) -> Result<DrmPixelFormat> {
+    // DRM names describe channels from most to least significant bits, while
+    // the framebuffer's RGB/BGR byte formats describe memory order.
+    // See <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_fourcc.h>.
+    Ok(match format {
+        PixelFormat::Rgb565 => DrmPixelFormat::RGB565,
+        PixelFormat::Rgb888 => DrmPixelFormat::BGR888,
+        PixelFormat::Bgr888 => DrmPixelFormat::RGB888,
+        PixelFormat::RgbReserved => DrmPixelFormat::XBGR8888,
+        PixelFormat::BgrReserved => DrmPixelFormat::XRGB8888,
+        PixelFormat::Grayscale8 => {
+            // DRM C8 uses palette indices, not grayscale intensities.
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the boot framebuffer pixel format is unsupported by simpledrm"
+            );
+        }
+    })
+}
+
+fn display_info_from_boot(
+    resolution: DrmSize,
+    physical_size_mm: Option<(u16, u16)>,
+) -> Result<DrmDisplayInfo> {
+    if let Some((width_mm, height_mm)) = physical_size_mm {
+        return Ok(DrmDisplayInfo::new(
+            u32::from(width_mm),
+            u32::from(height_mm),
+            SubpixelOrder::Unknown,
+        ));
+    }
+
+    const SIMPLEDRM_ASSUMED_DPI: u32 = 96;
+    DrmDisplayInfo::from_dpi(resolution, SIMPLEDRM_ASSUMED_DPI, SubpixelOrder::Unknown)
+}
+
+#[cfg(ktest)]
+mod test {
+    use aster_framebuffer::pixel::Pixel;
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    #[ktest]
+    fn drm_format_matches_rendered_pixels() {
+        let pixel = Pixel {
+            red: 0xa8,
+            green: 0x54,
+            blue: 0x38,
+        };
+        for format in [
+            PixelFormat::Rgb565,
+            PixelFormat::Rgb888,
+            PixelFormat::Bgr888,
+            PixelFormat::RgbReserved,
+            PixelFormat::BgrReserved,
+        ] {
+            let rendered = pixel.render(format);
+            let drm_format = drm_pixel_format(format).unwrap();
+            assert_eq!(rendered.nbytes(), drm_format.bytes_per_pixel());
+
+            let mut bytes = [0; 4];
+            bytes[..rendered.nbytes()].copy_from_slice(rendered.as_slice());
+            let value = u32::from_le_bytes(bytes);
+            let (red, green, blue) = match drm_format {
+                DrmPixelFormat::RGB565 => (
+                    ((value >> 11) & 0x1f) << 3,
+                    ((value >> 5) & 0x3f) << 2,
+                    (value & 0x1f) << 3,
+                ),
+                DrmPixelFormat::RGB888 | DrmPixelFormat::XRGB8888 => {
+                    ((value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff)
+                }
+                DrmPixelFormat::BGR888 | DrmPixelFormat::XBGR8888 => {
+                    (value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff)
+                }
+                _ => panic!("unexpected DRM pixel format"),
+            };
+            assert_eq!(red, u32::from(pixel.red));
+            assert_eq!(green, u32::from(pixel.green));
+            assert_eq!(blue, u32::from(pixel.blue));
+        }
+    }
+
+    #[ktest]
+    fn rejects_grayscale_scanout() {
+        assert_eq!(
+            drm_pixel_format(PixelFormat::Grayscale8)
+                .unwrap_err()
+                .error(),
+            Errno::EINVAL
+        );
+    }
+
+    #[ktest]
+    fn reports_boot_display_dimensions() {
+        let info = display_info_from_boot(DrmSize::new(1920, 1080), Some((520, 290))).unwrap();
+        assert_eq!(info.mm_width(), 520);
+        assert_eq!(info.mm_height(), 290);
+        assert_eq!(info.subpixel_order(), SubpixelOrder::Unknown as u32);
+    }
+
+    #[ktest]
+    fn estimates_missing_display_dimensions() {
+        let info = display_info_from_boot(DrmSize::new(1920, 1080), None).unwrap();
+        assert_eq!(info.mm_width(), 508);
+        assert_eq!(info.mm_height(), 285);
+        assert_eq!(info.subpixel_order(), SubpixelOrder::Unknown as u32);
     }
 }
