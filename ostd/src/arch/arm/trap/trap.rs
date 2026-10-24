@@ -108,10 +108,9 @@ impl RawUserContext {
     ///
     /// On return, the context will be reset to the status before the trap.
     /// Trap reason and error code will be placed at `trap_num`.
-    pub(in crate::arch) fn run(&mut self, guard: DisabledLocalIrqGuard) {
+    pub(in crate::arch) fn run(&mut self, _guard: &DisabledLocalIrqGuard) {
         // Return to userspace with interrupts disabled. Otherwise, interrupts
         // after switching `sp` will mess up the CPU state.
-        core::mem::forget(guard);
 
         unsafe { run_user(self) };
     }
