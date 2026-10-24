@@ -829,6 +829,15 @@ impl Debug for Mount {
 
 impl Drop for Mount {
     fn drop(&mut self) {
+        // A detached mount (`umount2(MNT_DETACH)`) lives on through its open
+        // descriptors; flush its filesystem now that the last reference is
+        // gone, as Linux does in `generic_shutdown_super()`.
+        // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/super.c>
+        let was_detached = self.mountpoint.read().is_none();
+        if was_detached && let Err(e) = self.fs.sync() {
+            warn!("failed to flush a detached mount: {:?}", e);
+        }
+
         self.clear_mountpoint();
         // `upgrade` returns `None` for pseudo mounts (no namespace) and for
         // mounts whose namespace is itself being dropped (the `mounts` map

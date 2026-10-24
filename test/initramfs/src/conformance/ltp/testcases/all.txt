@@ -1774,7 +1774,7 @@ unshare04
 # umount02
 # umount03
 
-# umount2_01
+umount2_01
 # umount2_02
 
 # userfaultfd01
