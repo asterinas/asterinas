@@ -7,18 +7,44 @@ use aster_bigtcp::iface::{InterfaceFlags, InterfaceType};
 use super::legacy::CRtGenMsg;
 use crate::{
     net::socket::netlink::{
-        message::{SegmentBody, SegmentCommon},
+        message::{CMsgSegHdr, CSegmentType, SegmentBody, SegmentCommon},
         route::message::attr::link::LinkAttr,
     },
     prelude::*,
     util::net::CSocketAddrFamily,
 };
 
-pub(crate) type LinkSegment = SegmentCommon<LinkSegmentBody, LinkAttr>;
+pub(in crate::net::socket::netlink::route) type LinkSegment =
+    SegmentCommon<LinkSegmentBody, LinkAttr>;
 
 impl SegmentBody for LinkSegmentBody {
     type CLegacyType = CRtGenMsg;
     type CType = CIfinfoMsg;
+
+    fn validate_strict_request_body(header: &CMsgSegHdr, body: &Self::CType) -> Result<()> {
+        if header.type_ != CSegmentType::GETLINK as u16 {
+            return_errno_with_message!(Errno::EOPNOTSUPP, "the link request type is not supported");
+        }
+
+        if body._pad != 0 || body.type_ != 0 || body.flags != 0 || body.change != 0 {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the link request header contains nonzero padding, type, flags, or change"
+            );
+        }
+        Ok(())
+    }
+
+    fn normalize_legacy_request_body(header: &CMsgSegHdr, body: &mut Self::CType) -> Result<()> {
+        if header.type_ != CSegmentType::GETLINK as u16 {
+            return_errno_with_message!(Errno::EOPNOTSUPP, "the link request type is not supported");
+        }
+
+        // Legacy GETLINK ignores the hardware type, including unknown values.
+        // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/core/rtnetlink.c#L4123>.
+        body.type_ = 0;
+        Ok(())
+    }
 }
 
 /// `ifinfomsg` in Linux.

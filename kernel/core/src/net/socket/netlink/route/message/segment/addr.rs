@@ -5,17 +5,49 @@ use core::num::NonZeroU32;
 use super::legacy::CRtGenMsg;
 use crate::{
     net::socket::netlink::{
-        message::{SegmentBody, SegmentCommon},
+        message::{CMsgSegHdr, CSegmentType, SegmentBody, SegmentCommon},
         route::message::attr::addr::AddrAttr,
     },
     prelude::*,
 };
 
-pub(crate) type AddrSegment = SegmentCommon<AddrSegmentBody, AddrAttr>;
+pub(in crate::net::socket::netlink::route) type AddrSegment =
+    SegmentCommon<AddrSegmentBody, AddrAttr>;
 
 impl SegmentBody for AddrSegmentBody {
     type CLegacyType = CRtGenMsg;
     type CType = CIfaddrMsg;
+
+    fn validate_strict_request_body(header: &CMsgSegHdr, body: &Self::CType) -> Result<()> {
+        if header.type_ != CSegmentType::GETADDR as u16 {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "the address request type is not supported"
+            );
+        }
+
+        if body.prefix_len != 0 || body.flags != 0 || body.scope != 0 {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the address request header contains nonzero prefix length, flags, or scope"
+            );
+        }
+        Ok(())
+    }
+
+    fn normalize_legacy_request_body(header: &CMsgSegHdr, body: &mut Self::CType) -> Result<()> {
+        if header.type_ != CSegmentType::GETADDR as u16 {
+            return_errno_with_message!(
+                Errno::EOPNOTSUPP,
+                "the address request type is not supported"
+            );
+        }
+
+        // Legacy GETADDR dumps ignore the scope.
+        // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/ipv4/devinet.c#L1950>.
+        body.scope = 0;
+        Ok(())
+    }
 }
 
 /// `ifaddrmsg` in Linux.
