@@ -33,6 +33,7 @@ impl OverlayInode {
         self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
+        creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
         if self.type_().is_directory() {
             // Only this call has the opening dentry, so the `..` identity is captured here.
@@ -46,9 +47,12 @@ impl OverlayInode {
             // A special inode's ops come from its type, not from any layer: the real object's own
             // filesystem opens it, and no copy-up is involved.
             let real = self.real_object();
-            return real
-                .real_inode()
-                .open(real.dentry(), access_mode, status_flags);
+            return real.real_inode().open(
+                real.dentry(),
+                access_mode,
+                status_flags,
+                creation_flags,
+            );
         }
         if !access_mode.is_writable() {
             return None;
