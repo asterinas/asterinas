@@ -829,6 +829,18 @@ impl Debug for Mount {
 
 impl Drop for Mount {
     fn drop(&mut self) {
+        // A mount that is no longer attached to any mountpoint lives on only
+        // through the file descriptors that were opened through it (a
+        // "detached" mount, `umount2(MNT_DETACH)`). Now that its last
+        // reference is gone, flush the filesystem so that data written
+        // through those descriptors is visible to a later mount of the same
+        // device. This mirrors Linux, where `generic_shutdown_super()` calls
+        // `sync_filesystem()` when a superblock is finally released.
+        let was_detached = self.mountpoint.read().is_none();
+        if was_detached && let Err(e) = self.fs.sync() {
+            warn!("failed to flush a detached mount: {:?}", e);
+        }
+
         self.clear_mountpoint();
         // `upgrade` returns `None` for pseudo mounts (no namespace) and for
         // mounts whose namespace is itself being dropped (the `mounts` map

@@ -636,7 +636,7 @@ getxattr01
 # inotify_init1_02
 
 # inotify01
-# inotify02
+inotify02
 # inotify03
 # inotify04
 # inotify05
@@ -994,7 +994,7 @@ nice03
 # nice05
 
 open01
-# open02
+open02
 open03
 # open04
 # open06
@@ -1507,7 +1507,7 @@ setsid01
 # setsockopt01
 # setsockopt02
 setsockopt03
-# setsockopt04
+setsockopt04
 # setsockopt05
 # setsockopt06
 # setsockopt07
@@ -1774,7 +1774,7 @@ unshare04
 # umount02
 # umount03
 
-# umount2_01
+umount2_01
 # umount2_02
 
 # userfaultfd01
