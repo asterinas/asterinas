@@ -25,6 +25,8 @@ mod worker;
 pub(in crate::fs) use fs::singleton;
 pub(crate) use tree::DevtmpfsNode;
 pub use tree::DevtmpfsNodeMeta;
+#[cfg(ktest)]
+pub(crate) use worker::init_for_ktest;
 pub(crate) use worker::{create_node, delete_node};
 
 pub(super) fn init() {

@@ -52,6 +52,15 @@ pub enum DeviceType {
     Block,
 }
 
+#[cfg(ktest)]
+pub(crate) fn init_for_ktest() {
+    static INIT: spin::Once<()> = spin::Once::new();
+    INIT.call_once(|| {
+        crate::fs::devtmpfs::init_for_ktest();
+        model::init_in_first_kthread();
+    });
+}
+
 pub(crate) fn init_in_first_kthread() {
     model::init_in_first_kthread();
     registry::init_in_first_kthread();

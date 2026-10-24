@@ -60,6 +60,18 @@ pub trait Class: Sized + Send + Sync + 'static {
     /// Returns the attributes shared by all devices on this class.
     fn dev_attrs(&self) -> &'static [Attr<ClassDevice<Self>>];
 
+    /// Appends class-specific entries to a device's uevent environment.
+    ///
+    /// Called for automatic and explicit events and for `uevent` reads.
+    /// Do not add `DRIVER`; the model derives it from the current binding.
+    fn uevent(
+        &self,
+        _dev: &ClassDevice<Self>,
+        _vars: &mut crate::uevent::UeventVars,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     /// Whether a device of this class placed under a class device still gets its own glue directory.
     const KEEPS_GLUE_DIR: bool = false;
 }

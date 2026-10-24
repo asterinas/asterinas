@@ -153,6 +153,17 @@ impl<B: Bus> DeviceInternals for BusDevice<B> {
     fn devnode_override(&self) -> Option<DevNode> {
         self.declared.type_devnode(self)
     }
+
+    fn driver_name(&self) -> Option<alloc::string::String> {
+        self.driver()
+            .map(|driver| alloc::string::ToString::to_string(driver.name()))
+    }
+
+    fn append_uevent_vars(&self, vars: &mut crate::uevent::UeventVars) -> Result<()> {
+        // The bus callback runs before the device type callback.
+        self.bus.bus().uevent(self, vars)?;
+        self.declared.type_uevent(self, vars)
+    }
 }
 
 impl<B: Bus> core::fmt::Debug for BusDevice<B> {
