@@ -181,13 +181,7 @@ impl DrmFile {
             .ok_or(Errno::ENOENT)?;
 
         args.gamma_size = crtc.gamma_size();
-        let mode = {
-            let crtc_state = crtc.state().lock();
-            crtc_state
-                .is_enabled()
-                .then(|| crtc_state.display_mode())
-                .flatten()
-        };
+        let mode = crtc.state().lock().display_mode();
 
         let primary_plane = crtc.primary_plane().upgrade().ok_or(Errno::ENOENT)?;
         let plane_state = primary_plane.state().lock();
