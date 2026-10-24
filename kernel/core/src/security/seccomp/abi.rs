@@ -8,6 +8,7 @@ use ostd::{arch::cpu::context::UserContext, user::UserContextApi};
 
 use crate::{cpu::LinuxAbi, prelude::*};
 
+pub(super) const MODE_STRICT: u32 = 1;
 pub(super) const MODE_FILTER: u32 = 2;
 pub(super) const RET_KILL_PROCESS: u32 = 0x8000_0000;
 pub(super) const RET_KILL_THREAD: u32 = 0;
@@ -75,6 +76,10 @@ pub(super) struct SeccompNotifResp {
 }
 
 impl SeccompData {
+    pub(super) fn syscall_number(&self) -> i32 {
+        self.nr
+    }
+
     pub(super) fn trap_info(&self, reason: u32) -> crate::process::signal::c_types::siginfo_t {
         use crate::process::signal::{
             c_types::siginfo_t,

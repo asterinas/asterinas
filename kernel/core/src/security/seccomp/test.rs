@@ -92,3 +92,62 @@ fn maximum_depth_chain_is_bounded_and_can_be_released() {
     ));
     drop(inherited);
 }
+
+#[ktest]
+fn strict_and_filter_modes_cannot_be_interchanged() {
+    let disabled = SeccompState::default();
+    let strict = disabled.to_strict().unwrap();
+    assert_eq!(strict.mode(), MODE_STRICT);
+    assert_eq!(strict.to_strict().unwrap().mode(), MODE_STRICT);
+    assert_eq!(
+        strict.append(program(RET_ALLOW)).err().unwrap().error(),
+        Errno::EINVAL
+    );
+    let filtered = disabled.append(program(RET_ALLOW)).unwrap();
+    assert_eq!(filtered.to_strict().err().unwrap().error(), Errno::EINVAL);
+    assert_eq!(disabled.mode(), 0);
+    assert_eq!(filtered.mode(), MODE_FILTER);
+}
+
+#[ktest]
+fn strict_threads_are_not_filter_sync_ancestors() {
+    let disabled = SeccompState::default();
+    let strict = disabled.to_strict().unwrap();
+    let filtered = disabled.append(program(RET_ALLOW)).unwrap();
+    assert!(!strict.is_ancestor_of(&disabled));
+    assert!(!strict.is_ancestor_of(&filtered));
+    assert!(!strict.is_ancestor_of(&strict));
+    assert!(disabled.is_ancestor_of(&filtered));
+    assert!(filtered.is_ancestor_of(&filtered.clone()));
+}
+
+#[ktest]
+fn inherited_strict_policy_retains_its_mode_and_restrictions() {
+    let original = SeccompState::default().to_strict().unwrap();
+    let inherited = original.clone();
+    drop(original);
+    assert_eq!(inherited.mode(), MODE_STRICT);
+    // An invalid syscall must remain forbidden after the source state is dropped.
+    let mut context = ostd::arch::cpu::context::UserContext::default();
+    use crate::cpu::LinuxAbi;
+    context.set_syscall_ret(usize::MAX);
+    let data = SeccompData::from_context(&context, -1);
+    assert!(matches!(
+        inherited.evaluate(&data),
+        SeccompDecision::StrictViolation
+    ));
+}
+
+#[cfg(target_arch = "x86_64")]
+#[ktest]
+fn strict_allows_x86_probe_trampolines() {
+    let strict = SeccompState::default().to_strict().unwrap();
+    let context = ostd::arch::cpu::context::UserContext::default();
+    // Native Linux x86 probe ABI numbers, introduced after Linux 6.8.
+    for number in [335, 336] {
+        assert!(matches!(
+            strict.evaluate(&SeccompData::from_context(&context, number)),
+            SeccompDecision::Allow
+        ));
+    }
+}

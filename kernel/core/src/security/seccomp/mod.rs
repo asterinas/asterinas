@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Per-thread Linux seccomp filters.
+//! Per-thread Linux seccomp modes and filters.
 //!
 //! Installation copies and validates a cBPF program before publishing an immutable
 //! filter chain. Syscall entry evaluates a stable snapshot, and fork/clone share
@@ -17,8 +17,8 @@ mod test;
 use ostd::{arch::cpu::context::UserContext, mm::VmIo};
 
 use self::abi::{
-    MODE_FILTER, RET_ALLOW, RET_ERRNO, RET_KILL_PROCESS, RET_KILL_THREAD, RET_TRACE, RET_TRAP,
-    SeccompNotif, SeccompNotifResp, SeccompNotifSizes,
+    MODE_FILTER, MODE_STRICT, RET_ALLOW, RET_ERRNO, RET_KILL_PROCESS, RET_KILL_THREAD, RET_TRACE,
+    RET_TRAP, SeccompNotif, SeccompNotifResp, SeccompNotifSizes,
 };
 pub(crate) use self::{
     abi::SeccompData,
@@ -26,6 +26,7 @@ pub(crate) use self::{
 };
 use crate::{cpu::LinuxAbi, prelude::*, process::signal};
 
+const SET_MODE_STRICT: u32 = 0;
 const SET_MODE_FILTER: u32 = 1;
 const GET_ACTION_AVAIL: u32 = 2;
 const GET_NOTIF_SIZES: u32 = 3;
@@ -38,6 +39,12 @@ pub(crate) fn seccomp(
     ctx: &Context,
 ) -> Result<isize> {
     match operation {
+        SET_MODE_STRICT => {
+            if flags != 0 || args_addr != 0 {
+                return_errno_with_message!(Errno::EINVAL, "invalid strict seccomp arguments");
+            }
+            install::install_strict(ctx).map(|()| 0)
+        }
         SET_MODE_FILTER => install::install_filter(ctx, flags, args_addr),
         GET_NOTIF_SIZES => {
             if flags != 0 {
@@ -79,6 +86,10 @@ pub(crate) fn trap(ctx: &Context, user_ctx: &mut UserContext, syscall_number: i3
 
 /// Handles `PR_SET_SECCOMP` using the same installation path as `seccomp(2)`.
 pub(crate) fn prctl_set_seccomp(mode: u64, fprog_addr: Vaddr, ctx: &Context) -> Result<()> {
+    // Unlike seccomp(2), prctl ignores its filter argument for strict mode.
+    if mode == MODE_STRICT as u64 {
+        return install::install_strict(ctx);
+    }
     if mode != MODE_FILTER as u64 {
         return_errno_with_message!(Errno::EINVAL, "unsupported seccomp mode");
     }

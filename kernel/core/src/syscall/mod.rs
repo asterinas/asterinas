@@ -21,7 +21,10 @@ use crate::{
     process::{
         TermStatus, posix_thread,
         posix_thread::ptrace::PtraceStopResult,
-        signal::{HandlePendingSignal, constants::SIGSYS},
+        signal::{
+            HandlePendingSignal,
+            constants::{SIGKILL, SIGSYS},
+        },
     },
     security::{
         self,
@@ -403,6 +406,18 @@ fn read_syscall_number(ctx: &Context, user_ctx: &UserContext) -> usize {
     }
 }
 
+/// Checks the native ABI's fixed strict-mode syscall set.
+pub(crate) fn strict_seccomp_allows(number: i32) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    if matches!(number as u64, arch::SYS_URETPROBE | arch::SYS_UPROBE) {
+        return true;
+    }
+    matches!(
+        number as u64,
+        arch::SYS_READ | arch::SYS_WRITE | arch::SYS_EXIT | arch::SYS_RT_SIGRETURN
+    )
+}
+
 pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
     let mut syscall_number = read_syscall_number(ctx, user_ctx);
     let mut has_traced = false;
@@ -452,6 +467,10 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
             }
             SeccompDecision::KillThread => {
                 posix_thread::do_exit(TermStatus::Killed(SIGSYS), ctx, user_ctx);
+                return;
+            }
+            SeccompDecision::StrictViolation => {
+                posix_thread::do_exit(TermStatus::Killed(SIGKILL), ctx, user_ctx);
                 return;
             }
             SeccompDecision::KillProcess => {

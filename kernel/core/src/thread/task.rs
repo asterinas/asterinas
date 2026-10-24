@@ -69,6 +69,10 @@ pub(crate) fn create_new_user_task(
         }
 
         while !current_thread.is_exited() {
+            #[cfg(target_arch = "x86_64")]
+            if ctx.posix_thread.seccomp_snapshot().is_strict() {
+                user_mode.context_mut().disable_tsc();
+            }
             // Execute the user code
             let return_reason = user_mode.execute(&ctx);
 

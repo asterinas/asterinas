@@ -16,6 +16,14 @@ use crate::{
 const FILTER_FLAG_TSYNC: u32 = 1;
 const FILTER_FLAG_TSYNC_ESRCH: u32 = 1 << 4;
 
+/// Enters strict mode, serialized against filter installation and TSYNC.
+pub(super) fn install_strict(ctx: &Context) -> Result<()> {
+    let _tasks = ctx.process.tasks().lock();
+    let state = ctx.posix_thread.seccomp_snapshot().to_strict()?;
+    ctx.posix_thread.set_seccomp(state);
+    Ok(())
+}
+
 /// Installs a new filter after preparing it without modifying the effective policy.
 pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Result<isize> {
     if flags & !(FILTER_FLAG_TSYNC | FILTER_FLAG_TSYNC_ESRCH) != 0 {

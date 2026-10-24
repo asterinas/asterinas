@@ -2,8 +2,8 @@
 
 use super::{
     abi::{
-        MODE_FILTER, RET_ACTION_FULL, RET_ALLOW, RET_DATA, RET_ERRNO, RET_KILL_THREAD, RET_TRACE,
-        RET_TRAP, SeccompData,
+        MODE_FILTER, MODE_STRICT, RET_ACTION_FULL, RET_ALLOW, RET_DATA, RET_ERRNO, RET_KILL_THREAD,
+        RET_TRACE, RET_TRAP, SeccompData,
     },
     cbpf::VerifiedProgram,
 };
@@ -18,7 +18,15 @@ const MAX_ERRNO: u32 = 4095;
 /// The effective seccomp policy of one thread.
 #[derive(Clone, Default)]
 pub(crate) struct SeccompState {
-    head: Option<Arc<FilterNode>>,
+    policy: Policy,
+}
+
+#[derive(Clone, Default)]
+enum Policy {
+    #[default]
+    Disabled,
+    Strict,
+    Filter(Arc<FilterNode>),
 }
 
 struct FilterNode {
@@ -35,19 +43,51 @@ pub(crate) enum SeccompDecision {
     Trace(u32),
     KillThread,
     KillProcess,
+    StrictViolation,
 }
 
 impl SeccompState {
     pub(crate) fn mode(&self) -> u32 {
-        if self.head.is_some() { MODE_FILTER } else { 0 }
+        match self.policy {
+            Policy::Disabled => 0,
+            Policy::Strict => MODE_STRICT,
+            Policy::Filter(_) => MODE_FILTER,
+        }
+    }
+
+    pub(crate) fn is_strict(&self) -> bool {
+        matches!(self.policy, Policy::Strict)
+    }
+
+    pub(super) fn to_strict(&self) -> Result<Self> {
+        if matches!(self.policy, Policy::Filter(_)) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "cannot change seccomp filter mode to strict"
+            );
+        }
+        Ok(Self {
+            policy: Policy::Strict,
+        })
+    }
+
+    fn head(&self) -> Option<&Arc<FilterNode>> {
+        match &self.policy {
+            Policy::Filter(head) => Some(head),
+            _ => None,
+        }
     }
 
     /// Checks whether this policy is an ancestor of (or identical to) `other`.
     pub(super) fn is_ancestor_of(&self, other: &Self) -> bool {
-        let Some(head) = &self.head else {
+        // Strict threads are ineligible for TSYNC, even though they have no filter.
+        if self.is_strict() || other.is_strict() {
+            return false;
+        }
+        let Some(head) = self.head() else {
             return true;
         };
-        let mut node = other.head.as_ref();
+        let mut node = other.head();
         while let Some(filter) = node {
             if Arc::ptr_eq(head, filter) {
                 return true;
@@ -58,10 +98,15 @@ impl SeccompState {
     }
 
     pub(super) fn append(&self, program: VerifiedProgram) -> Result<Self> {
+        if self.is_strict() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "cannot change strict seccomp mode to filter"
+            );
+        }
         let path_insns = program.len()
             + self
-                .head
-                .as_ref()
+                .head()
                 .map_or(0, |head| head.path_insns + PREVIOUS_FILTER_PENALTY);
         if path_insns > MAX_INSNS_PER_PATH {
             return_errno_with_message!(Errno::ENOMEM, "seccomp filter chain is too long");
@@ -69,17 +114,26 @@ impl SeccompState {
 
         let head = Arc::try_new(FilterNode {
             program,
-            previous: self.head.clone(),
+            previous: self.head().cloned(),
             path_insns,
         })
         .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate seccomp filter"))?;
 
-        Ok(Self { head: Some(head) })
+        Ok(Self {
+            policy: Policy::Filter(head),
+        })
     }
 
     pub(crate) fn evaluate(&self, data: &SeccompData) -> SeccompDecision {
+        if self.is_strict() {
+            return if crate::syscall::strict_seccomp_allows(data.syscall_number()) {
+                SeccompDecision::Allow
+            } else {
+                SeccompDecision::StrictViolation
+            };
+        }
         let mut result = RET_ALLOW;
-        let mut node = self.head.as_deref();
+        let mut node = self.head().map(Arc::as_ref);
         while let Some(filter) = node {
             let current = filter.program.run(data);
             // Linux compares signed actions so KILL_PROCESS precedes KILL_THREAD.

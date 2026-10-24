@@ -186,6 +186,12 @@ use super::{
     write::sys_write,
 };
 
+// Linux v6.18 exempts probe trampolines from strict seccomp. Keep their ABI
+// numbers even though the probe subsystem is not implemented (dispatch yields
+// ENOSYS): <https://github.com/torvalds/linux/blob/v6.18/kernel/seccomp.c>.
+pub(crate) const SYS_URETPROBE: u64 = 335;
+pub(crate) const SYS_UPROBE: u64 = 336;
+
 impl_syscall_nums_and_dispatch_fn! {
     SYS_READ = 0               => sys_read(args[..3]);
     SYS_WRITE = 1              => sys_write(args[..3]);
