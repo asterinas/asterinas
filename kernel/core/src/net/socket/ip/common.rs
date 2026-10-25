@@ -7,7 +7,11 @@ use aster_bigtcp::{
 };
 
 use crate::{
-    net::{iface::Iface, route, socket::util::check_port_privilege},
+    net::{
+        iface::{Iface, iter_all_ifaces},
+        route,
+        socket::util::check_port_privilege,
+    },
     prelude::*,
 };
 
@@ -17,9 +21,30 @@ pub(super) fn resolve_bind_iface_and_config(
 ) -> Result<(Arc<Iface>, BindPortConfig)> {
     check_port_privilege(endpoint.port)?;
 
-    let iface = route::lookup_local_iface(endpoint.addr)?;
+    // FIXME: An unspecified bind address (0.0.0.0 / ::) should accept traffic on
+    // every interface. aster-bigtcp attaches a bound socket to exactly one
+    // interface and dispatches by (addr, port), so instead bind to the default
+    // (last registered, i.e. virtio) interface *and* rewrite the address to that
+    // interface's own address. Without this, bind() to 0.0.0.0 fails with
+    // EADDRNOTAVAIL (e.g. every plain gen_tcp:listen and OTP's inet_res DNS
+    // client), or, with the address left unspecified, replies are never
+    // delivered and the kernel heap is exhausted.
+    let (iface, endpoint) = if endpoint.addr.is_unspecified() {
+        let iface = iter_all_ifaces()
+            .last()
+            .cloned()
+            .ok_or_else(|| Error::with_message(Errno::EADDRNOTAVAIL, "no interface"))?;
+        let addr = match endpoint.addr {
+            IpAddress::Ipv4(_) => iface.ipv4_cidr().map(|c| IpAddress::Ipv4(c.address())),
+            IpAddress::Ipv6(_) => iface.ipv6_cidr().map(|c| IpAddress::Ipv6(c.address())),
+        }
+        .ok_or_else(|| Error::with_message(Errno::EADDRNOTAVAIL, "interface has no address"))?;
+        (iface, IpEndpoint::new(addr, endpoint.port))
+    } else {
+        (route::lookup_local_iface(endpoint.addr)?, *endpoint)
+    };
 
-    let bind_port_config = BindPortConfig::new(*endpoint, can_reuse);
+    let bind_port_config = BindPortConfig::new(endpoint, can_reuse);
 
     Ok((iface, bind_port_config))
 }
