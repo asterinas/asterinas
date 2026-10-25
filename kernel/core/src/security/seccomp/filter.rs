@@ -14,6 +14,8 @@ use crate::prelude::*;
 const MAX_INSNS_PER_PATH: usize = 32768;
 const PREVIOUS_FILTER_PENALTY: usize = 4;
 const MAX_ERRNO: u32 = 4095;
+// Linux uses this internal mode after a filter returns a fatal action.
+const MODE_DEAD: u32 = MODE_FILTER + 1;
 
 /// The effective seccomp policy of one thread.
 #[derive(Clone, Default)]
@@ -27,6 +29,11 @@ enum Policy {
     Disabled,
     Strict,
     Filter(Arc<FilterNode>),
+    Dead(Arc<FilterNode>),
+    Exited {
+        mode: u32,
+        filter_count: usize,
+    },
 }
 
 struct FilterNode {
@@ -52,7 +59,44 @@ impl SeccompState {
             Policy::Disabled => 0,
             Policy::Strict => MODE_STRICT,
             Policy::Filter(_) => MODE_FILTER,
+            Policy::Dead(_) => MODE_DEAD,
+            Policy::Exited { mode, .. } => mode,
         }
+    }
+
+    /// Returns the filter count, retaining the last count after thread exit.
+    pub(crate) fn filter_count(&self) -> usize {
+        if let Policy::Exited { filter_count, .. } = self.policy {
+            return filter_count;
+        }
+        let mut count = 0;
+        let mut node = self.head();
+        while let Some(filter) = node {
+            count += 1;
+            node = filter.previous.as_ref();
+        }
+        count
+    }
+
+    /// Returns the status retained after thread exit without keeping its filters alive.
+    pub(crate) fn exited(&self) -> Self {
+        Self {
+            policy: Policy::Exited {
+                mode: self.mode(),
+                filter_count: self.filter_count(),
+            },
+        }
+    }
+
+    /// Prevents further syscalls after a fatal filter decision.
+    pub(crate) fn mark_dead(&mut self) {
+        if let Policy::Filter(head) = &self.policy {
+            self.policy = Policy::Dead(head.clone());
+        }
+    }
+
+    fn is_terminated(&self) -> bool {
+        matches!(self.policy, Policy::Dead(_) | Policy::Exited { .. })
     }
 
     pub(crate) fn is_strict(&self) -> bool {
@@ -60,7 +104,7 @@ impl SeccompState {
     }
 
     pub(super) fn to_strict(&self) -> Result<Self> {
-        if matches!(self.policy, Policy::Filter(_)) {
+        if !matches!(self.policy, Policy::Disabled | Policy::Strict) {
             return_errno_with_message!(
                 Errno::EINVAL,
                 "cannot change seccomp filter mode to strict"
@@ -73,7 +117,7 @@ impl SeccompState {
 
     fn head(&self) -> Option<&Arc<FilterNode>> {
         match &self.policy {
-            Policy::Filter(head) => Some(head),
+            Policy::Filter(head) | Policy::Dead(head) => Some(head),
             _ => None,
         }
     }
@@ -81,7 +125,7 @@ impl SeccompState {
     /// Checks whether this policy is an ancestor of (or identical to) `other`.
     pub(super) fn is_ancestor_of(&self, other: &Self) -> bool {
         // Strict threads are ineligible for TSYNC, even though they have no filter.
-        if self.is_strict() || other.is_strict() {
+        if self.is_strict() || other.is_strict() || self.is_terminated() || other.is_terminated() {
             return false;
         }
         let Some(head) = self.head() else {
@@ -98,6 +142,9 @@ impl SeccompState {
     }
 
     pub(super) fn append(&self, program: VerifiedProgram) -> Result<Self> {
+        if self.is_terminated() {
+            return_errno_with_message!(Errno::EINVAL, "cannot change a terminated seccomp policy");
+        }
         if self.is_strict() {
             return_errno_with_message!(
                 Errno::EINVAL,
@@ -125,6 +172,9 @@ impl SeccompState {
     }
 
     pub(crate) fn evaluate(&self, data: &SeccompData) -> SeccompDecision {
+        if self.is_terminated() {
+            return SeccompDecision::KillProcess;
+        }
         if self.is_strict() {
             return if crate::syscall::strict_seccomp_allows(data.syscall_number()) {
                 SeccompDecision::Allow

@@ -151,3 +151,33 @@ fn strict_allows_x86_probe_trampolines() {
         ));
     }
 }
+
+#[ktest]
+fn terminated_policies_cannot_be_reactivated() {
+    let disabled = SeccompState::default();
+    let active = disabled.append(program(RET_ALLOW)).unwrap();
+    let mut dead = active.clone();
+    dead.mark_dead();
+    for policy in [
+        dead.clone(),
+        dead.exited(),
+        active.exited(),
+        disabled.exited(),
+    ] {
+        assert!(!policy.is_ancestor_of(&active));
+        assert!(!disabled.is_ancestor_of(&policy));
+        assert_eq!(policy.to_strict().err().unwrap().error(), Errno::EINVAL);
+        assert_eq!(
+            policy.append(program(RET_ALLOW)).err().unwrap().error(),
+            Errno::EINVAL
+        );
+        assert!(matches!(
+            policy.evaluate(&SeccompData::new_zeroed()),
+            SeccompDecision::KillProcess
+        ));
+    }
+    assert_eq!(dead.mode(), MODE_FILTER + 1);
+    assert_eq!(dead.exited().mode(), dead.mode());
+    assert_eq!(dead.exited().filter_count(), 1);
+    assert_eq!(active.mode(), MODE_FILTER);
+}

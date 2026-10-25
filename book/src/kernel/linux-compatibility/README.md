@@ -378,6 +378,13 @@ Here is the list of supported file systems:
 * Procfs
 * Ramfs
 
+Procfs exposes `NoNewPrivs`, `Seccomp`, and `Seccomp_filters`
+in `/proc/[pid]/status` and `/proc/[pid]/task/[tid]/status`.
+The process path reports the main thread's state;
+the task path reports the selected thread's state.
+`Seccomp_filters` counts the filters in that thread's policy chain.
+These fields remain available for a zombie until it is reaped.
+
 ## Sockets
 
 Here is the list of supported socket types:

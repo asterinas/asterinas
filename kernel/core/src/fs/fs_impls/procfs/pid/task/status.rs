@@ -54,7 +54,9 @@ use crate::{
 /// - CapEff: Effective capabilities.
 /// - CapBnd: Bounding set.
 /// - CapAmb: Ambient capabilities.
+/// - NoNewPrivs: Whether the thread is forbidden from gaining new privileges.
 /// - Seccomp: Seccomp mode.
+/// - Seccomp_filters: Number of filters attached to the thread.
 /// - Cpus_allowed: CPUs allowed for this process.
 /// - Cpus_allowed_list: List of CPUs allowed for this process.
 /// - Mems_allowed: Memory nodes allowed for this process.
@@ -197,6 +199,18 @@ impl ProcFileOps for StatusFileOps {
             "CapAmb:\t{:016x}",
             credentials.ambient_capset().bits()
         )?;
+
+        // Use the target thread, including for reads by another process.
+        // Keep mode and count on the same policy snapshot across concurrent TSYNC.
+        // Reference: <https://github.com/torvalds/linux/blob/v6.18/fs/proc/array.c>.
+        let seccomp = posix_thread.seccomp_snapshot();
+        writeln!(
+            printer,
+            "NoNewPrivs:\t{}",
+            u8::from(credentials.no_new_privs())
+        )?;
+        writeln!(printer, "Seccomp:\t{}", seccomp.mode())?;
+        writeln!(printer, "Seccomp_filters:\t{}", seccomp.filter_count())?;
 
         Ok(printer.bytes_written())
     }

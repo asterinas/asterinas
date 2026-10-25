@@ -124,6 +124,14 @@ impl PosixThread {
         drop(previous);
     }
 
+    /// Marks a fatal filter decision before reporting the ptrace exit event.
+    pub(crate) fn mark_seccomp_dead(&self) {
+        // Serialize with installation and TSYNC so neither can revive the policy.
+        let process = self.process();
+        let _tasks = process.tasks().lock();
+        self.seccomp.lock().mark_dead();
+    }
+
     /// Inherits a thread's seccomp policy and its monotonic privilege restriction.
     ///
     /// The caller must hold the source process's task-set lock to exclude TSYNC.

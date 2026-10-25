@@ -133,7 +133,8 @@ fn exit_internal(
     }
 
     // Drop fields in `PosixThread`.
-    posix_thread.set_seccomp(Default::default());
+    // Linux retains mode and filter count until the zombie is reaped.
+    posix_thread.set_seccomp(posix_thread.seccomp_snapshot().exited());
     drop_after!(posix_thread.file_table().lock().take());
     drop_after!(posix_thread.fs.write().take());
     drop_after!(posix_thread.ns_proxy().lock().take());
