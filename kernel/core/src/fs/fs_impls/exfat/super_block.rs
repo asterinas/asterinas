@@ -57,7 +57,7 @@ impl TryFrom<ExfatBootSector> for ExfatSuperBlock {
 
         let mut block = ExfatSuperBlock {
             num_sectors: sector.vol_length,
-            num_clusters: num_clusters,
+            num_clusters,
 
             sector_size: 1 << sector.sector_size_bits,
 
