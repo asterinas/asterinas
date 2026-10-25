@@ -48,9 +48,16 @@ impl TryFrom<ExfatBootSector> for ExfatSuperBlock {
     fn try_from(sector: ExfatBootSector) -> Result<ExfatSuperBlock> {
         const EXFAT_CLUSTERS_UNTRACKED: u32 = !0;
 
+        let Some(num_clusters) = sector.cluster_count.checked_add(EXFAT_RESERVED_CLUSTERS) else {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "overflow detected when calculating number of clusters."
+            )
+        };
+
         let mut block = ExfatSuperBlock {
             num_sectors: sector.vol_length,
-            num_clusters: sector.cluster_count + EXFAT_RESERVED_CLUSTERS,
+            num_clusters: num_clusters,
 
             sector_size: 1 << sector.sector_size_bits,
 
