@@ -482,16 +482,17 @@ impl DirEntry {
     }
 
     fn visit_entry(&self, idx: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        // The visitor's offset is where the next directory read should resume.
         let try_visit = |idx: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
             // Read the two special entries("." and "..").
             if *idx == 0 {
                 let this_inode = self.this.upgrade().unwrap();
-                visitor.visit(".", this_inode.ino, this_inode.typ, *idx)?;
+                visitor.visit(".", this_inode.ino, this_inode.typ, *idx + 1)?;
                 *idx += 1;
             }
             if *idx == 1 {
                 let parent_inode = self.parent.upgrade().unwrap();
-                visitor.visit("..", parent_inode.ino, parent_inode.typ, *idx)?;
+                visitor.visit("..", parent_inode.ino, parent_inode.typ, *idx + 1)?;
                 *idx += 1;
             }
             // Read the normal child entries.
@@ -502,7 +503,7 @@ impl DirEntry {
                 .skip_while(|(offset, _)| offset + NUM_SPECIAL_ENTRIES < start_idx)
             {
                 let offset = offset_children + NUM_SPECIAL_ENTRIES;
-                visitor.visit(name.as_str().unwrap(), child.ino, child.typ, offset)?;
+                visitor.visit(name.as_str().unwrap(), child.ino, child.typ, offset + 1)?;
                 *idx = offset + 1;
             }
             Ok(())

@@ -11,6 +11,7 @@ SUBDIRS := \
 	overlayfs \
 	procfs \
 	pseudofs \
+	ramfs \
 	rename \
 	statx \
 	symlink \
