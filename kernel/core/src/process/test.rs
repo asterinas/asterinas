@@ -36,7 +36,7 @@ pub(super) fn new_task(
     PosixThreadBuilder::new(
         allocate_posix_tid(),
         derive_thread_name("cred-guard-test"),
-        Box::new(UserContext::default()),
+        Box::default(),
         Credentials::new_root(),
         vmar.clone_handle(),
     )
