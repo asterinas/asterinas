@@ -202,7 +202,7 @@ impl WriteChunk {
         self.prepared_pages.push(prepared);
     }
 
-    fn start_writeback(self) -> (SmallVec<[CachePage; 1]>, FuseRequestBufs, usize) {
+    fn start_writeback(self) -> (SmallVec<[LockedCachePage; 1]>, FuseRequestBufs, usize) {
         let Self {
             prepared_pages,
             mut data_bufs,
@@ -226,10 +226,10 @@ struct PreparedWritePage {
 }
 
 impl PreparedWritePage {
-    fn start_writeback(self) -> (CachePage, FuseRequestBuf) {
-        self.locked_page.set_writing_back();
+    fn start_writeback(mut self) -> (LockedCachePage, FuseRequestBuf) {
+        self.locked_page.start_writeback();
 
-        (self.locked_page.unlock(), self.data_buf)
+        (self.locked_page, self.data_buf)
     }
 }
 
@@ -315,8 +315,8 @@ fn submit_write_chunk(
 ) -> Result<()> {
     let (pages, data_bufs, total_len) = chunk.start_writeback();
 
-    let pages = Arc::new(pages);
-    let completion_pages = pages.clone();
+    let completion_pages: SmallVec<[CachePage; 1]> =
+        pages.iter().map(|page| page.deref().clone()).collect();
     let write_req = WriteReq::new(
         handle.fh(),
         write_offset as u64,
@@ -343,17 +343,13 @@ fn submit_write_chunk(
 
     match session.write_async(nodeid, write_req, data_bufs, Some(Box::new(complete_fn))) {
         Ok(waiter) => {
+            for page in pages {
+                page.finish_writeback_submission();
+            }
             io_batch.push(waiter);
             Ok(())
         }
-        Err(err) => {
-            for page in pages.iter().cloned() {
-                let locked_page = page.lock();
-                locked_page.set_dirty();
-                locked_page.clear_writing_back();
-            }
-            Err(err.into())
-        }
+        Err(err) => Err(err.into()),
     }
 }
 
