@@ -116,6 +116,7 @@ use aster_block::{
 };
 use io_util::batch::IoBatch;
 use ostd::mm::{Segment, VmIo, VmIoFill};
+use smallvec::SmallVec;
 
 use crate::prelude::*;
 
@@ -552,31 +553,26 @@ impl<'a> PageRun<'a> {
             let mut bio_segments = Vec::with_capacity(nr_pages);
             let mut pages = Vec::with_capacity(nr_pages);
             for locked_page in self.by_ref().take(nr_pages) {
-                let (bio_segment, page) = prepare_write_page_segment(locked_page);
+                let (bio_segment, locked_page) = prepare_write_page_segment(locked_page);
                 bio_segments.push(bio_segment);
-                pages.push(page);
+                pages.push(locked_page);
             }
 
-            let pages = Arc::new(pages);
-            let completion_pages = pages.clone();
+            let completion_pages: SmallVec<[CachePage; 1]> =
+                pages.iter().map(|page| page.deref().clone()).collect();
             let complete_fn = Box::new(move |status| {
                 for page in completion_pages.iter() {
                     complete_write_page(page, status);
                 }
             });
-            let result = block_device.write_blocks_async(
+            block_device.write_blocks_async(
                 start_bid,
                 bio_segments,
                 Some(complete_fn),
                 io_batch,
-            );
-            if let Err(err) = result {
-                for page in pages.iter() {
-                    let locked_page = page.lock_guard();
-                    locked_page.set_dirty();
-                    locked_page.clear_writing_back();
-                }
-                return Err(err.into());
+            )?;
+            for page in pages {
+                page.finish_writeback_submission();
             }
             start_bid = start_bid + nr_pages as u64;
             remaining_pages -= nr_pages;
@@ -660,15 +656,9 @@ pub(crate) trait BlockAsPageCacheBackend: Sync + Send {
     /// See also [`PageCacheBackend::write_page_async`].
     fn submit_write_page_run(&self, pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
         for (idx, locked_page) in pages.into_indexed() {
-            let rollback_page = locked_page.clone();
-            let (bio_segment, complete_fn) = prepare_write_page(locked_page);
-            let res = self.submit_write_bio(idx, bio_segment, complete_fn, io_batch);
-            if res.is_err() {
-                let locked_page = rollback_page.lock();
-                locked_page.set_dirty();
-                locked_page.clear_writing_back();
-            }
-            res?;
+            let (bio_segment, locked_page, complete_fn) = prepare_write_page(locked_page);
+            self.submit_write_bio(idx, bio_segment, complete_fn, io_batch)?;
+            locked_page.finish_writeback_submission();
         }
         Ok(())
     }
@@ -695,19 +685,10 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
         locked_page: LockedCachePage,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
-        let rollback_page = locked_page.clone();
-
-        let (bio_segment, complete_fn) = prepare_write_page(locked_page);
-        let res = self.submit_write_bio(idx, bio_segment, complete_fn, io_batch);
-        if res.is_err() {
-            // If submission fails, re-dirty the page so the next writeback can
-            // retry the data that never reached the device queue.
-            let locked_page = rollback_page.lock();
-            locked_page.set_dirty();
-            locked_page.clear_writing_back();
-        }
-
-        res
+        let (bio_segment, locked_page, complete_fn) = prepare_write_page(locked_page);
+        self.submit_write_bio(idx, bio_segment, complete_fn, io_batch)?;
+        locked_page.finish_writeback_submission();
+        Ok(())
     }
 
     fn write_pages_async(&self, pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
@@ -733,25 +714,24 @@ fn prepare_read_page(locked_page: LockedCachePage) -> (BioSegment, BioCompleteFn
     (bio_segment, complete_fn)
 }
 
-fn prepare_write_page(locked_page: LockedCachePage) -> (BioSegment, BioCompleteFn) {
-    let (bio_segment, page) = prepare_write_page_segment(locked_page);
+fn prepare_write_page(
+    locked_page: LockedCachePage,
+) -> (BioSegment, LockedCachePage, BioCompleteFn) {
+    let (bio_segment, locked_page) = prepare_write_page_segment(locked_page);
+    let page = locked_page.deref().clone();
     let complete_fn = Box::new(move |status| complete_write_page(&page, status));
-    (bio_segment, complete_fn)
+    (bio_segment, locked_page, complete_fn)
 }
 
-fn prepare_write_page_segment(locked_page: LockedCachePage) -> (BioSegment, CachePage) {
-    locked_page.wait_until_finish_writing_back();
+fn prepare_write_page_segment(mut locked_page: LockedCachePage) -> (BioSegment, LockedCachePage) {
+    locked_page.start_writeback();
 
     let bio_segment = BioSegment::new_from_segment(
         Segment::from(locked_page.deref().clone()).into(),
         BioDirection::ToDevice,
     );
 
-    locked_page.set_writing_back();
-    locked_page.set_up_to_date();
-
-    let page = locked_page.unlock();
-    (bio_segment, page)
+    (bio_segment, locked_page)
 }
 
 fn complete_write_page(page: &CachePage, status: BioStatus) {
