@@ -207,7 +207,12 @@ RUN curl https://sh.rustup.rs -sSf | \
         sh -s -- --default-toolchain ${ASTER_RUST_VERSION} -y \
     && rm -rf /root/.cargo/registry && rm -rf /root/.cargo/git \
     && cargo -V \
-    && rustup component add rust-src rustc-dev llvm-tools-preview
+    && rustup component add rust-src rustc-dev llvm-tools-preview \
+    && rustup target add \
+        x86_64-unknown-none \
+        riscv64imac-unknown-none-elf \
+        loongarch64-unknown-none-softfloat \
+        aarch64-unknown-none-softfloat
 
 # Let Github runners reuse the Rust toolchain installed in the Dockerfile and
 # also the Cargo crates downloaded subsequently in the Docker build process.
