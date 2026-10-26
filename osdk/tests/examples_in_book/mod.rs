@@ -5,4 +5,5 @@
 mod create_os_projects;
 mod test_and_run_projects;
 mod work_in_workspace;
+mod write_a_hypervisor_in_100_lines_riscv;
 mod write_a_kernel_in_100_lines;

@@ -2,22 +2,25 @@
 
 //! VM (Virtual Machine Extensions) support for riscv.
 
-pub(crate) mod gstage;
 mod context;
+pub(crate) mod gstage;
 
 mod types;
 
-mod csr;
-mod timer;
+mod context_switch;
 mod cpu;
-mod onereg;
-mod vcpu;
+mod csr;
+mod exit;
+mod guest_mode;
 mod isa;
-mod sbi;
-mod insn;
+mod timer;
 
-pub use vcpu::{KvmCpuTrap, VcpuArchInner};
-pub use insn::{KvmInsnReturn, handle_system_opcode_insn, insn_len};
-pub use csr::HSTATUS_SPV;
 pub use cpu::enable_virtualization_cpu;
-pub use context::VcpuContext;
+pub use csr::HSTATUS_SPV;
+pub(crate) use guest_mode::ArchGuestMode;
+
+pub use self::{
+    context::{GuestContext, VcpuArchState},
+    exit::{GuestException, GuestExitInfo, INTERRUPT_BIT},
+    types::VcpuRegs,
+};

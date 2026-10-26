@@ -14,3 +14,9 @@ pub use temp_riscv_gpm::GuestPhysMemSpace;
 
 /// A guest physical address.
 pub type Gpaddr = usize;
+
+#[cfg(target_arch = "riscv64")]
+mod guest_mode;
+
+#[cfg(target_arch = "riscv64")]
+pub use guest_mode::{DummyGuestHooks, GuestMode, GuestModeHooks, GuestReturnReason};

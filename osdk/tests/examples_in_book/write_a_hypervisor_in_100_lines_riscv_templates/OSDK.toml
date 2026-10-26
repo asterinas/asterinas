@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MPL-2.0
+
+project_type = "kernel"
+supported_archs = ["riscv64"]
+
+[boot]
+method = "vmm-direct"
+
+[qemu]
+args = """\
+    -machine virt \
+    -m 256M \
+    -smp 1 \
+    --no-reboot \
+    -nographic
+"""

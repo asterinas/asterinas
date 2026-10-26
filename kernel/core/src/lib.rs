@@ -50,7 +50,6 @@ pub mod events;
 pub mod fs;
 mod init;
 mod ipc;
-pub mod kvm;
 mod net;
 pub mod power;
 pub mod prelude;
