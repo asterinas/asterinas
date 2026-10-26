@@ -73,6 +73,11 @@ runs:
       shell: bash
       run: |
         # Set common environment variables using GitHub's environment files
+        #
+        # Container jobs run with HOME=/github/home, and GitHub mounts a runner
+        # directory there. Point rustup at the toolchain installed in the image
+        # so that it is not downloaded again in every job.
+        echo "RUSTUP_HOME=/root/.rustup" >> $GITHUB_ENV
         if [[ "${{ inputs.intel_tdx }}" == "true" ]]; then
           echo "RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static" >> $GITHUB_ENV
           echo "RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup" >> $GITHUB_ENV
@@ -123,7 +128,7 @@ runs:
       run: |
         [[ "${{ !contains(matrix.container, 'osdk') }}" == "true" ]] && make check_osdk
         if [[ "${{ inputs.intel_tdx }}" == "true" ]]; then
-          RUSTUP_HOME=/root/.rustup make test_osdk INTEL_TDX=1
+          make test_osdk INTEL_TDX=1
         else
-          RUSTUP_HOME=/root/.rustup make test_osdk
+          make test_osdk
         fi
