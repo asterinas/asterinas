@@ -40,16 +40,25 @@ struct FilterNode {
     program: VerifiedProgram,
     previous: Option<Arc<FilterNode>>,
     path_insns: usize,
+    logging: FilterLogging,
 }
 
-/// A syscall disposition and the action selected for logging.
+/// Whether the filter requests logging of its non-ALLOW decisions.
+#[derive(Clone, Copy, Default, PartialEq)]
+pub(super) enum FilterLogging {
+    #[default]
+    Default,
+    Requested,
+}
+
+/// A disposition and the log request from the winning filter.
 pub(crate) struct SeccompEvaluation {
     pub(crate) decision: SeccompDecision,
     pub(super) logged_action: Option<u32>,
 }
 
 impl SeccompEvaluation {
-    /// Records the decision when its action requests logging.
+    /// Records the decision when its action or winning filter requests logging.
     pub(crate) fn log(&self, ctx: &Context, data: &SeccompData) {
         if let Some(action) = self.logged_action {
             data.log(ctx, action);
@@ -156,7 +165,7 @@ impl SeccompState {
         false
     }
 
-    pub(super) fn append(&self, program: VerifiedProgram) -> Result<Self> {
+    pub(super) fn append(&self, program: VerifiedProgram, logging: FilterLogging) -> Result<Self> {
         if self.is_terminated() {
             return_errno_with_message!(Errno::EINVAL, "cannot change a terminated seccomp policy");
         }
@@ -178,6 +187,7 @@ impl SeccompState {
             program,
             previous: self.head().cloned(),
             path_insns,
+            logging,
         })
         .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate seccomp filter"))?;
 
@@ -207,6 +217,7 @@ impl SeccompState {
             };
         }
         let mut result = RET_ALLOW;
+        let mut logging = FilterLogging::Default;
         let mut node = self.head().map(Arc::as_ref);
         while let Some(filter) = node {
             let current = filter.program.run(data);
@@ -214,6 +225,7 @@ impl SeccompState {
             // Strict inequality retains the newest filter's data on a tie.
             if ((current & RET_ACTION_FULL) as i32) < ((result & RET_ACTION_FULL) as i32) {
                 result = current;
+                logging = filter.logging;
             }
             node = filter.previous.as_deref();
         }
@@ -231,8 +243,11 @@ impl SeccompState {
         // Match Linux's default actions_logged policy. This uses the kernel
         // logger, not the Linux audit transport; no task audit rules apply.
         let logged_action = match action {
-            RET_ALLOW | RET_ERRNO | RET_TRAP | RET_TRACE => None,
+            RET_ALLOW => None,
             RET_LOG | RET_KILL_THREAD => Some(action),
+            RET_ERRNO | RET_TRAP | RET_TRACE => {
+                (logging == FilterLogging::Requested).then_some(action)
+            }
             // Linux retains an unknown action's raw value in the log even
             // though its disposition is KILL_PROCESS.
             _ => Some(action),

@@ -5,6 +5,7 @@ use ostd::mm::VmIo;
 use super::{
     abi::{SockFilter, SockFprog},
     cbpf::{MAX_INSNS, VerifiedProgram},
+    filter::FilterLogging,
 };
 use crate::{
     prelude::*,
@@ -14,6 +15,7 @@ use crate::{
 };
 
 const FILTER_FLAG_TSYNC: u32 = 1;
+const FILTER_FLAG_LOG: u32 = 1 << 1;
 const FILTER_FLAG_TSYNC_ESRCH: u32 = 1 << 4;
 
 /// Enters strict mode, serialized against filter installation and TSYNC.
@@ -26,7 +28,7 @@ pub(super) fn install_strict(ctx: &Context) -> Result<()> {
 
 /// Installs a new filter after preparing it without modifying the effective policy.
 pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Result<isize> {
-    if flags & !(FILTER_FLAG_TSYNC | FILTER_FLAG_TSYNC_ESRCH) != 0 {
+    if flags & !(FILTER_FLAG_TSYNC | FILTER_FLAG_LOG | FILTER_FLAG_TSYNC_ESRCH) != 0 {
         return_errno_with_message!(Errno::EINVAL, "unsupported seccomp filter flags");
     }
 
@@ -68,7 +70,12 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
     };
     let tasks = ctx.process.tasks().lock();
     let old_state = ctx.posix_thread.seccomp_snapshot();
-    let new_state = old_state.append(program)?;
+    let logging = if flags & FILTER_FLAG_LOG != 0 {
+        FilterLogging::Requested
+    } else {
+        FilterLogging::Default
+    };
+    let new_state = old_state.append(program, logging)?;
 
     if sync_threads {
         for task in tasks.as_slice() {

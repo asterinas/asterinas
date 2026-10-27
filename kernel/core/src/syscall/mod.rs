@@ -429,7 +429,11 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
         // Do not retain a snapshot across a ptrace stop or a blocking syscall.
         drop(policy);
 
-        evaluation.log(ctx, &data);
+        // TRACE is logged only when it skips the syscall, not when the tracer
+        // continues it or a post-trace evaluation returns TRACE again.
+        if !matches!(evaluation.decision, SeccompDecision::Trace(_)) {
+            evaluation.log(ctx, &data);
+        }
         match evaluation.decision {
             SeccompDecision::Allow => break,
             SeccompDecision::Errno(errno) => {
@@ -441,25 +445,34 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
                 return;
             }
             SeccompDecision::Trace(_) if has_traced => break,
-            SeccompDecision::Trace(data) => {
+            SeccompDecision::Trace(reason) => {
                 match ctx
                     .posix_thread
-                    .ptrace_may_stop_on_seccomp(data, ctx, user_ctx)
+                    .ptrace_may_stop_on_seccomp(reason, ctx, user_ctx)
                 {
                     PtraceStopResult::NotTraced(_) => {
+                        evaluation.log(ctx, &data);
                         user_ctx.set_syscall_ret((-(Errno::ENOSYS as isize)) as usize);
                         return;
                     }
-                    PtraceStopResult::Interrupted => return,
+                    PtraceStopResult::Interrupted => {
+                        evaluation.log(ctx, &data);
+                        return;
+                    }
                     PtraceStopResult::Continued(_) => {}
                 }
                 if ctx.has_pending_sigkill() {
+                    evaluation.log(ctx, &data);
                     return;
                 }
 
                 syscall_number = read_syscall_number(ctx, user_ctx);
                 // A negative number skips the syscall without filtering again.
                 if (syscall_number as i32) < 0 {
+                    evaluation.log(
+                        ctx,
+                        &SeccompData::from_context(user_ctx, syscall_number as i32),
+                    );
                     return;
                 }
                 // Linux rechecks modified registers, but a second TRACE result
