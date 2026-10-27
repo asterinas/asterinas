@@ -141,6 +141,7 @@ dependencies = [
  "aster-cmdline",
  "aster-console",
  "aster-device",
+ "aster-device-mapper",
  "aster-framebuffer",
  "aster-fuse",
  "aster-input",
@@ -209,6 +210,16 @@ dependencies = [
  "device-id",
  "ostd",
  "spin",
+]
+
+[[package]]
+name = "aster-device-mapper"
+version = "0.1.0"
+dependencies = [
+ "aster-block",
+ "device-id",
+ "id-alloc",
+ "ostd",
 ]
 
 [[package]]

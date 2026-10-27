@@ -3,16 +3,24 @@
 //! Linux Device Mapper control-device registration and userspace entry point.
 //!
 //! This module owns privilege checks, version negotiation, and ioctl ordering.
-//! Only `DM_VERSION` is supported; `abi` handles its copied version fields.
+//! The command layer implements tableless identity management; the component
+//! owns mapper indexes, device numbers, and admitted control references.
 
+use aster_device_mapper::DmManager;
 use device_id::{DeviceId, MinorId};
 use ostd::mm::VmIo;
+use spin::Once;
 
 mod abi;
+mod commands;
+mod device_ops;
+mod ioctl_params;
 #[cfg(ktest)]
 mod tests;
 
-use abi::{DM_IOCTL_MAGIC, decode_command, validate_client_version, write_version};
+use abi::{DM_IOCTL_MAGIC, DM_VERSION_CMD, decode_command, validate_client_version, write_version};
+use commands::handle_command;
+use ioctl_params::process_ioctl_parameters;
 
 use crate::{
     context::current_userspace,
@@ -35,6 +43,8 @@ use crate::{
 };
 
 const DM_CONTROL_MINOR: u32 = 236;
+
+static DM_MANAGER: Once<DmManager> = Once::new();
 
 /// Character device object backing `/dev/mapper/control`.
 #[derive(Debug)]
@@ -119,7 +129,7 @@ impl PerOpenFileOps for DmControlFile {
         false
     }
 
-    /// Negotiates the DM ABI before rejecting unsupported commands.
+    /// Negotiates the DM ABI before copying or validating command parameters.
     ///
     /// Linux checks the caller's capability on every ioctl, including version
     /// queries. The version exchange touches only three `u32`s, even though the
@@ -150,13 +160,44 @@ impl PerOpenFileOps for DmControlFile {
         current_userspace!().write_bytes(raw_ioctl.arg(), &version)?;
         version_result?;
 
-        // The supported command set contains only DM_VERSION.
-        decode_command(raw_cmd)?;
+        let command = decode_command(raw_cmd)?;
+        if command == DM_VERSION_CMD {
+            return Ok(0);
+        }
+        process_ioctl_parameters(
+            command,
+            &version,
+            |offset, bytes| {
+                let addr = raw_ioctl.arg().checked_add(offset).ok_or_else(|| {
+                    Error::with_message(Errno::EFAULT, "ioctl user address overflow")
+                })?;
+                current_userspace!().read_bytes(addr, bytes)?;
+                Ok(())
+            },
+            |len| {
+                current_userspace!()
+                    .writer(raw_ioctl.arg(), len)?
+                    .fill_zeros(len)
+                    .map_err(|(error, _)| error)?;
+                Ok(())
+            },
+            |bytes| {
+                current_userspace!().write_bytes(raw_ioctl.arg(), bytes)?;
+                Ok(())
+            },
+            |buffer| handle_command(command, buffer),
+        )?;
         Ok(0)
     }
 }
 
+/// Returns the manager initialized before exposing the control device.
+fn manager() -> &'static DmManager {
+    DM_MANAGER.get().unwrap()
+}
+
 /// Registers the control device after the misc major has been acquired.
 pub(super) fn init_in_first_kthread() {
+    DM_MANAGER.call_once(|| DmManager::new().unwrap());
     char::register(DmControlDevice::new()).unwrap();
 }

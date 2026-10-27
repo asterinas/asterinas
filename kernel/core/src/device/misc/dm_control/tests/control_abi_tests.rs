@@ -66,6 +66,29 @@ fn rejects_wrong_type_and_unsupported_commands() {
 }
 
 #[ktest]
+fn decodes_only_the_tableless_management_commands() {
+    for command in [
+        DM_LIST_DEVICES_CMD,
+        DM_DEV_CREATE_CMD,
+        DM_DEV_REMOVE_CMD,
+        DM_DEV_STATUS_CMD,
+    ] {
+        for prefix in [0xc138_fd00, 0x0000_fd00, 0x8004_fd00, 0xffff_fd00] {
+            assert_eq!(
+                decode_command(prefix | u32::from(command)).unwrap(),
+                command
+            );
+        }
+    }
+    for command in [1, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] {
+        assert_eq!(
+            decode_command(0xc138_fd00 | command).unwrap_err().error(),
+            Errno::ENOTTY
+        );
+    }
+}
+
+#[ktest]
 fn writes_only_the_server_version_fields() {
     let mut buffer = [0xa5; 16];
     write_version(&mut buffer).unwrap();

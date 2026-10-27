@@ -23,6 +23,7 @@ set -e
 ./vt/vt_ioctl
 
 ./device_mapper_control
+./device_mapper_management
 ./devtmpfs_mode
 ./evdev
 ./framebuffer

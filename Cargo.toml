@@ -36,6 +36,7 @@ members = [
     "kernel/core/comps/cmdline",
     "kernel/core/comps/console",
     "kernel/core/comps/device",
+    "kernel/core/comps/device-mapper",
     "kernel/core/comps/framebuffer",
     "kernel/core/comps/input",
     "kernel/core/comps/logger",
@@ -91,6 +92,7 @@ default-members = [
     "kernel/core/comps/cmdline",
     "kernel/core/comps/console",
     "kernel/core/comps/device",
+    "kernel/core/comps/device-mapper",
     "kernel/core/comps/framebuffer",
     "kernel/core/comps/input",
     "kernel/core/comps/logger",
@@ -178,6 +180,7 @@ aster-block = { path = "kernel/core/comps/block" }
 aster-cmdline = { path = "kernel/core/comps/cmdline" }
 aster-console = { path = "kernel/core/comps/console" }
 aster-device = { path = "kernel/core/comps/device" }
+aster-device-mapper = { path = "kernel/core/comps/device-mapper" }
 aster-framebuffer = { path = "kernel/core/comps/framebuffer" }
 aster-input = { path = "kernel/core/comps/input" }
 aster-logger = { path = "kernel/core/comps/logger" }
