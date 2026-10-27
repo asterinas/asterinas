@@ -44,6 +44,7 @@ use crate::{
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::{Extension, FileOps, Inode, Metadata},
             path::Dentry,
         },
@@ -69,9 +70,14 @@ pub(crate) struct NaivePseudoFs {
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 impl FileSystem for NaivePseudoFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         self.name
     }
@@ -121,6 +127,7 @@ impl NaivePseudoFs {
                 )),
                 inode_allocator: AtomicU64::new(ROOT_INO + 1),
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+                lifecycle: FsLifecycle::new(),
             })
         })
     }

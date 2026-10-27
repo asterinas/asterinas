@@ -17,6 +17,7 @@ use crate::{
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::Inode,
             registry::{FsCache, FsCreationCtx, FsProperties, FsType},
         },
@@ -84,6 +85,7 @@ pub(super) struct VirtioFs {
     session: Arc<FuseSession>,
     inode_cache: InodeCache,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 impl VirtioFs {
@@ -119,6 +121,7 @@ impl VirtioFs {
                 session,
                 inode_cache,
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+                lifecycle: FsLifecycle::new(),
             }
         }))
     }
@@ -173,6 +176,10 @@ impl From<(DeviceId, Kstatfs)> for SuperBlock {
 }
 
 impl FileSystem for VirtioFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "virtiofs"
     }

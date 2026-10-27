@@ -13,6 +13,7 @@ use crate::fs::{
     utils::systree_inode::SysTreeInodeTy,
     vfs::{
         file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+        fs_handle::FsLifecycle,
         inode::Inode,
         registry::{FsCreationCtx, FsProperties, FsType},
     },
@@ -29,6 +30,7 @@ pub(crate) struct ConfigFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 // Magic number for `ConfigFs` (taken from Linux).
@@ -55,11 +57,16 @@ impl ConfigFs {
             sb,
             root: root_inode,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
         })
     }
 }
 
 impl FileSystem for ConfigFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "configfs"
     }

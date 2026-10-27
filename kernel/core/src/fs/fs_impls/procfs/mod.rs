@@ -29,6 +29,7 @@ use crate::{
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::{Inode, RevalidationPolicy},
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -76,6 +77,7 @@ struct ProcFs {
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 impl ProcFs {
@@ -88,6 +90,7 @@ impl ProcFs {
             root: RootDirOps::new_inode(weak_fs.clone(), &sb),
             inode_allocator: AtomicU64::new(PROC_ROOT_INO + 1),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
         })
     }
 
@@ -97,6 +100,10 @@ impl ProcFs {
 }
 
 impl FileSystem for ProcFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "proc"
     }

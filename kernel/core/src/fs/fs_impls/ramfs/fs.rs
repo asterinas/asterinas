@@ -25,6 +25,7 @@ use crate::{
         utils::{self, CStr256, DirentVisitor},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::{
                 Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
                 RenameMode, RevalidationPolicy, SymbolicLink,
@@ -53,6 +54,7 @@ pub(crate) struct RamFs {
     inode_allocator: AtomicU64,
     /// FS event subscriber stats for this file system
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 impl RamFs {
@@ -96,6 +98,7 @@ impl RamFs {
             }),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
         })
     }
 
@@ -111,6 +114,10 @@ impl RamFs {
 }
 
 impl FileSystem for RamFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         self.name
     }

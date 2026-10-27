@@ -33,6 +33,7 @@ use crate::{
         file::SyncMode,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::Inode,
             registry::{FsCache, FsCreationCtx, FsProperties, FsType},
         },
@@ -65,6 +66,7 @@ pub(crate) struct ExfatFs {
     mutex: Mutex<()>,
 
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 const FAT_LRU_CACHE_SIZE: usize = 1024;
@@ -93,6 +95,7 @@ impl ExfatFs {
             meta_cache: PageCache::new_with_backend(fs_size, weak_self.clone() as _).unwrap(),
             mutex: Mutex::new(()),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
         });
 
         // TODO: if the main superblock is corrupted, should we load the backup?
@@ -416,6 +419,10 @@ impl BlockAsPageCacheBackend for ExfatFs {
 }
 
 impl FileSystem for ExfatFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "exfat"
     }

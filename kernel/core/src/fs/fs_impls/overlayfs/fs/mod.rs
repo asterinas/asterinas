@@ -26,6 +26,7 @@ use crate::{
         },
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::Inode,
         },
     },
@@ -41,6 +42,7 @@ pub(super) struct OverlayFs {
     whiteout_cache: WhiteoutCache,
     inodes: InodeCache,
     fs_event_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
     self_weak: Weak<OverlayFs>,
 }
 
@@ -74,6 +76,10 @@ impl OverlayFs {
 }
 
 impl FileSystem for OverlayFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         OVERLAY_FS_NAME
     }

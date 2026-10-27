@@ -17,6 +17,7 @@ use crate::{
         utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
@@ -53,6 +54,7 @@ pub(crate) struct DevPts {
     root: Arc<RootInode>,
     index_alloc: Mutex<IdAlloc>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
     this: Weak<Self>,
 }
 
@@ -66,6 +68,7 @@ impl DevPts {
             root: RootInode::new(weak_self.clone(), &sb),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
             this: weak_self.clone(),
         })
     }
@@ -104,6 +107,10 @@ impl DevPts {
 }
 
 impl FileSystem for DevPts {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "devpts"
     }
