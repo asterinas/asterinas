@@ -270,7 +270,17 @@ impl ExfatFs {
             return_errno_with_message!(Errno::EINVAL, "bogus sector size bits");
         }
 
-        if boot_sector.sector_per_cluster_bits + boot_sector.sector_size_bits > 25 {
+        let Some(cluster_size_bits) = boot_sector
+            .sector_per_cluster_bits
+            .checked_add(boot_sector.sector_size_bits)
+        else {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "overflow when calculating cluster size bits"
+            );
+        };
+
+        if cluster_size_bits > 25 {
             return_errno_with_message!(Errno::EINVAL, "bogus sector size bits per cluster");
         }
 
