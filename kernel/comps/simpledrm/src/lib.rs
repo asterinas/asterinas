@@ -29,7 +29,7 @@ use aster_drm::{
         display_info::{DrmDisplayInfo, SubpixelOrder},
         display_mode::DrmDisplayMode,
         objects::{
-            KmsObjectIndex,
+            DrmKmsObjectStore, KmsObjectIndex,
             builder::DrmKmsObjectStoreBuilder,
             connector::{
                 DrmConnector, DrmConnectorProbeState, DrmConnectorStatus, DrmConnectorType,
@@ -47,6 +47,7 @@ use aster_framebuffer::{
     pixel::PixelFormat,
 };
 use component::{ComponentInitError, init_component};
+use ostd::sync::Mutex;
 
 const SIMPLEDRM_NAME: &str = "simpledrm";
 const SIMPLEDRM_DESC: &str = "DRM driver for simple-framebuffer platform devices";
@@ -79,6 +80,7 @@ struct SimpleDrmDevice {
     features: DrmFeatures,
     pixel_format: DrmPixelFormat,
     mode_config: DrmModeConfig,
+    object_store: Mutex<DrmKmsObjectStore>,
 }
 
 impl SimpleDrmDevice {
@@ -114,18 +116,15 @@ impl SimpleDrmDevice {
         let width = u32::try_from(boot_framebuffer.width())?;
         let height = u32::try_from(boot_framebuffer.height())?;
 
-        let mode_config = DrmModeConfig::new(
-            DrmSize::new(1, 1),
-            DrmSize::new(width, height),
-            object_store,
-        )?
-        .set_shadow_buffer();
+        let mode_config = DrmModeConfig::new(DrmSize::new(1, 1), DrmSize::new(width, height))?
+            .set_shadow_buffer();
 
         Ok(Self {
             boot_framebuffer: boot_framebuffer.clone(),
             features: DrmFeatures::empty(),
             pixel_format,
             mode_config,
+            object_store: Mutex::new(object_store),
         })
     }
 
@@ -226,6 +225,10 @@ impl DrmGemOps for SimpleDrmDevice {
 impl DrmKmsOps for SimpleDrmDevice {
     fn mode_config(&self) -> &DrmModeConfig {
         &self.mode_config
+    }
+
+    fn object_store(&self) -> &Mutex<DrmKmsObjectStore> {
+        &self.object_store
     }
 
     fn probe_connector(&self, _connector: &DrmConnector) -> Result<DrmConnectorProbeState> {

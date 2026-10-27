@@ -343,7 +343,7 @@ impl Drop for DrmFile {
     fn drop(&mut self) {
         let device = self.minor.device().clone();
         if let Some(kms_ops) = device.as_kms_ops() {
-            let mut object_store = kms_ops.mode_config().object_store().lock();
+            let mut object_store = kms_ops.object_store().lock();
             for framebuffer in self.framebuffers.get_mut().drain(..) {
                 object_store.free_object_id(framebuffer.id());
             }

@@ -116,9 +116,9 @@ impl DrmFile {
     pub(super) fn drm_mode_get_resources(&self, cmd: ioctl_defs::ModeGetResources) -> Result<i32> {
         cmd.with_data_ptr(|args_ptr| {
             let mut args: DrmModeGetResources = args_ptr.read()?;
-            let mode_config = self.device().as_kms_ops().unwrap().mode_config();
+            let kms_ops = self.device().as_kms_ops().unwrap();
 
-            let object_store = mode_config.object_store().lock();
+            let object_store = kms_ops.object_store().lock();
 
             let crtc_ids = object_store.collect_sorted_crtc_ids();
             let encoder_ids = object_store.collect_sorted_encoder_ids();
@@ -156,8 +156,8 @@ impl DrmFile {
             args.count_connectors = connector_ids.len() as u32;
             args.count_fbs = framebuffer_ids.len() as u32;
 
-            let min_size = mode_config.min_fb_size();
-            let max_size = mode_config.max_fb_size();
+            let min_size = kms_ops.mode_config().min_fb_size();
+            let max_size = kms_ops.mode_config().max_fb_size();
             args.min_width = min_size.width();
             args.max_width = max_size.width();
             args.min_height = min_size.height();
@@ -173,8 +173,8 @@ impl DrmFile {
 
     pub(super) fn drm_mode_get_crtc(&self, cmd: ioctl_defs::ModeGetCrtc) -> Result<i32> {
         let mut args: DrmModeCrtc = cmd.read()?;
-        let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-        let object_store = mode_config.object_store().lock();
+        let kms_ops = self.device().as_kms_ops().unwrap();
+        let object_store = kms_ops.object_store().lock();
 
         let crtc = object_store
             .lookup_crtc_by_id(args.crtc_id)
@@ -236,12 +236,7 @@ impl DrmFile {
 
         // This check only prevents an excessively large allocation for the connector ID array below.
         // The object-store lock need not be held beyond reading the count.
-        let connector_count = kms_ops
-            .mode_config()
-            .object_store()
-            .lock()
-            .connectors()
-            .count();
+        let connector_count = kms_ops.object_store().lock().connectors().count();
         if args.count_connectors as usize > connector_count {
             return_errno_with_message!(Errno::EINVAL, "too many connectors for SETCRTC");
         }
@@ -255,7 +250,7 @@ impl DrmFile {
         })?;
 
         // Serialize validation, driver application, and state publication with framebuffer removal.
-        let object_store = kms_ops.mode_config().object_store().lock();
+        let object_store = kms_ops.object_store().lock();
         let crtc = object_store
             .lookup_crtc_by_id(args.crtc_id)
             .ok_or(Errno::ENOENT)?;
@@ -398,8 +393,8 @@ impl DrmFile {
 
     pub(super) fn drm_mode_get_encoder(&self, cmd: ioctl_defs::ModeGetEncoder) -> Result<i32> {
         let mut args: DrmModeGetEncoder = cmd.read()?;
-        let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-        let object_store = mode_config.object_store().lock();
+        let kms_ops = self.device().as_kms_ops().unwrap();
+        let object_store = kms_ops.object_store().lock();
 
         let encoder = object_store
             .lookup_encoder_by_id(args.encoder_id)
@@ -428,7 +423,7 @@ impl DrmFile {
                 // Keep the connector alive without holding the object-store mutex
                 // across the driver callback, which may perform I/O or acquire other locks.
                 let connector = {
-                    let object_store = kms_ops.mode_config().object_store().lock();
+                    let object_store = kms_ops.object_store().lock();
                     object_store
                         .lookup_connector_by_id(args.connector_id)
                         .cloned()
@@ -438,8 +433,8 @@ impl DrmFile {
                 connector.update_probe_state(probe_state);
             }
 
-            let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-            let object_store = mode_config.object_store().lock();
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let object_store = kms_ops.object_store().lock();
 
             let connector = object_store
                 .lookup_connector_by_id(args.connector_id)
@@ -514,8 +509,8 @@ impl DrmFile {
         let mut args: DrmModeGetProperty = cmd.read()?;
 
         cmd.with_data_ptr(|args_ptr| {
-            let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-            let object_store = mode_config.object_store().lock();
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let object_store = kms_ops.object_store().lock();
 
             let property = object_store
                 .lookup_property(args.prop_id)
@@ -566,8 +561,8 @@ impl DrmFile {
 
         cmd.with_data_ptr(|args_ptr| {
             let blob = {
-                let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-                let object_store = mode_config.object_store().lock();
+                let kms_ops = self.device().as_kms_ops().unwrap();
+                let object_store = kms_ops.object_store().lock();
                 object_store
                     .lookup_property_blob(args.blob_id)
                     .ok_or(Errno::ENOENT)?
@@ -602,9 +597,9 @@ impl DrmFile {
 
         let pixel_format = DrmPixelFormat::try_from((args.bpp, args.depth))?;
 
-        let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-        let min_size = mode_config.min_fb_size();
-        let max_size = mode_config.max_fb_size();
+        let kms_ops = self.device().as_kms_ops().unwrap();
+        let min_size = kms_ops.mode_config().min_fb_size();
+        let max_size = kms_ops.mode_config().max_fb_size();
         let size = DrmSize::new(args.width, args.height);
 
         if !size.is_within(
@@ -618,7 +613,7 @@ impl DrmFile {
         }
 
         let supports_pixel_format = {
-            let object_store = mode_config.object_store().lock();
+            let object_store = kms_ops.object_store().lock();
             object_store
                 .planes()
                 .any(|plane| plane.pixel_formats().contains(&pixel_format))
@@ -632,7 +627,7 @@ impl DrmFile {
 
         let gem_object = self.lookup_gem_object(args.handle)?;
         let framebuffer = {
-            let mut object_store = mode_config.object_store().lock();
+            let mut object_store = kms_ops.object_store().lock();
             let fb_id = object_store.alloc_object_id()?;
             let framebuffer = DrmFramebuffer::new(
                 fb_id,
@@ -657,7 +652,7 @@ impl DrmFile {
         args.fb_id = fb_id;
 
         if let Err(error) = cmd.write(&args) {
-            mode_config.object_store().lock().free_object_id(fb_id);
+            kms_ops.object_store().lock().free_object_id(fb_id);
             return Err(error);
         }
         self.add_framebuffer(framebuffer);
@@ -668,10 +663,10 @@ impl DrmFile {
     pub(super) fn drm_mode_rm_fb(&self, cmd: ioctl_defs::ModeRmFb) -> Result<i32> {
         let fb_id: u32 = cmd.read()?;
 
-        let mode_config = self.device().as_kms_ops().unwrap().mode_config();
+        let kms_ops = self.device().as_kms_ops().unwrap();
         // Hold the object-store lock across lookup, removal, and ID release so
         // `fb_id` cannot be reused for another framebuffer in between.
-        let mut object_store = mode_config.object_store().lock();
+        let mut object_store = kms_ops.object_store().lock();
         let framebuffer = self.lookup_framebuffer(fb_id).ok_or(Errno::ENOENT)?;
 
         if object_store.planes().any(|plane| {
@@ -725,7 +720,7 @@ impl DrmFile {
         })?;
 
         let kms_ops = self.device().as_kms_ops().unwrap();
-        let object_store = kms_ops.mode_config().object_store().lock();
+        let object_store = kms_ops.object_store().lock();
         let source_rects = object_store
             .planes()
             .filter_map(|plane| {
@@ -749,8 +744,8 @@ impl DrmFile {
         cmd.with_data_ptr(|args_ptr| {
             let mut args: DrmModeGetPlaneRes = args_ptr.read()?;
             let plane_ids = {
-                let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-                let object_store = mode_config.object_store().lock();
+                let kms_ops = self.device().as_kms_ops().unwrap();
+                let object_store = kms_ops.object_store().lock();
                 let universal_planes = self.has_client_caps(DrmClientCaps::UNIVERSAL_PLANES);
                 let mut planes = object_store
                     .planes()
@@ -784,8 +779,8 @@ impl DrmFile {
         cmd.with_data_ptr(|args_ptr| {
             let mut args: DrmModeGetPlane = args_ptr.read()?;
             let pixel_format = {
-                let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-                let object_store = mode_config.object_store().lock();
+                let kms_ops = self.device().as_kms_ops().unwrap();
+                let object_store = kms_ops.object_store().lock();
                 let plane = object_store
                     .lookup_plane_by_id(args.plane_id)
                     .ok_or(Errno::ENOENT)?;
@@ -832,8 +827,8 @@ impl DrmFile {
         let mut args: DrmModeObjectGetProps = cmd.read()?;
 
         cmd.with_data_ptr(|args_ptr| {
-            let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-            let object_store = mode_config.object_store().lock();
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let object_store = kms_ops.object_store().lock();
 
             let object_type =
                 DrmKmsObjectType::try_from(args.obj_type).map_err(|_| Errno::ENOENT)?;
