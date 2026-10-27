@@ -15,7 +15,7 @@ use crate::{
     fs::{
         file::InodeMode,
         vfs::{
-            file_system::FileSystem,
+            fs_handle::{FsHandle, WeakFsHandle},
             inode::{Extension, Metadata},
             path::Dentry,
         },
@@ -37,11 +37,11 @@ mod sym;
 struct Common {
     metadata: RwLock<Metadata>,
     extension: Extension,
-    fs: Weak<dyn FileSystem>,
+    fs: WeakFsHandle,
 }
 
 impl Common {
-    fn new(metadata: Metadata, fs: Weak<dyn FileSystem>) -> Self {
+    fn new(metadata: Metadata, fs: WeakFsHandle) -> Self {
         Self {
             metadata: RwLock::new(metadata),
             extension: Extension::new(),
@@ -49,8 +49,8 @@ impl Common {
         }
     }
 
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        self.fs.upgrade().unwrap()
+    fn fs(&self) -> Option<FsHandle> {
+        self.fs.upgrade()
     }
 
     fn metadata_with_owner(&self, owner_thread: Option<Arc<Thread>>) -> Metadata {

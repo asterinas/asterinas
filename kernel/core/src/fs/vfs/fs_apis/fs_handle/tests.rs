@@ -19,7 +19,7 @@ use crate::{
 
 struct Probe {
     lifecycle: FsLifecycle,
-    ramfs: Arc<RamFs>,
+    ramfs: FsHandle<RamFs>,
     weak_self: Weak<Self>,
     sync_count: Arc<AtomicUsize>,
     dropped: Arc<AtomicBool>,

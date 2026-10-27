@@ -43,14 +43,16 @@ use crate::{
         fs_impls::overlayfs::inode::{InodeCache, WhiteoutCache},
         pseudofs::AnonDeviceId,
         vfs::{
-            file_system::FsEventSubscriberStats, fs_handle::FsLifecycle, registry::FsCreationCtx,
+            file_system::FsEventSubscriberStats,
+            fs_handle::{FsHandle, FsLifecycle},
+            registry::FsCreationCtx,
         },
     },
     prelude::*,
 };
 
 impl OverlayFs {
-    pub(in overlayfs) fn new(fs_creation_ctx: &FsCreationCtx) -> Result<Arc<Self>> {
+    pub(in overlayfs) fn new(fs_creation_ctx: &FsCreationCtx) -> Result<FsHandle<Self>> {
         let options = MountOptions::parse(fs_creation_ctx.args(), fs_creation_ctx.flags())?;
         let ctx = fs_creation_ctx.ctx().ok_or_else(|| {
             Error::with_message(Errno::EINVAL, "the overlay mount has no task context")
@@ -147,8 +149,7 @@ impl OverlayFs {
 
         let inodes = InodeCache::new();
 
-        let overlay_fs = Arc::new_cyclic(move |weak| OverlayFs {
-            layer_stack,
+        let overlay_fs = FsHandle::new_cyclic(move |weak| OverlayFs {
             policy,
             identity,
             upper_workdir_inuse,
@@ -157,6 +158,7 @@ impl OverlayFs {
             fs_event_stats: FsEventSubscriberStats::new(),
             lifecycle: FsLifecycle::new(),
             self_weak: weak.clone(),
+            layer_stack,
         });
         Ok(overlay_fs)
     }

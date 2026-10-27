@@ -13,6 +13,7 @@ use crate::{
         procfs::{BLOCK_SIZE, ProcFs},
         vfs::{
             file_system::FileSystem,
+            fs_handle::FsHandle,
             inode::{Extension, FileOps, Inode, Metadata, SymbolicLink},
             path::Dentry,
         },
@@ -30,7 +31,7 @@ pub(in procfs) struct ProcSym<S: ProcSymOps> {
 impl<S: ProcSymOps> ProcSym<S> {
     pub(in procfs) fn new(sym: S, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
         let common = {
-            let fs = parent.upgrade().unwrap().fs();
+            let fs = parent.upgrade().unwrap().fs().expect("procfs is inactive");
             let procfs = fs.downcast_ref::<ProcFs>().unwrap();
             let metadata = Metadata::new_symlink(
                 procfs.alloc_id(),
@@ -38,7 +39,7 @@ impl<S: ProcSymOps> ProcSym<S> {
                 BLOCK_SIZE,
                 procfs.sb().container_dev_id,
             );
-            Common::new(metadata, Arc::downgrade(&fs))
+            Common::new(metadata, fs.downgrade())
         };
         Arc::new(Self { inner: sym, common })
     }
@@ -85,7 +86,7 @@ impl<S: ProcSymOps + 'static> Inode for ProcSym<S> {
     fn set_mtime(&self, self_dentry: &Dentry, time: Duration);
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
-    fn fs(&self) -> Arc<dyn FileSystem>;
+    fn fs(&self) -> Option<FsHandle>;
 
     fn metadata(&self) -> Result<Metadata> {
         let owner_thread = self.inner.owner_thread();

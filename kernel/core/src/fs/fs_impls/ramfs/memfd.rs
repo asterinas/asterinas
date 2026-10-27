@@ -17,6 +17,7 @@ use crate::{
         utils,
         vfs::{
             file_system::FileSystem,
+            fs_handle::FsHandle,
             inode::{Extension, FallocMode, FileOps, Inode, Metadata},
             path::{Dentry, Mount, Path},
             xattr::{XattrName, XattrNamespace, XattrSetFlags},
@@ -217,8 +218,8 @@ impl Inode for MemfdInode {
         self.inode.fallocate(mode, offset, len)
     }
 
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        MemfdTmpFs::singleton().clone()
+    fn fs(&self) -> Option<FsHandle> {
+        Some(MemfdTmpFs::singleton().clone().into_dyn())
     }
 }
 
@@ -314,8 +315,8 @@ struct MemfdTmpFs {
 
 impl MemfdTmpFs {
     // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/shmem.c#L3828-L3850>
-    pub(self) fn singleton() -> &'static Arc<TmpFs> {
-        static MEMFD_TMPFS: Once<Arc<TmpFs>> = Once::new();
+    pub(self) fn singleton() -> &'static FsHandle<TmpFs> {
+        static MEMFD_TMPFS: Once<FsHandle<TmpFs>> = Once::new();
 
         MEMFD_TMPFS.call_once(TmpFs::new_tmpfs)
     }
@@ -330,7 +331,8 @@ impl MemfdTmpFs {
     fn mount_node() -> &'static Arc<Mount> {
         static MEMFD_TMPFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        MEMFD_TMPFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        MEMFD_TMPFS_MOUNT
+            .call_once(|| Mount::new_pseudo(Self::singleton().clone().into_dyn()).unwrap())
     }
 }
 

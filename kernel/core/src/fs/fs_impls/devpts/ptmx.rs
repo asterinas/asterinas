@@ -11,7 +11,8 @@ use crate::{
         devtmpfs::DevtmpfsNodeMeta,
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         vfs::{
-            file_system::{FileSystem, SuperBlock},
+            file_system::SuperBlock,
+            fs_handle::FsHandle,
             inode::{Extension, FileOps, Inode, Metadata},
             path::Dentry,
         },
@@ -158,9 +159,8 @@ impl Inode for Ptmx {
         self.metadata.write().last_meta_change_at = time;
     }
 
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        // FIXME: The below code may panic if the devpts is dropped.
-        self.devpts().unwrap()
+    fn fs(&self) -> Option<FsHandle> {
+        FsHandle::try_acquire(self.devpts()?).map(FsHandle::into_dyn)
     }
 
     fn open(

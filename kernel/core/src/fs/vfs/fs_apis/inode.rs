@@ -9,10 +9,7 @@ use device_id::DeviceId;
 use ostd::task::{CurrentTask, Task};
 use spin::Once;
 
-use super::{
-    file_system::FileSystem,
-    xattr::{XattrName, XattrNamespace, XattrSetFlags},
-};
+use super::xattr::{XattrName, XattrNamespace, XattrSetFlags};
 use crate::{
     device::{Device, DeviceType},
     fs::{
@@ -20,7 +17,10 @@ use crate::{
             AccessMode, InodeMode, InodeType, PerOpenFileOps, Permission, StatusFlags, SyncMode,
         },
         utils::DirentVisitor,
-        vfs::path::{Dentry, Path},
+        vfs::{
+            fs_handle::FsHandle,
+            path::{Dentry, Path},
+        },
     },
     prelude::*,
     process::{
@@ -543,8 +543,9 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         return_errno!(Errno::EOPNOTSUPP);
     }
 
-    /// Returns the filesystem containing this inode.
-    fn fs(&self) -> Arc<dyn FileSystem>;
+    /// Acquires an active filesystem handle, or returns `None` after shutdown starts.
+    /// Retaining an inode alone does not prevent filesystem shutdown.
+    fn fs(&self) -> Option<FsHandle>;
 
     /// Returns the revalidation policy for cached children of this directory.
     ///

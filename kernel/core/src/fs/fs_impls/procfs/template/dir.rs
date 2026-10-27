@@ -17,6 +17,7 @@ use crate::{
         utils::DirentVisitor,
         vfs::{
             file_system::{FileSystem, SuperBlock},
+            fs_handle::{FsHandle, WeakFsHandle},
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
@@ -44,7 +45,7 @@ impl<D: ProcDirOps> ProcDir<D> {
     /// Creates the root procfs directory inode.
     pub(in procfs) fn new_root(
         dir: D,
-        fs: Weak<dyn FileSystem>,
+        fs: WeakFsHandle,
         ino: u64,
         sb: &SuperBlock,
         mode: InodeMode,
@@ -63,11 +64,11 @@ impl<D: ProcDirOps> ProcDir<D> {
     /// Creates a non-root procfs directory inode under `parent`.
     pub(in procfs) fn new(dir: D, parent: Weak<dyn Inode>, mode: InodeMode) -> Arc<Self> {
         let common = {
-            let fs = parent.upgrade().unwrap().fs();
+            let fs = parent.upgrade().unwrap().fs().expect("procfs is inactive");
             let procfs = fs.downcast_ref::<ProcFs>().unwrap();
             let ino = procfs.alloc_id();
             let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE, procfs.sb().container_dev_id);
-            Common::new(metadata, Arc::downgrade(&fs))
+            Common::new(metadata, fs.downgrade())
         };
         Arc::new_cyclic(|weak_self| Self {
             inner: dir,
@@ -172,7 +173,7 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
     fn set_mtime(&self, self_dentry: &Dentry, time: Duration);
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
-    fn fs(&self) -> Arc<dyn FileSystem>;
+    fn fs(&self) -> Option<FsHandle>;
 
     fn metadata(&self) -> Result<Metadata> {
         let owner_thread = self.inner.owner_thread();

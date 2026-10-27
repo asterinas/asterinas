@@ -17,7 +17,7 @@ use crate::{
         utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            fs_handle::FsLifecycle,
+            fs_handle::{FsHandle, FsLifecycle},
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
@@ -59,10 +59,10 @@ pub(crate) struct DevPts {
 }
 
 impl DevPts {
-    pub(crate) fn new() -> Arc<Self> {
+    pub(crate) fn new() -> FsHandle<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for devpts");
         let sb = SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-        Arc::new_cyclic(|weak_self| Self {
+        FsHandle::new_cyclic(|weak_self| Self {
             _anon_device_id: anon_device_id,
             sb: sb.clone(),
             root: RootInode::new(weak_self.clone(), &sb),
@@ -145,8 +145,8 @@ impl FsType for DevPtsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(DevPts::new())
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
+        Ok(DevPts::new().into_dyn())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
@@ -362,7 +362,10 @@ impl Inode for RootInode {
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
         let inode = match name {
-            "." | ".." => self.fs().root_inode(),
+            "." | ".." => self
+                .fs()
+                .ok_or_else(|| Error::new(Errno::ESTALE))?
+                .root_inode(),
             // Call the "open" method of ptmx to create a master and slave pair.
             "ptmx" => self.ptmx.clone(),
             slave => self
@@ -386,8 +389,8 @@ impl Inode for RootInode {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        self.fs.upgrade().unwrap()
+    fn fs(&self) -> Option<FsHandle> {
+        FsHandle::try_acquire(self.fs.upgrade()?).map(FsHandle::into_dyn)
     }
 
     fn revalidation_policy(&self) -> RevalidationPolicy {

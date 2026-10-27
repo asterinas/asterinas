@@ -33,7 +33,7 @@ use crate::{
         file::SyncMode,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            fs_handle::FsLifecycle,
+            fs_handle::{FsHandle, FsLifecycle},
             inode::Inode,
             registry::{FsCache, FsCreationCtx, FsProperties, FsType},
         },
@@ -77,7 +77,7 @@ impl ExfatFs {
     pub(crate) fn open(
         block_device: Arc<dyn BlockDevice>,
         mount_option: ExfatMountOptions,
-    ) -> Result<Arc<Self>> {
+    ) -> Result<FsHandle<Self>> {
         // Load the super_block
         let super_block = Self::read_super_block(block_device.as_ref())?;
         let fs_size = super_block.num_clusters as usize * super_block.cluster_size as usize;
@@ -126,7 +126,7 @@ impl ExfatFs {
 
         exfat_fs.inodes.write().insert(root.hash_index(), root);
 
-        Ok(exfat_fs)
+        FsHandle::activate(exfat_fs)
     }
 
     pub(super) fn alloc_inode_number(&self) -> Ino {
@@ -435,6 +435,25 @@ impl FileSystem for ExfatFs {
         Ok(())
     }
 
+    fn shutdown(&self) -> Result<()> {
+        let result = self.sync();
+        let inodes = core::mem::take(&mut *self.inodes.write());
+        drop(inodes);
+        // Ordinary sync writes the metadata cache after its per-inode device flushes.
+        // Complete the final device flush before a replacement instance can open.
+        let flush_result = self
+            .block_device()
+            .sync()
+            .map_err(Error::from)
+            .and_then(|status| {
+                if status != aster_block::bio::BioStatus::Complete {
+                    return_errno_with_message!(Errno::EIO, "failed to flush block device");
+                }
+                Ok(())
+            });
+        result.and(flush_result)
+    }
+
     fn root_inode(&self) -> Arc<dyn Inode> {
         self.root_inode()
     }
@@ -499,9 +518,9 @@ impl FsType for ExfatType {
         FsProperties::NEED_DISK
     }
 
-    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
         let disk = fs_creation_ctx.resolve_block_device()?.clone();
-        Ok(ExfatFs::open(disk, ExfatMountOptions::default())?)
+        Ok(ExfatFs::open(disk, ExfatMountOptions::default())?.into_dyn())
     }
 
     fn obtain_key_and_cache(

@@ -66,24 +66,15 @@ pub(crate) struct FsHandle<F: FileSystem + ?Sized = dyn FileSystem> {
 }
 
 impl<F: FileSystem> FsHandle<F> {
-    #[expect(
-        dead_code,
-        reason = "VFS constructors adopt handles in the next commit"
-    )]
     pub(in crate::fs) fn new(fs: F) -> Self {
         Self::activate(Arc::new(fs)).unwrap()
     }
 
-    #[expect(
-        dead_code,
-        reason = "VFS constructors adopt handles in the next commit"
-    )]
     pub(in crate::fs) fn new_cyclic(create_fn: impl FnOnce(&Weak<F>) -> F) -> Self {
         Self::activate(Arc::new_cyclic(create_fn)).unwrap()
     }
 
     /// Erases the filesystem type without changing either reference count.
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(in crate::fs) fn into_dyn(mut self) -> FsHandle {
         FsHandle {
             fs: Some(self.fs.take().unwrap()),
@@ -119,17 +110,14 @@ impl<F: FileSystem + ?Sized> FsHandle<F> {
         self.fs.as_ref().unwrap()
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(in crate::fs) fn downgrade(&self) -> WeakFsHandle<F> {
         WeakFsHandle(Arc::downgrade(self.as_arc()))
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(in crate::fs) fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(self.as_arc(), other.as_arc())
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(in crate::fs) fn shutdown_completion(&self) -> &Arc<FsShutdown> {
         &self.lifecycle().shutdown
     }
@@ -204,22 +192,16 @@ impl<F: FileSystem + ?Sized> Drop for FsHandle<F> {
 pub(crate) struct WeakFsHandle<F: FileSystem + ?Sized = dyn FileSystem>(Weak<F>);
 
 impl<F: FileSystem + ?Sized> WeakFsHandle<F> {
-    #[expect(
-        dead_code,
-        reason = "VFS back-references adopt handles in the next commit"
-    )]
     pub(in crate::fs) fn from_weak(fs: Weak<F>) -> Self {
         Self(fs)
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(in crate::fs) fn upgrade(&self) -> Option<FsHandle<F>> {
         FsHandle::try_acquire(self.0.upgrade()?)
     }
 }
 
 impl<F: FileSystem> WeakFsHandle<F> {
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(in crate::fs) fn into_dyn(self) -> WeakFsHandle {
         WeakFsHandle(self.0)
     }
@@ -256,7 +238,6 @@ impl FsShutdown {
         }
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(in crate::fs) fn wait(&self) -> Result<()> {
         self.wait_queue.wait_until(|| self.result())
     }

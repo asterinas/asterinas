@@ -34,6 +34,7 @@ use crate::{
     fs::{
         file::{AccessMode, PerOpenFileOps, StatusFlags},
         utils::DirentVisitor,
+        vfs::fs_handle::FsHandle,
     },
     prelude::*,
     thread::work_queue::{self, WorkPriority},
@@ -226,6 +227,7 @@ impl VirtioFsInode {
         access_mode: AccessMode,
     ) -> Result<Arc<VirtioFsOpenHandle>> {
         let fs = self.fs_ref();
+        let owner = FsHandle::try_acquire(fs.clone()).ok_or_else(|| Error::new(Errno::ESTALE))?;
         let flags = access_mode as u32;
         let open_out = fs
             .session()
@@ -236,7 +238,7 @@ impl VirtioFsInode {
             access_mode,
             StatusFlags::empty(),
             open_out.open_flags(),
-            self.fs.clone(),
+            owner,
             ReleaseOptions::new(ReleaseKind::File, ReleaseFlags::empty()),
         ))
     }
@@ -339,6 +341,7 @@ impl VirtioFsInode {
             .upgrade()
             .ok_or_else(|| Error::with_message(Errno::EIO, "virtiofs inode is unavailable"))?;
         let fs = self.fs_ref();
+        let owner = FsHandle::try_acquire(fs.clone()).ok_or_else(|| Error::new(Errno::ESTALE))?;
 
         let open_out = fs.session().do_fuse_op(
             self.nodeid(),
@@ -360,7 +363,7 @@ impl VirtioFsInode {
             access_mode,
             status_flags,
             open_out.open_flags(),
-            self.fs.clone(),
+            owner,
             ReleaseOptions::new(ReleaseKind::File, ReleaseFlags::RELEASE_FLUSH),
         );
         if !open_out
@@ -393,6 +396,7 @@ impl VirtioFsInode {
             .upgrade()
             .ok_or_else(|| Error::with_message(Errno::EIO, "virtiofs inode is unavailable"))?;
         let fs = self.fs_ref();
+        let owner = FsHandle::try_acquire(fs.clone()).ok_or_else(|| Error::new(Errno::ESTALE))?;
 
         let open_out = fs
             .session()
@@ -403,7 +407,7 @@ impl VirtioFsInode {
             access_mode,
             status_flags,
             open_out.open_flags(),
-            self.fs.clone(),
+            owner,
             ReleaseOptions::new(ReleaseKind::Directory, ReleaseFlags::empty()),
         );
 

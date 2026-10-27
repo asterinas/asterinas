@@ -12,6 +12,7 @@ use crate::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         vfs::{
             file_system::FileSystem,
+            fs_handle::FsHandle,
             inode::{Extension, FileOps, Inode, Metadata},
             path::Dentry,
         },
@@ -146,8 +147,8 @@ impl Inode for PtySlaveInode {
         self.metadata.write().last_meta_change_at = time;
     }
 
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        self.fs.upgrade().unwrap()
+    fn fs(&self) -> Option<FsHandle> {
+        FsHandle::try_acquire(self.fs.upgrade()?).map(FsHandle::into_dyn)
     }
 
     fn open(

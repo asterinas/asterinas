@@ -6,7 +6,7 @@ use crate::{
         file::{InodeMode, InodeType},
         utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
         vfs::{
-            file_system::FileSystem,
+            fs_handle::FsHandle,
             inode::{Extension, Inode, Metadata, RevalidationPolicy},
             path::Dentry,
         },
@@ -89,8 +89,8 @@ impl SysTreeInodeTy for SysFsInode {
 }
 
 impl Inode for SysFsInode {
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        SysFs::singleton().clone()
+    fn fs(&self) -> Option<FsHandle> {
+        Some(SysFs::singleton().clone().into_dyn())
     }
 
     fn create(

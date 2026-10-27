@@ -19,7 +19,7 @@ use crate::{
         fs_impls::ext2::{FilePerm, Inode as Ext2Inode},
         utils::DirentVisitor,
         vfs::{
-            file_system::FileSystem,
+            fs_handle::FsHandle,
             inode::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
                 SymbolicLink,
@@ -284,9 +284,8 @@ impl Inode for Ext2Inode {
         self.fallocate(mode, offset, len)
     }
 
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        // The inode must belong to a live filesystem instance.
-        self.fs().unwrap()
+    fn fs(&self) -> Option<FsHandle> {
+        FsHandle::try_acquire(self.fs().ok()?).map(FsHandle::into_dyn)
     }
 
     fn extension(&self) -> &Extension {

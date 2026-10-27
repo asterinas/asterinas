@@ -35,7 +35,6 @@ use crate::{
 
 /// Holds one mount's overlay state: what construction settled and what every VFS entry reads.
 pub(super) struct OverlayFs {
-    layer_stack: LayerStack,
     policy: MountPolicy,
     identity: IdentityPolicy,
     upper_workdir_inuse: Option<UpperWorkdirInuse>,
@@ -44,6 +43,8 @@ pub(super) struct OverlayFs {
     fs_event_stats: FsEventSubscriberStats,
     lifecycle: FsLifecycle,
     self_weak: Weak<OverlayFs>,
+    // Release real inodes before their filesystem handles.
+    layer_stack: LayerStack,
 }
 
 impl OverlayFs {

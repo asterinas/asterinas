@@ -19,6 +19,7 @@ use crate::{
         },
         pseudofs::AnonInodeFs,
         vfs::{
+            fs_handle::WeakFsHandle,
             inode::{FallocMode, Inode},
             inode_ext::InodeExt,
             notify::{FsEventSubscriber, FsEvents},
@@ -32,6 +33,7 @@ use crate::{
 
 #[derive(Clone)]
 struct SubscriberEntry {
+    fs: WeakFsHandle,
     inode: Weak<dyn Inode>,
     subscriber: Weak<InotifySubscriber>,
 }
@@ -67,6 +69,9 @@ impl Drop for InotifyFile {
         let watch_map = self.watch_map.get_mut();
 
         for (_, entry) in watch_map.drain() {
+            let Some(_fs) = entry.fs.upgrade() else {
+                continue;
+            };
             let (Some(inode), Some(subscriber)) =
                 (entry.inode.upgrade(), entry.subscriber.upgrade())
             else {
@@ -77,8 +82,9 @@ impl Drop for InotifyFile {
                 .fs_event_publisher()
                 .unwrap()
                 .remove_subscriber(&(subscriber as _))
+                && let Some(fs) = inode.fs()
             {
-                inode.fs().fs_event_subscriber_stats().remove_subscriber();
+                fs.fs_event_subscriber_stats().remove_subscriber();
             }
         }
     }
@@ -184,10 +190,11 @@ impl InotifyFile {
                 "adding an inotify watch to a deleted inode is not supported yet"
             );
         }
-        inode.fs().fs_event_subscriber_stats().add_subscriber();
+        path.fs().fs_event_subscriber_stats().add_subscriber();
 
         let wd = inotify_subscriber.wd();
         let entry = SubscriberEntry {
+            fs: path.mount_node().fs().downgrade(),
             inode: inode_weak,
             subscriber: Arc::downgrade(&inotify_subscriber),
         };
@@ -204,21 +211,31 @@ impl InotifyFile {
             return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist");
         };
 
-        let (inode, subscriber) = match (entry.inode.upgrade(), entry.subscriber.upgrade()) {
-            (Some(inode), Some(subscriber)) => (inode, subscriber),
-            // The subscriber is dead because it's a one-shot subscriber or the inode is dead.
-            // The watch is considered removed.
-            _ => return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist"),
-        };
+        let _fs = entry
+            .fs
+            .upgrade()
+            .ok_or_else(|| Error::new(Errno::EINVAL))?;
+
+        let inode = entry.inode.upgrade();
+        let subscriber = entry.subscriber.upgrade();
+        if inode.is_none() || subscriber.is_none() {
+            drop(watch_map);
+            return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist");
+        }
+        let inode = inode.unwrap();
+        let subscriber = subscriber.unwrap();
 
         if inode
             .fs_event_publisher()
             .unwrap()
             .remove_subscriber(&(subscriber as _))
+            && let Some(fs) = inode.fs()
         {
-            inode.fs().fs_event_subscriber_stats().remove_subscriber();
+            fs.fs_event_subscriber_stats().remove_subscriber();
         }
 
+        // Releasing the inode itself may reclaim deleted file data.
+        drop(watch_map);
         Ok(())
     }
 
@@ -383,7 +400,17 @@ impl FileLike for InotifyFile {
                 writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
                 writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())?;
 
-                for (wd, entry) in self.inner.watch_map.lock().iter() {
+                let entries: Vec<_> = self
+                    .inner
+                    .watch_map
+                    .lock()
+                    .iter()
+                    .map(|(wd, entry)| (*wd, entry.clone()))
+                    .collect();
+                for (wd, entry) in entries {
+                    let Some(fs) = entry.fs.upgrade() else {
+                        continue;
+                    };
                     let Some(inode) = entry.inode.upgrade() else {
                         continue;
                     };
@@ -391,7 +418,7 @@ impl FileLike for InotifyFile {
                         continue;
                     };
                     let mask = subscriber.interesting_events().bits();
-                    let sdev = inode.fs().sb().fsid;
+                    let sdev = fs.sb().fsid;
                     writeln!(
                         f,
                         "inotify wd:{} ino:{:x} sdev:{:x} mask:{:x} ignored_mask:0",

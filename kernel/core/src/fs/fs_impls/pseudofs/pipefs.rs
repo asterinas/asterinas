@@ -9,7 +9,7 @@ use crate::{
         pipe::AnonPipeInode,
         pseudofs::NaivePseudoFs,
         vfs::{
-            file_system::FileSystem,
+            fs_handle::FsHandle,
             path::{Mount, Path},
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -28,8 +28,8 @@ pub(in crate::fs) struct PipeFs {
 
 impl PipeFs {
     /// Returns the singleton instance of the anonymous pipe file system.
-    pub(in crate::fs) fn singleton() -> &'static Arc<NaivePseudoFs> {
-        static PIPEFS: Once<Arc<NaivePseudoFs>> = Once::new();
+    pub(in crate::fs) fn singleton() -> &'static FsHandle<NaivePseudoFs> {
+        static PIPEFS: Once<FsHandle<NaivePseudoFs>> = Once::new();
 
         NaivePseudoFs::singleton(&PIPEFS, "pipefs", PIPEFS_MAGIC)
     }
@@ -45,7 +45,7 @@ impl PipeFs {
     fn mount_node() -> &'static Arc<Mount> {
         static PIPEFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        PIPEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        PIPEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone().into_dyn()).unwrap())
     }
 }
 
@@ -62,7 +62,7 @@ impl FsType for PipeFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
         return_errno_with_message!(Errno::EINVAL, "pipefs cannot be mounted");
     }
 
