@@ -24,7 +24,9 @@ cmpxchg_store:
     sc.w t1, a2, (a0)
     bnez t1, cmpxchg_load
 cmpxchg_done:
-    mv a0, t0
+    # Zero-extend the `lr.w` result; `!0u64` is reserved for page faults.
+    slli a0, t0, 32
+    srli a0, a0, 32
     csrc sstatus, t2
     ret
 cmpxchg_fault:
