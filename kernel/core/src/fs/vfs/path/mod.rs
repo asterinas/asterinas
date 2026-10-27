@@ -208,6 +208,123 @@ impl Path {
         InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
     }
 
+    /// Changes the mode after checking mount writability and the caller's permissions.
+    pub(crate) fn chmod(&self, mut mode: InodeMode, ctx: &Context) -> Result<()> {
+        self.check_mount_writable()?;
+
+        // FIXME: Keep the ownership checks and mode update in one inode critical
+        // section. `metadata()` returns a snapshot, so a concurrent `chown()` can
+        // change the owner or group before `set_mode()` runs.
+        let metadata = self.metadata()?;
+        let credentials = ctx.posix_thread.credentials();
+        let user_ns = ctx.thread_local.borrow_user_ns();
+
+        if credentials.fsuid() != metadata.uid {
+            lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                user_ns.as_ref(),
+                ctx.posix_thread,
+                CapSet::FOWNER,
+            ))?;
+        }
+
+        // If the caller is not in the file's group and lacks `CAP_FSETID`,
+        // Linux silently clears the requested `S_ISGID` bit.
+        // Reference: <https://man7.org/linux/man-pages/man2/chmod.2.html>.
+        if mode.contains(InodeMode::S_ISGID)
+            && !credentials.has_group_for_fs_access(metadata.gid)
+            && lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                user_ns.as_ref(),
+                ctx.posix_thread,
+                CapSet::FSETID,
+            ))
+            .is_err()
+        {
+            mode.remove(InodeMode::S_ISGID);
+        }
+
+        self.set_mode(mode)?;
+        notify::on_attr_change(self);
+        Ok(())
+    }
+
+    /// Changes the owner and/or group after checking mount writability and permissions.
+    ///
+    /// An ID of `None` leaves that ID unchanged.
+    /// A successful call on a non-directory clears the set-user-ID bit, even if
+    /// neither ID changes.
+    /// The set-group-ID bit is preserved only if the file is not group-executable
+    /// and the caller belongs to its group or has `CAP_FSETID`.
+    /// Clearing these bits requires the caller to own the file or have `CAP_FOWNER`.
+    pub(crate) fn chown(&self, uid: Option<Uid>, gid: Option<Gid>, ctx: &Context) -> Result<()> {
+        self.check_mount_writable()?;
+
+        // FIXME: Keep the ownership checks and owner, group, and mode updates in
+        // one inode critical section. `metadata()` returns a snapshot, so concurrent
+        // attribute changes can invalidate the checks before the updates run.
+        let metadata = self.metadata()?;
+        let credentials = ctx.posix_thread.credentials();
+        let user_ns = ctx.thread_local.borrow_user_ns();
+        let is_owner = credentials.fsuid() == metadata.uid;
+
+        // The owner may keep either ID or move the file into one of its groups.
+        // Other ownership changes require `CAP_CHOWN`.
+        let needs_cap_chown = uid.is_some_and(|uid| !is_owner || uid != metadata.uid)
+            || gid.is_some_and(|gid| {
+                !is_owner || (gid != metadata.gid && !credentials.has_group_for_fs_access(gid))
+            });
+        if needs_cap_chown {
+            lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                user_ns.as_ref(),
+                ctx.posix_thread,
+                CapSet::CHOWN,
+            ))?;
+        }
+
+        // Directories retain their set-ID bits because set-group-ID controls
+        // group inheritance for newly created children.
+        let mut mode = metadata.mode;
+        if !matches!(self.type_(), InodeType::Dir) {
+            mode.remove(InodeMode::S_ISUID);
+            if mode.has_set_gid() {
+                let keeps_set_gid = !mode.is_group_executable()
+                    && (credentials.has_group_for_fs_access(metadata.gid)
+                        || lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                            user_ns.as_ref(),
+                            ctx.posix_thread,
+                            CapSet::FSETID,
+                        ))
+                        .is_ok());
+                if !keeps_set_gid {
+                    mode.remove(InodeMode::S_ISGID);
+                }
+            }
+        }
+
+        if mode != metadata.mode {
+            // Clearing set-ID bits requires permission to change the file mode.
+            let may_change_mode = is_owner
+                || lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                    user_ns.as_ref(),
+                    ctx.posix_thread,
+                    CapSet::FOWNER,
+                ))
+                .is_ok();
+            if !may_change_mode {
+                return_errno_with_message!(Errno::EPERM, "the file mode cannot be changed");
+            }
+            self.set_mode(mode)?;
+        }
+
+        if let Some(uid) = uid {
+            self.set_owner(uid)?;
+        }
+        if let Some(gid) = gid {
+            self.set_group(gid)?;
+        }
+        notify::on_attr_change(self);
+        Ok(())
+    }
+
     /// Gets the parent `Path` within the same mount.
     ///
     /// This method returns the parent path within the same filesystem/mount.
@@ -818,123 +935,8 @@ impl Path {
         old_dir_dentry.rename(old_name, &new_dir_dentry, new_name, mode)
     }
 
-    /// Changes the owner and/or group after checking mount writability and permissions.
-    ///
-    /// An ID of `None` leaves that ID unchanged.
-    /// A successful call on a non-directory clears the set-user-ID bit, even if
-    /// neither ID changes.
-    /// The set-group-ID bit is preserved only if the file is not group-executable
-    /// and the caller belongs to its group or has `CAP_FSETID`.
-    /// Clearing these bits requires the caller to own the file or have `CAP_FOWNER`.
-    pub(crate) fn chown(&self, uid: Option<Uid>, gid: Option<Gid>, ctx: &Context) -> Result<()> {
-        self.check_mount_writable()?;
-
-        // FIXME: Keep the ownership checks and owner, group, and mode updates in
-        // one inode critical section. `metadata()` returns a snapshot, so concurrent
-        // attribute changes can invalidate the checks before the updates run.
-        let metadata = self.metadata()?;
-        let credentials = ctx.posix_thread.credentials();
-        let user_ns = ctx.thread_local.borrow_user_ns();
-        let is_owner = credentials.fsuid() == metadata.uid;
-
-        // The owner may keep either ID or move the file into one of its groups.
-        // Other ownership changes require `CAP_CHOWN`.
-        let needs_cap_chown = uid.is_some_and(|uid| !is_owner || uid != metadata.uid)
-            || gid.is_some_and(|gid| {
-                !is_owner || (gid != metadata.gid && !credentials.has_group_for_fs_access(gid))
-            });
-        if needs_cap_chown {
-            lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
-                user_ns.as_ref(),
-                ctx.posix_thread,
-                CapSet::CHOWN,
-            ))?;
-        }
-
-        // Directories retain their set-ID bits because set-group-ID controls
-        // group inheritance for newly created children.
-        let mut mode = metadata.mode;
-        if !matches!(self.type_(), InodeType::Dir) {
-            mode.remove(InodeMode::S_ISUID);
-            if mode.has_set_gid() {
-                let keeps_set_gid = !mode.is_group_executable()
-                    && (credentials.has_group_for_fs_access(metadata.gid)
-                        || lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
-                            user_ns.as_ref(),
-                            ctx.posix_thread,
-                            CapSet::FSETID,
-                        ))
-                        .is_ok());
-                if !keeps_set_gid {
-                    mode.remove(InodeMode::S_ISGID);
-                }
-            }
-        }
-
-        if mode != metadata.mode {
-            // Clearing set-ID bits requires permission to change the file mode.
-            let may_change_mode = is_owner
-                || lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
-                    user_ns.as_ref(),
-                    ctx.posix_thread,
-                    CapSet::FOWNER,
-                ))
-                .is_ok();
-            if !may_change_mode {
-                return_errno_with_message!(Errno::EPERM, "cannot change the file mode");
-            }
-            self.set_mode(mode)?;
-        }
-
-        if let Some(uid) = uid {
-            self.set_owner(uid)?;
-        }
-        if let Some(gid) = gid {
-            self.set_group(gid)?;
-        }
-
-        notify::on_attr_change(self);
-        Ok(())
-    }
-
-    /// Changes the mode after checking mount writability and the caller's permissions.
-    pub(crate) fn chmod(&self, mut mode: InodeMode, ctx: &Context) -> Result<()> {
-        self.check_mount_writable()?;
-
-        // FIXME: Keep the ownership checks and mode update in one inode critical
-        // section. `metadata()` returns a snapshot, so a concurrent `chown()` can
-        // change the owner or group before `set_mode()` runs.
-        let metadata = self.metadata()?;
-        let credentials = ctx.posix_thread.credentials();
-        let user_ns = ctx.thread_local.borrow_user_ns();
-
-        if credentials.fsuid() != metadata.uid {
-            lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
-                user_ns.as_ref(),
-                ctx.posix_thread,
-                CapSet::FOWNER,
-            ))?;
-        }
-
-        // If the caller is not in the file's group and lacks `CAP_FSETID`,
-        // Linux silently clears the requested `S_ISGID` bit.
-        // Reference: <https://man7.org/linux/man-pages/man2/chmod.2.html>.
-        if mode.contains(InodeMode::S_ISGID)
-            && !credentials.has_group_for_fs_access(metadata.gid)
-            && lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
-                user_ns.as_ref(),
-                ctx.posix_thread,
-                CapSet::FSETID,
-            ))
-            .is_err()
-        {
-            mode.remove(InodeMode::S_ISGID);
-        }
-
-        self.set_mode(mode)?;
-        notify::on_attr_change(self);
-        Ok(())
-    }
+    // This `impl` block should only contain methods that are inherited from `Dentry`.
+    // Do not add any unrelated methods.
 }
 
 // Methods inherited from `Inode`.
@@ -956,26 +958,38 @@ impl Path {
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
 
-    pub(crate) fn set_mode(&self, mode: InodeMode) -> Result<()> {
+    /// Sets the file's mode.
+    ///
+    /// Use [`Self::chmod`] instead, which will perform permission checks.
+    fn set_mode(&self, mode: InodeMode) -> Result<()> {
         self.inode().set_mode(&self.dentry, mode)
     }
 
-    pub(crate) fn set_owner(&self, uid: Uid) -> Result<()> {
+    /// Sets the file's owner.
+    ///
+    /// Use [`Self::chown`] instead, which will perform permission checks.
+    fn set_owner(&self, uid: Uid) -> Result<()> {
         self.inode().set_owner(&self.dentry, uid)
     }
 
-    pub(crate) fn set_group(&self, gid: Gid) -> Result<()> {
+    /// Sets the file's group.
+    ///
+    /// Use [`Self::chown`] instead, which will perform permission checks.
+    fn set_group(&self, gid: Gid) -> Result<()> {
         self.inode().set_group(&self.dentry, gid)
     }
 
+    /// Sets the file's access time.
     pub(crate) fn set_atime(&self, time: Duration) {
         self.inode().set_atime(&self.dentry, time)
     }
 
+    /// Sets the file's modification time.
     pub(crate) fn set_mtime(&self, time: Duration) {
         self.inode().set_mtime(&self.dentry, time)
     }
 
+    /// Sets the file's change time.
     pub(crate) fn set_ctime(&self, time: Duration) {
         self.inode().set_ctime(&self.dentry, time)
     }
@@ -1027,6 +1041,9 @@ impl Path {
         }
         inode.remove_xattr(&self.dentry, name)
     }
+
+    // This `impl` block should only contain methods that are inherited from `Inode`.
+    // Do not add any unrelated methods.
 }
 
 fn capable_modify_file_cap(inode: &dyn Inode, ctx: &Context) -> Result<()> {
