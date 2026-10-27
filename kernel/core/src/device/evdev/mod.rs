@@ -295,7 +295,7 @@ pub(super) fn init_in_first_kthread() {
     use aster_input::input_handler::RegisteredInputHandlerClass;
 
     static EVDEV_MAJOR: Once<MajorIdOwner> = Once::new();
-    EVDEV_MAJOR.call_once(|| acquire_major(MajorId::new(EVDEV_MAJOR_ID)).unwrap());
+    EVDEV_MAJOR.call_once(|| acquire_major(MajorId::new(EVDEV_MAJOR_ID), "input").unwrap());
 
     static REGISTERED_EVDDEV_CLASS: Once<RegisteredInputHandlerClass> = Once::new();
     let handler_class = Arc::new(EvdevHandlerClass);
