@@ -14,6 +14,7 @@ use crate::{
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -26,6 +27,7 @@ pub(super) struct CgroupFs {
     _anon_device_id: AnonDeviceId,
     sb: SuperBlock,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 // Magic number for cgroupfs v2 (taken from Linux)
@@ -50,11 +52,16 @@ impl CgroupFs {
             _anon_device_id: anon_device_id,
             sb,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
         })
     }
 }
 
 impl FileSystem for CgroupFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "cgroup2"
     }

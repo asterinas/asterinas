@@ -42,7 +42,9 @@ use crate::{
     fs::{
         fs_impls::overlayfs::inode::{InodeCache, WhiteoutCache},
         pseudofs::AnonDeviceId,
-        vfs::{file_system::FsEventSubscriberStats, registry::FsCreationCtx},
+        vfs::{
+            file_system::FsEventSubscriberStats, fs_handle::FsLifecycle, registry::FsCreationCtx,
+        },
     },
     prelude::*,
 };
@@ -153,6 +155,7 @@ impl OverlayFs {
             whiteout_cache,
             inodes,
             fs_event_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
             self_weak: weak.clone(),
         });
         Ok(overlay_fs)

@@ -9,6 +9,7 @@ use crate::{
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -23,6 +24,7 @@ pub(super) struct SysFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 const MAGIC_NUMBER: u64 = 0x62656572; // SYSFS_MAGIC
@@ -53,11 +55,16 @@ impl SysFs {
             sb,
             root: root_inode,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
         })
     }
 }
 
 impl FileSystem for SysFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "sysfs"
     }
