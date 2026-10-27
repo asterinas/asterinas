@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::btree_map::Entry;
-
 use aster_block::BlockDevice;
 use aster_systree::{
     AttrLessBranchNodeFields, SysNode, SysObj, SysPerms, SysStr, inherit_sys_branch_node,
@@ -12,7 +10,8 @@ use crate::{
     fs::{
         fs_impls::sysfs,
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FsFlags,
+            fs_handle::{FsHandle, FsShutdown, WeakFsHandle},
             path::{AT_FDCWD, Dentry, EmptyPathStr, FsPath},
         },
     },
@@ -34,7 +33,7 @@ pub(crate) trait FsType: Send + Sync + 'static {
     fn properties(&self) -> FsProperties;
 
     /// Creates an instance of this FS type.
-    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>>;
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle>;
 
     /// Returns the computed dedup key and the [`FsCache`] for this mount request.
     ///
@@ -276,47 +275,49 @@ static FS_REGISTRY: Once<Arc<FsRegistry>> = Once::new();
 ///
 /// `FsType` implementations use this cache to deduplicate mounts that refer to
 /// the same logical file system instance, such as the same block device.
+/// Expired weak entries remain reserved until final writeback has completed.
+/// Failed writeback keeps the key reserved: later lookups return that error
+/// rather than loading filesystem state that may still have outstanding I/O.
 pub(crate) struct FsCache<K: Eq + Ord + Clone + Send + Sync + 'static> {
-    entries: Mutex<BTreeMap<K, WeakFsAndRoot>>,
+    entries: Mutex<BTreeMap<K, CachedFs>>,
 }
 
-/// A file system paired with its root [`Dentry`].
-#[derive(Clone)]
+/// An active filesystem paired with the root selected during its creation context.
+#[derive(Clone, Debug)]
 pub(crate) struct FsAndRoot {
-    fs: Arc<dyn FileSystem>,
+    // Release the root while the filesystem is still active.
     root_dentry: Arc<Dentry>,
+    fs: FsHandle,
 }
 
 impl FsAndRoot {
-    /// Creates an `FsAndRoot` by deriving the root dentry from the file system.
-    ///
-    /// This root is the file system root created from [`FileSystem::root_inode`].
-    pub(crate) fn new(fs: Arc<dyn FileSystem>) -> Self {
+    /// Captures the filesystem root in the calling thread's context.
+    pub(crate) fn new(fs: FsHandle) -> Self {
         let root_dentry = Dentry::new_root(fs.root_inode());
-        Self { fs, root_dentry }
+        Self { root_dentry, fs }
     }
 
-    /// Consumes the `FsAndRoot` and returns the file system and its root dentry.
-    pub(in crate::fs) fn into_parts(self) -> (Arc<dyn FileSystem>, Arc<Dentry>) {
+    /// Consumes the pair without selecting the root again.
+    pub(in crate::fs) fn into_parts(self) -> (FsHandle, Arc<Dentry>) {
         (self.fs, self.root_dentry)
     }
 
-    /// Returns a reference the file system.
-    pub(in crate::fs) fn fs(&self) -> &Arc<dyn FileSystem> {
+    /// Returns the active filesystem handle.
+    pub(in crate::fs) fn fs(&self) -> &FsHandle {
         &self.fs
     }
 
     fn downgrade(&self) -> WeakFsAndRoot {
         WeakFsAndRoot {
-            fs: Arc::downgrade(&self.fs),
             root_dentry: Arc::downgrade(&self.root_dentry),
+            fs: self.fs.downgrade(),
         }
     }
 }
 
 struct WeakFsAndRoot {
-    fs: Weak<dyn FileSystem>,
     root_dentry: Weak<Dentry>,
+    fs: WeakFsHandle,
 }
 
 impl WeakFsAndRoot {
@@ -327,7 +328,21 @@ impl WeakFsAndRoot {
             self.root_dentry = Arc::downgrade(&dentry);
             dentry
         });
-        Some(FsAndRoot { fs, root_dentry })
+        Some(FsAndRoot { root_dentry, fs })
+    }
+}
+
+struct CachedFs {
+    fs_and_root: WeakFsAndRoot,
+    shutdown: Arc<FsShutdown>,
+}
+
+impl CachedFs {
+    fn new(fs_and_root: &FsAndRoot) -> Self {
+        Self {
+            fs_and_root: fs_and_root.downgrade(),
+            shutdown: fs_and_root.fs().shutdown_completion().clone(),
+        }
     }
 }
 
@@ -339,21 +354,26 @@ impl<K: Eq + Ord + Clone + Send + Sync + 'static> FsCache<K> {
         }
     }
 
-    /// Gets or creates a file system and its root dentry for `key`.
+    /// Gets or creates a filesystem instance and its root dentry for `key`.
     ///
-    /// A live entry is checked against `required_flags` while the cache is locked and
-    /// returned without invoking `create_fn`. If no live entry exists, invokes
-    /// `create_fn` and derives a root `Dentry`.
+    /// A live entry is checked against `required_flags` while the cache is locked
+    /// and returned without invoking `create_fn`.
+    /// An expired entry must finish final writeback before `create_fn` can run.
+    /// Waiting releases the cache lock and retries the lookup
+    /// so concurrent waiters cannot create duplicates.
+    /// A live instance reuses its cached root, recreating it only if the root expired.
     fn get_or_create<F>(&self, key: K, required_flags: FsFlags, create_fn: F) -> Result<FsAndRoot>
     where
-        F: FnOnce() -> Result<Arc<dyn FileSystem>>,
+        F: FnOnce() -> Result<FsHandle>,
     {
-        let mut entries = self.entries.lock();
-        match entries.entry(key) {
-            Entry::Occupied(mut entry) => {
-                if let Some(fs_and_root) = entry.get_mut().upgrade() {
-                    let extant_readonly = fs_and_root.fs.flags().contains(FsFlags::RDONLY);
+        loop {
+            let mut entries = self.entries.lock();
+            if let Some(entry) = entries.get_mut(&key) {
+                if let Some(fs_and_root) = entry.fs_and_root.upgrade() {
+                    let extant_readonly = fs_and_root.fs().flags().contains(FsFlags::RDONLY);
                     let requested_readonly = required_flags.contains(FsFlags::RDONLY);
+                    // Releasing this temporary owner may trigger final writeback.
+                    drop(entries);
                     if extant_readonly != requested_readonly {
                         return_errno_with_message!(
                             Errno::EBUSY,
@@ -363,23 +383,27 @@ impl<K: Eq + Ord + Clone + Send + Sync + 'static> FsCache<K> {
                     return Ok(fs_and_root);
                 }
 
-                let fs = match create_fn() {
-                    Ok(fs) => fs,
-                    Err(err) => {
-                        entry.remove();
-                        return Err(err);
+                match entry.shutdown.result() {
+                    Some(result) => result?,
+                    None => {
+                        let shutdown = entry.shutdown.clone();
+                        drop(entries);
+                        shutdown.wait()?;
+                        continue;
                     }
-                };
-                let fs_and_root = FsAndRoot::new(fs);
-                entry.insert(fs_and_root.downgrade());
-                Ok(fs_and_root)
+                }
             }
-            Entry::Vacant(entry) => {
-                let fs = create_fn()?;
-                let fs_and_root = FsAndRoot::new(fs);
-                entry.insert(fs_and_root.downgrade());
-                Ok(fs_and_root)
-            }
+
+            let fs = match create_fn() {
+                Ok(fs) => fs,
+                Err(err) => {
+                    entries.remove(&key);
+                    return Err(err);
+                }
+            };
+            let fs_and_root = FsAndRoot::new(fs);
+            entries.insert(key, CachedFs::new(&fs_and_root));
+            return Ok(fs_and_root);
         }
     }
 }

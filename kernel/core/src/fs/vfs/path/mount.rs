@@ -17,7 +17,8 @@ use crate::{
     fs::{
         file::InodeType,
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FsFlags,
+            fs_handle::FsHandle,
             path::{
                 Path,
                 dentry::{Dentry, DentryKey},
@@ -42,8 +43,6 @@ pub(crate) struct Mount {
     /// Mountpoint dentry. A mount node can be mounted on one dentry of another mount node,
     /// which makes the mount being the child of the mount node.
     mountpoint: RwLock<Option<Arc<Dentry>>>,
-    /// The associated mounted filesystem.
-    fs: Arc<dyn FileSystem>,
     /// The mount source (e.g., a device path like "/dev/vda" or a filesystem name like "proc").
     ///
     /// The source is stored in `Mount` instead of requiring each filesystem to provide it.
@@ -65,6 +64,8 @@ pub(crate) struct Mount {
     flags: AtomicPerMountFlags,
     /// Reference to self.
     this: Weak<Self>,
+    /// The associated filesystem, retained until the other mount fields are released.
+    fs: FsHandle,
 }
 
 impl Mount {
@@ -94,24 +95,21 @@ impl Mount {
     /// It is allowed to create a mount node even if the fs has been provided to another
     /// mount node. It is the fs's responsibility to ensure the data consistency.
     pub(in crate::fs) fn new_root(
-        fs: Arc<dyn FileSystem>,
+        fs: FsHandle,
         flags: PerMountFlags,
         mnt_ns: Weak<MountNamespace>,
     ) -> Result<Arc<Self>> {
         let source = fs.name().to_string();
-        let root_dentry = Dentry::new_root(fs.root_inode());
-        Self::new(root_dentry, fs, flags, None, mnt_ns, Some(source))
+        Self::new(FsAndRoot::new(fs), flags, None, mnt_ns, Some(source))
     }
 
     /// Creates a pseudo mount node with an associated FS.
     ///
     /// This pseudo mount is not mounted on other mount nodes, has no parent, and does not
     /// belong to any mount namespace.
-    pub(in crate::fs) fn new_pseudo(fs: Arc<dyn FileSystem>) -> Result<Arc<Self>> {
-        let root_dentry = Dentry::new_root(fs.root_inode());
+    pub(in crate::fs) fn new_pseudo(fs: FsHandle) -> Result<Arc<Self>> {
         Self::new(
-            root_dentry,
-            fs,
+            FsAndRoot::new(fs),
             PerMountFlags::KERNMOUNT,
             None,
             Weak::new(),
@@ -132,8 +130,7 @@ impl Mount {
         mnt_ns: Weak<MountNamespace>,
         source: Option<String>,
     ) -> Result<Arc<Self>> {
-        let (fs, root_dentry) = fs_and_root.into_parts();
-        Self::new(root_dentry, fs, flags, None, mnt_ns, source)
+        Self::new(fs_and_root, flags, None, mnt_ns, source)
     }
 
     /// The internal constructor.
@@ -145,8 +142,7 @@ impl Mount {
     /// exist without a mountpoint, ensuring uniformity and security, while all other
     /// mount nodes must be explicitly assigned a mountpoint to maintain structural integrity.
     fn new(
-        root_dentry: Arc<Dentry>,
-        fs: Arc<dyn FileSystem>,
+        fs_and_root: FsAndRoot,
         flags: PerMountFlags,
         parent_mount: Option<Weak<Mount>>,
         mnt_ns: Weak<MountNamespace>,
@@ -155,11 +151,11 @@ impl Mount {
         let id = MountId::alloc()
             .ok_or_else(|| Error::with_message(Errno::ENOMEM, "mount ID space exhausted"))?;
 
+        let (fs, root_dentry) = fs_and_root.into_parts();
         let mount = Arc::new_cyclic(|weak_self| Self {
             id,
             root_dentry,
             mountpoint: RwLock::new(None),
-            fs,
             source,
             parent: RwLock::new(parent_mount),
             children: RwLock::new(HashMap::new()),
@@ -167,6 +163,7 @@ impl Mount {
             propagation: RwLock::new(MountPropagation::default()),
             flags: AtomicPerMountFlags::new(flags),
             this: weak_self.clone(),
+            fs,
         });
         // `upgrade` returns `None` for pseudo mounts (no namespace) and for
         // mounts still being built by `MountNamespace::new_with_root` (the
@@ -286,7 +283,6 @@ impl Mount {
             id,
             root_dentry: root_dentry.clone(),
             mountpoint: RwLock::new(None),
-            fs: self.fs.clone(),
             source: self.source.clone(),
             parent: RwLock::new(None),
             children: RwLock::new(HashMap::new()),
@@ -294,6 +290,7 @@ impl Mount {
             propagation: RwLock::new(propagation),
             flags: AtomicPerMountFlags::new(self.flags.load(Ordering::Relaxed)),
             this: weak_self.clone(),
+            fs: self.fs.clone(),
         });
         if let Some(ns) = mount.mnt_ns.upgrade() {
             ns.register_mount(&mount);
@@ -765,7 +762,7 @@ impl Mount {
     }
 
     /// Gets the associated FS.
-    pub(crate) fn fs(&self) -> &Arc<dyn FileSystem> {
+    pub(crate) fn fs(&self) -> &FsHandle {
         &self.fs
     }
 
@@ -859,7 +856,7 @@ impl PendingMountTreeAttachment {
 
         for (receiver, copy) in self.copies {
             let mount_point = self.target_path.dentry.clone();
-            debug_assert!(Arc::ptr_eq(&receiver.fs, &mount_point.inode().fs()));
+            debug_assert!(Arc::ptr_eq(receiver.fs.as_arc(), &mount_point.inode().fs()));
             // Propagation stacks the new copy below an existing mount at this
             // dentry. Preserve the existing mount so it can be uncovered again
             // when the propagated copy is unmounted, as on Linux.

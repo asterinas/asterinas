@@ -44,7 +44,7 @@ use crate::{
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            fs_handle::FsLifecycle,
+            fs_handle::{FsHandle, FsLifecycle},
             inode::{Extension, FileOps, Inode, Metadata},
             path::Dentry,
         },
@@ -103,16 +103,16 @@ impl FileSystem for NaivePseudoFs {
 impl NaivePseudoFs {
     /// Returns a reference to the singleton pseudo file system.
     fn singleton(
-        fs: &'static Once<Arc<Self>>,
+        fs: &'static Once<FsHandle<Self>>,
         name: &'static str,
         magic: u64,
-    ) -> &'static Arc<Self> {
+    ) -> &'static FsHandle<Self> {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/libfs.c#L659-L689>
         fs.call_once(|| {
             let anon_device_id =
                 AnonDeviceId::acquire().expect("no device ID is available for pseudofs");
             let container_dev_id = anon_device_id.id();
-            Arc::new_cyclic(move |weak_fs: &Weak<Self>| Self {
+            FsHandle::new(Arc::new_cyclic(move |weak_fs: &Weak<Self>| Self {
                 name,
                 _anon_device_id: anon_device_id,
                 sb: SuperBlock::new(magic, aster_block::BLOCK_SIZE, NAME_MAX, container_dev_id),
@@ -128,7 +128,7 @@ impl NaivePseudoFs {
                 inode_allocator: AtomicU64::new(ROOT_INO + 1),
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
                 lifecycle: FsLifecycle::new(),
-            })
+            }))
         })
     }
 

@@ -35,7 +35,7 @@ use crate::{
         ext2::utils,
         vfs::{
             file_system::{AtomicFsFlags, FsEventSubscriberStats, FsFlags},
-            fs_handle::FsLifecycle,
+            fs_handle::{FsHandle, FsLifecycle},
         },
     },
     process::{Gid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
@@ -127,7 +127,7 @@ impl Ext2 {
         device: Arc<dyn BlockDevice>,
         flags: FsFlags,
         data: Option<&str>,
-    ) -> Result<Arc<Self>> {
+    ) -> Result<FsHandle<Self>> {
         let super_block = {
             let raw_super_block = device.read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)?;
             SuperBlock::try_from(raw_super_block)?
@@ -197,7 +197,7 @@ impl Ext2 {
             self_ref: weak_self.clone(),
         });
 
-        Ok(ext2)
+        Ok(FsHandle::new(ext2))
     }
 
     /// Returns the block device.
@@ -534,6 +534,17 @@ impl Ext2 {
             group.sync_all(&self.group_descriptors_segment)?;
         }
         self.sync_metadata()
+    }
+
+    /// Syncs and releases inode caches while internal weak references remain valid.
+    pub(super) fn shutdown(&self) -> Result<()> {
+        let result = crate::fs::vfs::file_system::FileSystem::sync(self);
+        for group in &self.block_groups {
+            group.evict_inodes();
+        }
+        // Evicting inodes reclaims those already unlinked, dirtying allocation metadata.
+        // Sync again even if the first sync failed, so that the reclaim is not lost.
+        result.and(crate::fs::vfs::file_system::FileSystem::sync(self))
     }
 
     /// Allocates a new inode number.

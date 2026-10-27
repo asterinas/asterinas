@@ -17,7 +17,7 @@ use crate::{
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            fs_handle::FsLifecycle,
+            fs_handle::{FsHandle, FsLifecycle},
             inode::Inode,
             registry::{FsCache, FsCreationCtx, FsProperties, FsType},
         },
@@ -51,7 +51,7 @@ impl FsType for VirtioFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
         let tag = fs_creation_ctx
             .source()
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "virtiofs source(tag) is required"))?
@@ -60,7 +60,7 @@ impl FsType for VirtioFsType {
         let device = device::find_device_by_tag(&tag)
             .ok_or_else(|| Error::with_message(Errno::ENODEV, "virtiofs device is not found"))?;
 
-        Ok(VirtioFs::new(device, tag)? as Arc<dyn FileSystem>)
+        Ok(VirtioFs::new(device, tag)?.into_dyn())
     }
 
     fn obtain_key_and_cache(
@@ -89,7 +89,7 @@ pub(super) struct VirtioFs {
 }
 
 impl VirtioFs {
-    fn new(device: Arc<FileSystemDevice>, tag: String) -> Result<Arc<Self>> {
+    fn new(device: Arc<FileSystemDevice>, tag: String) -> Result<FsHandle<Self>> {
         let session = FuseSession::new(device)
             .map_err(|_| Error::with_message(Errno::EIO, "virtiofs FUSE_INIT failed"))?;
 
@@ -105,7 +105,7 @@ impl VirtioFs {
 
         let root_entry = session.do_fuse_op(FUSE_ROOT_ID, LookupOperation::new("."))?;
 
-        Ok(Arc::new_cyclic(|weak_fs| {
+        Ok(FsHandle::new(Arc::new_cyclic(|weak_fs| {
             let root = VirtioFsInode::new_root(
                 root_entry,
                 weak_fs.clone(),
@@ -123,7 +123,7 @@ impl VirtioFs {
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
                 lifecycle: FsLifecycle::new(),
             }
-        }))
+        })))
     }
 
     pub(super) fn session(&self) -> &Arc<FuseSession> {

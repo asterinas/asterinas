@@ -116,7 +116,6 @@ pub(crate) struct FsHandle<F: FileSystem + ?Sized = dyn FileSystem> {
 
 impl<F: FileSystem> FsHandle<F> {
     /// Erases the filesystem type without changing either reference count.
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(in crate::fs) fn into_dyn(mut self) -> FsHandle {
         FsHandle {
             fs: Some(self.fs.take().unwrap()),
@@ -133,7 +132,6 @@ impl<F: FileSystem + ?Sized> FsHandle<F> {
     /// # Panics
     ///
     /// Panics if `fs` has already been activated.
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(in crate::fs) fn new(fs: Arc<F>) -> Self {
         let activated = fs.lifecycle().num_handles.compare_exchange(
             FsLifecycle::INITIALIZING,
@@ -158,12 +156,10 @@ impl<F: FileSystem + ?Sized> FsHandle<F> {
         self.fs.as_ref().unwrap()
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(super) fn downgrade(&self) -> WeakFsHandle<F> {
         WeakFsHandle(Arc::downgrade(self.as_arc()))
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(super) fn shutdown_completion(&self) -> &Arc<FsShutdown> {
         &self.lifecycle().shutdown
     }
@@ -238,7 +234,6 @@ impl<F: FileSystem + ?Sized> Drop for FsHandle<F> {
 pub(super) struct WeakFsHandle<F: FileSystem + ?Sized = dyn FileSystem>(Weak<F>);
 
 impl<F: FileSystem + ?Sized> WeakFsHandle<F> {
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(super) fn upgrade(&self) -> Option<FsHandle<F>> {
         FsHandle::try_acquire(self.0.upgrade()?)
     }
@@ -275,7 +270,6 @@ impl FsShutdown {
         }
     }
 
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(super) fn wait(&self) -> Result<()> {
         self.wait_queue.wait_until(|| self.result())
     }

@@ -25,7 +25,7 @@ use crate::{
         utils::{self, CStr256, DirentVisitor},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
-            fs_handle::FsLifecycle,
+            fs_handle::{FsHandle, FsLifecycle},
             inode::{
                 Extension, FallocMode, FileOps, HardLinkability, Inode, Metadata, MknodType,
                 RenameMode, RevalidationPolicy, SymbolicLink,
@@ -58,11 +58,11 @@ pub(crate) struct RamFs {
 }
 
 impl RamFs {
-    pub(crate) fn new() -> Arc<Self> {
+    pub(crate) fn new() -> FsHandle<Self> {
         Self::new_internal("ramfs")
     }
 
-    pub(in crate::fs) fn new_rootfs() -> Arc<Self> {
+    pub(in crate::fs) fn new_rootfs() -> FsHandle<Self> {
         Self::new_internal("rootfs")
     }
 
@@ -71,9 +71,9 @@ impl RamFs {
         anon_device_id: AnonDeviceId,
         sb: SuperBlock,
         revalidation_policy: RevalidationPolicy,
-    ) -> Arc<Self> {
+    ) -> FsHandle<Self> {
         let root_dev_id = anon_device_id.id();
-        Arc::new_cyclic(move |weak_fs| Self {
+        FsHandle::new(Arc::new_cyclic(move |weak_fs| Self {
             name,
             _anon_device_id: anon_device_id,
             revalidation_policy,
@@ -99,10 +99,10 @@ impl RamFs {
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             lifecycle: FsLifecycle::new(),
-        })
+        }))
     }
 
-    fn new_internal(name: &'static str) -> Arc<Self> {
+    fn new_internal(name: &'static str) -> FsHandle<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for ramfs");
         let sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         Self::new_with_sb(name, anon_device_id, sb, RevalidationPolicy::empty())
@@ -1687,8 +1687,8 @@ impl FsType for RamFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(RamFs::new())
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
+        Ok(RamFs::new().into_dyn())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

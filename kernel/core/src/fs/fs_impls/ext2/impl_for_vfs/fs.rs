@@ -37,6 +37,10 @@ impl FileSystem for Ext2 {
         Ok(())
     }
 
+    fn shutdown(&self) -> Result<()> {
+        Ext2::shutdown(self)
+    }
+
     fn root_inode(&self) -> Arc<dyn Inode> {
         self.root_inode().unwrap()
     }

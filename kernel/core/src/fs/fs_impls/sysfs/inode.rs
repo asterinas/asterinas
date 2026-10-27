@@ -90,7 +90,7 @@ impl SysTreeInodeTy for SysFsInode {
 
 impl Inode for SysFsInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
-        SysFs::singleton().clone()
+        SysFs::singleton().as_arc().clone()
     }
 
     fn create(
