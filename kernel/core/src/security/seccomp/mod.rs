@@ -6,6 +6,12 @@
 //! filter chain. Syscall entry evaluates a stable snapshot, and fork/clone share
 //! that chain while retaining independent per-thread heads.
 
+macro_rules! __log_prefix {
+    () => {
+        "seccomp: "
+    };
+}
+
 mod abi;
 mod cbpf;
 mod filter;
@@ -17,8 +23,8 @@ mod test;
 use ostd::{arch::cpu::context::UserContext, mm::VmIo};
 
 use self::abi::{
-    MODE_FILTER, MODE_STRICT, RET_ALLOW, RET_ERRNO, RET_KILL_PROCESS, RET_KILL_THREAD, RET_TRACE,
-    RET_TRAP, SeccompNotif, SeccompNotifResp, SeccompNotifSizes,
+    MODE_FILTER, MODE_STRICT, RET_ALLOW, RET_ERRNO, RET_KILL_PROCESS, RET_KILL_THREAD, RET_LOG,
+    RET_TRACE, RET_TRAP, SeccompNotif, SeccompNotifResp, SeccompNotifSizes,
 };
 pub(crate) use self::{
     abi::SeccompData,
@@ -67,7 +73,7 @@ pub(crate) fn seccomp(
             let action: u32 = ctx.user_space().read_val(args_addr)?;
             match action {
                 RET_ALLOW | RET_ERRNO | RET_KILL_PROCESS | RET_KILL_THREAD | RET_TRAP
-                | RET_TRACE => Ok(0),
+                | RET_TRACE | RET_LOG => Ok(0),
                 _ => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported seccomp action"),
             }
         }

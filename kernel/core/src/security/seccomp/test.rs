@@ -23,16 +23,16 @@ fn newest_equal_priority_data_wins() {
         .unwrap();
     let appended = original.append(program(RET_ERRNO | 16)).unwrap();
     assert!(matches!(
-        original.evaluate(&data),
+        original.evaluate(&data).decision,
         SeccompDecision::Errno(13)
     ));
     assert!(matches!(
-        appended.evaluate(&data),
+        appended.evaluate(&data).decision,
         SeccompDecision::Errno(16)
     ));
     let allowed = appended.append(program(RET_ALLOW)).unwrap();
     assert!(matches!(
-        allowed.evaluate(&data),
+        allowed.evaluate(&data).decision,
         SeccompDecision::Errno(16)
     ));
 }
@@ -48,7 +48,7 @@ fn signed_action_precedence_and_unknown_actions() {
         .append(program(RET_ERRNO | 13))
         .unwrap();
     assert!(matches!(
-        policy.evaluate(&data),
+        policy.evaluate(&data).decision,
         SeccompDecision::KillProcess
     ));
 
@@ -57,21 +57,27 @@ fn signed_action_precedence_and_unknown_actions() {
         .append(program(0x1234_0000))
         .unwrap();
     assert!(matches!(
-        unknown.evaluate(&data),
+        unknown.evaluate(&data).decision,
         SeccompDecision::KillProcess
     ));
     let errno = unknown.append(program(RET_ERRNO | 16)).unwrap();
-    assert!(matches!(errno.evaluate(&data), SeccompDecision::Errno(16)));
+    assert!(matches!(
+        errno.evaluate(&data).decision,
+        SeccompDecision::Errno(16)
+    ));
 }
 
 #[ktest]
 fn errno_zero_and_saturation() {
     let data = SeccompData::new_zeroed();
     let policy = SeccompState::default().append(program(RET_ERRNO)).unwrap();
-    assert!(matches!(policy.evaluate(&data), SeccompDecision::Errno(0)));
+    assert!(matches!(
+        policy.evaluate(&data).decision,
+        SeccompDecision::Errno(0)
+    ));
     let policy = policy.append(program(RET_ERRNO | 0xffff)).unwrap();
     assert!(matches!(
-        policy.evaluate(&data),
+        policy.evaluate(&data).decision,
         SeccompDecision::Errno(4095)
     ));
 }
@@ -87,7 +93,7 @@ fn maximum_depth_chain_is_bounded_and_can_be_released() {
     let inherited = policy.clone();
     drop(policy);
     assert!(matches!(
-        inherited.evaluate(&SeccompData::new_zeroed()),
+        inherited.evaluate(&SeccompData::new_zeroed()).decision,
         SeccompDecision::Allow
     ));
     drop(inherited);
@@ -133,7 +139,7 @@ fn inherited_strict_policy_retains_its_mode_and_restrictions() {
     context.set_syscall_ret(usize::MAX);
     let data = SeccompData::from_context(&context, -1);
     assert!(matches!(
-        inherited.evaluate(&data),
+        inherited.evaluate(&data).decision,
         SeccompDecision::StrictViolation
     ));
 }
@@ -146,7 +152,9 @@ fn strict_allows_x86_probe_trampolines() {
     // Native Linux x86 probe ABI numbers, introduced after Linux 6.8.
     for number in [335, 336] {
         assert!(matches!(
-            strict.evaluate(&SeccompData::from_context(&context, number)),
+            strict
+                .evaluate(&SeccompData::from_context(&context, number))
+                .decision,
             SeccompDecision::Allow
         ));
     }
@@ -172,7 +180,7 @@ fn terminated_policies_cannot_be_reactivated() {
             Errno::EINVAL
         );
         assert!(matches!(
-            policy.evaluate(&SeccompData::new_zeroed()),
+            policy.evaluate(&SeccompData::new_zeroed()).decision,
             SeccompDecision::KillProcess
         ));
     }
@@ -180,4 +188,42 @@ fn terminated_policies_cannot_be_reactivated() {
     assert_eq!(dead.exited().mode(), dead.mode());
     assert_eq!(dead.exited().filter_count(), 1);
     assert_eq!(active.mode(), MODE_FILTER);
+}
+
+#[ktest]
+fn log_action_allows_with_data_and_respects_precedence() {
+    let data = SeccompData::new_zeroed();
+    let policy = SeccompState::default()
+        .append(program(RET_LOG | 123))
+        .unwrap();
+    let evaluation = policy.evaluate(&data);
+    assert!(matches!(evaluation.decision, SeccompDecision::Allow));
+    assert_eq!(evaluation.logged_action, Some(RET_LOG));
+    let policy = policy.append(program(RET_ALLOW)).unwrap();
+    assert_eq!(policy.evaluate(&data).logged_action, Some(RET_LOG));
+    let policy = policy.append(program(RET_ERRNO | 13)).unwrap();
+    let evaluation = policy.evaluate(&data);
+    assert!(matches!(evaluation.decision, SeccompDecision::Errno(13)));
+    assert_eq!(evaluation.logged_action, None);
+}
+
+#[ktest]
+fn fatal_actions_log_without_filter_flag() {
+    let data = SeccompData::new_zeroed();
+    for (action, expected) in [
+        (RET_KILL_THREAD, RET_KILL_THREAD),
+        (RET_KILL_PROCESS, RET_KILL_PROCESS),
+        (0x1234_0000, 0x1234_0000),
+    ] {
+        let policy = SeccompState::default().append(program(action)).unwrap();
+        assert_eq!(policy.evaluate(&data).logged_action, Some(expected));
+    }
+    let strict = SeccompState::default().to_strict().unwrap();
+    let context = ostd::arch::cpu::context::UserContext::default();
+    assert_eq!(
+        strict
+            .evaluate(&SeccompData::from_context(&context, -1))
+            .logged_action,
+        Some(RET_KILL_THREAD)
+    );
 }

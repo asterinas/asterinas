@@ -3,7 +3,7 @@
 use super::{
     abi::{
         MODE_FILTER, MODE_STRICT, RET_ACTION_FULL, RET_ALLOW, RET_DATA, RET_ERRNO, RET_KILL_THREAD,
-        RET_TRACE, RET_TRAP, SeccompData,
+        RET_LOG, RET_TRACE, RET_TRAP, SeccompData,
     },
     cbpf::VerifiedProgram,
 };
@@ -40,6 +40,21 @@ struct FilterNode {
     program: VerifiedProgram,
     previous: Option<Arc<FilterNode>>,
     path_insns: usize,
+}
+
+/// A syscall disposition and the action selected for logging.
+pub(crate) struct SeccompEvaluation {
+    pub(crate) decision: SeccompDecision,
+    pub(super) logged_action: Option<u32>,
+}
+
+impl SeccompEvaluation {
+    /// Records the decision when its action requests logging.
+    pub(crate) fn log(&self, ctx: &Context, data: &SeccompData) {
+        if let Some(action) = self.logged_action {
+            data.log(ctx, action);
+        }
+    }
 }
 
 /// A syscall disposition after merging every installed filter.
@@ -171,15 +186,24 @@ impl SeccompState {
         })
     }
 
-    pub(crate) fn evaluate(&self, data: &SeccompData) -> SeccompDecision {
+    pub(crate) fn evaluate(&self, data: &SeccompData) -> SeccompEvaluation {
         if self.is_terminated() {
-            return SeccompDecision::KillProcess;
+            return SeccompEvaluation {
+                decision: SeccompDecision::KillProcess,
+                logged_action: None,
+            };
         }
         if self.is_strict() {
             return if crate::syscall::strict_seccomp_allows(data.syscall_number()) {
-                SeccompDecision::Allow
+                SeccompEvaluation {
+                    decision: SeccompDecision::Allow,
+                    logged_action: None,
+                }
             } else {
-                SeccompDecision::StrictViolation
+                SeccompEvaluation {
+                    decision: SeccompDecision::StrictViolation,
+                    logged_action: Some(RET_KILL_THREAD),
+                }
             };
         }
         let mut result = RET_ALLOW;
@@ -194,14 +218,28 @@ impl SeccompState {
             node = filter.previous.as_deref();
         }
 
-        match result & RET_ACTION_FULL {
-            RET_ALLOW => SeccompDecision::Allow,
+        let action = result & RET_ACTION_FULL;
+        let decision = match action {
+            RET_ALLOW | RET_LOG => SeccompDecision::Allow,
             RET_ERRNO => SeccompDecision::Errno((result & RET_DATA).min(MAX_ERRNO)),
             RET_TRAP => SeccompDecision::Trap(result & RET_DATA),
             RET_TRACE => SeccompDecision::Trace(result & RET_DATA),
             RET_KILL_THREAD => SeccompDecision::KillThread,
             // Unknown or unsupported actions must never permit a syscall.
             _ => SeccompDecision::KillProcess,
+        };
+        // Match Linux's default actions_logged policy. This uses the kernel
+        // logger, not the Linux audit transport; no task audit rules apply.
+        let logged_action = match action {
+            RET_ALLOW | RET_ERRNO | RET_TRAP | RET_TRACE => None,
+            RET_LOG | RET_KILL_THREAD => Some(action),
+            // Linux retains an unknown action's raw value in the log even
+            // though its disposition is KILL_PROCESS.
+            _ => Some(action),
+        };
+        SeccompEvaluation {
+            decision,
+            logged_action,
         }
     }
 }

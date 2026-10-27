@@ -424,11 +424,13 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
 
     loop {
         let policy = ctx.posix_thread.seccomp_snapshot();
-        let decision = policy.evaluate(&SeccompData::from_context(user_ctx, syscall_number as i32));
+        let data = SeccompData::from_context(user_ctx, syscall_number as i32);
+        let evaluation = policy.evaluate(&data);
         // Do not retain a snapshot across a ptrace stop or a blocking syscall.
         drop(policy);
 
-        match decision {
+        evaluation.log(ctx, &data);
+        match evaluation.decision {
             SeccompDecision::Allow => break,
             SeccompDecision::Errno(errno) => {
                 user_ctx.set_syscall_ret((-(errno as isize)) as usize);
