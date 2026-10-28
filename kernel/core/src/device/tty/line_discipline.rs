@@ -18,6 +18,7 @@ use crate::{
 
 const LINE_CAPACITY: usize = 4095;
 const BUFFER_CAPACITY: usize = 8192;
+const ECHO_CAPACITY: usize = 4096;
 
 // `LINE_CAPACITY` must be less than `BUFFER_CAPACITY`. Otherwise, `write()` can be blocked
 // indefinitely if both the current line and the buffer are full, so even the line terminator won't
@@ -29,6 +30,8 @@ pub(crate) struct LineDiscipline {
     current_line: CurrentLine,
     /// Read buffer
     read_buffer: RingBuffer<u8>,
+    /// Echoes not yet committed to the driver
+    echo_buffer: EchoBuffer,
     /// Termios
     termios: CTermios2,
     /// Window size
@@ -81,23 +84,110 @@ impl CurrentLine {
     }
 }
 
+/// The echo of one input character.
+///
+/// A unit is written to the driver as a whole, so a flush between two commits never leaves half
+/// of a `^C` behind.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct EchoUnit {
+    bytes: [u8; 2],
+    len: u8,
+}
+
+impl EchoUnit {
+    fn new(chs: &[u8]) -> Self {
+        let mut bytes = [0; 2];
+        bytes[..chs.len()].copy_from_slice(chs);
+        Self {
+            bytes,
+            len: chs.len() as u8,
+        }
+    }
+
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..self.len as usize]
+    }
+}
+
+/// Echoes waiting to be committed to the driver.
+///
+/// Echoing straight to the driver would require holding the driver's output lock across a whole
+/// input batch, or would lose echoes when the output buffer is full. Instead, echoes are collected
+/// here and committed in batches (see [`LineDiscipline::commit_echoes`]).
+struct EchoBuffer {
+    units: Box<[EchoUnit]>,
+    len: usize,
+}
+
+impl Default for EchoBuffer {
+    fn default() -> Self {
+        Self {
+            units: vec![EchoUnit::default(); ECHO_CAPACITY].into_boxed_slice(),
+            len: 0,
+        }
+    }
+}
+
+impl EchoBuffer {
+    /// Pushes the echo of one input character.
+    fn push(&mut self, chs: &[u8]) {
+        // The caller commits the buffer before pushing into a full one, so this only drops an
+        // echo if the driver has no room for the backlog either.
+        if self.is_full() {
+            return;
+        }
+
+        self.units[self.len] = EchoUnit::new(chs);
+        self.len += 1;
+    }
+
+    /// Returns the echoes that have not been committed.
+    fn pending(&self) -> &[EchoUnit] {
+        &self.units[..self.len]
+    }
+
+    /// Removes the first `len` units, which have been committed.
+    fn consume(&mut self, len: usize) {
+        debug_assert!(len <= self.len);
+
+        self.units.copy_within(len..self.len, 0);
+        self.len -= len;
+    }
+
+    /// Discards all pending echoes.
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    fn is_full(&self) -> bool {
+        self.len == self.units.len()
+    }
+}
+
 impl LineDiscipline {
     /// Creates a new line discipline.
     pub(crate) fn new() -> Self {
         Self {
             current_line: CurrentLine::default(),
             read_buffer: RingBuffer::new(BUFFER_CAPACITY),
+            echo_buffer: EchoBuffer::default(),
             termios: CTermios2::default(),
             winsize: CWinSize::default(),
         }
     }
 
     /// Pushes a character to the line discipline.
-    pub(crate) fn push_char<F1: FnMut(SigNum), F2: FnMut(&[u8])>(
+    ///
+    /// Echoes are not written out immediately. The caller should commit them afterwards with
+    /// [`Self::commit_echoes`].
+    pub(crate) fn push_char<F: FnMut(SigNum)>(
         &mut self,
         ch: u8,
-        mut signal_callback: F1,
-        echo_callback: F2,
+        mut signal_callback: F,
     ) -> Result<()> {
         let ch = if self.termios.input_flags().contains(CInputFlags::ICRNL) && ch == b'\r' {
             b'\n'
@@ -108,17 +198,21 @@ impl LineDiscipline {
         if let Some(signum) = char_to_signal(ch, &self.termios) {
             signal_callback(signum);
 
-            // Unless `NOFLSH` is set, pending input is discarded.
+            // Unless `NOFLSH` is set, pending echoes and input are discarded. Linux also discards
+            // output that the driver has buffered but not yet transmitted. There is no such buffer
+            // here: the console drivers write through, and a pty in Linux keeps what the master
+            // can already read.
             //
-            // TODO: Linux discards pending output here as well. The driver's output buffer is
-            // locked by the echo callback for the whole duration of the caller's character loop,
-            // so draining it needs an operation on the callback itself.
+            // Reference: <https://elixir.bootlin.com/linux/v7.1/source/drivers/tty/n_tty.c#L1067>
+            // Reference: <https://elixir.bootlin.com/linux/v7.1/source/drivers/tty/pty.c#L204>
             if !self.termios.local_flags().contains(CLocalFlags::NOFLSH) {
+                self.echo_buffer.clear();
                 self.drain_input();
             }
 
+            // The signal character is echoed after the flush, so its echo survives.
             if self.termios.local_flags().contains(CLocalFlags::ECHO) {
-                self.output_char(ch, echo_callback);
+                self.echo_char(ch);
             }
 
             // The signal character itself is consumed, not delivered to readers.
@@ -128,7 +222,7 @@ impl LineDiscipline {
         // Typically, a TTY in raw mode does not echo. But the TTY can also be in a CBREAK mode,
         // with ICANON closed and ECHO opened.
         if self.termios.local_flags().contains(CLocalFlags::ECHO) {
-            self.output_char(ch, echo_callback);
+            self.echo_char(ch);
         }
 
         if self.is_full() {
@@ -173,20 +267,38 @@ impl LineDiscipline {
     }
 
     // TODO: respect output flags
-    fn output_char<F: FnMut(&[u8])>(&self, ch: u8, mut echo_callback: F) {
+    fn echo_char(&mut self, ch: u8) {
         match ch {
-            b'\n' => echo_callback(b"\n"),
-            b'\r' => echo_callback(b"\r\n"),
+            b'\n' => self.echo_buffer.push(b"\n"),
+            b'\r' => self.echo_buffer.push(b"\r\n"),
             ch if ch == self.termios.special_char(CCtrlCharId::VERASE) => {
                 // The driver should erase the current character
-                echo_callback(b"\x08");
+                self.echo_buffer.push(b"\x08");
             }
-            ch if is_printable_char(ch) => echo_callback(&[ch]),
+            ch if is_printable_char(ch) => self.echo_buffer.push(&[ch]),
             ch if is_ctrl_char(ch) && self.termios.local_flags().contains(CLocalFlags::ECHOCTL) => {
-                echo_callback(&[b'^', ctrl_char_to_printable(ch)]);
+                self.echo_buffer.push(&[b'^', ctrl_char_to_printable(ch)]);
             }
             _ => {}
         }
+    }
+
+    /// Commits pending echoes to the driver.
+    ///
+    /// `push_echo` returns the number of units that the driver has accepted. The rest stay pending
+    /// until the next commit.
+    pub(crate) fn commit_echoes<F: FnOnce(&[EchoUnit]) -> usize>(&mut self, push_echo: F) {
+        if self.echo_buffer.is_empty() {
+            return;
+        }
+
+        let len = push_echo(self.echo_buffer.pending());
+        self.echo_buffer.consume(len);
+    }
+
+    /// Returns whether the next echo would be dropped unless pending echoes are committed first.
+    pub(crate) fn is_echo_buffer_full(&self) -> bool {
+        self.echo_buffer.is_full()
     }
 
     /// Reads bytes from `self` to `dst`, returning the actual bytes read.
