@@ -994,6 +994,60 @@ impl Path {
         self.inode().set_ctime(&self.dentry, time)
     }
 
+    /// Updates inode timestamps after checking mount and caller permissions.
+    ///
+    /// A touch request sets both atime and mtime to the current time. Linux
+    /// permits it for the inode owner, a caller with `CAP_FOWNER`, or a caller
+    /// with write permission. Any other timestamp update requires ownership or
+    /// `CAP_FOWNER`.
+    pub(crate) fn update_times(
+        &self,
+        atime: Option<Duration>,
+        mtime: Option<Duration>,
+        ctime: Duration,
+        is_touch: bool,
+        ctx: &Context,
+    ) -> Result<()> {
+        self.check_mount_writable()?;
+
+        // FIXME: Keep this check and the timestamp updates in one inode critical
+        // section. `metadata()` returns a snapshot, so a concurrent chown() can
+        // change the owner before the updates run.
+        let metadata = self.metadata()?;
+        let credentials = ctx.posix_thread.credentials();
+        let is_owner = credentials.fsuid() == metadata.uid;
+
+        if !is_owner {
+            let has_fowner = lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                ctx.thread_local.borrow_user_ns().as_ref(),
+                ctx.posix_thread,
+                CapSet::FOWNER,
+            ))
+            .is_ok();
+
+            if !has_fowner {
+                if is_touch {
+                    self.inode().check_permission(Permission::MAY_WRITE)?;
+                } else {
+                    return_errno_with_message!(
+                        Errno::EPERM,
+                        "only the owner may set explicit timestamps"
+                    );
+                }
+            }
+        }
+
+        if let Some(atime) = atime {
+            self.set_atime(atime);
+        }
+        if let Some(mtime) = mtime {
+            self.set_mtime(mtime);
+        }
+        self.set_ctime(ctime);
+        notify::on_attr_change(self);
+        Ok(())
+    }
+
     /// Resizes the file.
     pub(crate) fn resize(&self, size: usize) -> Result<()> {
         self.inode().check_permission(Permission::MAY_WRITE)?;

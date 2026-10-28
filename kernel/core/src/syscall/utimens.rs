@@ -6,7 +6,6 @@ use ostd::mm::VmIo;
 
 use super::{SyscallReturn, constants::MAX_FILENAME_LEN};
 use crate::{
-    fs,
     fs::{
         file::{
             StatusFlags,
@@ -165,6 +164,12 @@ struct TimeSpecPair {
     mtime: TimeSpec,
 }
 
+impl TimeSpecPair {
+    fn is_touch(&self) -> bool {
+        self.atime.is_now() && self.mtime.is_now()
+    }
+}
+
 /// An enum to hold access or modification time.
 #[derive(Debug)]
 enum TimeSpec {
@@ -174,6 +179,10 @@ enum TimeSpec {
 }
 
 impl TimeSpec {
+    fn is_now(&self) -> bool {
+        matches!(self, Self::Now)
+    }
+
     /// Converts to a duration, using `now` as [`Self::Now`].
     fn with_now(self, now: Duration) -> Option<Duration> {
         match self {
@@ -258,11 +267,16 @@ fn do_utimes(
         file.path().clone()
     };
 
-    vfs_utimes(&path, times)
+    vfs_utimes(&path, times, ctx)
 }
 
-fn vfs_utimes(path: &Path, times: Option<TimeSpecPair>) -> Result<SyscallReturn> {
+fn vfs_utimes(
+    path: &Path,
+    times: Option<TimeSpecPair>,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     let now = RealTimeCoarseClock::get().read_time();
+    let is_touch = times.as_ref().is_none_or(TimeSpecPair::is_touch);
     let (atime, mtime, ctime) = match times {
         Some(times) => {
             let atime = times.atime.with_now(now);
@@ -272,15 +286,7 @@ fn vfs_utimes(path: &Path, times: Option<TimeSpecPair>) -> Result<SyscallReturn>
         None => (Some(now), Some(now), now),
     };
 
-    // Update times.
-    if let Some(atime) = atime {
-        path.set_atime(atime);
-    }
-    if let Some(mtime) = mtime {
-        path.set_mtime(mtime);
-    }
-    path.set_ctime(ctime);
-    fs::vfs::notify::on_attr_change(path);
+    path.update_times(atime, mtime, ctime, is_touch, ctx)?;
     Ok(SyscallReturn::Return(0))
 }
 
