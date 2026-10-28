@@ -429,9 +429,12 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
         // Do not retain a snapshot across a ptrace stop or a blocking syscall.
         drop(policy);
 
-        // TRACE is logged only when it skips the syscall, not when the tracer
-        // continues it or a post-trace evaluation returns TRACE again.
-        if !matches!(evaluation.decision, SeccompDecision::Trace(_)) {
+        // TRACE and USER_NOTIF are logged only when they skip the syscall,
+        // not when the tracer or supervisor permits it to continue.
+        if !matches!(
+            evaluation.decision,
+            SeccompDecision::Trace(_) | SeccompDecision::UserNotification(_)
+        ) {
             evaluation.log(ctx, &data);
         }
         match evaluation.decision {
@@ -479,6 +482,25 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
                 // must not report another event for the same syscall.
                 // See __seccomp_filter() in Linux kernel/seccomp.c.
                 has_traced = true;
+            }
+            SeccompDecision::UserNotification(ref listener) => {
+                let result = match listener {
+                    Some(listener) => listener.notify(ctx, &data),
+                    None => Err(Error::with_message(Errno::ENOSYS, "no seccomp listener")),
+                };
+                match result {
+                    // CONTINUE executes the already filtered call without rechecking.
+                    Ok(None) => break,
+                    Ok(Some(value)) => user_ctx.set_syscall_ret(value),
+                    Err(error) => {
+                        if error.error() == Errno::ERESTARTSYS {
+                            ctx.thread_local.request_syscall_restart();
+                        }
+                        user_ctx.set_syscall_ret((-(error.error() as isize)) as usize);
+                    }
+                }
+                evaluation.log(ctx, &data);
+                return;
             }
             SeccompDecision::KillThread => {
                 ctx.posix_thread.mark_seccomp_dead();

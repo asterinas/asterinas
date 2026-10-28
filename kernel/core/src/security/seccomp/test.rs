@@ -325,3 +325,38 @@ fn listener_hup_counts_threads_not_policy_snapshots() {
     assert_eq!(snapshot.filter_count(), 1);
     assert_eq!(state.filter_count(), 1);
 }
+
+#[ktest]
+fn notification_uses_only_the_winning_filters_listener_and_log_flag() {
+    use super::listener::Listener;
+
+    let listener = Listener::new().unwrap();
+    let policy = SeccompState::default()
+        .append_with_listener(
+            program(RET_USER_NOTIF | 0xffff),
+            FilterLogging::Requested,
+            Some(listener.clone()),
+        )
+        .unwrap()
+        .append(program(RET_TRACE), FilterLogging::Default)
+        .unwrap();
+    let data = SeccompData::new_zeroed();
+    let result = policy.evaluate(&data);
+    assert!(
+        matches!(result.decision, SeccompDecision::UserNotification(Some(ref selected))
+        if Arc::ptr_eq(selected, &listener))
+    );
+    assert_eq!(result.logged_action, Some(RET_USER_NOTIF));
+
+    // An equal-priority newer filter without a listener must not borrow an
+    // older filter's listener, even though that listener is still open.
+    let policy = policy
+        .append(program(RET_USER_NOTIF), FilterLogging::Default)
+        .unwrap();
+    let result = policy.evaluate(&data);
+    assert!(matches!(
+        result.decision,
+        SeccompDecision::UserNotification(None)
+    ));
+    assert_eq!(result.logged_action, None);
+}

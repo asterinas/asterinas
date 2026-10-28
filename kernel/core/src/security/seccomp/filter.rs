@@ -3,7 +3,7 @@
 use super::{
     abi::{
         MODE_FILTER, MODE_STRICT, RET_ACTION_FULL, RET_ALLOW, RET_DATA, RET_ERRNO, RET_KILL_THREAD,
-        RET_LOG, RET_TRACE, RET_TRAP, SeccompData,
+        RET_LOG, RET_TRACE, RET_TRAP, RET_USER_NOTIF, SeccompData,
     },
     cbpf::VerifiedProgram,
     listener::Listener,
@@ -101,6 +101,7 @@ pub(crate) enum SeccompDecision {
     Errno(u32),
     Trap(u32),
     Trace(u32),
+    UserNotification(Option<Arc<Listener>>),
     KillThread,
     KillProcess,
     StrictViolation,
@@ -284,6 +285,7 @@ impl SeccompState {
         }
         let mut result = RET_ALLOW;
         let mut logging = FilterLogging::Default;
+        let mut listener = None;
         let mut node = self.head().map(Arc::as_ref);
         while let Some(filter) = node {
             let current = filter.program.run(data);
@@ -292,6 +294,7 @@ impl SeccompState {
             if ((current & RET_ACTION_FULL) as i32) < ((result & RET_ACTION_FULL) as i32) {
                 result = current;
                 logging = filter.logging;
+                listener = filter.listener.as_ref();
             }
             node = filter.previous.as_deref();
         }
@@ -302,6 +305,7 @@ impl SeccompState {
             RET_ERRNO => SeccompDecision::Errno((result & RET_DATA).min(MAX_ERRNO)),
             RET_TRAP => SeccompDecision::Trap(result & RET_DATA),
             RET_TRACE => SeccompDecision::Trace(result & RET_DATA),
+            RET_USER_NOTIF => SeccompDecision::UserNotification(listener.cloned()),
             RET_KILL_THREAD => SeccompDecision::KillThread,
             // Unknown or unsupported actions must never permit a syscall.
             _ => SeccompDecision::KillProcess,
@@ -311,7 +315,7 @@ impl SeccompState {
         let logged_action = match action {
             RET_ALLOW => None,
             RET_LOG | RET_KILL_THREAD => Some(action),
-            RET_ERRNO | RET_TRAP | RET_TRACE => {
+            RET_ERRNO | RET_TRAP | RET_TRACE | RET_USER_NOTIF => {
                 (logging == FilterLogging::Requested).then_some(action)
             }
             // Linux retains an unknown action's raw value in the log even

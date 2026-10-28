@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #include "seccomp_common.h"
+#include "seccomp_log_capture.h"
 #include <sys/ptrace.h>
 #if defined(__x86_64__)
 #include <sys/user.h>
@@ -289,15 +290,7 @@ static int trace_log(int skip)
 
 FN_TEST(logging)
 {
-	/* Kernel logs and terminal output use separate writers. Spool test output
-	 * until every notifying child has exited so serial records cannot be split
-	 * by a LOG_EXPECT line or a test result from userspace.
-	 */
-	FILE *output = tmpfile();
-	CHECK_WITH(output != NULL, _ret);
-	fflush(stdout);
-	int console = CHECK(dup(STDOUT_FILENO));
-	CHECK(dup2(fileno(output), STDOUT_FILENO));
+	struct log_capture capture = capture_log_output();
 
 	uint32_t action = SECCOMP_RET_LOG;
 	TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0, &action));
@@ -324,14 +317,6 @@ FN_TEST(logging)
 	TEST_RES(trace_log(0), _ret == 0);
 	TEST_RES(trace_log(1), _ret == 0);
 #endif
-	fflush(stdout);
-	CHECK(dup2(console, STDOUT_FILENO));
-	CHECK(close(console));
-	CHECK(fseek(output, 0, SEEK_SET));
-	int byte;
-	while ((byte = fgetc(output)) != EOF)
-		putchar(byte);
-	CHECK_WITH(ferror(output), _ret == 0);
-	CHECK(fclose(output));
+	flush_log_output(capture);
 }
 END_TEST()

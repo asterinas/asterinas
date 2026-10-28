@@ -14,6 +14,7 @@ pub(super) const RET_KILL_PROCESS: u32 = 0x8000_0000;
 pub(super) const RET_KILL_THREAD: u32 = 0;
 pub(super) const RET_ERRNO: u32 = 0x0005_0000;
 pub(super) const RET_TRAP: u32 = 0x0003_0000;
+pub(super) const RET_USER_NOTIF: u32 = 0x7fc0_0000;
 pub(super) const RET_TRACE: u32 = 0x7ff0_0000;
 pub(super) const RET_LOG: u32 = 0x7ffc_0000;
 pub(super) const RET_ALLOW: u32 = 0x7fff_0000;
