@@ -291,3 +291,37 @@ fn fatal_actions_log_without_filter_flag() {
         Some(RET_KILL_THREAD)
     );
 }
+
+#[ktest]
+fn listener_hup_counts_threads_not_policy_snapshots() {
+    use super::listener::Listener;
+    use crate::{events::IoEvents, process::signal::Pollable};
+
+    let listener = Listener::new().unwrap();
+    let state = SeccompState::default()
+        .append_with_listener(
+            program(RET_ALLOW),
+            FilterLogging::Default,
+            Some(listener.clone()),
+        )
+        .unwrap();
+    let first = ThreadSeccompState::new(state.clone());
+    let second = ThreadSeccompState::new(first.snapshot());
+    let snapshot = first.snapshot();
+    assert!(listener.poll(IoEvents::HUP, None).is_empty());
+    drop(first);
+    assert!(listener.poll(IoEvents::HUP, None).is_empty());
+    // An appended policy must keep the listener active while replacing its ancestor.
+    let appended = ThreadSeccompState::new(
+        second
+            .snapshot()
+            .append(program(RET_ALLOW), FilterLogging::Default)
+            .unwrap(),
+    );
+    drop(second);
+    assert!(listener.poll(IoEvents::HUP, None).is_empty());
+    drop(appended);
+    assert_eq!(listener.poll(IoEvents::HUP, None), IoEvents::HUP);
+    assert_eq!(snapshot.filter_count(), 1);
+    assert_eq!(state.filter_count(), 1);
+}

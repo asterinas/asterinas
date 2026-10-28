@@ -24,7 +24,7 @@ use crate::{
         posix_thread::ptrace::TraceeStatus,
         signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
-    security::seccomp::SeccompState,
+    security::seccomp::{SeccompState, ThreadSeccompState},
     thread::{Thread, Tid},
     time::{Timer, TimerManager, clocks::ProfClock, timer::TimerFn},
 };
@@ -99,7 +99,7 @@ pub struct PosixThread {
     default_timer_slack_ns: AtomicU64,
 
     /// The effective per-thread syscall filtering policy.
-    seccomp: Mutex<SeccompState>,
+    seccomp: Mutex<ThreadSeccompState>,
 
     // Ptrace
     /// Status of being traced.
@@ -116,10 +116,13 @@ pub struct PosixThread {
 
 impl PosixThread {
     pub(crate) fn seccomp_snapshot(&self) -> SeccompState {
-        self.seccomp.lock().clone()
+        self.seccomp.lock().snapshot()
     }
 
     pub(crate) fn set_seccomp(&self, state: SeccompState) {
+        // Attach before detaching the old policy so a retained listener never
+        // temporarily loses its last user during append or TSYNC.
+        let state = ThreadSeccompState::new(state);
         let previous = core::mem::replace(&mut *self.seccomp.lock(), state);
         drop(previous);
     }

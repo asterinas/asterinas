@@ -6,16 +6,19 @@ use super::{
     abi::{SockFilter, SockFprog},
     cbpf::{MAX_INSNS, VerifiedProgram},
     filter::FilterLogging,
+    listener::{Listener, ListenerFile},
 };
 use crate::{
+    fs::file::file_table::{FdFlags, FileDescReservation},
     prelude::*,
-    process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    process::{ResourceType, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     security::lsm::hooks::{self, CapableContext},
     thread::AsThread,
 };
 
 const FILTER_FLAG_TSYNC: u32 = 1;
 const FILTER_FLAG_LOG: u32 = 1 << 1;
+const FILTER_FLAG_NEW_LISTENER: u32 = 1 << 3;
 const FILTER_FLAG_TSYNC_ESRCH: u32 = 1 << 4;
 
 /// Enters strict mode, serialized against filter installation and TSYNC.
@@ -28,8 +31,22 @@ pub(super) fn install_strict(ctx: &Context) -> Result<()> {
 
 /// Installs a new filter after preparing it without modifying the effective policy.
 pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Result<isize> {
-    if flags & !(FILTER_FLAG_TSYNC | FILTER_FLAG_LOG | FILTER_FLAG_TSYNC_ESRCH) != 0 {
+    if flags
+        & !(FILTER_FLAG_TSYNC
+            | FILTER_FLAG_LOG
+            | FILTER_FLAG_NEW_LISTENER
+            | FILTER_FLAG_TSYNC_ESRCH)
+        != 0
+    {
         return_errno_with_message!(Errno::EINVAL, "unsupported seccomp filter flags");
+    }
+    let sync_threads = flags & FILTER_FLAG_TSYNC != 0;
+    let new_listener = flags & FILTER_FLAG_NEW_LISTENER != 0;
+    if sync_threads && new_listener && flags & FILTER_FLAG_TSYNC_ESRCH == 0 {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "a synchronized listener requires TSYNC_ESRCH"
+        );
     }
 
     let user_space = ctx.user_space();
@@ -58,11 +75,29 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
     user_space.read_bytes(fprog.filter as Vaddr, raw.as_mut_bytes())?;
     let program = VerifiedProgram::new(raw)?;
 
+    // Reserve before policy validation, but do not expose the file until all
+    // threads have received the new policy. Failure releases the reservation.
+    let listener = if new_listener {
+        let limit = ctx
+            .process
+            .resource_limits()
+            .get_rlimit(ResourceType::RLIMIT_NOFILE)
+            .get_cur();
+        let reservation = {
+            let table = ctx.thread_local.borrow_file_table();
+            FileDescReservation::new(&table, limit)?
+        };
+        let state = Listener::new()?;
+        let file = ListenerFile::new(state.clone())?;
+        Some((reservation, file, state))
+    } else {
+        None
+    };
+
     // Linux accepts TSYNC_ESRCH without TSYNC; it has no effect in that case.
     // Lock order: credential guard -> task set -> per-thread seccomp state.
     // Ordinary installs share the task-set lock, so an append cannot lose a
     // concurrent TSYNC update. User copies and verification precede all locks.
-    let sync_threads = flags & FILTER_FLAG_TSYNC != 0;
     let _cred_guard = if sync_threads {
         Some(ctx.process.cred_guard().lock_for_seccomp()?)
     } else {
@@ -75,7 +110,11 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
     } else {
         FilterLogging::Default
     };
-    let new_state = old_state.append(program, logging)?;
+    let new_state = old_state.append_with_listener(
+        program,
+        logging,
+        listener.as_ref().map(|(_, _, state)| state.clone()),
+    )?;
 
     if sync_threads {
         for task in tasks.as_slice() {
@@ -108,7 +147,13 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
             }
         }
     }
-    Ok(0)
+    drop(tasks);
+    drop(_cred_guard);
+    if let Some((reservation, file, _)) = listener {
+        Ok(reservation.install(file, FdFlags::CLOEXEC).into())
+    } else {
+        Ok(0)
+    }
 }
 
 fn check_install_permission(ctx: &Context) -> Result<()> {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::vec::Vec;
+use alloc::{collections::TryReserveError, vec::Vec};
 use core::ops::Range;
 
 /// A `SlotVec` is a type of vector that retains the index of an item, even when items are added to
@@ -45,6 +45,11 @@ impl<T> SlotVec<T> {
     /// Returns the number of slots.
     pub fn slots_len(&self) -> usize {
         self.slots.len()
+    }
+
+    /// Reserves capacity for at least `additional` more slots without occupying them.
+    pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError> {
+        self.slots.try_reserve(additional)
     }
 
     /// Gets the item at position `idx`.

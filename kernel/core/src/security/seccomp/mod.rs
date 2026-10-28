@@ -16,6 +16,7 @@ mod abi;
 mod cbpf;
 mod filter;
 mod install;
+mod listener;
 
 #[cfg(ktest)]
 mod test;
@@ -28,7 +29,7 @@ use self::abi::{
 };
 pub(crate) use self::{
     abi::SeccompData,
-    filter::{SeccompDecision, SeccompState},
+    filter::{SeccompDecision, SeccompState, ThreadSeccompState},
 };
 use crate::{cpu::LinuxAbi, prelude::*, process::signal};
 

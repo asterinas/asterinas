@@ -6,6 +6,7 @@ use super::{
         RET_LOG, RET_TRACE, RET_TRAP, SeccompData,
     },
     cbpf::VerifiedProgram,
+    listener::Listener,
 };
 use crate::prelude::*;
 
@@ -21,6 +22,33 @@ const MODE_DEAD: u32 = MODE_FILTER + 1;
 #[derive(Clone, Default)]
 pub(crate) struct SeccompState {
     policy: Policy,
+}
+
+/// A policy attached to a thread, distinct from a temporary evaluation snapshot.
+pub(crate) struct ThreadSeccompState {
+    state: SeccompState,
+}
+
+impl ThreadSeccompState {
+    pub(crate) fn new(state: SeccompState) -> Self {
+        state.for_each_listener(|listener| listener.attach_thread());
+        Self { state }
+    }
+
+    pub(crate) fn snapshot(&self) -> SeccompState {
+        self.state.clone()
+    }
+
+    pub(crate) fn mark_dead(&mut self) {
+        self.state.mark_dead();
+    }
+}
+
+impl Drop for ThreadSeccompState {
+    fn drop(&mut self) {
+        self.state
+            .for_each_listener(|listener| listener.detach_thread());
+    }
 }
 
 #[derive(Clone, Default)]
@@ -41,6 +69,7 @@ struct FilterNode {
     previous: Option<Arc<FilterNode>>,
     path_insns: usize,
     logging: FilterLogging,
+    listener: Option<Arc<Listener>>,
 }
 
 /// Whether the filter requests logging of its non-ALLOW decisions.
@@ -165,7 +194,27 @@ impl SeccompState {
         false
     }
 
+    fn for_each_listener(&self, visit_fn: impl Fn(&Listener)) {
+        let mut node = self.head();
+        while let Some(filter) = node {
+            if let Some(listener) = &filter.listener {
+                visit_fn(listener);
+            }
+            node = filter.previous.as_ref();
+        }
+    }
+
+    #[cfg(ktest)]
     pub(super) fn append(&self, program: VerifiedProgram, logging: FilterLogging) -> Result<Self> {
+        self.append_with_listener(program, logging, None)
+    }
+
+    pub(super) fn append_with_listener(
+        &self,
+        program: VerifiedProgram,
+        logging: FilterLogging,
+        listener: Option<Arc<Listener>>,
+    ) -> Result<Self> {
         if self.is_terminated() {
             return_errno_with_message!(Errno::EINVAL, "cannot change a terminated seccomp policy");
         }
@@ -174,6 +223,22 @@ impl SeccompState {
                 Errno::EINVAL,
                 "cannot change strict seccomp mode to filter"
             );
+        }
+        if listener.is_some() {
+            let mut node = self.head();
+            while let Some(filter) = node {
+                if filter
+                    .listener
+                    .as_ref()
+                    .is_some_and(|listener| listener.is_open())
+                {
+                    return_errno_with_message!(
+                        Errno::EBUSY,
+                        "a seccomp listener is already attached"
+                    );
+                }
+                node = filter.previous.as_ref();
+            }
         }
         let path_insns = program.len()
             + self
@@ -188,6 +253,7 @@ impl SeccompState {
             previous: self.head().cloned(),
             path_insns,
             logging,
+            listener,
         })
         .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate seccomp filter"))?;
 
