@@ -18,7 +18,7 @@
 //! no two writers touch the same bytes. `next_generation` is an `AtomicU32`
 //! incremented once per newly allocated inode.
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use aster_block::bio::BioCompleteFn;
 use device_id::DeviceId;
@@ -58,6 +58,9 @@ pub(crate) struct Ext4 {
     /// Backing block device.
     block_device: Arc<dyn BlockDevice>,
     extent_reclaim: super::reclaim::DeferredReclaim,
+    /// Updated under the superblock state lock; retained until primary writeback succeeds.
+    dirty_allocation_groups: Mutex<BTreeSet<usize>>,
+    backups_dirty: AtomicBool,
     /// Immutable superblock information with separately locked runtime state.
     super_block: SuperBlock,
     /// Block group descriptors and caches.
@@ -201,6 +204,8 @@ impl Ext4 {
         let ext2 = Arc::new_cyclic(|weak_self| Ext4 {
             block_device: device,
             extent_reclaim: super::reclaim::DeferredReclaim::default(),
+            dirty_allocation_groups: Mutex::new(BTreeSet::new()),
+            backups_dirty: AtomicBool::new(false),
             super_block,
             block_groups,
             group_descriptors_segment,
@@ -371,6 +376,7 @@ impl Ext4 {
             let range = group.alloc_blocks(count, sb_free_blocks)?;
             if !range.is_empty() {
                 let allocated_count = range.end - range.start;
+                self.dirty_allocation_groups.lock().insert(group_idx);
                 state.dec_free_blocks(allocated_count)?;
                 return Ok(range);
             }
@@ -423,6 +429,7 @@ impl Ext4 {
             let freed_count =
                 group.free_blocks(group_start_bit..(group_start_bit + blocks_in_group))?;
             if freed_count > 0 {
+                self.dirty_allocation_groups.lock().insert(group_idx);
                 state.inc_free_blocks(freed_count)?;
             }
             current_block += blocks_in_group;
@@ -510,8 +517,14 @@ impl Ext4 {
             .find_group(ino)
             .ok_or_else(|| Error::with_message(Errno::EIO, "block group index out of range"))?;
 
+        if state.free_inodes_count().checked_add(1).is_none() {
+            return_errno_with_message!(Errno::EIO, "free inode counter overflow");
+        }
         let was_allocated = group.free_inode(ino, inode_type)?;
         if was_allocated {
+            self.dirty_allocation_groups
+                .lock()
+                .insert(group.group_idx());
             state.inc_free_inodes()?;
         }
 
@@ -592,15 +605,43 @@ impl Ext4 {
         for group in &self.block_groups {
             group.sync_inodes()?;
         }
-        self.sync_allocation_metadata()
+        self.sync_allocation_metadata()?;
+        self.sync_metadata()
     }
 
     /// Persists dirty allocation bitmaps, group descriptors, and block counts.
     pub(super) fn sync_allocation_metadata(&self) -> Result<()> {
-        for group in &self.block_groups {
-            group.sync_metadata(&self.group_descriptors_segment)?;
+        // Allocation/free take the same state lock before group metadata.
+        // Holding it through writeback keeps counts, bitmap snapshots and the
+        // pending index stable, and serializes concurrent filesystem syncs.
+        let mut state = self.super_block.write_state();
+        let pending = self.dirty_allocation_groups.lock().clone();
+        if pending.is_empty() && !state.is_dirty() {
+            return Ok(());
         }
-        self.sync_metadata()
+        let mut descriptor_blocks = BTreeSet::new();
+        for &idx in &pending {
+            self.block_groups[idx].sync_metadata(&self.group_descriptors_segment)?;
+            descriptor_blocks.insert(idx * size_of::<RawBlockGroup>() / BLOCK_SIZE);
+        }
+        for index in descriptor_blocks {
+            let mut bytes = Box::new([0u8; BLOCK_SIZE]);
+            self.group_descriptors_segment
+                .read_bytes(index * BLOCK_SIZE, bytes.as_mut())?;
+            self.block_device.write_bytes(
+                Bid::new(u64::from(self.super_block.group_descriptors_bid(0)) + index as u64)
+                    .to_offset(),
+                bytes.as_ref(),
+            )?;
+        }
+        state.set_wtime(utils::now());
+        let raw = self.super_block.to_raw(&state);
+        self.block_device
+            .write_bytes(SUPER_BLOCK_OFFSET, raw.as_bytes())?;
+        self.backups_dirty.store(true, Ordering::Relaxed);
+        state.clear_dirty();
+        self.dirty_allocation_groups.lock().clear();
+        Ok(())
     }
 
     /// Allocates a new inode number.
@@ -629,6 +670,7 @@ impl Ext4 {
             if ino < sb.first_ino() || ino > total_inodes {
                 return_errno_with_message!(Errno::EIO, "allocated inode number out of valid range");
             }
+            self.dirty_allocation_groups.lock().insert(group_idx);
             state.dec_free_inodes()?;
 
             return Ok(ino);
@@ -698,7 +740,7 @@ impl Ext4 {
         let mut sb_guard = self.super_block.write_state();
 
         let any_group_dirty = self.block_groups.iter().any(|group| group.is_desc_dirty());
-        if !sb_guard.is_dirty() && !any_group_dirty {
+        if !sb_guard.is_dirty() && !any_group_dirty && !self.backups_dirty.load(Ordering::Relaxed) {
             return Ok(());
         }
 
@@ -731,6 +773,7 @@ impl Ext4 {
         }
 
         sb_guard.clear_dirty();
+        self.backups_dirty.store(false, Ordering::Relaxed);
         Ok(())
     }
 
@@ -1165,6 +1208,19 @@ mod test {
         let expected_free_inodes = ext2.super_block().read_state().free_inodes_count();
         assert!(ext2.block_group(0).is_desc_dirty());
 
+        // File-level allocation sync writes only primary metadata; failure of
+        // its GDT write must remain retryable without touching backup copies.
+        disk.fail_write_block(Some(sb.group_descriptors_bid(0) as usize));
+        assert!(ext2.sync_allocation_metadata().is_err());
+        disk.fail_write_block(None);
+        ext2.sync_allocation_metadata().unwrap();
+        assert_eq!(disk.block_writes(sb.bid(1) as usize), 0);
+        let primary = disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        assert_eq!(primary.free_inodes_count, expected_free_inodes);
+        // Full filesystem sync still refreshes backups.
         ext2.sync_all().unwrap();
 
         assert!(!ext2.super_block().read_state().is_dirty());
