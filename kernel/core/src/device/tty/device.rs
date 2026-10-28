@@ -76,58 +76,39 @@ impl Device for TtyDevice {
 
 /// Corresponds to `/dev/console` in the file system. This device represents a console to which
 /// system messages will be sent.
-pub(crate) struct SystemConsole {
+pub(super) struct SystemConsole {
     inner: Arc<dyn Device>,
 }
 
-/// The device ID of `/dev/console`.
-pub(crate) const CONSOLE_DEVICE_ID: DeviceId = DeviceId::new(MajorId::new(5), MinorId::new(1));
-
 impl SystemConsole {
-    /// Returns the singleton instance of the console device.
-    pub(crate) fn singleton() -> &'static Arc<SystemConsole> {
-        static INSTANCE: Once<Arc<SystemConsole>> = Once::new();
+    pub(super) fn from_console_param() -> Self {
+        // TODO: Support specifying multiple TTY devices, e.g., "console=hvc0 console=tty0".
+        let console_name = CONSOLES
+            .get()
+            .and_then(|consoles| consoles.first().map(|s| s.as_str()))
+            .unwrap_or("tty0");
 
-        INSTANCE.call_once(|| {
-            // TODO: Support specifying multiple TTY devices, e.g., "console=hvc0 console=tty0".
-            let console_name = CONSOLES
-                .get()
-                .and_then(|consoles| consoles.first().map(|s| s.as_str()))
-                .unwrap_or("tty0");
-
-            let device = match console_name {
-                "tty0" => Some(Arc::new(Tty0Device) as _),
-                "ttyS0" => serial0_device().cloned().map(|device| device as _),
-                "hvc0" => hvc0_device().cloned().map(|device| device as _),
-                _ => None,
-            };
-            let inner = device.unwrap_or_else(|| {
+        let device = match console_name {
+            "tty0" => Some(Arc::new(Tty0Device) as _),
+            "ttyS0" => serial0_device().cloned().map(|device| device as _),
+            "hvc0" => hvc0_device().cloned().map(|device| device as _),
+            _ => None,
+        };
+        let inner = match device {
+            Some(inner) => inner,
+            None => {
                 warn!(
                     "'{}' console not found, falling back to 'tty0'",
                     console_name
                 );
                 Arc::new(Tty0Device) as _
-            });
+            }
+        };
 
-            Arc::new(Self { inner })
-        })
-    }
-}
-
-impl Device for SystemConsole {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Char
+        Self { inner }
     }
 
-    fn id(&self) -> DeviceId {
-        CONSOLE_DEVICE_ID
-    }
-
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
-        Some(DevtmpfsNodeMeta::new("console").unwrap())
-    }
-
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+    pub(super) fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         self.inner.open()
     }
 }
@@ -135,7 +116,6 @@ impl Device for SystemConsole {
 pub(super) fn init_in_first_process() -> Result<()> {
     char::register(Arc::new(Tty0Device))?;
     char::register(Arc::new(TtyDevice))?;
-    char::register(SystemConsole::singleton().clone())?;
 
     Ok(())
 }
