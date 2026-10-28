@@ -141,9 +141,56 @@ mod tests {
     use ostd::prelude::ktest;
 
     use crate::fs::ext4::{
-        fs::MountFlavor,
+        FilePerm,
+        fs::{MountFlavor, ROOT_INO},
+        prelude::*,
         test_utils::{ExtFixtureBuilder, create_file},
     };
+
+    #[ktest]
+    fn deleted_inodes_without_mappings_retry_failed_reclaim() {
+        crate::time::clocks::init_for_ktest();
+        for flavor in [MountFlavor::Ext2, MountFlavor::Ext4] {
+            let f = ExtFixtureBuilder::new(1, 256)
+                .with_mount_flavor(flavor)
+                .with_free_inodes(1000, 1000)
+                .build()
+                .unwrap();
+            for inode_type in [
+                InodeType::SymLink,
+                InodeType::CharDevice,
+                InodeType::BlockDevice,
+                InodeType::NamedPipe,
+                InodeType::Socket,
+            ] {
+                let before = f.fs.super_block().read_state().free_inodes_count();
+                let inode =
+                    f.fs.create_inode(ROOT_INO, inode_type, FilePerm::from_bits_truncate(0o600))
+                        .unwrap();
+                let ino = inode.ino;
+                assert!(inode.inner.read().block_manager().is_err());
+                inode.inner.write().desc.link_count = 0;
+                // Make free_inode fail after descriptor staging. Drop must
+                // transfer ownership of unfinished cleanup even without a tree.
+                f.fs.super_block()
+                    .write_state()
+                    .set_free_inodes_count(u32::MAX);
+                drop(inode);
+                assert!(f.fs.block_group(0).is_inode_allocated(ino));
+                let retry = f.fs.retry_deferred_reclaim();
+                f.fs.super_block()
+                    .write_state()
+                    .set_free_inodes_count(before - 1);
+                assert!(retry.is_err());
+                f.fs.retry_deferred_reclaim().unwrap();
+                assert!(!f.fs.block_group(0).is_inode_allocated(ino));
+                assert_eq!(f.fs.super_block().read_state().free_inodes_count(), before);
+                assert_eq!(f.fs.block_group(0).free_inodes_count(), 1000);
+                f.fs.retry_deferred_reclaim().unwrap();
+                assert_eq!(f.fs.super_block().read_state().free_inodes_count(), before);
+            }
+        }
+    }
 
     #[ktest]
     fn extent_inode_publication_waits_for_nodes_and_drop_retries_reclaim() {

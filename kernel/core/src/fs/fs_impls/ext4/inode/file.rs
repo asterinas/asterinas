@@ -481,10 +481,7 @@ fn is_block_aligned(offset: usize) -> bool {
 mod test {
     use ostd::prelude::ktest;
 
-    use super::{
-        super::{RAW_BLOCK_PTRS_LEN, io_range::IoRange},
-        *,
-    };
+    use super::{super::io_range::IoRange, *};
     use crate::{
         fs::ext4::test_utils::{ExtFixtureBuilder, assert_errno, create_file},
         time::clocks,
@@ -715,50 +712,5 @@ mod test {
         let mut writer = VmWriter::from(readback.as_mut_slice()).to_fallible();
         file.read_direct_at(0, &mut writer).unwrap();
         assert_eq!(readback, base_data);
-    }
-    #[ktest]
-    fn falloc_allocate_returns_enospc_after_consuming_blocks() {
-        clocks::init_for_ktest();
-
-        let f = ExtFixtureBuilder::new(1, 256)
-            .with_free_blocks(2, 2)
-            .build()
-            .unwrap();
-        let file =
-            make_live_file_inode(&f.fs, 69, 0, 0, FileFlags::empty(), [0; RAW_BLOCK_PTRS_LEN]);
-
-        file.fallocate(FallocMode::Allocate, 0, BLOCK_SIZE * 2)
-            .unwrap();
-        assert_eq!(f.fs.super_block().read_state().free_blocks_count(), 0);
-        assert_eq!(file.file_size(), BLOCK_SIZE * 2);
-
-        assert_errno!(
-            file.fallocate(FallocMode::Allocate, BLOCK_SIZE * 2, BLOCK_SIZE),
-            Errno::ENOSPC
-        );
-        assert_eq!(f.fs.super_block().read_state().free_blocks_count(), 0);
-        assert_eq!(file.file_size(), BLOCK_SIZE * 2);
-    }
-    fn make_live_file_inode(
-        ext2: &Arc<Ext4>,
-        ino: u32,
-        size: usize,
-        sector_count: u32,
-        flags: FileFlags,
-        block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
-    ) -> Arc<Inode> {
-        let mut raw = crate::fs::ext4::test_utils::RawInodeBuilder::new(0o100644).build();
-        raw.size_lo = size as u32;
-        raw.sector_count = sector_count;
-        raw.flags = flags.bits();
-        raw.block = block_ptrs;
-        let desc = super::super::InodeDesc::try_from(&raw).unwrap();
-        Inode::new(
-            ino,
-            InodeType::File,
-            Dirty::new(desc),
-            0,
-            Arc::downgrade(ext2),
-        )
     }
 }

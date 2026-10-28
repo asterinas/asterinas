@@ -203,12 +203,14 @@ if [ "$1" = "tdx" ]; then
         -drive if=none,format=raw,id=ext4_64bit,file=./test/initramfs/build/ext4-regression/64bit.img \
         -drive if=none,format=raw,id=ext4_metadata_csum,file=./test/initramfs/build/ext4-regression/metadata_csum.img \
         -drive if=none,format=raw,id=ext4_unknown,file=./test/initramfs/build/ext4-regression/unknown_incompat.img \
+        -drive if=none,format=raw,id=ext2_space,file=./test/initramfs/build/ext4-regression/ext2-space.img \
         -device virtio-blk-pci,bus=pcie.0,addr=0x11,drive=ext4,serial=vext4,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
         -device virtio-blk-pci,bus=pcie.0,addr=0x12,drive=ext4_journal,serial=vext4journal,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
         -device virtio-blk-pci,bus=pcie.0,addr=0x13,drive=ext4_recover,serial=vext4recover,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
         -device virtio-blk-pci,bus=pcie.0,addr=0x14,drive=ext4_64bit,serial=vext464bit,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
         -device virtio-blk-pci,bus=pcie.0,addr=0x15,drive=ext4_metadata_csum,serial=vext4metadata,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
         -device virtio-blk-pci,bus=pcie.0,addr=0x16,drive=ext4_unknown,serial=vext4unknown,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
+        -device virtio-blk-pci,bus=pcie.0,addr=0x17,drive=ext2_space,serial=vext2space,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
         "
     fi
 
@@ -273,6 +275,7 @@ if [ "$ATTACH_EXT4_REGRESSION_IMAGES" = "true" ]; then
     -drive if=none,format=raw,id=ext4_64bit,file=./test/initramfs/build/ext4-regression/64bit.img \
     -drive if=none,format=raw,id=ext4_metadata_csum,file=./test/initramfs/build/ext4-regression/metadata_csum.img \
     -drive if=none,format=raw,id=ext4_unknown,file=./test/initramfs/build/ext4-regression/unknown_incompat.img \
+    -drive if=none,format=raw,id=ext2_space,file=./test/initramfs/build/ext4-regression/ext2-space.img \
     "
 fi
 
@@ -351,6 +354,7 @@ if [ "$ATTACH_EXT4_REGRESSION_IMAGES" = "true" ]; then
         -device virtio-blk-device,drive=ext4_64bit,serial=vext464bit \
         -device virtio-blk-device,drive=ext4_metadata_csum,serial=vext4metadata \
         -device virtio-blk-device,drive=ext4_unknown,serial=vext4unknown \
+        -device virtio-blk-device,drive=ext2_space,serial=vext2space \
         "
     else
         QEMU_ARGS="$QEMU_ARGS \
@@ -360,6 +364,7 @@ if [ "$ATTACH_EXT4_REGRESSION_IMAGES" = "true" ]; then
         -device virtio-blk-pci,bus=pcie.0,addr=0x14,drive=ext4_64bit,serial=vext464bit,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
         -device virtio-blk-pci,bus=pcie.0,addr=0x15,drive=ext4_metadata_csum,serial=vext4metadata,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
         -device virtio-blk-pci,bus=pcie.0,addr=0x16,drive=ext4_unknown,serial=vext4unknown,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-blk-pci,bus=pcie.0,addr=0x17,drive=ext2_space,serial=vext2space,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
         "
     fi
 fi

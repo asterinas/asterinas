@@ -75,10 +75,16 @@ run_ext_suite() {
     umount /ext-test
     sync
     umount "$source"
-    mount -t "$suite_name" "$device" "$source"
+    mount -t "$suite_name" -o minixdf "$device" "$source"
+    EXT_STATFS_DEVICE="$device" EXT_STATFS_PATH="$source" \
+        EXT_STATFS_EXPECT=total ./ext/statfs_options
     mount --bind "$source" /ext-test
     EXT_REMOUNT_PHASE=verify ./ext/remount
     umount /ext-test
+    umount "$source"
+    mount -t "$suite_name" -o bsddf "$device" "$source"
+    EXT_STATFS_DEVICE="$device" EXT_STATFS_PATH="$source" \
+        EXT_STATFS_EXPECT=overhead ./ext/statfs_options
     echo "All $suite_name shared EXT tests and real remount passed."
 }
 
@@ -120,4 +126,19 @@ expect_mount_rejected ext4 /dev/vdh metadata_csum
 expect_mount_rejected ext4 /dev/vdi unknown_incompat
 echo "All unsupported EXT4 feature mounts were rejected."
 
+# This disposable image is separate from the shared suites and all host devices.
+mkdir -p /ext-space
+mount -t ext2 /dev/vdj /ext-space
+EXT_STATFS_DEVICE=/dev/vdj EXT_STATFS_PATH=/ext-space \
+    EXT_STATFS_EXPECT=2035 ./ext/statfs_options
+./ext/fallocate_enospc
+umount /ext-space
+mount -t ext2 -o bsddf /dev/vdj /ext-space
+EXT_STATFS_DEVICE=/dev/vdj EXT_STATFS_PATH=/ext-space \
+    EXT_STATFS_EXPECT=2035 ./ext/statfs_options
+umount /ext-space
+mount -t ext2 -o minixdf /dev/vdj /ext-space
+EXT_STATFS_DEVICE=/dev/vdj EXT_STATFS_PATH=/ext-space \
+    EXT_STATFS_EXPECT=total ./ext/statfs_options
+umount /ext-space
 echo "All EXT regression tests passed."

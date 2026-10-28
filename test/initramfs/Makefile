@@ -34,6 +34,7 @@ EXT4_IMAGE := $(BUILD_DIR)/ext4.img
 EXT4_SEED_FILE := $(CUR_DIR)/ext4-root/seed.txt
 EXT4_REGRESSION_DIR := $(BUILD_DIR)/ext4-regression
 EXT4_REGRESSION_IMAGES := \
+	$(EXT4_REGRESSION_DIR)/ext2-space.img \
 	$(EXT4_REGRESSION_DIR)/journal.img \
 	$(EXT4_REGRESSION_DIR)/recover.img \
 	$(EXT4_REGRESSION_DIR)/64bit.img \
@@ -226,6 +227,14 @@ $(EXT4_IMAGE): $(EXT4_SEED_FILE)
 	@truncate -s 128M $@
 	@mke2fs -q -F -t ext4 -b 4096 -I 256 \
 		-O $(EXT4_SUPPORTED_FEATURES) -d $(CUR_DIR)/ext4-root $@
+
+# Fixed geometry for statfs accounting and bounded ENOSPC regressions:
+# 2048 blocks in three groups (768 each), 48 inodes, 13 metadata blocks.
+$(EXT4_REGRESSION_DIR)/ext2-space.img:
+	@mkdir -p $(EXT4_REGRESSION_DIR)
+	@truncate -s 8M $@
+	@mke2fs -q -F -t ext2 -b 4096 -I 256 -g 768 -N 48 -m 0 \
+		-O filetype,^resize_inode,^dir_index,^metadata_csum,^64bit $@
 
 $(EXT4_REGRESSION_DIR)/journal.img:
 	@mkdir -p $(EXT4_REGRESSION_DIR)
