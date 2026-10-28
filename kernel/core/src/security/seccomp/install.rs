@@ -6,7 +6,7 @@ use super::{
     abi::{SockFilter, SockFprog},
     cbpf::{MAX_INSNS, VerifiedProgram},
     filter::FilterLogging,
-    listener::{Listener, ListenerFile},
+    listener::{Listener, ListenerFile, NotificationWaitMode},
 };
 use crate::{
     fs::file::file_table::{FdFlags, FileDescReservation},
@@ -20,6 +20,7 @@ const FILTER_FLAG_TSYNC: u32 = 1;
 const FILTER_FLAG_LOG: u32 = 1 << 1;
 const FILTER_FLAG_NEW_LISTENER: u32 = 1 << 3;
 const FILTER_FLAG_TSYNC_ESRCH: u32 = 1 << 4;
+const FILTER_FLAG_WAIT_KILLABLE_RECV: u32 = 1 << 5;
 
 /// Enters strict mode, serialized against filter installation and TSYNC.
 pub(super) fn install_strict(ctx: &Context) -> Result<()> {
@@ -35,7 +36,8 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
         & !(FILTER_FLAG_TSYNC
             | FILTER_FLAG_LOG
             | FILTER_FLAG_NEW_LISTENER
-            | FILTER_FLAG_TSYNC_ESRCH)
+            | FILTER_FLAG_TSYNC_ESRCH
+            | FILTER_FLAG_WAIT_KILLABLE_RECV)
         != 0
     {
         return_errno_with_message!(Errno::EINVAL, "unsupported seccomp filter flags");
@@ -48,6 +50,18 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
             "a synchronized listener requires TSYNC_ESRCH"
         );
     }
+
+    let wait_mode = if flags & FILTER_FLAG_WAIT_KILLABLE_RECV != 0 {
+        if !new_listener {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "killable notification waiting requires a new listener"
+            );
+        }
+        NotificationWaitMode::KillableAfterReceive
+    } else {
+        NotificationWaitMode::Interruptible
+    };
 
     let user_space = ctx.user_space();
     let fprog: SockFprog = user_space.read_val(fprog_addr)?;
@@ -87,7 +101,7 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
             let table = ctx.thread_local.borrow_file_table();
             FileDescReservation::new(&table, limit)?
         };
-        let state = Listener::new()?;
+        let state = Listener::new(wait_mode)?;
         let file = ListenerFile::new(state.clone())?;
         Some((reservation, file, state))
     } else {

@@ -294,10 +294,10 @@ fn fatal_actions_log_without_filter_flag() {
 
 #[ktest]
 fn listener_hup_counts_threads_not_policy_snapshots() {
-    use super::listener::Listener;
+    use super::listener::{Listener, NotificationWaitMode};
     use crate::{events::IoEvents, process::signal::Pollable};
 
-    let listener = Listener::new().unwrap();
+    let listener = Listener::new(NotificationWaitMode::Interruptible).unwrap();
     let state = SeccompState::default()
         .append_with_listener(
             program(RET_ALLOW),
@@ -328,9 +328,9 @@ fn listener_hup_counts_threads_not_policy_snapshots() {
 
 #[ktest]
 fn notification_uses_only_the_winning_filters_listener_and_log_flag() {
-    use super::listener::Listener;
+    use super::listener::{Listener, NotificationWaitMode};
 
-    let listener = Listener::new().unwrap();
+    let listener = Listener::new(NotificationWaitMode::Interruptible).unwrap();
     let policy = SeccompState::default()
         .append_with_listener(
             program(RET_USER_NOTIF | 0xffff),

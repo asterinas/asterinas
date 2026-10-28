@@ -22,7 +22,7 @@ use crate::{
         pseudofs::AnonInodeFs,
     },
     prelude::*,
-    process::signal::{PollHandle, Pollable, Pollee},
+    process::signal::{PauseReason, PollHandle, Pollable, Pollee},
     util::ioctl::RawIoctl,
 };
 
@@ -33,6 +33,14 @@ pub(crate) struct Listener {
     pollee: Pollee,
     notifications: Mutex<Notifications>,
     waiters: WaitQueue,
+    wait_mode: NotificationWaitMode,
+}
+
+/// The signal behavior selected when a listener is installed.
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(super) enum NotificationWaitMode {
+    Interruptible,
+    KillableAfterReceive,
 }
 
 #[derive(Default)]
@@ -41,6 +49,18 @@ struct Notifications {
     // A canceled unread request still consumes one RECV attempt (ENOENT).
     pending_receives: usize,
     requests: Vec<Notification>,
+}
+
+impl Notifications {
+    fn remove(&mut self, id: u64) {
+        if let Some(index) = self
+            .requests
+            .iter()
+            .position(|request| request.message.id == id)
+        {
+            self.requests.remove(index);
+        }
+    }
 }
 
 struct Notification {
@@ -54,16 +74,22 @@ enum NotificationState {
     Replied(SeccompNotifResp),
 }
 
+enum WaitOutcome {
+    Response(SeccompNotifResp),
+    ModeChanged,
+}
+
 const NOTIF_FLAG_CONTINUE: u32 = 1;
 
 impl Listener {
-    pub(super) fn new() -> Result<Arc<Self>> {
+    pub(super) fn new(wait_mode: NotificationWaitMode) -> Result<Arc<Self>> {
         Arc::try_new(Self {
             is_open: AtomicBool::new(true),
             users: AtomicUsize::new(0),
             pollee: Pollee::new(),
             notifications: Mutex::new(Notifications::default()),
             waiters: WaitQueue::new(),
+            wait_mode,
         })
         .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate a seccomp listener"))
     }
@@ -120,22 +146,7 @@ impl Listener {
         self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
         self.waiters.wake_all();
 
-        let response = self
-            .waiters
-            .pause_until(|| {
-                let notifications = self.notifications.lock();
-                let request = notifications
-                    .requests
-                    .iter()
-                    .find(|request| request.message.id == id)?;
-                match request.state {
-                    NotificationState::Replied(response) => Some(response),
-                    _ => None,
-                }
-            })
-            .map_err(|_| {
-                Error::with_message(Errno::ERESTARTSYS, "seccomp notification interrupted")
-            })?;
+        let response = self.wait_for_response(id)?;
         if response.flags & NOTIF_FLAG_CONTINUE != 0 {
             return Ok(None);
         }
@@ -147,6 +158,63 @@ impl Listener {
             response.val as usize
         };
         Ok(Some(value))
+    }
+
+    fn wait_for_response(&self, id: u64) -> Result<SeccompNotifResp> {
+        loop {
+            let is_killable = self.should_sleep_killable(&self.notifications.lock(), id);
+            let reason = if is_killable {
+                PauseReason::Killable
+            } else {
+                PauseReason::Sleep
+            };
+            let outcome = self.waiters.pause_until_by(
+                || {
+                    let notifications = self.notifications.lock();
+                    // The caller's PendingNotification owns this entry until
+                    // the response or interruption has been consumed.
+                    let request = notifications
+                        .requests
+                        .iter()
+                        .find(|request| request.message.id == id)
+                        .unwrap();
+                    if let NotificationState::Replied(response) = request.state {
+                        return Some(WaitOutcome::Response(response));
+                    }
+                    (self.should_sleep_killable(&notifications, id) != is_killable)
+                        .then_some(WaitOutcome::ModeChanged)
+                },
+                reason,
+            );
+            match outcome {
+                Ok(WaitOutcome::Response(response)) => return Ok(response),
+                Ok(WaitOutcome::ModeChanged) => continue,
+                Err(_) => {
+                    let mut notifications = self.notifications.lock();
+                    // RECV can win a race with an ordinary signal. Linux
+                    // switches to killable waiting rather than canceling the
+                    // request in this case. A pending SIGKILL still interrupts
+                    // the next killable wait.
+                    if !is_killable && self.should_sleep_killable(&notifications, id) {
+                        continue;
+                    }
+                    // Cancel under the same lock as the mode check so RECV
+                    // cannot claim a request that we have decided to interrupt.
+                    notifications.remove(id);
+                    return_errno_with_message!(
+                        Errno::ERESTARTSYS,
+                        "seccomp notification interrupted"
+                    );
+                }
+            }
+        }
+    }
+
+    fn should_sleep_killable(&self, notifications: &Notifications, id: u64) -> bool {
+        self.wait_mode == NotificationWaitMode::KillableAfterReceive
+            && notifications.requests.iter().any(|request| {
+                request.message.id == id && !matches!(request.state, NotificationState::Queued)
+            })
     }
 
     fn receive(&self) -> Result<SeccompNotif> {
@@ -287,13 +355,7 @@ struct PendingNotification<'a> {
 impl Drop for PendingNotification<'_> {
     fn drop(&mut self) {
         let mut notifications = self.listener.notifications.lock();
-        if let Some(index) = notifications
-            .requests
-            .iter()
-            .position(|request| request.message.id == self.id)
-        {
-            notifications.requests.remove(index);
-        }
+        notifications.remove(self.id);
         drop(notifications);
         self.listener.pollee.invalidate();
     }
