@@ -4,6 +4,7 @@
 #define DEVICE_MODEL_TEST_COMMON_H
 
 #include <errno.h>
+#include <glob.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -29,7 +30,7 @@ struct device_node {
 };
 
 struct device_spec {
-	/* Canonical absolute path to the device directory under `/sys/devices`. */
+	/* Absolute path under `/sys/devices`. Glob patterns must match exactly one device. */
 	const char *path;
 	/*
 	 * Canonical `subsystem` link target under `/sys/bus` or `/sys/class`.
@@ -230,6 +231,27 @@ static inline int check_node(const struct device_spec *spec)
 	return 0;
 }
 
+/* Resolves a path pattern to exactly one device. */
+static inline int resolve_device_path(const char *pattern, char path[PATH_MAX])
+{
+	glob_t paths = { 0 };
+	int found = glob(pattern, 0, NULL, &paths);
+	if (found || paths.gl_pathc != 1) {
+		globfree(&paths);
+		return device_error(pattern,
+				    "expected exactly one matching device");
+	}
+
+	size_t len = strlen(paths.gl_pathv[0]);
+	if (len >= PATH_MAX) {
+		globfree(&paths);
+		return device_error(pattern, "device path is too long");
+	}
+	memcpy(path, paths.gl_pathv[0], len + 1);
+	globfree(&paths);
+	return 0;
+}
+
 /*
  * Checks a device's canonical path, membership links, attributes, and node.
  * Returns `-1` with a diagnostic and sets `errno` on failure for `TEST_SUCC()`.
@@ -238,6 +260,14 @@ static inline int check_device(const struct device_spec *spec)
 {
 	char path[PATH_MAX], resolved[PATH_MAX];
 	struct stat st;
+
+	/* Resolve the pattern so all checks use the unique matching device path. */
+	char device_path[PATH_MAX];
+	if (resolve_device_path(spec->path, device_path) < 0)
+		return -1;
+	struct device_spec matched = *spec;
+	matched.path = device_path;
+	spec = &matched;
 
 	/* Require an existing directory at its canonical path under `/sys/devices`. */
 	if (strncmp(spec->path, "/sys/devices/", strlen("/sys/devices/")))
