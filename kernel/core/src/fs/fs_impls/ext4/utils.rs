@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Small helpers shared across the ext2 module.
+//! Small helpers shared across the EXT2/EXT4 implementation.
 //!
 //! - `Dirty` — a wrapper that tracks whether its inner value has been
 //!   mutated, for writeback scheduling.
@@ -9,11 +9,31 @@
 //! - `now` — a convenience function that reads the real-time coarse clock.
 //! - `duration_to_ext2_secs` — converts kernel durations to clamped ext2
 //!   timestamp seconds.
+//! - `ranges_overlap` — tests whether two half-open ranges share any elements.
+//! - `submit_and_wait` — drains submitted I/O even when a later submission fails.
 
 use core::ops::MulAssign;
 
 use super::prelude::*;
 use crate::prelude::warn;
+
+/// Submits I/O and waits for all queued requests, even if submission fails.
+/// A submission error takes precedence over a completion error.
+pub(super) fn submit_and_wait(
+    batch: &mut IoBatch,
+    submit_fn: impl FnOnce(&mut IoBatch) -> Result<()>,
+) -> Result<()> {
+    let submitted = submit_fn(batch);
+    let completed = batch.wait_all();
+    submitted?;
+    completed?;
+    Ok(())
+}
+
+/// Returns whether two half-open ranges overlap; empty ranges never overlap.
+pub(super) fn ranges_overlap<T: Ord>(left: &Range<T>, right: &Range<T>) -> bool {
+    !left.is_empty() && !right.is_empty() && left.start < right.end && right.start < left.end
+}
 
 pub(super) trait IsPowerOf: Copy + Sized + MulAssign + PartialOrd {
     /// Returns whether `self` equals `x^k` for some `k > 0`.
@@ -111,4 +131,60 @@ pub(super) fn now() -> Duration {
 /// Converts a `Duration` to a 32-bit ext2 timestamp, clamping to `u32::MAX`.
 pub(super) fn duration_to_ext2_secs(d: Duration) -> u32 {
     u32::try_from(d.as_secs()).unwrap_or(u32::MAX)
+}
+
+#[cfg(ktest)]
+mod tests {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    use io_util::{IoError, batch::IoCompletion};
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    struct Completion {
+        waits: Arc<AtomicUsize>,
+        result: core::result::Result<(), IoError>,
+    }
+
+    impl IoCompletion for Completion {
+        fn wait(&self) -> core::result::Result<(), IoError> {
+            self.waits.fetch_add(1, Ordering::Relaxed);
+            self.result
+        }
+    }
+
+    #[ktest]
+    fn io_submission_drains_all_completions_and_preserves_first_error() {
+        for (submission_error, completion_error, expected) in [
+            (None, false, None),
+            (Some(Errno::ENOSPC), false, Some(Errno::ENOSPC)),
+            (None, true, Some(Errno::EIO)),
+            (Some(Errno::ENOSPC), true, Some(Errno::ENOSPC)),
+        ] {
+            let waits = Arc::new(AtomicUsize::new(0));
+            let mut batch = IoBatch::new();
+            let result = submit_and_wait(&mut batch, |batch| {
+                for result in [
+                    if completion_error {
+                        Err(IoError::Failed)
+                    } else {
+                        Ok(())
+                    },
+                    Ok(()),
+                ] {
+                    batch.push(Arc::new(Completion {
+                        waits: waits.clone(),
+                        result,
+                    }));
+                }
+                match submission_error {
+                    Some(errno) => Err(Error::with_message(errno, "injected submission failure")),
+                    None => Ok(()),
+                }
+            });
+            assert_eq!(waits.load(Ordering::Relaxed), 2);
+            assert_eq!(result.err().map(|error| error.error()), expected);
+        }
+    }
 }

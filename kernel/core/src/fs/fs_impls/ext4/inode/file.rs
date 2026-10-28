@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Regular-file data I/O for ext2 inodes: buffered reads/writes and fallocate.
+//! Regular-file data I/O for EXT2/EXT4 inodes: buffered reads/writes and fallocate.
 //!
 //! This module contains the regular-file behavior exposed through the VFS
 //! layer: page-cache I/O, direct I/O, size changes, and block preallocation.
-//! File size, page-cache state, and ext2 block mappings must stay coherent
+//! File size, page-cache state, and block mappings must stay coherent
 //! across those entry points.
 
 #![short_vis_path::add(ext4)]
 
 use ostd::mm::io::util::HasVmReaderWriter;
 
-use super::{super::Ext4, FileFlags, Inode, InodeInner, io_range::IoRange};
+use super::{super::Ext4, FileFlags, Inode, InodeInner, io_range::Backing};
 use crate::fs::{
     ext4::{prelude::*, utils},
     vfs::inode::FallocMode,
@@ -123,7 +123,7 @@ impl Inode {
         }
 
         if new_size < old_size {
-            inner.shrink(new_size)?;
+            inner.shrink(&fs, new_size)?;
         } else {
             inner.expand(&fs, new_size)?;
         }
@@ -354,17 +354,19 @@ impl InodeInner {
         let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range)?;
 
         while let Some(range) = range_iter.next()? {
-            match range {
-                IoRange::Mapped(device_range) => {
-                    let nblocks = device_range.len();
+            match range.backing {
+                Backing::Written { physical_start } => {
+                    let nblocks = range.logical.len();
                     let bio_segment = BioSegment::alloc(nblocks, BioDirection::FromDevice);
-                    fs.read_blocks(device_range.start, bio_segment.clone())?;
+                    fs.read_blocks(physical_start, bio_segment.clone())?;
                     let mut segment_reader = bio_segment.reader()?;
                     segment_reader.read_fallible(writer)?;
                 }
-                IoRange::Hole(hole_range) => {
-                    let n_bytes =
-                        (hole_range.end as usize - hole_range.start as usize) * BLOCK_SIZE;
+                Backing::Unwritten { .. } => {
+                    writer.fill_zeros(range.logical.len() * BLOCK_SIZE)?;
+                }
+                Backing::Hole => {
+                    let n_bytes = range.logical.len() * BLOCK_SIZE;
                     writer.fill_zeros(n_bytes)?;
                 }
             }
@@ -373,6 +375,8 @@ impl InodeInner {
     }
 
     /// Writes file data directly to already-allocated data blocks.
+    /// Both individual BIO buffers and each outstanding batch have a bounded
+    /// page budget, independent of extent length and the caller's write size.
     fn write_direct_blocks(
         &mut self,
         fs: &Ext4,
@@ -392,14 +396,14 @@ impl InodeInner {
 
         let mut io_batch = IoBatch::new();
         while let Some(range) = range_iter.next()? {
-            match range {
-                IoRange::Mapped(device_range) => {
-                    let nblocks = device_range.len();
+            match range.backing {
+                Backing::Written { physical_start } => {
+                    let nblocks = range.logical.len();
                     let bio_segment = BioSegment::alloc(nblocks, BioDirection::ToDevice);
                     bio_segment.writer().unwrap().write_fallible(reader)?;
-                    fs.write_blocks_async(device_range.start, bio_segment, None, &mut io_batch)?;
+                    fs.write_blocks_async(physical_start, bio_segment, None, &mut io_batch)?;
                 }
-                IoRange::Hole(_) => {
+                Backing::Hole | Backing::Unwritten { .. } => {
                     // TODO: Consider falling back to buffered write like Linux.
                     // The upper layer should have performed allocation for the write
                     // range. Linux does not allocate blocks in the direct write path;
@@ -416,14 +420,22 @@ impl InodeInner {
         Ok(())
     }
 
-    fn shrink(&mut self, new_size: usize) -> Result<()> {
+    fn shrink(&mut self, fs: &Ext4, new_size: usize) -> Result<()> {
         let old_size = self.desc.size as usize;
 
+        let mapping = self.block_manager()?.clone();
+        // Read and validate the candidate before cache resize can discard data.
+        // Keep the inode write lock, but release the mapping lock so page-cache
+        // tail zeroing can resolve the still-published mappings.
+        let prepared = mapping.prepare_truncate(fs, new_size)?;
         self.resize_page_cache(new_size, old_size)?;
-        self.block_manager()?.truncate_to_byte_len(new_size)?;
-
+        let cleanup_result = prepared.commit();
+        // Mapping acceptance is not undone by a deferred-release error. Keep
+        // inode size, page-cache bounds and timestamps consistent before
+        // reporting that cleanup still needs filesystem retry.
         self.set_file_size(new_size);
-        Ok(())
+        self.set_mtime_ctime(utils::now());
+        cleanup_result
     }
 
     fn expand(&mut self, fs: &Ext4, new_size: usize) -> Result<()> {
@@ -469,24 +481,209 @@ fn is_block_aligned(offset: usize) -> bool {
 mod test {
     use ostd::prelude::ktest;
 
-    use super::{super::RAW_BLOCK_PTRS_LEN, *};
-    use crate::{
-        fs::{
-            ext4::{
-                inode::test::make_live_file_inode,
-                test_utils::{Ext4FixtureBuilder, assert_errno, create_file},
-            },
-            vfs::inode::Inode,
-        },
-        time::clocks,
-        vm::page_cache::VmoMapMode,
+    use super::{
+        super::{RAW_BLOCK_PTRS_LEN, io_range::IoRange},
+        *,
     };
+    use crate::{
+        fs::ext4::test_utils::{ExtFixtureBuilder, assert_errno, create_file},
+        time::clocks,
+    };
+
+    #[ktest]
+    fn extent_truncate_failure_preserves_caller_state_and_retries_cleanup() {
+        use crate::fs::ext4::fs::MountFlavor;
+        clocks::init_for_ktest();
+        let f = ExtFixtureBuilder::new(1, 2048)
+            .with_mount_flavor(MountFlavor::Ext4)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let file = create_file(&f.root(), "truncate_failure");
+        let payload = vec![0x5au8; BLOCK_SIZE];
+        // Five separated mappings require an external extent leaf.
+        for block in [0, 2, 4, 6, 8] {
+            file.write_direct_at(
+                block * BLOCK_SIZE,
+                &mut VmReader::from(payload.as_slice()).to_fallible(),
+            )
+            .unwrap();
+        }
+        file.sync_all().unwrap();
+        let ino = file.ino;
+        let raw = file.inner.read().raw_block_ptrs();
+        let node_bid = raw.block_ptrs[4];
+        let mut data_bids = Vec::new();
+        for block in [0, 2, 4, 6, 8] {
+            let mapping = file.inner.read().block_manager().unwrap().clone();
+            let Some(IoRange {
+                backing: Backing::Written { physical_start },
+                ..
+            }) = mapping
+                .iter_io_ranges(block..block + 1)
+                .unwrap()
+                .next()
+                .unwrap()
+            else {
+                panic!("expected initialized extent");
+            };
+            data_bids.push(physical_start);
+        }
+        let group = f.fs.block_group(0);
+        drop(group.remove_inode(ino));
+        drop(file);
+        // Reload through the normal inode path so its node cache is cold.
+        let file = f.fs.read_inode(ino).unwrap();
+        let mapping = file.inner.read().block_manager().unwrap().clone();
+        let free = f.fs.super_block().read_state().free_blocks_count();
+        let old_size = 9 * BLOCK_SIZE;
+        f.disk.fail_read_block(Some(node_bid as usize));
+        for new_size in [BLOCK_SIZE, BLOCK_SIZE + 37] {
+            assert_errno!(file.resize(new_size), Errno::EIO);
+            assert_eq!(file.file_size(), old_size);
+            assert_eq!(file.inner.read().page_cache().size(), old_size);
+            assert_eq!(mapping.raw_block_ptrs().block_ptrs, raw.block_ptrs);
+            assert_eq!(mapping.raw_block_ptrs().sector_count, raw.sector_count);
+            assert!(!mapping.has_dirty_metadata());
+            assert_eq!(f.fs.super_block().read_state().free_blocks_count(), free);
+            for &bid in data_bids.iter().chain(core::iter::once(&node_bid)) {
+                assert!(group.is_allocated_data_range(bid..bid + 1));
+            }
+            f.fs.retry_deferred_reclaim().unwrap();
+            assert_eq!(f.fs.super_block().read_state().free_blocks_count(), free);
+        }
+        f.disk.fail_read_block(None);
+        let mut bytes = vec![0u8; BLOCK_SIZE];
+        assert_eq!(
+            file.read_at(
+                8 * BLOCK_SIZE,
+                &mut VmWriter::from(bytes.as_mut_slice()).to_fallible()
+            )
+            .unwrap(),
+            BLOCK_SIZE
+        );
+        assert_eq!(bytes, payload);
+        // A boundary-page read can fail after the mapping candidate is ready.
+        // Discarding that candidate must preserve even an unwritten-back tail.
+        let dirty_tail = [0xc3u8; 64];
+        let tail_writes = f.disk.block_writes(data_bids[4] as usize);
+        file.write_at(
+            8 * BLOCK_SIZE + 17,
+            &mut VmReader::from(dirty_tail.as_slice()).to_fallible(),
+        )
+        .unwrap();
+        f.disk.fail_read_block(Some(data_bids[0] as usize));
+        assert_errno!(file.resize(37), Errno::EIO);
+        assert_eq!(file.file_size(), old_size);
+        assert_eq!(file.inner.read().page_cache().size(), old_size);
+        assert_eq!(mapping.raw_block_ptrs().block_ptrs, raw.block_ptrs);
+        assert_eq!(mapping.raw_block_ptrs().sector_count, raw.sector_count);
+        assert!(!mapping.has_dirty_metadata());
+        assert_eq!(f.fs.super_block().read_state().free_blocks_count(), free);
+        f.fs.retry_deferred_reclaim().unwrap();
+        assert_eq!(f.fs.super_block().read_state().free_blocks_count(), free);
+        file.read_at(
+            8 * BLOCK_SIZE,
+            &mut VmWriter::from(bytes.as_mut_slice()).to_fallible(),
+        )
+        .unwrap();
+        assert_eq!(&bytes[17..81], &dirty_tail);
+        f.disk.fail_read_block(None);
+        // Accept the new mapping, free one range, then fail the next release.
+        // A checked counter overflow gives deterministic partial progress
+        // without introducing a production fault-injection hook.
+        f.fs.super_block()
+            .write_state()
+            .set_free_blocks_count(u32::MAX - 1);
+        let new_size = 37;
+        assert_errno!(file.resize(new_size), Errno::EIO);
+        assert_eq!(file.file_size(), new_size);
+        assert_eq!(file.inner.read().page_cache().size(), BLOCK_SIZE);
+        assert_eq!(
+            mapping.raw_block_ptrs().sector_count,
+            (BLOCK_SIZE / SECTOR_SIZE) as u32
+        );
+        assert!(mapping.is_inode_dirty());
+        assert!(file.inner.read().is_dirty());
+        assert!(group.is_allocated_data_range(data_bids[0]..data_bids[0] + 1));
+        assert!(!group.is_allocated_data_range(data_bids[1]..data_bids[1] + 1));
+        for &bid in data_bids[2..].iter().chain(core::iter::once(&node_bid)) {
+            assert!(group.is_allocated_data_range(bid..bid + 1));
+        }
+        assert_eq!(
+            f.fs.super_block().read_state().free_blocks_count(),
+            u32::MAX
+        );
+        let Some(IoRange {
+            logical: hole,
+            backing: Backing::Hole,
+        }) = mapping.iter_io_ranges(2..9).unwrap().next().unwrap()
+        else {
+            panic!("retired blocks must no longer be mapped");
+        };
+        assert_eq!(hole, 2..9);
+        assert_eq!(
+            file.read_at(
+                8 * BLOCK_SIZE,
+                &mut VmWriter::from(bytes.as_mut_slice()).to_fallible()
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            file.read_at(0, &mut VmWriter::from(bytes.as_mut_slice()).to_fallible())
+                .unwrap(),
+            new_size
+        );
+        assert_eq!(&bytes[..new_size], &payload[..new_size]);
+        // Reconcile the injected global counter with the single completed free.
+        f.fs.super_block()
+            .write_state()
+            .set_free_blocks_count(free + 1);
+        f.fs.retry_deferred_reclaim().unwrap();
+        assert_eq!(
+            f.fs.super_block().read_state().free_blocks_count(),
+            free + 5
+        );
+        for &bid in data_bids[1..].iter().chain(core::iter::once(&node_bid)) {
+            assert!(!group.is_allocated_data_range(bid..bid + 1));
+        }
+        assert!(group.is_allocated_data_range(data_bids[0]..data_bids[0] + 1));
+        f.fs.retry_deferred_reclaim().unwrap();
+        assert_eq!(
+            f.fs.super_block().read_state().free_blocks_count(),
+            free + 5
+        );
+        file.sync_all().unwrap();
+        let persisted = group.read_inode_desc((ino - 1) as u16).unwrap();
+        assert_eq!(persisted.size, new_size as u64);
+        assert_eq!(
+            persisted.sector_count,
+            mapping.raw_block_ptrs().sector_count
+        );
+        assert_eq!(persisted.block_ptrs, mapping.raw_block_ptrs().block_ptrs);
+        assert!(!file.inner.read().is_dirty());
+        group.sync_inode_table().unwrap();
+        let disk_inode = super::super::test::read_raw_inode_from_disk(&f, ino);
+        assert_eq!(disk_inode.size_lo, new_size as u32);
+        assert_eq!(disk_inode.sector_count, persisted.sector_count);
+        assert_eq!(disk_inode.block, persisted.block_ptrs);
+        f.disk
+            .segment()
+            .read_bytes(Bid::new(u64::from(data_bids[0])).to_offset(), &mut bytes)
+            .unwrap();
+        assert_eq!(&bytes[..new_size], &payload[..new_size]);
+        assert!(bytes[new_size..].iter().all(|byte| *byte == 0));
+        assert_eq!(f.disk.block_writes(data_bids[4] as usize), tail_writes);
+    }
 
     #[ktest]
     fn file_write_enospc_rollback() {
         clocks::init_for_ktest();
 
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(2, 2)
             .with_free_inodes(1000, 1000)
             .with_group0_used_dirs(1)
@@ -519,54 +716,11 @@ mod test {
         file.read_direct_at(0, &mut writer).unwrap();
         assert_eq!(readback, base_data);
     }
-
-    #[ktest]
-    fn file_sparse_buffered_write_preserves_mmap_dirty_tail() {
-        clocks::init_for_ktest();
-
-        let f = Ext4FixtureBuilder::new(1, 256)
-            .with_free_blocks(2, 2)
-            .with_free_inodes(1000, 1000)
-            .build()
-            .unwrap();
-        let root = f.root();
-        let file: Arc<dyn Inode> = create_file(&root, "mmap_dirty_tail") as _;
-        let vmo = file.page_cache().unwrap();
-
-        let file_dentry = crate::fs::vfs::path::Dentry::new_root(file.clone());
-        file.resize(&file_dentry, BLOCK_SIZE * 3).unwrap();
-
-        let block_start = BLOCK_SIZE;
-        let mmap_offset = block_start + 200;
-        let mmap_payload = [0x5au8; 32];
-
-        vmo.commit_on(block_start / PAGE_SIZE, VmoMapMode::SharedWrite)
-            .unwrap();
-        let (page, mode) = vmo
-            .try_commit_page(block_start, VmoMapMode::SharedWrite)
-            .unwrap();
-        assert_eq!(mode, VmoMapMode::SharedWrite);
-        page.write_bytes(mmap_offset % PAGE_SIZE, &mmap_payload)
-            .unwrap();
-
-        let buffered_offset = block_start + 100;
-        let buffered_payload = [0xa5u8; 100];
-        assert_eq!(
-            file.write_bytes_at(buffered_offset, &buffered_payload)
-                .unwrap(),
-            buffered_payload.len()
-        );
-
-        let mut read_back = [0xffu8; 32];
-        file.read_bytes_at(mmap_offset, &mut read_back).unwrap();
-        assert_eq!(read_back, mmap_payload);
-    }
-
     #[ktest]
     fn falloc_allocate_returns_enospc_after_consuming_blocks() {
         clocks::init_for_ktest();
 
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(2, 2)
             .build()
             .unwrap();
@@ -584,5 +738,27 @@ mod test {
         );
         assert_eq!(f.fs.super_block().read_state().free_blocks_count(), 0);
         assert_eq!(file.file_size(), BLOCK_SIZE * 2);
+    }
+    fn make_live_file_inode(
+        ext2: &Arc<Ext4>,
+        ino: u32,
+        size: usize,
+        sector_count: u32,
+        flags: FileFlags,
+        block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
+    ) -> Arc<Inode> {
+        let mut raw = crate::fs::ext4::test_utils::RawInodeBuilder::new(0o100644).build();
+        raw.size_lo = size as u32;
+        raw.sector_count = sector_count;
+        raw.flags = flags.bits();
+        raw.block = block_ptrs;
+        let desc = super::super::InodeDesc::try_from(&raw).unwrap();
+        Inode::new(
+            ino,
+            InodeType::File,
+            Dirty::new(desc),
+            0,
+            Arc::downgrade(ext2),
+        )
     }
 }

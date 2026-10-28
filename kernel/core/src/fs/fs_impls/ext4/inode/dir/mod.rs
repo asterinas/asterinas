@@ -786,9 +786,11 @@ mod test {
     };
 
     #[ktest]
-    fn unlink_last_link_deallocates_on_drop() {
+    fn unlink_retains_inode_slot_until_last_owner_drop() {
         let (f, root) = default_fixture();
 
+        // User-visible open/unlink behavior is covered by ext/open_unlink.c.
+        // Here retain the inode slot, raw fields, and cache error transitions.
         let old = create_file(&root, "old");
         let old_ino = old.ino();
         let payload = vec![0x6au8; BLOCK_SIZE];

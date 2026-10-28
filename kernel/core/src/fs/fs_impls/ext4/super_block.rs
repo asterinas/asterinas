@@ -916,14 +916,6 @@ mod test {
     use crate::fs::fs_impls::ext4::test_utils::make_valid_raw_super_block;
 
     #[ktest]
-    fn max_file_size_matches_ext2_4k_limit() {
-        let raw = make_valid_raw_super_block(1);
-        let sb = SuperBlock::try_from(raw).unwrap();
-
-        assert_eq!(sb.max_file_size(), 2_196_873_666_560);
-    }
-
-    #[ktest]
     fn sparse_super_backup_groups() {
         let mut raw = make_valid_raw_super_block(30);
         raw.feature_ro_compat = FeatureRoCompatSet::SPARSE_SUPER.bits();

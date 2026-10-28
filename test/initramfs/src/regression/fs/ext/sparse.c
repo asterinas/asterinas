@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/vfs.h>
 #include <unistd.h>
@@ -149,5 +150,39 @@ FN_TEST(statfs_bavail_reserved)
 
 	TEST_SUCC(statfs(EXT_TEST_ROOT, &st));
 	TEST_RES(statfs(EXT_TEST_ROOT, &st), st.f_bavail <= st.f_bfree);
+}
+END_TEST()
+
+/* A buffered partial write must preserve an already dirty MAP_SHARED tail. */
+FN_TEST(buffered_write_preserves_shared_mapping_tail)
+{
+	const char *path = BASE_DIR "/shared_mapping_tail";
+	int fd = TEST_SUCC(open(path, O_CREAT | O_RDWR | O_TRUNC, 0644));
+	TEST_SUCC(ftruncate(fd, PAGE_SIZE * 3));
+	char *mapping =
+		TEST_SUCC(mmap(NULL, PAGE_SIZE * 3, PROT_READ | PROT_WRITE,
+			       MAP_SHARED, fd, 0));
+	memset(mapping + PAGE_SIZE + 200, 0x5a, 32);
+	char payload[100], readback[32];
+	memset(payload, 0xa5, sizeof(payload));
+	TEST_RES(pwrite(fd, payload, sizeof(payload), PAGE_SIZE + 100),
+		 _ret == sizeof(payload));
+	TEST_RES(pread(fd, readback, sizeof(readback), PAGE_SIZE + 200),
+		 _ret == sizeof(readback));
+	for (int i = 0; i < sizeof(readback); i++)
+		TEST_RES((unsigned char)readback[i], _ret == 0x5a);
+	TEST_RES(memcmp(mapping + PAGE_SIZE + 100, payload, sizeof(payload)),
+		 _ret == 0);
+	TEST_SUCC(msync(mapping, PAGE_SIZE * 3, MS_SYNC));
+	TEST_SUCC(fsync(fd));
+	TEST_SUCC(munmap(mapping, PAGE_SIZE * 3));
+	TEST_SUCC(close(fd));
+	fd = TEST_SUCC(open(path, O_RDONLY));
+	TEST_RES(pread(fd, readback, sizeof(readback), PAGE_SIZE + 200),
+		 _ret == sizeof(readback));
+	for (int i = 0; i < sizeof(readback); i++)
+		TEST_RES((unsigned char)readback[i], _ret == 0x5a);
+	TEST_SUCC(close(fd));
+	TEST_SUCC(unlink(path));
 }
 END_TEST()

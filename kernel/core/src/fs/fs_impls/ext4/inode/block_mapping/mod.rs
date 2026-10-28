@@ -2,16 +2,18 @@
 
 //! Per-inode logical-to-physical block mapping.
 //!
-//! [`BlockMapping`] is the single owner of mapping synchronization, page-count
-//! bounds, and the filesystem reference. The format-specific manager stores
-//! only the on-disk mapping state. Callers therefore use one interface whether
-//! an inode uses classic block pointers or another EXT mapping format.
+//! [`BlockMapping`] coordinates mapping synchronization and page-count bounds,
+//! and holds the filesystem reference for page-cache I/O.
+//! Each format-specific tree manages its mapping state and runtime caches.
+//! Callers use one interface for classic block pointers and EXT4 extents.
 //!
 //! Page-cache I/O releases the mapping lock before data BIO submission.
 //! Direct-I/O range iteration keeps a read guard while its mapping plan is
 //! consumed, giving both mapping formats the same stable-iteration behavior.
 //! The inode lock remains responsible for coordinating mapping changes with
 //! inode size and metadata updates.
+
+#![short_vis_path::add(inode)]
 
 mod block_manager;
 pub(super) mod extent;
@@ -27,7 +29,7 @@ use self::{
 };
 use super::{
     Iblock, RAW_BLOCK_PTRS_LEN,
-    io_range::{IoRange, IoRangeIter},
+    io_range::{Backing, IoRange, IoRangeIter},
 };
 use crate::{
     fs::ext4::{fs::Ext4, prelude::*},
@@ -59,23 +61,20 @@ pub(super) enum MappingTreeType {
 
 /// On-disk mapping state mirrored from an inode.
 #[derive(Clone, Copy, Debug)]
-pub(in crate::fs::fs_impls::ext4::inode) struct RawBlockPtrs {
+pub(in inode) struct RawBlockPtrs {
     pub sector_count: u32,
     pub block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
 }
 
 impl RawBlockPtrs {
-    pub(in crate::fs::fs_impls::ext4::inode) fn new(
-        sector_count: u32,
-        block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
-    ) -> Self {
+    pub(in inode) fn new(sector_count: u32, block_ptrs: [u32; RAW_BLOCK_PTRS_LEN]) -> Self {
         Self {
             sector_count,
             block_ptrs,
         }
     }
 
-    pub(in crate::fs::fs_impls::ext4::inode) fn read_device_id(&self) -> u64 {
+    pub(in inode) fn read_device_id(&self) -> u64 {
         let (major, minor) = if self.block_ptrs[0] != 0 {
             let encoded = self.block_ptrs[0];
             (((encoded >> 8) & 0xff), (encoded & 0xff))
@@ -89,7 +88,7 @@ impl RawBlockPtrs {
         encode_device_numbers(major, minor)
     }
 
-    pub(in crate::fs::fs_impls::ext4::inode) fn write_device_id(&mut self, device_id: u64) {
+    pub(in inode) fn write_device_id(&mut self, device_id: u64) {
         let (major, minor) = decode_device_numbers(device_id);
         if major < 256 && minor < 256 {
             self.block_ptrs[0] = (major << 8) | minor;
@@ -102,11 +101,44 @@ impl RawBlockPtrs {
     }
 }
 
+/// Per-iterator format state, retained by the same guard as the tree.
+pub(super) enum MappingRangeCursor {
+    Indirect,
+    Extent(extent::ExtentRangeCursor),
+}
+
+/// A candidate built while the owning inode is write-locked.
+/// The caller must retain that lock until commit or discard, excluding mapping
+/// changes while the mapping lock is released for page-cache preparation.
+#[must_use]
+pub(super) struct PreparedTruncate<'a> {
+    mapping: &'a BlockMapping,
+    fs: &'a Ext4,
+    new_size: usize,
+    extent_update: Option<extent::PreparedUpdate<'a>>,
+}
+
+impl PreparedTruncate<'_> {
+    /// Publishes the candidate into its original mapping while the inode stays
+    /// write-locked. An error means block release failed after the mapping was
+    /// committed; callers must update inode size before propagating the error.
+    pub(super) fn commit(self) -> Result<()> {
+        match &mut *self.mapping.manager.write() {
+            MappingTreeType::ExtentTree(tree) => tree.commit_truncate(self.extent_update),
+            MappingTreeType::BlockPtrTree(tree) => {
+                tree.truncate_to_byte_len(self.fs, self.new_size);
+                Ok(())
+            }
+        }
+    }
+}
+
 impl MappingTreeType {
     pub(super) fn next_io_range(
         &self,
         fs: &Ext4,
         range: &mut Range<Iblock>,
+        cursor: &mut MappingRangeCursor,
     ) -> Result<Option<IoRange>> {
         if range.start >= range.end {
             return Ok(None);
@@ -120,22 +152,29 @@ impl MappingTreeType {
                     let hole_len = tree.approx_hole_blocks(start, max_blocks)?;
                     debug_assert!(hole_len > 0);
                     range.start += hole_len;
-                    Ok(Some(IoRange::Hole(start..start + hole_len)))
+                    Ok(Some(IoRange {
+                        logical: start..range.start,
+                        backing: Backing::Hole,
+                    }))
                 } else {
                     range.start += mapped.len() as u32;
-                    Ok(Some(IoRange::Mapped(mapped)))
+                    Ok(Some(IoRange {
+                        logical: start..range.start,
+                        backing: Backing::Written {
+                            physical_start: mapped.start,
+                        },
+                    }))
                 }
             }
-            Self::ExtentTree(state) => match state.mapped_run(fs, start, max_blocks)? {
-                Some(mapped) => {
-                    range.start += mapped.len() as u32;
-                    Ok(Some(IoRange::Mapped(mapped)))
+            Self::ExtentTree(tree) => {
+                if !matches!(cursor, MappingRangeCursor::Extent(_)) {
+                    *cursor = MappingRangeCursor::Extent(extent::ExtentRangeCursor::default());
                 }
-                None => {
-                    range.start += 1;
-                    Ok(Some(IoRange::Hole(start..start + 1)))
-                }
-            },
+                let MappingRangeCursor::Extent(cursor) = cursor else {
+                    unreachable!()
+                };
+                tree.next_io_range(fs, range, cursor).map(Some)
+            }
         }
     }
 }
@@ -181,21 +220,39 @@ impl BlockMapping {
         }
     }
 
-    /// Returns whether the in-inode mapping representation needs writeback.
-    pub(super) fn is_dirty(&self) -> bool {
+    /// Returns whether the inode-resident mapping metadata needs writeback.
+    pub(super) fn is_inode_dirty(&self) -> bool {
         let manager = self.manager.read();
         match &*manager {
-            MappingTreeType::ExtentTree(state) => state.is_dirty(),
-            MappingTreeType::BlockPtrTree(tree) => tree.is_dirty(),
+            MappingTreeType::ExtentTree(tree) => tree.is_inode_dirty(),
+            MappingTreeType::BlockPtrTree(tree) => tree.is_inode_dirty(),
         }
     }
 
-    /// Marks the in-inode mapping representation as written back.
-    pub(super) fn clear_dirty(&self) {
+    /// Returns whether inode-resident or external mapping metadata needs writeback.
+    ///
+    /// External metadata includes extent nodes or indirect blocks, depending
+    /// on the mapping format.
+    pub(super) fn has_dirty_metadata(&self) -> bool {
+        if self.is_inode_dirty() {
+            return true;
+        }
+        let manager = self.manager.read();
+        match &*manager {
+            MappingTreeType::ExtentTree(tree) => tree.has_dirty_metadata(),
+            MappingTreeType::BlockPtrTree(tree) => tree.has_dirty_metadata(),
+        }
+    }
+
+    /// Clears only the dirty flag for the inode-resident mapping metadata.
+    ///
+    /// External extent nodes and indirect blocks are unaffected; they are
+    /// written back separately by `sync_metadata`.
+    pub(super) fn clear_inode_dirty(&self) {
         let mut manager = self.manager.write();
         match &mut *manager {
-            MappingTreeType::ExtentTree(state) => state.clear_dirty(),
-            MappingTreeType::BlockPtrTree(tree) => tree.clear_dirty(),
+            MappingTreeType::ExtentTree(state) => state.clear_inode_dirty(),
+            MappingTreeType::BlockPtrTree(tree) => tree.clear_inode_dirty(),
         }
     }
 
@@ -208,12 +265,40 @@ impl BlockMapping {
         ))
     }
 
+    /// Prepares truncation without changing mappings or releasing blocks.
+    /// The owning inode must remain write-locked until commit or discard.
+    pub(super) fn prepare_truncate<'a>(
+        &'a self,
+        fs: &'a Ext4,
+        new_size: usize,
+    ) -> Result<PreparedTruncate<'a>> {
+        let extent_update = match &*self.manager.read() {
+            MappingTreeType::ExtentTree(tree) => tree.prepare_truncate(fs, new_size)?,
+            MappingTreeType::BlockPtrTree(_) => None,
+        };
+        Ok(PreparedTruncate {
+            mapping: self,
+            fs,
+            new_size,
+            extent_update,
+        })
+    }
+
     /// Removes mappings beyond the block containing `new_size`.
+    ///
+    /// On error, mappings may already have been removed while some blocks still
+    /// await release. The caller must not assume the original mappings remain
+    /// intact or free the inode as though truncation had completed successfully.
+    ///
+    /// This method does not update the inode's file size or page cache.
+    /// Use [`Self::prepare_truncate`] to prepare mapping changes before updating
+    /// the page cache, then commit the changes and update the inode's file size.
+    /// Block-pointer truncation logs internal errors without propagating them.
     pub(super) fn truncate_to_byte_len(&self, new_size: usize) -> Result<()> {
         let fs = self.fs()?;
         let mut manager = self.manager.write();
         match &mut *manager {
-            MappingTreeType::ExtentTree(state) => state.truncate_to_byte_len(&fs, new_size),
+            MappingTreeType::ExtentTree(tree) => tree.truncate_to_byte_len(&fs, new_size),
             MappingTreeType::BlockPtrTree(tree) => {
                 tree.truncate_to_byte_len(&fs, new_size);
                 Ok(())
@@ -225,7 +310,7 @@ impl BlockMapping {
     pub(super) fn sync_metadata(&self) -> Result<()> {
         let manager = self.manager.read();
         match &*manager {
-            MappingTreeType::ExtentTree(_) => Ok(()),
+            MappingTreeType::ExtentTree(tree) => tree.sync_metadata(self.fs()?.as_ref()),
             MappingTreeType::BlockPtrTree(tree) => tree.sync_indirect_blocks(),
         }
     }
@@ -272,7 +357,7 @@ impl BlockMapping {
         let fs = self.fs()?;
         let manager = self.manager.read();
         match &*manager {
-            MappingTreeType::ExtentTree(state) => state.map_block(&fs, iblock),
+            MappingTreeType::ExtentTree(state) => state.lookup_readable_block(&fs, iblock),
             MappingTreeType::BlockPtrTree(tree) => tree.lookup_block(iblock),
         }
     }
@@ -313,18 +398,18 @@ impl BlockAsPageCacheBackend for BlockMapping {
         let fs = self.fs()?;
         let mut io_ranges = self.iter_io_ranges(start_idx as Iblock..end_idx as Iblock)?;
         while let Some(io_range) = io_ranges.next()? {
-            match io_range {
-                IoRange::Mapped(device_range) => {
-                    let range_len = device_range.len();
+            match io_range.backing {
+                Backing::Written { physical_start } => {
+                    let range_len = io_range.logical.len();
                     pages.submit_contiguous_read_pages(
                         fs.block_device(),
-                        Bid::new(device_range.start as u64),
+                        Bid::new(physical_start as u64),
                         range_len,
                         io_batch,
                     )?;
                 }
-                IoRange::Hole(hole_range) => {
-                    for locked_page in pages.by_ref().take(hole_range.len()) {
+                Backing::Hole | Backing::Unwritten { .. } => {
+                    for locked_page in pages.by_ref().take(io_range.logical.len()) {
                         locked_page.fill_zeros(0, PAGE_SIZE).unwrap();
                         locked_page.set_up_to_date();
                     }
@@ -369,17 +454,17 @@ impl BlockAsPageCacheBackend for BlockMapping {
         let fs = self.fs()?;
         let mut io_ranges = self.iter_io_ranges(start_idx as Iblock..end_idx as Iblock)?;
         while let Some(io_range) = io_ranges.next()? {
-            match io_range {
-                IoRange::Mapped(device_range) => {
-                    let range_len = device_range.len();
+            match io_range.backing {
+                Backing::Written { physical_start } => {
+                    let range_len = io_range.logical.len();
                     pages.submit_contiguous_write_pages(
                         fs.block_device(),
-                        Bid::new(device_range.start as u64),
+                        Bid::new(physical_start as u64),
                         range_len,
                         io_batch,
                     )?;
                 }
-                IoRange::Hole(_) => {
+                Backing::Hole | Backing::Unwritten { .. } => {
                     return_errno_with_message!(
                         Errno::EIO,
                         "unexpected hole after writeback allocation"

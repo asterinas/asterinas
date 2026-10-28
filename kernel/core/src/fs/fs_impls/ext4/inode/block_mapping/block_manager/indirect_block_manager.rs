@@ -66,9 +66,8 @@ impl IndirectBlockManager {
     }
 
     /// Inserts an indirect block into the cache.
-    pub(super) fn insert(&mut self, block: IndirectBlock) -> Result<()> {
+    pub(super) fn insert(&mut self, block: IndirectBlock) {
         self.cache.insert(block.bid(), block);
-        Ok(())
     }
 
     /// Removes an indirect block from the cache without writing it back.
@@ -76,21 +75,15 @@ impl IndirectBlockManager {
         self.cache.remove(&bid)
     }
 
+    /// Returns whether any cached indirect block needs writeback.
+    pub(super) fn has_dirty_metadata(&self) -> bool {
+        self.cache.values().any(IndirectBlock::is_dirty)
+    }
+
     /// Writes all dirty cached indirect blocks back to the device.
     pub(super) fn sync(&mut self) -> Result<()> {
         let fs = self.fs()?;
-        let dirty_bids: Vec<Ext4Bid> = self
-            .cache
-            .iter()
-            .filter_map(|(bid, block)| block.is_dirty().then_some(*bid))
-            .collect();
-
-        // TODO: do this flush job in best effort (skip the failed flush).
-        for bid in dirty_bids {
-            let block = self
-                .cache
-                .get_mut(&bid)
-                .expect("dirty indirect block key must still be cached");
+        for block in self.cache.values_mut() {
             Self::write_block(&fs, block)?;
         }
 

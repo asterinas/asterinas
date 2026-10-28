@@ -46,28 +46,28 @@
 //!
 //! # Locking
 //!
-//! Within a single inode, `inner` and `xattr` are never held simultaneously;
-//! `Xattr` manages its own internal lock and is always accessed outside
-//! `inner`. Data-backed inodes additionally nest the block-pointer tree and
-//! its indirect-block cache under `inner` in order:
+//! Within a single inode, `inner` and the xattr cache lock are never held
+//! simultaneously. Xattr operations release their cache lock before acquiring
+//! `inner` to update the inode descriptor.
+//!
+//! Data-backed operations acquire the mapping lock under `inner`. The mapping
+//! lock protects the selected tree; its indirect-block or extent-node cache
+//! has an additional internal lock. Extent-node cache bookkeeping releases its
+//! lock before device I/O or filesystem allocation.
 //!
 //! ```text
-//! Inode::inner → BlockPtrTree → IndirectBlockManager
+//! Inode::inner → BlockMapping::manager → mapping cache locks
+//! Inode::inner → BlockMapping::manager → SuperBlock::state → BlockGroup::metadata
 //! ```
 //!
 //! When multiple inodes must be write-locked simultaneously, acquire them
 //! in ascending `ino` order and coalesce duplicates first.
 //!
-//! Data-backed inode operations that allocate or free blocks call into
-//! filesystem-level methods (`Ext4::alloc_blocks`, `Ext4::free_blocks`). The
-//! full cross-layer ordering is:
-//!
-//! ```text
-//! Inode::inner → BlockMapping → SuperBlock::state → BlockGroup::metadata
-//! ```
-//!
-//! `BlockGroup::inode_cache` is independent: it is never held while
-//! acquiring `super_block` or `metadata`, nor while holding `Inode::inner`.
+//! Directory operations may acquire `BlockGroup::inode_cache` while holding
+//! inode write locks. The reverse order must be avoided: inode-cache walkers
+//! such as sync clone the inode handles and release the cache lock before
+//! acquiring any cached inode's `inner` lock. Cache misses may load a new inode
+//! under the cache lock, but must not lock an existing inode's `inner` there.
 
 #![short_vis_path::add(ext4)]
 
@@ -76,6 +76,7 @@ mod block_mapping;
 mod dir;
 mod file;
 mod io_range;
+pub(super) mod reclaim;
 mod symlink;
 mod sync;
 
@@ -223,6 +224,7 @@ impl Inode {
 impl Drop for Inode {
     fn drop(&mut self) {
         if let Err(err) = self.try_reclaim_deleted_inode() {
+            self.defer_deleted_inode_work();
             debug!(
                 "failed to reclaim deleted inode {} during drop: {:?}",
                 self.ino, err
@@ -346,7 +348,7 @@ impl TryFrom<&RawInode> for InodeDesc {
         let flags = FileFlags::from_bits(raw.flags)
             .ok_or_else(|| Error::with_message(Errno::EIO, "invalid inode flags"))?;
         if flags.contains(FileFlags::EXTENTS) {
-            block_mapping::extent::validate_extent_root(raw.block)?;
+            block_mapping::extent::ExtentTree::validate_root(&raw.block)?;
         }
         let raw_block_ptrs = RawBlockPtrs::new(raw.sector_count, raw.block);
 
@@ -528,7 +530,7 @@ impl InodeInner {
     fn clear_dirty(&mut self) {
         self.desc.clear_dirty();
         if let Ok(block_manager) = self.block_manager() {
-            block_manager.clear_dirty();
+            block_manager.clear_inode_dirty();
         }
     }
 
@@ -536,7 +538,7 @@ impl InodeInner {
         self.desc.is_dirty()
             || self
                 .block_manager()
-                .is_ok_and(|block_manager| block_manager.is_dirty())
+                .is_ok_and(|block_manager| block_manager.has_dirty_metadata())
     }
 
     fn inode_type(&self) -> InodeType {
@@ -780,10 +782,10 @@ bitflags! {
 #[cfg(ktest)]
 mod test {
     use super::*;
-    use crate::fs::fs_impls::ext4::test_utils::{self, RawInodeBuilder};
+    use crate::fs::fs_impls::ext4::test_utils;
 
     /// Reads a `RawInode` directly from the test fixture's disk image.
-    pub(super) fn read_raw_inode_from_disk(f: &test_utils::Ext4Fixture, ino: u32) -> RawInode {
+    pub(super) fn read_raw_inode_from_disk(f: &test_utils::ExtFixture, ino: u32) -> RawInode {
         let nr_inodes_per_group = f.sb.nr_inodes_per_group();
         let group_idx = ((ino - 1) / nr_inodes_per_group) as usize;
         let inode_idx = (ino - 1) % nr_inodes_per_group;
@@ -801,29 +803,5 @@ mod test {
             )
             .unwrap();
         raw
-    }
-
-    /// Builds a live in-memory file inode (not on disk) for low-level tests.
-    pub(super) fn make_live_file_inode(
-        ext2: &Arc<Ext4>,
-        ino: u32,
-        size: usize,
-        sector_count: u32,
-        flags: FileFlags,
-        block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
-    ) -> Arc<Inode> {
-        let mut raw = RawInodeBuilder::new(0o100644).build();
-        raw.size_lo = size as u32;
-        raw.sector_count = sector_count;
-        raw.flags = flags.bits();
-        raw.block = block_ptrs;
-        let desc = InodeDesc::try_from(&raw).unwrap();
-        Inode::new(
-            ino,
-            InodeType::File,
-            Dirty::new(desc),
-            0,
-            Arc::downgrade(ext2),
-        )
     }
 }

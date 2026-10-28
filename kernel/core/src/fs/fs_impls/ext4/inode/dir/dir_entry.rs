@@ -373,14 +373,8 @@ mod test {
     use crate::fs::ext4::test_utils::assert_errno;
 
     #[ktest]
-    fn min_rec_len_ok() {
+    fn directory_entry_record_length_boundaries() {
         assert_eq!(DirEntryHeader::min_rec_len(0), 8);
-        assert_eq!(DirEntryHeader::min_rec_len(1), 12);
-        assert_eq!(DirEntryHeader::min_rec_len(NAME_MAX), 264);
-    }
-
-    #[ktest]
-    fn min_rec_len_boundary_values() {
         // 4-byte alignment: name_len 1..4 all round to 12.
         assert_eq!(DirEntryHeader::min_rec_len(1), 12);
         assert_eq!(DirEntryHeader::min_rec_len(2), 12);
@@ -397,16 +391,10 @@ mod test {
     }
 
     #[ktest]
-    fn iter_all_zero_block_returns_eio() {
+    fn directory_iterator_rejects_zero_and_undersized_records() {
         let page_cache = PageCache::new_anon(BLOCK_SIZE).unwrap();
         let view = DirBlockView::from_index(&page_cache, 0, BLOCK_SIZE);
-        let mut iter = view.iter_entries();
-        assert_errno!(iter.next_entry(), Errno::EIO);
-    }
-
-    #[ktest]
-    fn iter_bad_entry_returns_eio() {
-        let page_cache = PageCache::new_anon(BLOCK_SIZE).unwrap();
+        assert_errno!(view.iter_entries().next_entry(), Errno::EIO);
 
         // Write a first entry with ino=2, rec_len=8, name_len=1, type=Dir, name='.'.
         // rec_len=8 is exactly the header size, which is too small for name_len=1

@@ -2,16 +2,28 @@
 
 //! Classification of logical block ranges as mapped runs or sparse holes.
 
-use super::block_mapping::MappingTreeType;
+use super::block_mapping::{MappingRangeCursor, MappingTreeType};
 use crate::fs::ext4::{fs::Ext4, prelude::*};
 
-/// EXT block-range classification for the current logical interval.
+/// A half-open file-logical block interval and its storage backing.
+/// Physical block numbers are kept separate from the logical endpoints.
+/// The exclusive logical end is at most `Iblock::MAX`.
 #[derive(Debug, Eq, PartialEq)]
-pub(super) enum IoRange {
-    /// A contiguous mapped device-block range.
-    Mapped(Range<Ext4Bid>),
-    /// A hole in the file expressed as a logical-block interval.
-    Hole(Range<Iblock>),
+pub(super) struct IoRange {
+    pub(super) logical: Range<Iblock>,
+    pub(super) backing: Backing,
+}
+
+/// Storage for the whole logical interval, contiguous when allocated.
+/// A physical start corresponds to the interval's first logical block.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) enum Backing {
+    /// Unallocated blocks that read as zeros.
+    Hole,
+    /// Allocated blocks that read as zeros until initialized.
+    Unwritten { physical_start: Ext4Bid },
+    /// Initialized blocks whose data can be read from the device.
+    Written { physical_start: Ext4Bid },
 }
 
 /// Iterator over mapped runs and sparse holes in a logical block range.
@@ -23,6 +35,7 @@ pub(super) struct IoRangeIter<'a> {
     range: Range<Iblock>,
     manager: RwMutexReadGuard<'a, MappingTreeType>,
     fs: Arc<Ext4>,
+    cursor: MappingRangeCursor,
 }
 
 impl<'a> IoRangeIter<'a> {
@@ -31,16 +44,26 @@ impl<'a> IoRangeIter<'a> {
         manager: RwMutexReadGuard<'a, MappingTreeType>,
         fs: Arc<Ext4>,
     ) -> Self {
-        Self { range, manager, fs }
+        Self {
+            range,
+            manager,
+            fs,
+            cursor: MappingRangeCursor::Indirect,
+        }
     }
 
     /// Returns the next logical run for block-I/O planning.
     ///
-    /// `IoRange::Mapped` returns one run whose logical blocks are backed by
-    /// contiguous physical device blocks. `IoRange::Hole` returns a known hole
-    /// run that may stop early at direct/indirect region boundaries.
+    /// Allocated intervals have contiguous physical backing. Hole intervals
+    /// may stop early at direct/indirect region boundaries.
     pub(super) fn next(&mut self) -> Result<Option<IoRange>> {
-        self.manager.next_io_range(&self.fs, &mut self.range)
+        let result = self
+            .manager
+            .next_io_range(&self.fs, &mut self.range, &mut self.cursor);
+        if result.is_err() {
+            self.range.start = self.range.end;
+        }
+        result
     }
 }
 
@@ -56,7 +79,7 @@ mod test {
                 RAW_BLOCK_PTRS_LEN,
                 block_mapping::{BlockMapping, RawBlockPtrs},
             },
-            test_utils::{BlockBitmapInit, Ext4FixtureBuilder},
+            test_utils::{BlockBitmapInit, ExtFixtureBuilder},
         },
         time::clocks,
     };
@@ -64,7 +87,11 @@ mod test {
     fn expect_hole_runs(iter: &mut IoRangeIter<'_>, expected: Range<Iblock>) {
         let mut cursor = expected.start;
         while cursor < expected.end {
-            let Some(IoRange::Hole(hole)) = iter.next().unwrap() else {
+            let Some(IoRange {
+                logical: hole,
+                backing: Backing::Hole,
+            }) = iter.next().unwrap()
+            else {
                 panic!("expected a hole at logical block {cursor}");
             };
             assert_eq!(hole.start, cursor);
@@ -74,10 +101,123 @@ mod test {
     }
 
     #[ktest]
+    fn extent_iterator_emits_one_large_hole_and_clips_runs() {
+        let f = ExtFixtureBuilder::new(1, 2048)
+            .with_mount_flavor(MountFlavor::Ext4)
+            .build()
+            .unwrap();
+        let root = [
+            0x0003_f30a,
+            4,
+            0,
+            0,
+            1,
+            50,
+            100000,
+            1,
+            60,
+            100002,
+            0x8002, // Two unwritten blocks.
+            61,
+            0,
+            0,
+            0,
+        ];
+        let mapping =
+            BlockMapping::new_extent(RawBlockPtrs::new(32, root), Arc::downgrade(&f.fs), 100006)
+                .unwrap();
+        let mut iter = mapping.iter_io_ranges(0..100002).unwrap();
+        assert_eq!(
+            iter.next().unwrap(),
+            Some(IoRange {
+                logical: 0..1,
+                backing: Backing::Written { physical_start: 50 }
+            })
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            Some(IoRange {
+                logical: 1..100000,
+                backing: Backing::Hole
+            })
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            Some(IoRange {
+                logical: 100000..100001,
+                backing: Backing::Written { physical_start: 60 }
+            })
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            Some(IoRange {
+                logical: 100001..100002,
+                backing: Backing::Hole
+            })
+        );
+        assert_eq!(iter.next().unwrap(), None);
+
+        drop(iter);
+        // Clipping an unwritten extent must advance its physical start too.
+        let mut iter = mapping.iter_io_ranges(100003..100006).unwrap();
+        assert_eq!(
+            iter.next().unwrap(),
+            Some(IoRange {
+                logical: 100003..100004,
+                backing: Backing::Unwritten { physical_start: 62 },
+            })
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            Some(IoRange {
+                logical: 100004..100006,
+                backing: Backing::Hole,
+            })
+        );
+        assert_eq!(iter.next().unwrap(), None);
+        drop(iter);
+        // Keep the existing exclusive endpoint without widening to u64.
+        let root = [
+            0x0001_f30a,
+            4,
+            0,
+            Iblock::MAX - 1,
+            1,
+            50,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ];
+        let mapping = BlockMapping::new_extent(
+            RawBlockPtrs::new(8, root),
+            Arc::downgrade(&f.fs),
+            Iblock::MAX as usize,
+        )
+        .unwrap();
+        let mut iter = mapping
+            .iter_io_ranges(Iblock::MAX - 1..Iblock::MAX)
+            .unwrap();
+        assert_eq!(
+            iter.next().unwrap(),
+            Some(IoRange {
+                logical: Iblock::MAX - 1..Iblock::MAX,
+                backing: Backing::Written { physical_start: 50 },
+            })
+        );
+        assert_eq!(iter.next().unwrap(), None);
+    }
+
+    #[ktest]
     fn io_range_iter_preserves_mapping_and_hole_boundaries_for_both_formats() {
         clocks::init_for_ktest();
         for flavor in [MountFlavor::Ext2, MountFlavor::Ext4] {
-            let f = Ext4FixtureBuilder::new(2, 256)
+            let f = ExtFixtureBuilder::new(2, 256)
                 .with_mount_flavor(flavor)
                 .block_bitmap(BlockBitmapInit::MetadataPlus(vec![50, 51, 52, 60, 61]))
                 .build()
@@ -99,17 +239,41 @@ mod test {
                     .unwrap()
             };
             let mut iter = mapping.iter_io_ranges(0..9).unwrap();
-            assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(50..53)));
+            assert_eq!(
+                iter.next().unwrap(),
+                Some(IoRange {
+                    logical: 0..3,
+                    backing: Backing::Written { physical_start: 50 }
+                })
+            );
             expect_hole_runs(&mut iter, 3..7);
-            assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(60..62)));
+            assert_eq!(
+                iter.next().unwrap(),
+                Some(IoRange {
+                    logical: 7..9,
+                    backing: Backing::Written { physical_start: 60 }
+                })
+            );
             assert_eq!(iter.next().unwrap(), None);
             drop(iter);
 
             // Both ends of a requested subrange must clip the mapped runs.
             let mut iter = mapping.iter_io_ranges(2..8).unwrap();
-            assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(52..53)));
+            assert_eq!(
+                iter.next().unwrap(),
+                Some(IoRange {
+                    logical: 2..3,
+                    backing: Backing::Written { physical_start: 52 }
+                })
+            );
             expect_hole_runs(&mut iter, 3..7);
-            assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(60..61)));
+            assert_eq!(
+                iter.next().unwrap(),
+                Some(IoRange {
+                    logical: 7..8,
+                    backing: Backing::Written { physical_start: 60 }
+                })
+            );
             assert_eq!(iter.next().unwrap(), None);
             drop(iter);
             assert_eq!(mapping.iter_io_ranges(4..4).unwrap().next().unwrap(), None);

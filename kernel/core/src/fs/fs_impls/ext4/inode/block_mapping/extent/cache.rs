@@ -1,0 +1,261 @@
+// SPDX-License-Identifier: MPL-2.0
+
+use smallvec::SmallVec;
+
+use super::node::{ExtentIdx, ExtentNode};
+use crate::fs::fs_impls::ext4::{fs::Ext4, prelude::*, utils};
+
+/// Inode-private extent nodes with per-node dirty tracking.
+///
+/// The mapping lock excludes edits during writeback. Cache bookkeeping is
+/// protected by the inner mutex, which is never held during device I/O.
+/// Clean nodes may be evicted; dirty nodes remain authoritative until written
+/// or explicitly retired by a mapping update.
+#[derive(Debug)]
+pub(super) struct ExtentNodeCache {
+    inner: Mutex<CacheInner>,
+}
+
+#[derive(Debug, Default)]
+struct CacheInner {
+    nodes: BTreeMap<Ext4Bid, Dirty<Arc<ExtentNode>>>,
+    clean_lru: VecDeque<Ext4Bid>,
+}
+
+/// An immutable version retained until all submitted I/O has completed.
+///
+/// The snapshot does not clear dirty state on drop: failed writeback leaves the
+/// cache authoritative. Completion only cleans the exact version submitted.
+struct NodeWriteback {
+    bid: Ext4Bid,
+    node: Arc<ExtentNode>,
+}
+
+enum NodeRead {
+    Cached(Arc<ExtentNode>),
+    Pending(BioSegment),
+}
+
+impl ExtentNodeCache {
+    pub(super) fn new() -> Self {
+        Self {
+            inner: Mutex::new(CacheInner::default()),
+        }
+    }
+
+    pub(super) fn load(
+        &self,
+        fs: &Ext4,
+        bid: Ext4Bid,
+        expected_depth: u16,
+    ) -> Result<Arc<ExtentNode>> {
+        if let Some(node) = self.cached_node(bid, expected_depth)? {
+            return Ok(node);
+        }
+        let bytes = fs
+            .block_device()
+            .read_val::<[u8; BLOCK_SIZE]>(Bid::new(bid.into()).to_offset())?;
+        self.cache_parsed_node(fs, bid, &bytes, expected_depth)
+    }
+
+    /// Loads a bounded batch of siblings, submitting cache misses before waiting.
+    /// All submitted reads are drained on failure; returned versions remain alive
+    /// even if recursion evicts their clean cache entries.
+    pub(super) fn load_children(
+        &self,
+        fs: &Ext4,
+        indexes: &[ExtentIdx],
+        expected_depth: u16,
+    ) -> Result<SmallVec<[Arc<ExtentNode>; INLINE_READ_NODES]>> {
+        debug_assert!(indexes.len() <= READ_BATCH_NODES);
+        let mut reads = SmallVec::<[NodeRead; INLINE_READ_NODES]>::with_capacity(indexes.len());
+        let mut batch = IoBatch::with_capacity(indexes.len());
+        utils::submit_and_wait(&mut batch, |batch| {
+            for index in indexes {
+                if let Some(node) = self.cached_node(index.leaf(), expected_depth)? {
+                    reads.push(NodeRead::Cached(node));
+                } else {
+                    let segment = BioSegment::alloc(1, BioDirection::FromDevice);
+                    fs.read_blocks_async(index.leaf(), segment.clone(), None, batch)?;
+                    reads.push(NodeRead::Pending(segment));
+                }
+            }
+            Ok(())
+        })?;
+        let mut nodes = SmallVec::with_capacity(reads.len());
+        for (index, read) in indexes.iter().zip(reads) {
+            let node = match read {
+                NodeRead::Cached(node) => node,
+                NodeRead::Pending(segment) => {
+                    let mut bytes = [0u8; BLOCK_SIZE];
+                    segment.read_bytes(0, &mut bytes)?;
+                    self.cache_parsed_node(fs, index.leaf(), &bytes, expected_depth)?
+                }
+            };
+            nodes.push(node);
+        }
+        Ok(nodes)
+    }
+
+    fn cached_node(&self, bid: Ext4Bid, expected_depth: u16) -> Result<Option<Arc<ExtentNode>>> {
+        let mut cache = self.inner.lock();
+        let node = cache.nodes.get(&bid).map(|entry| Arc::clone(entry));
+        if let Some(node) = &node {
+            if node.depth != expected_depth {
+                return_errno_with_message!(Errno::EUCLEAN, "cached extent child depth mismatch");
+            }
+            if cache.clean_lru.contains(&bid) {
+                cache.touch_clean(bid);
+            }
+        }
+        Ok(node)
+    }
+
+    fn cache_parsed_node(
+        &self,
+        fs: &Ext4,
+        bid: Ext4Bid,
+        bytes: &[u8],
+        expected_depth: u16,
+    ) -> Result<Arc<ExtentNode>> {
+        let node = Arc::new(ExtentNode::parse(bytes)?);
+        if node.depth != expected_depth {
+            return_errno_with_message!(Errno::EUCLEAN, "extent child has an invalid depth");
+        }
+        node.validate_addresses(fs)?;
+        let mut cache = self.inner.lock();
+        // Concurrent readers may have filled the same immutable version.
+        let entry = cache.nodes.entry(bid).or_insert_with(|| Dirty::new(node));
+        let node = Arc::clone(entry);
+        cache.touch_clean(bid);
+        Ok(node)
+    }
+
+    pub(super) fn stage(&mut self, bid: Ext4Bid, node: Arc<ExtentNode>) {
+        let mut cache = self.inner.lock();
+        cache.clean_lru.retain(|key| *key != bid);
+        if let Some(entry) = cache.nodes.get_mut(&bid) {
+            **entry = node;
+        } else {
+            cache.nodes.insert(bid, Dirty::_new_dirty(node));
+        }
+    }
+
+    pub(super) fn remove(&mut self, bid: Ext4Bid) {
+        let mut cache = self.inner.lock();
+        cache.clean_lru.retain(|key| *key != bid);
+        if let Some(mut entry) = cache.nodes.remove(&bid) {
+            // The accepted mapping update retired this block; writing the old
+            // contents after reuse would be incorrect.
+            entry.clear_dirty();
+        }
+    }
+
+    pub(super) fn is_dirty(&self) -> bool {
+        self.inner
+            .lock()
+            .nodes
+            .values()
+            .any(|entry| entry.is_dirty())
+    }
+
+    pub(super) fn sync(&self, fs: &Ext4) -> Result<()> {
+        let mut pending: Vec<_> = self
+            .inner
+            .lock()
+            .nodes
+            .iter()
+            .filter(|(_, entry)| entry.is_dirty())
+            .map(|(&bid, entry)| NodeWriteback {
+                bid,
+                node: Arc::clone(entry),
+            })
+            .collect();
+        pending.sort_by_key(|snapshot| snapshot.node.depth);
+        // Complete child nodes before submitting their parents.
+        for snapshot in &pending {
+            let mut bytes = Box::new([0u8; BLOCK_SIZE]);
+            snapshot.node.write_into(bytes.as_mut());
+            fs.block_device().write_bytes(
+                Bid::new(u64::from(snapshot.bid)).to_offset(),
+                bytes.as_ref(),
+            )?;
+            self.inner.lock().complete(snapshot);
+        }
+        Ok(())
+    }
+}
+
+// Each external node occupies one filesystem block.
+const MAX_CLEAN_NODES: usize = 32;
+// The inode-resident root has at most four children.
+const INLINE_READ_NODES: usize = 4;
+// Bound read-ahead to 128 KiB of DMA buffers per tree level.
+pub(super) const READ_BATCH_NODES: usize = 32;
+
+impl CacheInner {
+    fn touch_clean(&mut self, bid: Ext4Bid) {
+        debug_assert!(!self.nodes[&bid].is_dirty());
+        self.clean_lru.retain(|key| *key != bid);
+        if self.clean_lru.len() == MAX_CLEAN_NODES {
+            let evicted = self.clean_lru.pop_front().unwrap();
+            self.nodes.remove(&evicted);
+        }
+        self.clean_lru.push_back(bid);
+    }
+
+    fn complete(&mut self, snapshot: &NodeWriteback) {
+        let Some(entry) = self.nodes.get_mut(&snapshot.bid) else {
+            return;
+        };
+        if !Arc::ptr_eq(entry, &snapshot.node) {
+            return;
+        }
+        entry.clear_dirty();
+        self.touch_clean(snapshot.bid);
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use ostd::prelude::ktest;
+
+    use super::*;
+    use crate::fs::ext4::inode::block_mapping::extent::empty_extent_root;
+
+    #[ktest]
+    fn stale_writeback_completion_preserves_replacement_until_its_own_completion() {
+        let root = empty_extent_root();
+        let first = Arc::new(ExtentNode::parse(root.as_bytes()).unwrap());
+        let mut next = (*first).clone();
+        next.capacity -= 1;
+        let next = Arc::new(next);
+        let mut cache = ExtentNodeCache::new();
+        cache.stage(40, first.clone());
+        let older = NodeWriteback {
+            bid: 40,
+            node: first,
+        };
+        cache.stage(40, next.clone());
+        cache.inner.lock().complete(&older);
+        assert!(cache.is_dirty());
+        {
+            let inner = cache.inner.lock();
+            assert!(inner.clean_lru.is_empty());
+            assert!(Arc::ptr_eq(&inner.nodes[&40], &next));
+        }
+        let current = NodeWriteback {
+            bid: 40,
+            node: next.clone(),
+        };
+        cache.inner.lock().complete(&current);
+        assert!(!cache.is_dirty());
+        assert_eq!(cache.inner.lock().clean_lru.front(), Some(&40));
+        // Retiring a dirty node removes the obligation rather than persisting
+        // obsolete contents into a block that can be reused.
+        cache.stage(40, next);
+        cache.remove(40);
+        assert!(!cache.is_dirty());
+        assert!(cache.inner.lock().nodes.is_empty());
+    }
+}

@@ -36,10 +36,9 @@ impl FastSymlinkTarget {
         }
     }
 
-    fn write(&mut self, target: &[u8]) -> Result<()> {
+    fn write(&mut self, target: &[u8]) {
         debug_assert!(target.len() <= MAX_FAST_SYMLINK_LEN);
         self.block_ptrs.as_mut_bytes()[..target.len()].copy_from_slice(target);
-        Ok(())
     }
 
     fn read(&self, len: usize) -> Vec<u8> {
@@ -98,7 +97,7 @@ impl InodeInner {
                 block_manager.truncate_to_byte_len(0)?;
             }
             let mut fast_target = FastSymlinkTarget::new_zeros();
-            fast_target.write(target.as_bytes())?;
+            fast_target.write(target.as_bytes());
             self.payload = InodePayload::FastSymlink {
                 target: fast_target,
             };

@@ -53,13 +53,20 @@ impl BlockPtrTree {
         &self.raw_block_ptrs
     }
 
-    /// Returns whether the `RawBlockPtrs` is dirty.
-    pub(in inode) fn is_dirty(&self) -> bool {
+    /// Returns whether the inode-resident pointers or sector count needs writeback.
+    pub(in inode) fn is_inode_dirty(&self) -> bool {
         self.raw_block_ptrs.is_dirty()
     }
 
-    /// Clears the dirty flag for the raw on-disk block pointer state.
-    pub(in inode) fn clear_dirty(&mut self) {
+    /// Returns whether inode-resident metadata or cached indirect blocks need writeback.
+    pub(in inode) fn has_dirty_metadata(&self) -> bool {
+        self.is_inode_dirty() || self.indirect_blocks_manager.lock().has_dirty_metadata()
+    }
+
+    /// Clears only the dirty flag for inode-resident pointers and sector count.
+    ///
+    /// Cached indirect blocks are unaffected; `sync_indirect_blocks` writes them back.
+    pub(in inode) fn clear_inode_dirty(&mut self) {
         self.raw_block_ptrs.clear_dirty();
     }
 
@@ -781,7 +788,7 @@ impl BlockPtrTree {
                 } else {
                     block.write_bid(start_slot, indirect_blocks[indirect_blk_idx + 1])?;
                 }
-                indirect_blocks_manager.insert(block)?;
+                indirect_blocks_manager.insert(block);
             }
 
             // Splice the chain root into the parent pointer.
@@ -1128,7 +1135,7 @@ mod test {
     use crate::{
         fs::fs_impls::ext4::{
             inode::RAW_BLOCK_PTRS_LEN,
-            test_utils::{Ext4FixtureBuilder, write_indirect_ptr},
+            test_utils::{ExtFixtureBuilder, write_indirect_ptr},
         },
         time::clocks,
     };
@@ -1176,7 +1183,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_direct_and_indirect_ok() {
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = ExtFixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
         let ptrs = PTRS_PER_BLOCK as u32;
@@ -1287,7 +1294,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_get_block_range_returns_contiguous_runs() {
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = ExtFixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
         let indirect_bid = 40u32;
@@ -1312,7 +1319,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_out_of_range_iblock_returns_err() {
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = ExtFixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
         let ptrs = PTRS_PER_BLOCK as u64;
@@ -1325,6 +1332,12 @@ mod test {
 
         let block_ptr_tree = make_block_ptr_tree([0; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
 
+        // The sector-accounting limit is lower than the tree's address limit.
+        const MAX_FILE_BYTES_4K: u64 = 2_196_873_666_560;
+        assert_eq!(f.sb.max_file_size() as u64, MAX_FILE_BYTES_4K);
+        let last_file_block = (MAX_FILE_BYTES_4K / BLOCK_SIZE as u64 - 1) as u32;
+        block_ptr_tree.walk_at(last_file_block).unwrap();
+        assert!(u64::from(last_file_block) < max_iblock);
         // Accept the maximum valid logical block and reject the next one.
         block_ptr_tree.walk_at(max_iblock as u32).unwrap();
 
@@ -1377,7 +1390,7 @@ mod test {
     #[ktest]
     fn approx_hole_blocks_scans() {
         clocks::init_for_ktest();
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = ExtFixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
         let ptrs = PTRS_PER_BLOCK;
         let ptrs_bits = (ptrs as u32).trailing_zeros();
@@ -1487,7 +1500,7 @@ mod test {
 
     #[ktest]
     fn block_alloc_direct_range_ok() {
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1529,7 +1542,7 @@ mod test {
 
     #[ktest]
     fn block_alloc_indirect_range_ok() {
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1556,11 +1569,24 @@ mod test {
             SECTORS_PER_BLOCK * 5
         );
         assert_eq!(free_before - free_after, 5);
+
+        // Confirming inode metadata does not discard pending indirect writes.
+        assert!(block_ptr_tree.is_inode_dirty());
+        block_ptr_tree.clear_inode_dirty();
+        assert!(!block_ptr_tree.is_inode_dirty());
+        assert!(block_ptr_tree.has_dirty_metadata());
+        let indirect_bid = block_ptr_tree.raw_block_ptrs.block_ptrs[12];
+        f.disk.fail_write_block(Some(indirect_bid as usize));
+        assert!(block_ptr_tree.sync_indirect_blocks().is_err());
+        assert!(block_ptr_tree.has_dirty_metadata());
+        f.disk.fail_write_block(None);
+        block_ptr_tree.sync_indirect_blocks().unwrap();
+        assert!(!block_ptr_tree.has_dirty_metadata());
     }
 
     #[ktest]
     fn truncate_indirect_frees_shared_path() {
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1596,7 +1622,7 @@ mod test {
 
     #[ktest]
     fn truncate_releases_all_indirect_blocks() {
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1631,7 +1657,7 @@ mod test {
 
     #[ktest]
     fn free_block_subtree_recursively_releases_blocks() {
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();

@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/vfs.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -98,5 +99,27 @@ FN_TEST(append_two_writers)
 
 	TEST_SUCC(close(fd));
 	remove_file_if_exists(FILE_APPEND);
+}
+END_TEST()
+
+/* Closing the last unlinked handle must reclaim even unsynced allocations. */
+FN_TEST(write_after_unlink_reclaims_unsynced_blocks)
+{
+	const char *path = BASE_DIR "/unsynced_file";
+	remove_file_if_exists(path);
+	struct statfs before, allocated, after;
+	TEST_SUCC(statfs(BASE_DIR, &before));
+	int fd = TEST_SUCC(open(path, O_CREAT | O_RDWR, 0644));
+	TEST_SUCC(unlink(path));
+	TEST_RES(write(fd, "alive", 5), _ret == 5);
+	char buffer[5];
+	TEST_RES(pread(fd, buffer, sizeof(buffer), 0), _ret == sizeof(buffer));
+	TEST_RES(memcmp(buffer, "alive", sizeof(buffer)), _ret == 0);
+	TEST_SUCC(statfs(BASE_DIR, &allocated));
+	TEST_RES(allocated.f_bfree, _ret < before.f_bfree);
+	TEST_SUCC(close(fd));
+	TEST_SUCC(statfs(BASE_DIR, &after));
+	TEST_RES(after.f_bfree, _ret == before.f_bfree);
+	TEST_RES(after.f_ffree, _ret == before.f_ffree);
 }
 END_TEST()
