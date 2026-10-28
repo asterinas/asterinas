@@ -76,6 +76,7 @@ mod block_mapping;
 mod dir;
 mod file;
 mod io_range;
+pub(super) mod reclaim;
 mod symlink;
 mod sync;
 
@@ -223,6 +224,7 @@ impl Inode {
 impl Drop for Inode {
     fn drop(&mut self) {
         if let Err(err) = self.try_reclaim_deleted_inode() {
+            self.defer_deleted_inode_work();
             debug!(
                 "failed to reclaim deleted inode {} during drop: {:?}",
                 self.ino, err

@@ -2,7 +2,7 @@
 
 //! Classification of logical block ranges as mapped runs or sparse holes.
 
-use super::block_mapping::MappingTreeType;
+use super::block_mapping::{MappingRangeCursor, MappingTreeType};
 use crate::fs::ext4::{fs::Ext4, prelude::*};
 
 /// EXT block-range classification for the current logical interval.
@@ -10,6 +10,8 @@ use crate::fs::ext4::{fs::Ext4, prelude::*};
 pub(super) enum IoRange {
     /// A contiguous mapped device-block range.
     Mapped(Range<Ext4Bid>),
+    /// Allocated blocks whose data must read as zeros until initialized.
+    Unwritten(Range<Ext4Bid>),
     /// A hole in the file expressed as a logical-block interval.
     Hole(Range<Iblock>),
 }
@@ -23,6 +25,7 @@ pub(super) struct IoRangeIter<'a> {
     range: Range<Iblock>,
     manager: RwMutexReadGuard<'a, MappingTreeType>,
     fs: Arc<Ext4>,
+    cursor: MappingRangeCursor,
 }
 
 impl<'a> IoRangeIter<'a> {
@@ -31,7 +34,12 @@ impl<'a> IoRangeIter<'a> {
         manager: RwMutexReadGuard<'a, MappingTreeType>,
         fs: Arc<Ext4>,
     ) -> Self {
-        Self { range, manager, fs }
+        Self {
+            range,
+            manager,
+            fs,
+            cursor: MappingRangeCursor::Indirect,
+        }
     }
 
     /// Returns the next logical run for block-I/O planning.
@@ -40,7 +48,13 @@ impl<'a> IoRangeIter<'a> {
     /// contiguous physical device blocks. `IoRange::Hole` returns a known hole
     /// run that may stop early at direct/indirect region boundaries.
     pub(super) fn next(&mut self) -> Result<Option<IoRange>> {
-        self.manager.next_io_range(&self.fs, &mut self.range)
+        let result = self
+            .manager
+            .next_io_range(&self.fs, &mut self.range, &mut self.cursor);
+        if result.is_err() {
+            self.range.start = self.range.end;
+        }
+        result
     }
 }
 
@@ -71,6 +85,24 @@ mod test {
             assert!(hole.end > cursor && hole.end <= expected.end);
             cursor = hole.end;
         }
+    }
+
+    #[ktest]
+    fn extent_iterator_emits_one_large_hole_and_clips_runs() {
+        let f = Ext4FixtureBuilder::new(1, 2048)
+            .with_mount_flavor(MountFlavor::Ext4)
+            .build()
+            .unwrap();
+        let root = [0x0002_f30a, 4, 0, 0, 1, 50, 100000, 1, 60, 0, 0, 0, 0, 0, 0];
+        let mapping =
+            BlockMapping::new_extent(RawBlockPtrs::new(16, root), Arc::downgrade(&f.fs), 100002)
+                .unwrap();
+        let mut iter = mapping.iter_io_ranges(0..100002).unwrap();
+        assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(50..51)));
+        assert_eq!(iter.next().unwrap(), Some(IoRange::Hole(1..100000)));
+        assert_eq!(iter.next().unwrap(), Some(IoRange::Mapped(60..61)));
+        assert_eq!(iter.next().unwrap(), Some(IoRange::Hole(100001..100002)));
+        assert_eq!(iter.next().unwrap(), None);
     }
 
     #[ktest]

@@ -15,7 +15,7 @@ use crate::fs::ext4::{prelude::*, utils};
 impl Inode {
     /// Flushes all dirty state owned by the inode.
     ///
-    /// Writes xattrs, data pages, and indirect blocks back before staging dirty
+    /// Writes xattrs, data pages, and mapping nodes back before staging dirty
     /// inode metadata in the block group's inode-table page cache.
     pub(in ext4) fn sync_all(&self) -> Result<()> {
         // Step 1: flush the xattr.
@@ -28,8 +28,8 @@ impl Inode {
         let mut inner = self.inner.write();
         inner.sync_data_pages()?;
 
-        // Step 3: flush inode-local indirect metadata before inode-table state.
-        inner.sync_indirect_blocks()?;
+        // Step 3: flush inode-local mapping metadata before inode-table state.
+        inner.sync_mapping_metadata()?;
 
         // Step 4: persist inode metadata to the inode-table page cache.
         inner.write_back_inode_desc(&fs, self.ino)
@@ -37,7 +37,7 @@ impl Inode {
 
     /// Flushes dirty file data and the metadata required to retrieve it.
     ///
-    /// Writes data pages and indirect blocks back before staging dirty inode
+    /// Writes data pages and mapping nodes back before staging dirty inode
     /// metadata in the block group's inode-table page cache. This does not flush
     /// xattrs.
     pub(in ext4) fn sync_data(&self) -> Result<()> {
@@ -47,11 +47,29 @@ impl Inode {
         // Step 1: flush dirty data pages.
         inner.sync_data_pages()?;
 
-        // Step 2: flush inode-local indirect metadata before inode-table state.
-        inner.sync_indirect_blocks()?;
+        // Step 2: flush inode-local mapping metadata before inode-table state.
+        inner.sync_mapping_metadata()?;
 
         // Step 3: persist inode metadata to the inode-table page cache.
         inner.write_back_inode_desc(&fs, self.ino)
+    }
+
+    pub(super) fn defer_deleted_inode_work(&mut self) {
+        let Ok(fs) = self.fs() else { return };
+        let mut inner = self.inner.write();
+        let Ok(mapping) = inner.block_manager().cloned() else {
+            return;
+        };
+        inner.set_dtime(utils::now());
+        inner.set_file_size(0);
+        let raw = RawInode::from(&*inner.desc);
+        fs.defer_extent_inode(super::reclaim::PendingInodeWork {
+            ino: self.ino,
+            type_: self.type_,
+            raw,
+            mapping,
+            xattr: self.xattr.take(),
+        });
     }
 
     /// Attempts final reclaim for a deleted inode.
@@ -79,9 +97,10 @@ impl Inode {
         inner.set_dtime(utils::now());
         inner.set_file_size(0);
         inner.set_file_acl(0);
-        if inner.desc.sector_count > 0
-            && let Some(block_manager) = block_manager
-        {
+        // The descriptor's sector count may predate allocations made since
+        // its last writeback. Reclaim through the authoritative mapping even
+        // when that descriptor still reports an empty file.
+        if let Some(block_manager) = block_manager {
             block_manager.truncate_to_byte_len(0)?;
         }
         inner.write_back_inode_desc(&fs, self.ino)?;
@@ -98,6 +117,7 @@ impl InodeInner {
             return Ok(());
         }
 
+        self.sync_mapping_metadata()?;
         let raw_block_ptrs = self.raw_block_ptrs();
         self.desc.block_ptrs = raw_block_ptrs.block_ptrs;
         self.desc.sector_count = raw_block_ptrs.sector_count;
@@ -123,10 +143,86 @@ impl InodeInner {
         }
     }
 
-    fn sync_indirect_blocks(&self) -> Result<()> {
+    fn sync_mapping_metadata(&self) -> Result<()> {
         match &self.payload {
             super::InodePayload::DataBacked { block_manager, .. } => block_manager.sync_metadata(),
             _ => Ok(()),
         }
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use ostd::prelude::ktest;
+
+    use crate::fs::ext4::{
+        fs::MountFlavor,
+        test_utils::{Ext4FixtureBuilder, create_file},
+    };
+
+    #[ktest]
+    fn extent_inode_publication_waits_for_nodes_and_drop_retries_reclaim() {
+        crate::time::clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 2048)
+            .with_mount_flavor(MountFlavor::Ext4)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let file = create_file(&f.root(), "publish");
+        let ino = file.ino;
+        let mapping = file.inner.read().block_manager().unwrap().clone();
+        for i in 0..5 {
+            mapping.allocate_range_blocks(i * 3, i * 3 + 1).unwrap();
+        }
+        let root = mapping.raw_block_ptrs().block_ptrs;
+        let bid = root[4];
+        f.disk.fail_write_block(Some(bid as usize));
+        assert!(
+            file.inner
+                .write()
+                .write_back_inode_desc(&f.fs, ino)
+                .is_err()
+        );
+        assert!(mapping.is_dirty());
+        let group = f.fs.block_group(0);
+        group.sync_inode_table().unwrap();
+        assert_ne!(
+            group.read_inode_desc((ino - 1) as u16).unwrap().block_ptrs,
+            root
+        );
+        f.disk.fail_write_block(None);
+        file.inner
+            .write()
+            .write_back_inode_desc(&f.fs, ino)
+            .unwrap();
+        assert_eq!(
+            group.read_inode_desc((ino - 1) as u16).unwrap().block_ptrs,
+            root
+        );
+        assert!(!mapping.is_dirty());
+        // Force post-accept cleanup failure on final Drop. Neither the inode
+        // number nor unfinished block frees may be forgotten or reused early.
+        let free = f.fs.super_block().read_state().free_blocks_count();
+        f.fs.super_block()
+            .write_state()
+            .set_free_blocks_count(u32::MAX);
+        file.inner.write().desc.link_count = 0;
+        drop(group.remove_inode(ino));
+        drop(file);
+        assert!(group.is_inode_allocated(ino));
+        f.fs.super_block().write_state().set_free_blocks_count(free);
+        f.fs.retry_extent_work().unwrap();
+        assert!(!group.is_inode_allocated(ino));
+        assert_eq!(
+            f.fs.super_block().read_state().free_blocks_count(),
+            free + 6
+        );
+        f.fs.retry_extent_work().unwrap();
+        assert_eq!(
+            f.fs.super_block().read_state().free_blocks_count(),
+            free + 6
+        );
     }
 }

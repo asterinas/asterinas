@@ -73,6 +73,7 @@ mod fs_type;
 mod impl_for_vfs;
 mod inode;
 mod prelude;
+mod reclaim;
 mod super_block;
 mod utils;
 mod xattr;

@@ -358,6 +358,14 @@ impl BlockGroup {
         // Clear bits one by one and count only allocated-to-free transitions.
         let range_start = start_bit as u16;
         let range_end = (start_bit + group_count) as u16;
+        let expected = (range_start..range_end)
+            .filter(|&bit| metadata.block_bitmap.is_allocated(bit))
+            .count() as u16;
+        let new_free = metadata
+            .desc
+            .free_blocks_count
+            .checked_add(expected)
+            .ok_or_else(|| Error::with_message(Errno::EIO, "free block count overflow in group"))?;
         let mut actually_freed: u32 = 0;
         for block_bit in range_start..range_end {
             if !metadata.block_bitmap.is_allocated(block_bit) {
@@ -373,18 +381,22 @@ impl BlockGroup {
 
         // Persistent in-memory bitmap cache; writeback is deferred to sync_metadata.
 
-        let freed_count = actually_freed as u16;
-        metadata.desc.free_blocks_count = metadata
-            .desc
-            .free_blocks_count
-            .checked_add(freed_count)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "free block count overflow in group"))?;
+        metadata.desc.free_blocks_count = new_free;
 
         Ok(actually_freed)
     }
 
+    /// Checks address bounds and protected metadata without scanning allocation bits.
+    pub(super) fn is_data_area_range(&self, range: Range<Ext4Bid>) -> bool {
+        if range.is_empty() || range.start < self.first_block || range.end > self.last_block + 1 {
+            return false;
+        }
+        !self.overlaps_system_zone_with(&self.metadata.read().desc, range)
+    }
+
     /// Returns whether every block in an absolute range is allocated and is
     /// outside this group's bitmap and inode-table metadata.
+    #[cfg(ktest)]
     pub(super) fn is_allocated_data_range(&self, range: Range<Ext4Bid>) -> bool {
         if range.is_empty() || range.start < self.first_block || range.end > self.last_block + 1 {
             return false;
@@ -846,6 +858,30 @@ mod test {
 
     use super::*;
     use crate::fs::fs_impls::ext4::test_utils::{Ext4FixtureBuilder, RawInodeBuilder};
+
+    #[ktest]
+    fn deferred_extent_release_does_not_retry_completed_group() {
+        use crate::fs::ext4::reclaim::DeferredReclaim;
+        let f = Ext4FixtureBuilder::new(2, 256)
+            .with_blocks_per_group(128)
+            .with_free_blocks(100, 50)
+            .build()
+            .unwrap();
+        let a = f.fs.block_group(0).alloc_blocks(1, 100).unwrap();
+        f.fs.block_group(1).metadata.write().desc.free_blocks_count = 50;
+        let b = f.fs.block_group(1).alloc_blocks(1, 100).unwrap();
+        assert!(!a.is_empty() && !b.is_empty());
+        let group = f.fs.block_group(1);
+        let saved = group.metadata.read().desc.free_blocks_count;
+        group.metadata.write().desc.free_blocks_count = u16::MAX;
+        assert!(DeferredReclaim::release(&f.fs, vec![a.clone(), b.clone()]).is_err());
+        let reused = f.fs.alloc_blocks(1, a.start).unwrap();
+        assert_eq!(reused, a);
+        group.metadata.write().desc.free_blocks_count = saved;
+        f.fs.retry_extent_work().unwrap();
+        assert!(f.fs.block_group(0).is_allocated_data_range(a));
+        assert!(!group.is_allocated_data_range(b));
+    }
 
     #[ktest]
     fn inode_slot_read_update_write_preserves_layout_and_unknown_bytes() {

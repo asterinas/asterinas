@@ -141,6 +141,13 @@ mount --bind /ext4 /ext-test
 run_test_list ./ext/ext4-only.tests
 umount /ext-test
 echo "All ext4-only EXT tests passed."
+EXTENT_REMOUNT_PHASE=prepare ./ext/extent_remount
+sync
+# run_ext_suite and the ext4-only suite have released every bind mount.
+umount /ext4
+mount -t ext4 /dev/vdd /ext4
+EXTENT_REMOUNT_PHASE=verify ./ext/extent_remount
+echo "EXT4 extent split/truncate/remount regression passed."
 umount /ext4
 
 expect_mount_rejected ext2 /dev/vdd extents

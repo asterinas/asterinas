@@ -66,6 +66,10 @@ pub(super) struct Ext4MemoryDisk {
     flush_count: AtomicUsize,
     max_write_blocks: AtomicUsize,
     fail_flush: AtomicBool,
+    block_reads: Mutex<BTreeMap<usize, usize>>,
+    block_writes: Mutex<BTreeMap<usize, usize>>,
+    fail_read_block: AtomicUsize,
+    fail_write_block: AtomicUsize,
 }
 
 impl Ext4MemoryDisk {
@@ -80,11 +84,33 @@ impl Ext4MemoryDisk {
             flush_count: AtomicUsize::new(0),
             max_write_blocks: AtomicUsize::new(0),
             fail_flush: AtomicBool::new(false),
+            block_reads: Mutex::new(BTreeMap::new()),
+            block_writes: Mutex::new(BTreeMap::new()),
+            fail_read_block: AtomicUsize::new(usize::MAX),
+            fail_write_block: AtomicUsize::new(usize::MAX),
         }
     }
 
     pub(super) fn max_write_blocks(&self) -> usize {
         self.max_write_blocks.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn block_reads(&self, bid: usize) -> usize {
+        self.block_reads.lock().get(&bid).copied().unwrap_or(0)
+    }
+
+    pub(super) fn block_writes(&self, bid: usize) -> usize {
+        self.block_writes.lock().get(&bid).copied().unwrap_or(0)
+    }
+
+    pub(super) fn fail_read_block(&self, bid: Option<usize>) {
+        self.fail_read_block
+            .store(bid.unwrap_or(usize::MAX), Ordering::Relaxed);
+    }
+
+    pub(super) fn fail_write_block(&self, bid: Option<usize>) {
+        self.fail_write_block
+            .store(bid.unwrap_or(usize::MAX), Ordering::Relaxed);
     }
 
     pub(super) fn flush_count(&self) -> usize {
@@ -143,6 +169,21 @@ impl BlockDevice for Ext4MemoryDisk {
                 * SECTOR_SIZE)
                 .div_ceil(BLOCK_SIZE);
             self.max_write_blocks.fetch_max(blocks, Ordering::Relaxed);
+        }
+
+        let first = bio.sid_range().start.to_raw() as usize * SECTOR_SIZE / BLOCK_SIZE;
+        let end = (bio.sid_range().end.to_raw() as usize * SECTOR_SIZE).div_ceil(BLOCK_SIZE);
+        let (counts, failure) = if bio.type_() == BioType::Read {
+            (&self.block_reads, &self.fail_read_block)
+        } else {
+            (&self.block_writes, &self.fail_write_block)
+        };
+        for bid in first..end {
+            *counts.lock().entry(bid).or_default() += 1;
+        }
+        if (first..end).contains(&failure.load(Ordering::Relaxed)) {
+            bio.complete(BioStatus::IoError);
+            return Ok(());
         }
 
         let mut cur_device_ofs = bio.sid_range().start.to_raw() as usize * SECTOR_SIZE;

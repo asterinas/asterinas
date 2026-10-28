@@ -1,29 +1,178 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! On-disk extent entries and their validated in-memory forms.
-//!
-//! Raw structures mirror the 12-byte EXT4 disk records. Parsing converts them
-//! into private validated values before tree code can use block numbers or
-//! lengths. This keeps byte layout concerns separate from tree traversal and
-//! centralizes rejection of unsupported on-disk features.
-//!
-//! Supported nodes have the EXT4 extent magic, a depth no greater than five,
-//! and an entry count bounded by the containing root or block. Keys are checked
-//! for ordering by the tree layer. This implementation accepts only initialized
-//! extents and 32-bit physical block addresses; unwritten extents and nonzero
-//! high block bits return `EOPNOTSUPP`.
+//! Extent node layout, parsing, and validation.
 
 use ostd::const_assert;
 
-use crate::fs::fs_impls::ext4::prelude::*;
+use super::ExtentTree;
+use crate::fs::fs_impls::ext4::{fs::Ext4, prelude::*};
+
+pub(super) const ENTRY_SIZE: usize = 12;
 
 pub(super) const EXTENT_MAGIC: u16 = 0xF30A;
-const MAX_EXTENT_DEPTH: u16 = 5;
+pub(super) const MAX_EXTENT_DEPTH: u16 = 5;
 const UNWRITTEN_EXTENT_BIAS: u16 = 32768;
 
-const_assert!(size_of::<RawExtentHeader>() == 12);
-const_assert!(size_of::<RawExtentIdx>() == 12);
-const_assert!(size_of::<RawExtent>() == 12);
+const_assert!(size_of::<RawExtentHeader>() == ENTRY_SIZE);
+const_assert!(size_of::<RawExtentIdx>() == ENTRY_SIZE);
+const_assert!(size_of::<RawExtent>() == ENTRY_SIZE);
+
+/// An owned extent node used by cached reads and prepared updates.
+///
+/// Parsing validates the header, entries, and logical ordering; descent checks
+/// parent bounds. Depth is at most five and physical addresses are 32-bit.
+/// Unsupported high address bits return `EOPNOTSUPP`.
+#[derive(Clone, Debug)]
+pub(super) struct ExtentNode {
+    pub(super) depth: u16,
+    pub(super) capacity: usize,
+    pub(super) entries: NodeEntries,
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum NodeEntries {
+    Leaf(Vec<Extent>),
+    Index(Vec<ExtentIdx>),
+}
+
+impl ExtentNode {
+    pub(super) fn len(&self) -> usize {
+        match &self.entries {
+            NodeEntries::Leaf(e) => e.len(),
+            NodeEntries::Index(e) => e.len(),
+        }
+    }
+
+    pub(super) fn write_into(&self, bytes: &mut [u8]) {
+        bytes.fill(0);
+        let count = match &self.entries {
+            NodeEntries::Leaf(e) => e.len(),
+            NodeEntries::Index(e) => e.len(),
+        };
+        let header = RawExtentHeader {
+            magic: EXTENT_MAGIC,
+            entries: count as u16,
+            max: self.capacity as u16,
+            depth: self.depth,
+            generation: 0,
+        };
+        bytes[..ENTRY_SIZE].copy_from_slice(header.as_bytes());
+        match &self.entries {
+            NodeEntries::Leaf(entries) => {
+                for (i, e) in entries.iter().enumerate() {
+                    let offset = ENTRY_SIZE * (i + 1);
+                    bytes[offset..offset + ENTRY_SIZE].copy_from_slice(e.to_raw().as_bytes());
+                }
+            }
+            NodeEntries::Index(entries) => {
+                for (i, e) in entries.iter().enumerate() {
+                    let offset = ENTRY_SIZE * (i + 1);
+                    bytes[offset..offset + ENTRY_SIZE]
+                        .copy_from_slice(RawExtentIdx::new(e.block(), e.leaf()).as_bytes());
+                }
+            }
+        }
+    }
+
+    pub(super) fn parse(bytes: &[u8], depth: Option<u16>) -> Result<Self> {
+        let header = ExtentHeader::parse(bytes, depth)?;
+        let raw = RawExtentHeader::from_bytes(&bytes[..ENTRY_SIZE]);
+        if raw.max == 0 {
+            return_errno_with_message!(Errno::EUCLEAN, "extent node has zero capacity");
+        }
+        let entries = if header.is_leaf() {
+            let mut entries: Vec<Extent> = Vec::with_capacity(header.entries());
+            for i in 0..header.entries() {
+                let offset = ENTRY_SIZE * (i + 1);
+                let e =
+                    Extent::try_from(&RawExtent::from_bytes(&bytes[offset..offset + ENTRY_SIZE]))?;
+                if e.logical_end() > 1u64 << 32
+                    || entries
+                        .last()
+                        .is_some_and(|p| p.logical_end() > u64::from(e.block()))
+                {
+                    return_errno_with_message!(Errno::EUCLEAN, "invalid extent logical range");
+                }
+                entries.push(e);
+            }
+            NodeEntries::Leaf(entries)
+        } else {
+            if header.entries() == 0 {
+                return_errno_with_message!(Errno::EUCLEAN, "empty extent index");
+            }
+            let mut entries: Vec<ExtentIdx> = Vec::with_capacity(header.entries());
+            for i in 0..header.entries() {
+                let offset = ENTRY_SIZE * (i + 1);
+                let e = ExtentIdx::try_from(&RawExtentIdx::from_bytes(
+                    &bytes[offset..offset + ENTRY_SIZE],
+                ))?;
+                if entries.last().is_some_and(|p| p.block() >= e.block()) {
+                    return_errno_with_message!(Errno::EUCLEAN, "extent indexes are unsorted");
+                }
+                entries.push(e);
+            }
+            NodeEntries::Index(entries)
+        };
+        Ok(Self {
+            depth: header.depth(),
+            capacity: raw.max as usize,
+            entries,
+        })
+    }
+
+    /// Device-derived addresses are checked once before a node is cached.
+    pub(super) fn validate_addresses(&self, fs: &Ext4) -> Result<()> {
+        match &self.entries {
+            NodeEntries::Leaf(entries) => {
+                for e in entries {
+                    ExtentTree::validate_extent_block_range(fs, e.start(), u32::from(e.len()))?;
+                }
+            }
+            NodeEntries::Index(entries) => {
+                for e in entries {
+                    ExtentTree::validate_extent_block_range(fs, e.leaf(), 1)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn first_key(&self) -> Option<Iblock> {
+        match &self.entries {
+            NodeEntries::Leaf(entries) => entries.first().map(|e| e.block()),
+            NodeEntries::Index(entries) => entries.first().map(|e| e.block()),
+        }
+    }
+
+    pub(super) fn validate_bounds(&self, lower: u64, upper: u64, root: bool) -> Result<()> {
+        if !root && self.first_key().map(u64::from) != Some(lower) {
+            return_errno_with_message!(
+                Errno::EUCLEAN,
+                "extent child first key differs from parent"
+            );
+        }
+        let outside = match &self.entries {
+            NodeEntries::Leaf(entries) => {
+                entries
+                    .first()
+                    .is_some_and(|e| u64::from(e.block()) < lower)
+                    || entries.last().is_some_and(|e| e.logical_end() > upper)
+            }
+            NodeEntries::Index(entries) => {
+                entries
+                    .first()
+                    .is_some_and(|e| u64::from(e.block()) < lower)
+                    || entries
+                        .last()
+                        .is_some_and(|e| u64::from(e.block()) >= upper)
+            }
+        };
+        if outside {
+            return_errno_with_message!(Errno::EUCLEAN, "extent node crosses parent bounds");
+        }
+        Ok(())
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
@@ -143,6 +292,10 @@ impl TryFrom<&RawExtentIdx> for ExtentIdx {
 }
 
 impl ExtentIdx {
+    pub(super) const fn new(block: Iblock, leaf: Ext4Bid) -> Self {
+        Self { block, leaf }
+    }
+
     pub(super) const fn block(self) -> Iblock {
         self.block
     }
@@ -162,6 +315,7 @@ pub(super) struct Extent {
     block: Iblock,
     len: u16,
     start: Ext4Bid,
+    unwritten: bool,
 }
 
 impl TryFrom<&RawExtent> for Extent {
@@ -171,27 +325,55 @@ impl TryFrom<&RawExtent> for Extent {
         if raw.len == 0 {
             return_errno_with_message!(Errno::EUCLEAN, "extent has zero length");
         }
-        if raw.len > UNWRITTEN_EXTENT_BIAS {
-            return_errno_with_message!(Errno::EOPNOTSUPP, "unwritten extent is unsupported");
-        }
+        let unwritten = raw.len > UNWRITTEN_EXTENT_BIAS;
+        let len = if unwritten {
+            raw.len - UNWRITTEN_EXTENT_BIAS
+        } else {
+            raw.len
+        };
         if raw.start_hi != 0 {
             return_errno_with_message!(Errno::EOPNOTSUPP, "48-bit physical block is unsupported");
         }
-        let physical_end = u64::from(raw.start_lo) + u64::from(raw.len);
+        let physical_end = u64::from(raw.start_lo) + u64::from(len);
         if physical_end > u64::from(u32::MAX) + 1 {
             return_errno_with_message!(Errno::EOVERFLOW, "extent physical range overflows");
         }
         Ok(Self {
             block: raw.block,
-            len: raw.len,
+            len,
             start: raw.start_lo,
+            unwritten,
         })
     }
 }
 
 impl Extent {
     pub(super) const fn new(block: Iblock, len: u16, start: Ext4Bid) -> Self {
-        Self { block, len, start }
+        Self {
+            block,
+            len,
+            start,
+            unwritten: false,
+        }
+    }
+
+    pub(super) fn with_unwritten(mut self, unwritten: bool) -> Self {
+        debug_assert!(!unwritten || self.len < UNWRITTEN_EXTENT_BIAS);
+        self.unwritten = unwritten;
+        self
+    }
+
+    pub(super) const fn is_unwritten(self) -> bool {
+        self.unwritten
+    }
+
+    pub(super) fn slice(self, start: Iblock, end: u64) -> Self {
+        Self::new(
+            start,
+            (end - u64::from(start)) as u16,
+            self.physical_block(start),
+        )
+        .with_unwritten(self.unwritten)
     }
 
     pub(super) const fn block(self) -> Iblock {
@@ -219,6 +401,15 @@ impl Extent {
     }
 
     pub(super) fn to_raw(self) -> RawExtent {
-        RawExtent::new(self.block, self.len, self.start)
+        RawExtent::new(
+            self.block,
+            self.len
+                + if self.unwritten {
+                    UNWRITTEN_EXTENT_BIAS
+                } else {
+                    0
+                },
+            self.start,
+        )
     }
 }

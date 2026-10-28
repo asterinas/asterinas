@@ -362,6 +362,9 @@ impl InodeInner {
                     let mut segment_reader = bio_segment.reader()?;
                     segment_reader.read_fallible(writer)?;
                 }
+                IoRange::Unwritten(device_range) => {
+                    writer.fill_zeros(device_range.len() * BLOCK_SIZE)?;
+                }
                 IoRange::Hole(hole_range) => {
                     let n_bytes =
                         (hole_range.end as usize - hole_range.start as usize) * BLOCK_SIZE;
@@ -399,7 +402,7 @@ impl InodeInner {
                     bio_segment.writer().unwrap().write_fallible(reader)?;
                     fs.write_blocks_async(device_range.start, bio_segment, None, &mut io_batch)?;
                 }
-                IoRange::Hole(_) => {
+                IoRange::Hole(_) | IoRange::Unwritten(_) => {
                     // TODO: Consider falling back to buffered write like Linux.
                     // The upper layer should have performed allocation for the write
                     // range. Linux does not allocate blocks in the direct write path;
@@ -420,10 +423,13 @@ impl InodeInner {
         let old_size = self.desc.size as usize;
 
         self.resize_page_cache(new_size, old_size)?;
-        self.block_manager()?.truncate_to_byte_len(new_size)?;
-
+        let completion = self.block_manager()?.truncate_with_status(new_size)?;
+        // Mapping acceptance is not undone by a deferred-release error. Keep
+        // inode size, page-cache bounds and timestamps consistent before
+        // reporting that cleanup still needs filesystem retry.
         self.set_file_size(new_size);
-        Ok(())
+        self.set_mtime_ctime(utils::now());
+        completion.into_result()
     }
 
     fn expand(&mut self, fs: &Ext4, new_size: usize) -> Result<()> {
@@ -481,6 +487,52 @@ mod test {
         time::clocks,
         vm::page_cache::VmoMapMode,
     };
+
+    #[ktest]
+    fn extent_truncate_cleanup_error_keeps_live_size_consistent() {
+        use crate::fs::ext4::fs::MountFlavor;
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 2048)
+            .with_mount_flavor(MountFlavor::Ext4)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let file = create_file(&f.root(), "truncate_cleanup");
+        let payload = vec![0x5au8; 2 * BLOCK_SIZE];
+        file.write_direct_at(0, &mut VmReader::from(payload.as_slice()).to_fallible())
+            .unwrap();
+        let free = f.fs.super_block().read_state().free_blocks_count();
+        f.fs.super_block()
+            .write_state()
+            .set_free_blocks_count(u32::MAX);
+        assert!(file.resize(BLOCK_SIZE).is_err());
+        assert_eq!(file.file_size(), BLOCK_SIZE);
+        let mut bytes = vec![0u8; BLOCK_SIZE];
+        assert_eq!(
+            file.read_direct_at(
+                BLOCK_SIZE,
+                &mut VmWriter::from(bytes.as_mut_slice()).to_fallible()
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            file.read_direct_at(0, &mut VmWriter::from(bytes.as_mut_slice()).to_fallible())
+                .unwrap(),
+            BLOCK_SIZE
+        );
+        assert_eq!(bytes, vec![0x5a; BLOCK_SIZE]);
+        f.fs.super_block().write_state().set_free_blocks_count(free);
+        f.fs.retry_extent_work().unwrap();
+        assert_eq!(
+            f.fs.super_block().read_state().free_blocks_count(),
+            free + 1
+        );
+        file.sync_all().unwrap();
+        assert_eq!(file.file_size(), BLOCK_SIZE);
+    }
 
     #[ktest]
     fn file_write_enospc_rollback() {

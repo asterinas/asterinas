@@ -102,11 +102,31 @@ impl RawBlockPtrs {
     }
 }
 
+/// Per-iterator format state, retained by the same guard as the tree.
+pub(super) enum MappingRangeCursor {
+    Indirect,
+    Extent(extent::ExtentRangeCursor),
+}
+
+/// A truncate whose mapping has been accepted, even if retired-block cleanup
+/// still needs filesystem retry. Callers must finish their size transition
+/// before propagating this completion's cleanup error.
+pub(super) struct TruncateCompletion {
+    cleanup: Result<()>,
+}
+
+impl TruncateCompletion {
+    pub(super) fn into_result(self) -> Result<()> {
+        self.cleanup
+    }
+}
+
 impl MappingTreeType {
     pub(super) fn next_io_range(
         &self,
         fs: &Ext4,
         range: &mut Range<Iblock>,
+        cursor: &mut MappingRangeCursor,
     ) -> Result<Option<IoRange>> {
         if range.start >= range.end {
             return Ok(None);
@@ -126,16 +146,15 @@ impl MappingTreeType {
                     Ok(Some(IoRange::Mapped(mapped)))
                 }
             }
-            Self::ExtentTree(state) => match state.mapped_run(fs, start, max_blocks)? {
-                Some(mapped) => {
-                    range.start += mapped.len() as u32;
-                    Ok(Some(IoRange::Mapped(mapped)))
+            Self::ExtentTree(tree) => {
+                if !matches!(cursor, MappingRangeCursor::Extent(_)) {
+                    *cursor = MappingRangeCursor::Extent(extent::ExtentRangeCursor::default());
                 }
-                None => {
-                    range.start += 1;
-                    Ok(Some(IoRange::Hole(start..start + 1)))
-                }
-            },
+                let MappingRangeCursor::Extent(cursor) = cursor else {
+                    unreachable!()
+                };
+                tree.next_io_range(fs, range, cursor).map(Some)
+            }
         }
     }
 }
@@ -210,13 +229,18 @@ impl BlockMapping {
 
     /// Removes mappings beyond the block containing `new_size`.
     pub(super) fn truncate_to_byte_len(&self, new_size: usize) -> Result<()> {
+        self.truncate_with_status(new_size)?.into_result()
+    }
+
+    /// Separates preparation errors from cleanup errors after acceptance.
+    pub(super) fn truncate_with_status(&self, new_size: usize) -> Result<TruncateCompletion> {
         let fs = self.fs()?;
         let mut manager = self.manager.write();
         match &mut *manager {
-            MappingTreeType::ExtentTree(state) => state.truncate_to_byte_len(&fs, new_size),
+            MappingTreeType::ExtentTree(tree) => tree.truncate_with_status(&fs, new_size),
             MappingTreeType::BlockPtrTree(tree) => {
                 tree.truncate_to_byte_len(&fs, new_size);
-                Ok(())
+                Ok(TruncateCompletion { cleanup: Ok(()) })
             }
         }
     }
@@ -225,7 +249,7 @@ impl BlockMapping {
     pub(super) fn sync_metadata(&self) -> Result<()> {
         let manager = self.manager.read();
         match &*manager {
-            MappingTreeType::ExtentTree(_) => Ok(()),
+            MappingTreeType::ExtentTree(tree) => tree.sync_metadata(self.fs()?.as_ref()),
             MappingTreeType::BlockPtrTree(tree) => tree.sync_indirect_blocks(),
         }
     }
@@ -323,7 +347,7 @@ impl BlockAsPageCacheBackend for BlockMapping {
                         io_batch,
                     )?;
                 }
-                IoRange::Hole(hole_range) => {
+                IoRange::Hole(hole_range) | IoRange::Unwritten(hole_range) => {
                     for locked_page in pages.by_ref().take(hole_range.len()) {
                         locked_page.fill_zeros(0, PAGE_SIZE).unwrap();
                         locked_page.set_up_to_date();
@@ -379,7 +403,7 @@ impl BlockAsPageCacheBackend for BlockMapping {
                         io_batch,
                     )?;
                 }
-                IoRange::Hole(_) => {
+                IoRange::Hole(_) | IoRange::Unwritten(_) => {
                     return_errno_with_message!(
                         Errno::EIO,
                         "unexpected hole after writeback allocation"

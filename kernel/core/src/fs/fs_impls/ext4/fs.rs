@@ -57,6 +57,7 @@ pub(super) enum MountFlavor {
 pub(crate) struct Ext4 {
     /// Backing block device.
     block_device: Arc<dyn BlockDevice>,
+    extent_reclaim: super::reclaim::DeferredReclaim,
     /// Immutable superblock information with separately locked runtime state.
     super_block: SuperBlock,
     /// Block group descriptors and caches.
@@ -199,6 +200,7 @@ impl Ext4 {
 
         let ext2 = Arc::new_cyclic(|weak_self| Ext4 {
             block_device: device,
+            extent_reclaim: super::reclaim::DeferredReclaim::default(),
             super_block,
             block_groups,
             group_descriptors_segment,
@@ -377,6 +379,18 @@ impl Ext4 {
         return_errno_with_message!(Errno::ENOSPC, "no free blocks available in any group");
     }
 
+    pub(super) fn defer_extent_blocks(&self, ranges: Vec<Range<Ext4Bid>>) {
+        self.extent_reclaim.enqueue_blocks(ranges);
+    }
+
+    pub(super) fn defer_extent_inode(&self, work: super::inode::reclaim::PendingInodeWork) {
+        self.extent_reclaim.enqueue_inode(work);
+    }
+
+    pub(super) fn retry_extent_work(&self) -> Result<()> {
+        self.extent_reclaim.retry(self)
+    }
+
     /// Frees a range of blocks starting at `start`.
     pub(super) fn free_blocks(&self, start: Ext4Bid, count: u32) -> Result<()> {
         if count == 0 {
@@ -387,6 +401,9 @@ impl Ext4 {
         let mut state = sb.write_state();
         if !sb.is_data_block_valid(start, count) {
             return_errno_with_message!(Errno::EIO, "freeing invalid data block range");
+        }
+        if state.free_blocks_count().checked_add(count).is_none() {
+            return_errno_with_message!(Errno::EIO, "free block counter overflow");
         }
         let nr_blocks_per_group = sb.nr_blocks_per_group();
         let first_data_block = sb.first_data_block();
@@ -566,6 +583,7 @@ impl Ext4 {
     /// This intentionally performs no device flush: callers issue one final
     /// flush after all inode, allocation, and superblock state is staged.
     pub(super) fn sync_all(&self) -> Result<()> {
+        self.retry_extent_work()?;
         // `group_descriptors_segment` is updated without a filesystem-wide lock,
         // but each group writes only its own descriptor slice under its
         // `metadata.write()` guard.  Because groups are synced sequentially and
