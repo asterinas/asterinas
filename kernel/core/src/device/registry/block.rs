@@ -156,14 +156,7 @@ impl FileOps for OpenBlockFile {
         }
 
         let read_len = total.min(device_size - offset);
-        {
-            // `VmIo::read` does not allow short writes,
-            // so the writer must be precisely limited here.
-            let mut limited_writer = writer.clone_exclusive();
-            limited_writer.limit(read_len);
-            self.0.read(offset, &mut limited_writer)?;
-        }
-        writer.skip(read_len);
+        self.0.read_with_len(offset, writer, read_len)?;
         Ok(read_len)
     }
 

@@ -651,7 +651,9 @@ impl ExfatInode {
             let end = file_size.min(offset + writer.avail());
             (start, end - start)
         };
-        inner.page_cache.read(read_off, writer)?;
+        if read_len > 0 {
+            inner.page_cache.read_with_len(read_off, writer, read_len)?;
+        }
 
         inner.upgrade().update_atime()?;
         Ok(read_len)

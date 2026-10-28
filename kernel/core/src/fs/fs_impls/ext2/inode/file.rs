@@ -237,8 +237,7 @@ impl InodeInner {
         }
 
         let read_len = writer.avail().min(file_size - offset);
-        writer.limit(read_len);
-        self.page_cache().read(offset, writer)?;
+        self.page_cache().read_with_len(offset, writer, read_len)?;
         Ok(read_len)
     }
 
@@ -279,11 +278,13 @@ impl InodeInner {
         }
 
         let read_len = writer.avail().min(file_size - offset);
-        writer.limit(read_len);
         let end = offset + read_len;
 
         self.page_cache().flush_range(offset..end)?;
-        self.read_direct_blocks(fs, offset, end, writer)?;
+        let mut limited_writer = writer.clone_exclusive();
+        limited_writer.limit(read_len);
+        self.read_direct_blocks(fs, offset, end, &mut limited_writer)?;
+        writer.skip(read_len);
         Ok(read_len)
     }
 
@@ -464,13 +465,33 @@ mod test {
         fs::{
             ext2::{
                 inode::test::make_live_file_inode,
-                test_utils::{Ext2FixtureBuilder, assert_errno, create_file},
+                test_utils::{Ext2FixtureBuilder, assert_errno, create_file, default_fixture},
             },
-            vfs::inode::Inode,
+            file::StatusFlags,
+            vfs::inode::{FileOps, Inode},
         },
         time::clocks,
         vm::page_cache::VmoMapMode,
     };
+
+    #[ktest]
+    fn ext2_read_direct_preserves_capacity() {
+        let (_fixture, root) = default_fixture();
+        let file = create_file(&root, "direct_capacity");
+        let data = vec![0x5a; BLOCK_SIZE];
+        file.write_at(0, &mut VmReader::from(data.as_slice()).to_fallible())
+            .unwrap();
+        let mut buffer = vec![0xaa; BLOCK_SIZE * 2];
+        let mut writer = VmWriter::from(buffer.as_mut_slice()).to_fallible();
+
+        assert_eq!(
+            FileOps::read_at(file.as_ref(), 0, &mut writer, StatusFlags::O_DIRECT).unwrap(),
+            BLOCK_SIZE
+        );
+        assert_eq!(writer.avail(), BLOCK_SIZE);
+        assert!(buffer[..BLOCK_SIZE].iter().all(|&byte| byte == 0x5a));
+        assert!(buffer[BLOCK_SIZE..].iter().all(|&byte| byte == 0xaa));
+    }
 
     #[ktest]
     fn file_write_enospc_rollback() {
