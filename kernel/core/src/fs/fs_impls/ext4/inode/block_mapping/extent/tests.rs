@@ -151,8 +151,9 @@ fn extent_node_cache_retains_failed_writeback() {
     f.disk.fail_write_block(Some(40));
     assert!(cache.sync(&f.fs).is_err());
     assert!(cache.is_dirty());
-    // Failed child writeback must not submit siblings or its parent level.
-    assert_eq!(f.disk.block_writes(80), 0);
+    // Submit siblings before waiting, even when one completes with an
+    // error. A failed child batch must not submit its parent level.
+    assert_eq!(f.disk.block_writes(80), 1);
     assert_eq!(f.disk.block_writes(81), 0);
     assert_eq!(
         cache.load(&f.fs, 40, 0).unwrap().first_key(),
@@ -173,8 +174,8 @@ fn extent_node_cache_retains_failed_writeback() {
     cache.sync(&f.fs).unwrap();
     assert!(!cache.is_dirty());
     assert_eq!(f.disk.block_writes(40), 2);
-    // Retry the failed node and then write its sibling and parent.
-    assert_eq!(f.disk.block_writes(80), 1);
+    // Retain the entire failed batch for conservative retry.
+    assert_eq!(f.disk.block_writes(80), 2);
     assert_eq!(f.disk.block_writes(81), 1);
     for bid in 43..78 {
         write_leaf(&f.disk, bid, 0, 41);
