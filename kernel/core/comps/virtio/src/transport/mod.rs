@@ -41,13 +41,16 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
     fn read_device_features(&self) -> u64;
 
     /// Set driver features.
-    fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError>;
+    fn write_driver_features(&self, features: u64) -> Result<(), VirtioTransportError>;
 
     /// Get device status.
     fn read_device_status(&self) -> DeviceStatus;
 
     /// Set device status.
-    fn write_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError>;
+    fn write_device_status(&self, status: DeviceStatus) -> Result<(), VirtioTransportError>;
+
+    /// Adds status bits without losing a concurrent update.
+    fn add_device_status(&self, bits: DeviceStatus) -> Result<(), VirtioTransportError>;
 
     /// Get access to the device config memory.
     fn device_config_mem(&self) -> Option<IoMem>;
@@ -62,7 +65,7 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
 
     /// Set virtqueue information. Some transport may set other necessary information such as MSI-X vector in PCI transport.
     fn set_queue(
-        &mut self,
+        &self,
         idx: u16,
         queue_size: u16,
         descriptor_ptr: &SafePtr<Descriptor, Arc<DmaCoherent>>,
@@ -88,7 +91,7 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
     /// If no available IRQ lines are found for allocation, the
     /// transport may assign the callback to a shared IRQ line.
     fn register_queue_callback(
-        &mut self,
+        &self,
         index: u16,
         func: Box<IrqCallbackFunction>,
         single_interrupt: bool,
@@ -96,7 +99,7 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
 
     /// Register configuration space change interrupt callback.
     fn register_cfg_callback(
-        &mut self,
+        &self,
         func: Box<IrqCallbackFunction>,
     ) -> Result<(), VirtioTransportError>;
 }
@@ -279,8 +282,9 @@ impl DeviceTransport {
     /// After this call, the wrapper will NOT set `FAILED` on drop.
     pub(crate) fn finish_init(&mut self) {
         self.is_completed = true;
-        let status = self.inner.read_device_status() | DeviceStatus::DRIVER_OK;
-        self.inner.write_device_status(status).unwrap();
+        self.inner
+            .add_device_status(DeviceStatus::DRIVER_OK)
+            .unwrap();
     }
 }
 
@@ -301,10 +305,7 @@ impl DerefMut for DeviceTransport {
 impl Drop for DeviceTransport {
     fn drop(&mut self) {
         if !self.is_completed {
-            let status = self.inner.read_device_status();
-            let _ = self
-                .inner
-                .write_device_status(status | DeviceStatus::FAILED);
+            let _ = self.inner.add_device_status(DeviceStatus::FAILED);
         }
     }
 }
