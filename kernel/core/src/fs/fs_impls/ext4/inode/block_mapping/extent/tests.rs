@@ -89,12 +89,18 @@ fn extent_lookup_visits_only_selected_path() {
     write_leaf(&f.disk, 40, 0, 41);
     // An unreadable sibling must not affect a query in the first leaf.
     f.disk.fail_read_block(Some(42));
-    let tree = ExtentTree::new(RawBlockPtrs::new(24, index_root(&[(0, 40), (100, 42)]))).unwrap();
+    let mut tree =
+        ExtentTree::new(RawBlockPtrs::new(24, index_root(&[(0, 40), (100, 42)]))).unwrap();
     let reads = f.disk.block_reads(40);
     assert_eq!(tree.lookup_readable_block(&f.fs, 0).unwrap(), Some(41));
     assert_eq!(f.disk.block_reads(40) - reads, 1);
     assert_eq!(f.disk.block_reads(42), 0);
     tree.lookup_mapping_range(&f.fs, 1, 100).unwrap();
+    tree.node_cache.remove(40);
+    f.disk.fail_read_block(Some(40));
+    assert_eq!(tree.lookup_readable_block(&f.fs, 0).unwrap(), Some(41));
+    assert_eq!(tree.lookup_readable_block(&f.fs, 1).unwrap(), None);
+    assert_eq!(f.disk.block_reads(40), 1);
 }
 
 #[ktest]
@@ -209,6 +215,26 @@ fn deferred_extent_reclaim_retries_once() {
 }
 
 #[ktest]
+fn extent_status_and_last_lookup_track_mutations() {
+    let f = extent_fixture_builder(1, 2048)
+        .with_free_blocks(64, 64)
+        .build()
+        .unwrap();
+    let mut tree = ExtentTree::new(RawBlockPtrs::new(0, super::empty_extent_root())).unwrap();
+    assert_eq!(tree.lookup_readable_block(&f.fs, 2).unwrap(), None);
+    tree.allocate_range_blocks(&f.fs, 2, 3).unwrap();
+    let old = tree.lookup_readable_block(&f.fs, 2).unwrap().unwrap();
+    tree.allocate_range_blocks(&f.fs, 10, 11).unwrap();
+    assert!(tree.lookup_cache.lock().lookup(2, 3).is_some());
+
+    tree.truncate_to_byte_len(&f.fs, 0).unwrap();
+    assert_eq!(tree.lookup_readable_block(&f.fs, 2).unwrap(), None);
+    let occupied = f.fs.alloc_blocks(1, old).unwrap();
+    tree.allocate_range_blocks(&f.fs, 2, 3).unwrap();
+    assert_ne!(tree.lookup_readable_block(&f.fs, 2).unwrap(), Some(old));
+    f.fs.free_blocks(occupied.start, 1).unwrap();
+}
+
 #[ktest]
 fn extent_non_rightmost_split_leaves_sibling_unread_and_unwritten() {
     use super::node::{ExtentNode, NodeEntries};

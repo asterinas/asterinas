@@ -25,6 +25,7 @@ pub(in block_mapping) struct PreparedUpdate<'a> {
     retired: Vec<Range<Ext4Bid>>,
     allocations: AllocatedBlocks<'a>,
     sectors: u32,
+    invalidated: Range<Iblock>,
 }
 
 /// Owns new blocks until the prepared mapping accepts them.
@@ -65,6 +66,9 @@ impl ExtentTree {
             return_errno_with_message!(Errno::EINVAL, "invalid logical allocation range");
         }
         let (start, end) = (start as Iblock, end as Iblock);
+        if self.lookup_cache.lock().covers_initialized(start..end) {
+            return Ok(());
+        }
         let mut current = start;
         while current < end {
             match self.lookup_mapping_range(fs, current, end)? {
@@ -110,6 +114,7 @@ impl ExtentTree {
                             .ok_or_else(|| {
                                 Error::with_message(Errno::EINVAL, "extent logical range overflow")
                             })?;
+                    update.invalidated = current..update_end;
                     update.account(self.raw_block_ptrs.sector_count)?;
                     self.accept_update(update)?;
                     current = update_end;
@@ -234,6 +239,7 @@ impl ExtentTree {
                     self.raw_block_ptrs.sector_count,
                 );
                 self.finish_leaf_update(&path, &mut update, node)?;
+                update.invalidated = current as Iblock..stop as Iblock;
                 update.account(self.raw_block_ptrs.sector_count)?;
                 self.accept_update(update)?;
             }
@@ -278,6 +284,7 @@ impl ExtentTree {
         let root = self.root_node(fs)?;
         root.validate_bounds(0, u64::from(Iblock::MAX), true)?;
         let mut update = PreparedUpdate::new(fs, (*root).clone(), self.raw_block_ptrs.sector_count);
+        update.invalidated = keep as Iblock..Iblock::MAX;
         let result = self.prune_node(
             fs,
             &root,
@@ -432,6 +439,9 @@ impl ExtentTree {
     fn accept_validated_update(&mut self, mut update: PreparedUpdate<'_>) -> Result<()> {
         *self.root_cache.get_mut() = Some(Arc::new(update.root.clone()));
         // Splits and merges preserve mappings outside the logical edit span.
+        self.lookup_cache
+            .lock()
+            .invalidate(update.invalidated.clone());
         for bid in &update.removed {
             self.node_cache.remove(*bid);
         }
@@ -523,6 +533,7 @@ impl<'a> PreparedUpdate<'a> {
             retired: Vec::new(),
             allocations: AllocatedBlocks::new(fs),
             sectors,
+            invalidated: 0..Iblock::MAX,
         }
     }
 

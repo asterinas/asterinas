@@ -139,6 +139,31 @@ impl ExtentTree {
         if end <= iblock {
             return_errno_with_message!(Errno::EINVAL, "invalid extent query range");
         }
+        if let Some(mapping_range) = self.cached_mapping_range(iblock, end) {
+            return Ok(mapping_range);
+        }
+        let mapping_range = self.lookup_mapping_range_uncached(fs, iblock, end)?;
+        self.cache_mapping_range(&mapping_range);
+        Ok(mapping_range)
+    }
+
+    fn cached_mapping_range(&self, iblock: Iblock, end: Iblock) -> Option<ExtentMappingRange> {
+        self.lookup_cache.lock().lookup(iblock, end)
+    }
+
+    fn cache_mapping_range(&self, mapping_range: &ExtentMappingRange) {
+        self.lookup_cache.lock().record(mapping_range.clone());
+    }
+
+    fn lookup_mapping_range_uncached(
+        &self,
+        fs: &Ext4,
+        iblock: Iblock,
+        end: Iblock,
+    ) -> Result<ExtentMappingRange> {
+        if end <= iblock {
+            return_errno_with_message!(Errno::EINVAL, "invalid extent query range");
+        }
         let path = self.lookup_path(fs, iblock)?;
         Ok(leaf_mapping_range(path.levels.last().unwrap(), iblock, end))
     }
@@ -155,8 +180,10 @@ pub(in inode) struct ExtentRangeCursor {
 impl ExtentRangeCursor {
     /// Returns the mapped or hole interval beginning at the requested start.
     ///
-    /// Consecutive calls advance the retained path under the mapping lock.
-    /// Calls must advance monotonically.
+    /// An established path takes precedence over result-cache hints so that
+    /// consecutive calls keep the path current. A new cursor can use a cached
+    /// result without reading metadata; its first miss locates the requested
+    /// block directly. Calls must advance monotonically under the mapping lock.
     fn next_range(
         &mut self,
         tree: &ExtentTree,
@@ -167,6 +194,9 @@ impl ExtentRangeCursor {
             return_errno_with_message!(Errno::EINVAL, "invalid extent query range");
         }
         if self.path.is_none() {
+            if let Some(mapping_range) = tree.cached_mapping_range(range.start, range.end) {
+                return Ok(mapping_range);
+            }
             self.path = Some(tree.lookup_path(fs, range.start)?);
         }
         while range.start >= self.path.as_ref().unwrap().levels.last().unwrap().upper {
@@ -175,6 +205,7 @@ impl ExtentRangeCursor {
         }
         let leaf = self.path.as_ref().unwrap().levels.last().unwrap();
         let mapping_range = leaf_mapping_range(leaf, range.start, range.end);
+        tree.cache_mapping_range(&mapping_range);
         Ok(mapping_range)
     }
 
@@ -252,6 +283,25 @@ fn leaf_mapping_range(leaf: &PathLevel, iblock: Iblock, end: Iblock) -> ExtentMa
     ExtentMappingRange::Hole(iblock..end.min(stop))
 }
 
+impl ExtentMappingRange {
+    pub(super) fn bounds(&self) -> &Range<Iblock> {
+        match self {
+            Self::Mapped { logical, .. } => logical,
+            Self::Hole(range) => range,
+        }
+    }
+
+    pub(super) fn clip(mut self, start: Iblock, end: Iblock) -> Self {
+        let range = match &mut self {
+            Self::Mapped { logical, .. } => logical,
+            Self::Hole(range) => range,
+        };
+        range.start = start.max(range.start);
+        range.end = end.min(range.end);
+        self
+    }
+}
+
 #[cfg(ktest)]
 mod tests {
     use ostd::prelude::ktest;
@@ -293,7 +343,7 @@ mod tests {
         };
         let mut raw = [0u32; 15];
         root.write_into(raw.as_mut_bytes());
-        let tree = ExtentTree::new(RawBlockPtrs::new(48, raw)).unwrap();
+        let mut tree = ExtentTree::new(RawBlockPtrs::new(48, raw)).unwrap();
         let mut cursor = ExtentRangeCursor::default();
         cursor.next_range(&tree, &f.fs, 0..102).unwrap();
         let root_handle = cursor.path.as_ref().unwrap().levels[0].node.clone();
@@ -347,6 +397,33 @@ mod tests {
         assert_eq!(f.disk.block_reads(40), 1);
         assert_eq!(f.disk.block_reads(42), 1);
         assert_eq!(f.disk.block_reads(44), 2);
+        // Separate data-I/O calls must retain proven mapped and hole facts,
+        // even after the underlying clean node has been evicted.
+        drop(cursor);
+        tree.node_cache = super::super::cache::ExtentNodeCache::new();
+        let mut range = 0..3;
+        let mut cursor = ExtentRangeCursor::default();
+        tree.next_io_range(&f.fs, &mut range, &mut cursor).unwrap();
+        tree.next_io_range(&f.fs, &mut range, &mut cursor).unwrap();
+        tree.node_cache = super::super::cache::ExtentNodeCache::new();
+        f.disk.fail_read_block(Some(40));
+        for (start, stop) in [(0, 1), (1, 2)] {
+            let mut range = start..stop;
+            tree.next_io_range(&f.fs, &mut range, &mut ExtentRangeCursor::default())
+                .unwrap();
+            assert_eq!(range.start, stop);
+        }
+        // Cache-only calls retain no stale path. On a later miss, seek directly
+        // to the requested leaf rather than loading the unreadable first leaf.
+        let mut cursor = ExtentRangeCursor::default();
+        cursor.next_range(&tree, &f.fs, 0..1).unwrap();
+        assert!(cursor.path.is_none());
+        assert!(matches!(cursor.next_range(&tree, &f.fs, 201..202).unwrap(),
+            ExtentMappingRange::Hole(r) if r == (201..202)));
+        assert_eq!(
+            cursor.path.as_ref().unwrap().levels.last().unwrap().bid,
+            Some(44)
+        );
         assert!(cursor.next_range(&tree, &f.fs, 202..202).is_err());
         assert!(
             cursor
