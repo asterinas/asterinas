@@ -11,6 +11,7 @@ use ostd::{
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, dma::DmaCoherent},
+    sync::Mutex,
     warn,
 };
 
@@ -39,6 +40,10 @@ pub(super) struct VirtioPciModernTransport {
     common_cfg: SafePtr<VirtioPciCommonCfg, IoMem>,
     device_cfg: VirtioPciCapabilityData,
     notify: VirtioPciNotify,
+    config_lock: Mutex<ExclusiveState>,
+}
+
+struct ExclusiveState {
     msix_manager: VirtioMsixManager,
 }
 
@@ -56,13 +61,14 @@ impl VirtioTransport for VirtioPciModernTransport {
     }
 
     fn set_queue(
-        &mut self,
+        &self,
         idx: u16,
         queue_size: u16,
         descriptor_ptr: &SafePtr<Descriptor, Arc<DmaCoherent>>,
         avail_ring_ptr: &SafePtr<AvailRing, Arc<DmaCoherent>>,
         used_ring_ptr: &SafePtr<UsedRing, Arc<DmaCoherent>>,
     ) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         if idx >= self.num_queues() {
             return Err(VirtioTransportError::InvalidArgs);
         }
@@ -130,6 +136,7 @@ impl VirtioTransport for VirtioPciModernTransport {
     }
 
     fn read_device_features(&self) -> u64 {
+        let _lock = self.config_lock.lock();
         // select low
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_feature_select)
             .write_once(&0u32)
@@ -147,7 +154,8 @@ impl VirtioTransport for VirtioPciModernTransport {
         (device_feature_high << 32) | device_feature_low as u64
     }
 
-    fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError> {
+    fn write_driver_features(&self, features: u64) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         let low = features as u32;
         let high = (features >> 32) as u32;
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, driver_feature_select)
@@ -172,14 +180,25 @@ impl VirtioTransport for VirtioPciModernTransport {
         DeviceStatus::from_bits(status).unwrap()
     }
 
-    fn write_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
+    fn write_device_status(&self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_status)
             .write_once(&(status.bits()))
             .unwrap();
         Ok(())
     }
 
+    fn add_device_status(&self, bits: DeviceStatus) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
+        let status = self.read_device_status() | bits;
+        field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_status)
+            .write_once(&status.bits())
+            .unwrap();
+        Ok(())
+    }
+
     fn max_queue_size(&self, idx: u16) -> Result<u16, VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
             .write_once(&idx)
             .unwrap();
@@ -196,26 +215,27 @@ impl VirtioTransport for VirtioPciModernTransport {
     }
 
     fn register_queue_callback(
-        &mut self,
+        &self,
         index: u16,
         func: Box<IrqCallbackFunction>,
         single_interrupt: bool,
     ) -> Result<(), VirtioTransportError> {
+        let mut state = self.config_lock.lock();
         if index >= self.num_queues() {
             return Err(VirtioTransportError::InvalidArgs);
         }
         let (vector, irq) = if single_interrupt {
-            if let Some(unused_irq) = self.msix_manager.pop_unused_irq() {
+            if let Some(unused_irq) = state.msix_manager.pop_unused_irq() {
                 unused_irq
             } else {
                 warn!(
                     "{:?}: `single_interrupt` ignored: no more IRQ lines available",
                     self.device_type
                 );
-                self.msix_manager.shared_irq_line()
+                state.msix_manager.shared_irq_line()
             }
         } else {
-            self.msix_manager.shared_irq_line()
+            state.msix_manager.shared_irq_line()
         };
         irq.on_active(func);
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
@@ -234,10 +254,11 @@ impl VirtioTransport for VirtioPciModernTransport {
     }
 
     fn register_cfg_callback(
-        &mut self,
+        &self,
         func: Box<IrqCallbackFunction>,
     ) -> Result<(), VirtioTransportError> {
-        let (_, irq) = self.msix_manager.config_msix_irq();
+        let mut state = self.config_lock.lock();
+        let (_, irq) = state.msix_manager.config_msix_irq();
         irq.on_active(func);
         Ok(())
     }
@@ -306,7 +327,7 @@ impl VirtioPciModernTransport {
             common_cfg,
             device_cfg,
             notify,
-            msix_manager,
+            config_lock: Mutex::new(ExclusiveState { msix_manager }),
         })
     }
 }

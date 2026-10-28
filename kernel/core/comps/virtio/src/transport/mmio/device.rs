@@ -10,7 +10,7 @@ use ostd::{
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaCoherent},
-    sync::RwLock,
+    sync::{Mutex, RwLock},
     warn,
 };
 
@@ -40,6 +40,7 @@ pub(crate) struct VirtioMmioTransport {
     device: Arc<VirtioMmioDevice>,
     common_device: MmioCommonDevice,
     multiplex: Arc<RwLock<MultiplexIrq>>,
+    config_lock: Mutex<()>,
 }
 
 impl MmioDevice for VirtioMmioDevice {
@@ -91,6 +92,7 @@ impl VirtioMmioTransport {
             device: Arc::new(VirtioMmioDevice { device_id }),
             common_device: device,
             multiplex: MultiplexIrq::new(irq, interrupt_ack, interrupt_status),
+            config_lock: Mutex::new(()),
         };
         if device.common_device.read_version().unwrap() == VirtioMmioVersion::Legacy {
             field_ptr!(&device.layout, VirtioMmioLayout, legacy_guest_page_size)
@@ -107,13 +109,14 @@ impl VirtioTransport for VirtioMmioTransport {
     }
 
     fn set_queue(
-        &mut self,
+        &self,
         idx: u16,
         queue_size: u16,
         descriptor_ptr: &SafePtr<Descriptor, Arc<DmaCoherent>>,
         driver_ptr: &SafePtr<AvailRing, Arc<DmaCoherent>>,
         device_ptr: &SafePtr<UsedRing, Arc<DmaCoherent>>,
     ) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)
             .write_once(&(idx as u32))
             .unwrap();
@@ -193,6 +196,7 @@ impl VirtioTransport for VirtioMmioTransport {
     }
 
     fn num_queues(&self) -> u16 {
+        let _lock = self.config_lock.lock();
         // We use the field `queue_num_max` to get queue size.
         // If the queue is not exists, the field should be zero
         let mut num_queues = 0;
@@ -223,6 +227,7 @@ impl VirtioTransport for VirtioMmioTransport {
     }
 
     fn read_device_features(&self) -> u64 {
+        let _lock = self.config_lock.lock();
         // select low
         field_ptr!(&self.layout, VirtioMmioLayout, device_features_select)
             .write_once(&0u32)
@@ -240,7 +245,8 @@ impl VirtioTransport for VirtioMmioTransport {
         (device_feature_high << 32) | device_feature_low as u64
     }
 
-    fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError> {
+    fn write_driver_features(&self, features: u64) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         let low = features as u32;
         let high = (features >> 32) as u32;
         field_ptr!(&self.layout, VirtioMmioLayout, driver_features_select)
@@ -267,7 +273,17 @@ impl VirtioTransport for VirtioMmioTransport {
         .unwrap()
     }
 
-    fn write_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
+    fn write_device_status(&self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
+        field_ptr!(&self.layout, VirtioMmioLayout, status)
+            .write_once(&(status.bits() as u32))
+            .unwrap();
+        Ok(())
+    }
+
+    fn add_device_status(&self, bits: DeviceStatus) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
+        let status = self.read_device_status() | bits;
         field_ptr!(&self.layout, VirtioMmioLayout, status)
             .write_once(&(status.bits() as u32))
             .unwrap();
@@ -279,6 +295,7 @@ impl VirtioTransport for VirtioMmioTransport {
     }
 
     fn max_queue_size(&self, idx: u16) -> Result<u16, VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)
             .write_once(&(idx as u32))
             .unwrap();
@@ -288,7 +305,7 @@ impl VirtioTransport for VirtioMmioTransport {
     }
 
     fn register_queue_callback(
-        &mut self,
+        &self,
         _index: u16,
         func: Box<IrqCallbackFunction>,
         single_interrupt: bool,
@@ -304,7 +321,7 @@ impl VirtioTransport for VirtioMmioTransport {
     }
 
     fn register_cfg_callback(
-        &mut self,
+        &self,
         func: Box<IrqCallbackFunction>,
     ) -> Result<(), VirtioTransportError> {
         self.multiplex.write().register_cfg_callback(func);

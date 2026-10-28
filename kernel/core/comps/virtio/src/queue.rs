@@ -106,7 +106,7 @@ impl VirtQueue {
     pub(crate) fn new(
         idx: u16,
         size: u16,
-        transport: &mut dyn VirtioTransport,
+        transport: &dyn VirtioTransport,
     ) -> Result<Self, CreationError> {
         if !size.is_power_of_two() {
             return Err(CreationError::InvalidArgs);

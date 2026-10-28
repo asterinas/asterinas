@@ -128,7 +128,7 @@ impl InputDevice {
             debug!("input device has no properties or the properties is not defined");
         }
 
-        let mut transport = device.transport.lock();
+        let transport = device.transport.lock();
         fn config_space_change(_: &TrapFrame) {
             debug!("input device config space change");
         }
