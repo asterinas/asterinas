@@ -202,14 +202,14 @@ fn bus_device_registration_and_probe() {
 
     // 6. Check the attributes supplied by the bus and driver.
     let names = utils::attr_names("/devices/toy0000:00/0000:00:01.0");
-    for expected in ["vendor", "model", "bound_by"] {
+    for expected in ["uevent", "vendor", "model", "bound_by"] {
         assert!(names.iter().any(|n| n == expected), "{expected} missing");
     }
     assert_eq!(
         utils::read_attr("/devices/toy0000:00/0000:00:01.0", "vendor"),
         "0x0001\n"
     );
-    assert_eq!(names.len(), 3);
+    assert_eq!(names.len(), 4);
 
     // 7. Check the disk created by probe, its links, attributes, and notification.
     let disk_path = "/devices/toy0000:00/0000:00:01.0/toyblk/td3";
@@ -232,7 +232,7 @@ fn bus_device_registration_and_probe() {
     );
     assert_eq!(utils::read_attr(disk_path, "dev"), "200:3\n");
     assert_eq!(utils::read_attr(disk_path, "size"), "8\n");
-    assert_eq!(utils::attr_names(disk_path).len(), 2);
+    assert_eq!(utils::attr_names(disk_path).len(), 3);
     assert_eq!(observer.added.load(Ordering::Relaxed), 1);
 
     // 8. Unbind and check that the disk, driver entries, and glue directory vanish.

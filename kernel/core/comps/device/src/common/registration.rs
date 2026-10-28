@@ -17,11 +17,12 @@ use crate::{
     common::{
         Error, Result, Subsystem, SubsystemKind, SysStr,
         attr::{Attr, TyErasedAttr},
-        devnum::{DEFAULT_DEVNODE_MODE, DevNum},
+        devnum::DevNum,
         node::{SysTreeEdit, add_link, remove_link},
         registry,
     },
     hooks::{self, DevNodeRequest},
+    uevent::{UeventAction, UeventBuilder},
 };
 
 /// Registers a device, publishing its sysfs directory and optional `/dev` node.
@@ -52,7 +53,7 @@ pub fn remove<D: AnyDevice + ?Sized>(dev: &Arc<D>) -> Result<()> {
         }
         *state = State::Removed;
     }
-    teardown(&this);
+    teardown(&this, RemoveUevent::Emit);
     Ok(())
 }
 
@@ -167,7 +168,7 @@ fn add_erased(this: Arc<dyn AnyDevice>) -> Result<()> {
         }
         Err(e) => {
             *base.state().lock() = State::Removed;
-            teardown(&this);
+            teardown(&this, RemoveUevent::Suppress);
             Err(e)
         }
     }
@@ -181,7 +182,7 @@ fn add_steps(this: &Arc<dyn AnyDevice>) -> Result<()> {
     place(this)?;
 
     // 2. Core attributes.
-    let mut attrs = Vec::new();
+    let mut attrs = alloc::vec![TyErasedAttr::from_dyn(&UEVENT_ATTR)];
     if base.devnum().is_some() {
         attrs.push(TyErasedAttr::from_dyn(&DEV_ATTR));
     }
@@ -220,6 +221,11 @@ fn add_steps(this: &Arc<dyn AnyDevice>) -> Result<()> {
     // No fallible registration steps remain. The path is now stable, and
     // callbacks can register children without a later rollback orphaning them.
     *base.state().lock() = State::Adding(Vec::new());
+    // Announce `add` before probing, as Linux does. The event is best effort:
+    // a failure here does not roll back the registration.
+    if let Err(error) = crate::uevent::emit_uevent(this, UeventAction::Add) {
+        ostd::debug!("cannot emit add for {}: {error}", this.name());
+    }
 
     // 6. Let the subsystem act.
     if let Some(ops) = subsystem.ops() {
@@ -229,8 +235,14 @@ fn add_steps(this: &Arc<dyn AnyDevice>) -> Result<()> {
     Ok(())
 }
 
+/// Whether teardown emits a remove uevent.
+enum RemoveUevent {
+    Emit,
+    Suppress,
+}
+
 /// Undoes registration, tolerating steps that never happened.
-fn teardown(this: &Arc<dyn AnyDevice>) {
+fn teardown(this: &Arc<dyn AnyDevice>, remove_uevent: RemoveUevent) {
     let base = this.base();
     let subsystem = this.subsystem();
     // Only links this device created are removed: an index entry under the
@@ -241,6 +253,30 @@ fn teardown(this: &Arc<dyn AnyDevice>) {
     if let Some(ops) = subsystem.ops() {
         ops.on_removed(this);
     }
+
+    // Capture the remove environment before deleting the `/dev` node and links,
+    // then broadcast the event after those resources have been removed.
+    let prepared = if matches!(remove_uevent, RemoveUevent::Emit)
+        && let Some(subsystem_name) = subsystem.name()
+    {
+        let devpath = base.tree_path();
+        match crate::uevent::build_vars(this.as_ref()).and_then(|vars| {
+            UeventBuilder::new(
+                UeventAction::Remove,
+                devpath,
+                subsystem_name.to_string(),
+                vars,
+            )
+        }) {
+            Ok(builder) => Some(builder),
+            Err(error) => {
+                ostd::debug!("cannot emit remove for {}: {error}", this.name());
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // 5. Device number.
     if let Some(devnum) = base.devnum() {
@@ -270,6 +306,12 @@ fn teardown(this: &Arc<dyn AnyDevice>) {
     }
     if links.subsystem {
         remove_link(base, "subsystem");
+    }
+
+    if let Some(prepared) = prepared
+        && let Err(error) = prepared.build().and_then(|event| event.commit())
+    {
+        ostd::debug!("cannot emit remove for {}: {error}", this.name());
     }
 
     // 3. and 2. Attributes are dropped with the directory.
@@ -372,9 +414,12 @@ fn devnode_request(dev: &dyn AnyDevice, devnum: DevNum) -> DevNodeRequest {
         path: over
             .path
             .unwrap_or_else(|| SysStr::from(dev.base().name().replace('!', "/"))),
-        mode: over.mode.unwrap_or(DEFAULT_DEVNODE_MODE),
+        mode: over.mode,
     }
 }
+
+const UEVENT_ATTR: Attr<dyn AnyDevice> =
+    Attr::rw("uevent", crate::uevent::show, crate::uevent::store);
 
 const DEV_ATTR: Attr<dyn AnyDevice> = Attr::ro("dev", show_dev);
 

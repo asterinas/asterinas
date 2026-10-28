@@ -7,6 +7,7 @@
 //! - `attributes`: device attributes.
 //! - `observers`: class observers.
 //! - `names`: device name validation.
+//! - `uevent`: event validation, capacity, lifecycle callbacks, and sysfs requests.
 //!
 //! `toy` and `utils` provide shared test helpers.
 
@@ -16,4 +17,5 @@ mod observers;
 mod registration;
 mod registry;
 mod toy;
+mod uevent;
 mod utils;
