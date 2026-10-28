@@ -18,6 +18,9 @@ use crate::{
     prelude::*,
 };
 
+#[cfg(ktest)]
+mod tests;
+
 /// A type of file system.
 pub(crate) trait FsType: Send + Sync + 'static {
     /// Key used to deduplicate mounts of the same logical FS instance.
