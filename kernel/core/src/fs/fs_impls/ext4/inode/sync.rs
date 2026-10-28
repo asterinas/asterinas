@@ -206,7 +206,7 @@ mod tests {
         let ino = file.ino;
         let mapping = file.inner.read().block_manager().unwrap().clone();
         for i in 0..5 {
-            mapping.allocate_range_blocks(i * 3, i * 3 + 1).unwrap();
+            mapping.allocate_direct_blocks(i * 3, i * 3 + 1).unwrap();
         }
         let root = mapping.raw_block_ptrs().block_ptrs;
         let bid = root[4];
@@ -234,6 +234,29 @@ mod tests {
             root
         );
         assert!(!mapping.has_dirty_metadata());
+        // Converting an external leaf changes neither the root nor sector count.
+        // Both sync entry points must still flush it when the descriptor is clean.
+        for logical in [0, 3] {
+            mapping.mark_direct_written(logical, logical + 1).unwrap();
+            assert!(!mapping.is_inode_dirty());
+            assert!(!file.inner.read().desc.is_dirty());
+            assert!(mapping.has_dirty_metadata());
+            let writes = f.disk.block_writes(bid as usize);
+            f.disk.fail_write_block(Some(bid as usize));
+            let sync = || {
+                if logical == 0 {
+                    file.sync_data()
+                } else {
+                    file.sync_all()
+                }
+            };
+            assert!(sync().is_err());
+            assert!(mapping.has_dirty_metadata());
+            f.disk.fail_write_block(None);
+            sync().unwrap();
+            assert_eq!(f.disk.block_writes(bid as usize), writes + 2);
+            assert!(!mapping.has_dirty_metadata());
+        }
         // Force post-accept cleanup failure on final Drop. Neither the inode
         // number nor unfinished block frees may be forgotten or reused early.
         let free = f.fs.super_block().read_state().free_blocks_count();

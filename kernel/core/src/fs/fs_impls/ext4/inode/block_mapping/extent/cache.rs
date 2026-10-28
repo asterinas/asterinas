@@ -172,15 +172,16 @@ impl ExtentNodeCache {
             })
             .collect();
         pending.sort_by_key(|snapshot| snapshot.node.depth);
-        // Complete child nodes before submitting their parents.
-        for snapshot in &pending {
-            let mut bytes = Box::new([0u8; BLOCK_SIZE]);
-            snapshot.node.write_into(bytes.as_mut());
-            fs.block_device().write_bytes(
-                Bid::new(u64::from(snapshot.bid)).to_offset(),
-                bytes.as_ref(),
-            )?;
-            self.inner.lock().complete(snapshot);
+        // Child completion precedes parent submission; independent nodes at
+        // one depth share a batch bounded to 128 KiB of DMA buffers.
+        for level in pending.chunk_by(|left, right| left.node.depth == right.node.depth) {
+            for nodes in level.chunks(WRITEBACK_BATCH_NODES) {
+                writeback_batch(fs, nodes)?;
+                let mut cache = self.inner.lock();
+                for snapshot in nodes {
+                    cache.complete(snapshot);
+                }
+            }
         }
         Ok(())
     }
@@ -192,6 +193,7 @@ const MAX_CLEAN_NODES: usize = 32;
 const INLINE_READ_NODES: usize = 4;
 // Bound read-ahead to 128 KiB of DMA buffers per tree level.
 pub(super) const READ_BATCH_NODES: usize = 32;
+const WRITEBACK_BATCH_NODES: usize = 32;
 
 impl CacheInner {
     fn touch_clean(&mut self, bid: Ext4Bid) {
@@ -214,6 +216,24 @@ impl CacheInner {
         entry.clear_dirty();
         self.touch_clean(snapshot.bid);
     }
+}
+
+fn writeback_batch(fs: &Ext4, nodes: &[NodeWriteback]) -> Result<()> {
+    let mut batch = IoBatch::with_capacity(nodes.len());
+    // Keep snapshots alive until every queued write finishes; any error leaves
+    // the dirty versions in the cache for retry.
+    utils::submit_and_wait(&mut batch, |batch| {
+        for snapshot in nodes {
+            let mut bytes = Box::new([0u8; BLOCK_SIZE]);
+            snapshot.node.write_into(bytes.as_mut());
+            fs.block_device().write_bytes_async(
+                Bid::new(u64::from(snapshot.bid)).to_offset(),
+                bytes.as_ref(),
+                batch,
+            )?;
+        }
+        Ok(())
+    })
 }
 
 #[cfg(ktest)]
