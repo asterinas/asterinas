@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::fmt::Write;
+
 use aster_device::{
     class::{self, Class, ClassDevice, ClassHandle},
-    common::{AnyDevice, Attr, DevNode, DevNum},
+    common::{AnyDevice, Attr, DevNode, DevNum, Result as DeviceResult},
 };
 use device_id::{DeviceId, MajorId, MinorId};
 use spin::Once;
@@ -39,13 +41,13 @@ pub(super) fn init_in_first_process() -> Result<()> {
 }
 
 fn add_tty_device(payload: TtyPayload) -> Result<()> {
-    let class = TTY_CLASS
-        .get()
-        .expect("the tty class is registered in `init_in_first_process`");
+    let class = TTY_CLASS.get().unwrap();
     let name = payload.name();
     let devnum = payload.devnum();
+    let attrs = payload.attrs();
     let device = TtyClassDevice::builder(class, name, payload)
         .devnum(devnum)
+        .attrs(attrs)
         .build();
 
     aster_device::add_device(&device)?;
@@ -78,6 +80,16 @@ impl Class for TtyClass {
     }
 }
 
+static CONSOLE_DEV_ATTRS: [Attr<ClassDevice<TtyClass>>; 1] = [Attr::ro("active", show_active)];
+
+fn show_active(dev: &ClassDevice<TtyClass>, writer: &mut dyn Write) -> DeviceResult<()> {
+    let name = match dev.payload() {
+        TtyPayload::Console(console) => console.active_name(),
+    };
+    writeln!(writer, "{}", name)?;
+    Ok(())
+}
+
 /// The payload of a device in the `tty` class.
 enum TtyPayload {
     /// `/dev/console`, which forwards I/O to the TTY selected by the `console=` parameter.
@@ -106,6 +118,12 @@ impl TtyPayload {
         ))
     }
 
+    fn attrs(&self) -> &'static [Attr<TtyClassDevice>] {
+        match self {
+            TtyPayload::Console(_) => &CONSOLE_DEV_ATTRS,
+        }
+    }
+
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         match self {
             TtyPayload::Console(console) => console.open(),
@@ -123,7 +141,7 @@ impl Device for TtyClassDevice {
 
     fn id(&self) -> DeviceId {
         self.devnum()
-            .expect("tty devices always have a device number")
+            .expect("TTY devices always have a device number")
             .id()
     }
 

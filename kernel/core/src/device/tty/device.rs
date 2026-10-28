@@ -78,6 +78,7 @@ impl Device for TtyDevice {
 /// system messages will be sent.
 pub(super) struct SystemConsole {
     inner: Arc<dyn Device>,
+    active_name: &'static str,
 }
 
 impl SystemConsole {
@@ -94,18 +95,22 @@ impl SystemConsole {
             "hvc0" => hvc0_device().cloned().map(|device| device as _),
             _ => None,
         };
-        let inner = match device {
-            Some(inner) => inner,
+        let (inner, active_name) = match device {
+            Some(inner) => (inner, console_name),
             None => {
                 warn!(
                     "'{}' console not found, falling back to 'tty0'",
                     console_name
                 );
-                Arc::new(Tty0Device) as _
+                (Arc::new(Tty0Device) as _, "tty0")
             }
         };
 
-        Self { inner }
+        Self { inner, active_name }
+    }
+
+    pub(super) fn active_name(&self) -> &'static str {
+        self.active_name
     }
 
     pub(super) fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
