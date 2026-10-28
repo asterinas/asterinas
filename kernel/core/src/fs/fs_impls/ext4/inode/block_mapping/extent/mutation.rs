@@ -19,6 +19,7 @@ struct PreparedUpdate<'a> {
     retired: Vec<Range<Ext4Bid>>,
     allocations: AllocatedBlocks<'a>,
     sectors: u32,
+    invalidated: Range<u64>,
 }
 
 /// Owns new blocks until the prepared mapping accepts them.
@@ -48,6 +49,13 @@ impl ExtentTree {
         let unwritten = mode == AllocationMode::Unwritten;
         if end as u128 > 1u128 << 32 || start > end {
             return_errno_with_message!(Errno::EINVAL, "invalid logical allocation range");
+        }
+        if self
+            .lookup_cache
+            .lock()
+            .covers_initialized(start as u64..end as u64)
+        {
+            return Ok(());
         }
         let mut current = start as u64;
         while current < end as u64 {
@@ -89,6 +97,7 @@ impl ExtentTree {
                     entries.insert(at, extent);
                     *entries = merge_adjacent_extents(core::mem::take(entries));
                     self.finish_leaf_update(&path, &mut update, node)?;
+                    update.invalidated = current..current + u64::from(extent.len());
                     update.account(self.raw_block_ptrs.sector_count)?;
                     self.accept_update(update)?;
                     current += u64::from(extent.len());
@@ -194,6 +203,7 @@ impl ExtentTree {
                     self.raw_block_ptrs.sector_count,
                 );
                 self.finish_leaf_update(&path, &mut update, node)?;
+                update.invalidated = current..stop;
                 update.account(self.raw_block_ptrs.sector_count)?;
                 self.accept_update(update)?;
             }
@@ -222,6 +232,7 @@ impl ExtentTree {
         let root = self.root_node(fs)?;
         root.validate_bounds(0, 1u64 << 32, true)?;
         let mut update = PreparedUpdate::new(fs, (*root).clone(), self.raw_block_ptrs.sector_count);
+        update.invalidated = keep..1u64 << 32;
         let (new_root, changed) =
             self.prune_node(fs, &root, 0..1u64 << 32, true, keep, &mut update)?;
         if !changed {
@@ -336,6 +347,10 @@ impl ExtentTree {
             node.validate_addresses(update.allocations.fs)?;
         }
         *self.root_cache.get_mut() = Some(Arc::new(update.root.clone()));
+        // Splits and merges preserve mappings outside the logical edit span.
+        self.lookup_cache
+            .lock()
+            .invalidate(update.invalidated.clone());
         for bid in &update.removed {
             self.node_cache.remove(*bid);
         }
@@ -449,6 +464,7 @@ impl<'a> PreparedUpdate<'a> {
             retired: Vec::new(),
             allocations: AllocatedBlocks::new(fs),
             sectors,
+            invalidated: 0..1u64 << 32,
         }
     }
 

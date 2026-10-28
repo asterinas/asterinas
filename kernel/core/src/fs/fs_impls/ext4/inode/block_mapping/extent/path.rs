@@ -122,6 +122,26 @@ impl ExtentTree {
         if end <= u64::from(iblock) || end > 1u64 << 32 {
             return_errno_with_message!(Errno::EINVAL, "invalid extent query range");
         }
+        if let Some(run) = self.cached_run(iblock, end) {
+            return Ok(run);
+        }
+        let run = self.lookup_run_uncached(fs, iblock, end)?;
+        self.remember_run(&run);
+        Ok(run)
+    }
+
+    fn cached_run(&self, iblock: Iblock, end: u64) -> Option<ExtentRun> {
+        self.lookup_cache.lock().lookup(iblock, end)
+    }
+
+    fn remember_run(&self, run: &ExtentRun) {
+        self.lookup_cache.lock().record(run.clone());
+    }
+
+    fn lookup_run_uncached(&self, fs: &Ext4, iblock: Iblock, end: u64) -> Result<ExtentRun> {
+        if end <= u64::from(iblock) || end > 1u64 << 32 {
+            return_errno_with_message!(Errno::EINVAL, "invalid extent query range");
+        }
         let path = self.lookup_path(fs, iblock)?;
         Ok(leaf_run(path.levels.last().unwrap(), iblock, end))
     }
@@ -137,6 +157,21 @@ pub(in crate::fs::fs_impls::ext4::inode) struct ExtentRangeCursor {
 
 impl ExtentRangeCursor {
     fn run(&mut self, tree: &ExtentTree, fs: &Ext4, start: Iblock, end: u64) -> Result<ExtentRun> {
+        if let Some(run) = tree.cached_run(start, end) {
+            return Ok(run);
+        }
+        let run = self.run_uncached(tree, fs, start, end)?;
+        tree.remember_run(&run);
+        Ok(run)
+    }
+
+    fn run_uncached(
+        &mut self,
+        tree: &ExtentTree,
+        fs: &Ext4,
+        start: Iblock,
+        end: u64,
+    ) -> Result<ExtentRun> {
         if self.path.is_none() {
             self.path = Some(tree.lookup_path(fs, start)?);
         }
@@ -228,6 +263,25 @@ fn leaf_run(leaf: &PathLevel, iblock: Iblock, end: u64) -> ExtentRun {
     ExtentRun::Hole(u64::from(iblock)..end.min(stop))
 }
 
+impl ExtentRun {
+    pub(super) fn bounds(&self) -> &Range<u64> {
+        match self {
+            Self::Mapped { logical, .. } => logical,
+            Self::Hole(range) => range,
+        }
+    }
+
+    pub(super) fn clip(mut self, start: u64, end: u64) -> Self {
+        let range = match &mut self {
+            Self::Mapped { logical, .. } => logical,
+            Self::Hole(range) => range,
+        };
+        range.start = start.max(range.start);
+        range.end = end.min(range.end);
+        self
+    }
+}
+
 #[cfg(ktest)]
 mod tests {
     use ostd::prelude::ktest;
@@ -264,7 +318,7 @@ mod tests {
         };
         let mut raw = [0u32; 15];
         root.write_into(raw.as_mut_bytes());
-        let tree = ExtentTree::new(RawBlockPtrs::new(40, raw)).unwrap();
+        let mut tree = ExtentTree::new(RawBlockPtrs::new(40, raw)).unwrap();
         let mut cursor = ExtentRangeCursor::default();
         cursor.run(&tree, &f.fs, 0, 102).unwrap();
         let root_handle = cursor.path.as_ref().unwrap().levels[0].node.clone();
@@ -283,5 +337,21 @@ mod tests {
         ));
         assert_eq!(f.disk.block_reads(40), 1);
         assert_eq!(f.disk.block_reads(42), 1);
+        // Separate data-I/O calls must retain proven mapped and hole facts,
+        // even after the underlying clean node has been evicted.
+        drop(cursor);
+        tree.node_cache = super::super::cache::ExtentNodeCache::new();
+        let mut range = 0..3;
+        let mut cursor = ExtentRangeCursor::default();
+        tree.next_io_range(&f.fs, &mut range, &mut cursor).unwrap();
+        tree.next_io_range(&f.fs, &mut range, &mut cursor).unwrap();
+        tree.node_cache = super::super::cache::ExtentNodeCache::new();
+        f.disk.fail_read_block(Some(40));
+        for (start, stop) in [(0, 1), (1, 2)] {
+            let mut range = start..stop;
+            tree.next_io_range(&f.fs, &mut range, &mut ExtentRangeCursor::default())
+                .unwrap();
+            assert_eq!(range.start, stop);
+        }
     }
 }

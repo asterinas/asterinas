@@ -89,12 +89,18 @@ fn extent_lookup_visits_only_selected_path() {
     write_leaf(&f.disk, 40, 0, 41);
     // An unreadable sibling must not affect a query in the first leaf.
     f.disk.fail_read_block(Some(42));
-    let tree = ExtentTree::new(RawBlockPtrs::new(24, index_root(&[(0, 40), (100, 42)]))).unwrap();
+    let mut tree =
+        ExtentTree::new(RawBlockPtrs::new(24, index_root(&[(0, 40), (100, 42)]))).unwrap();
     let reads = f.disk.block_reads(40);
     assert_eq!(tree.map_block(&f.fs, 0).unwrap(), Some(41));
     assert_eq!(f.disk.block_reads(40) - reads, 1);
     assert_eq!(f.disk.block_reads(42), 0);
     tree.lookup_run(&f.fs, 1, 100).unwrap();
+    tree.node_cache.remove(40);
+    f.disk.fail_read_block(Some(40));
+    assert_eq!(tree.map_block(&f.fs, 0).unwrap(), Some(41));
+    assert_eq!(tree.map_block(&f.fs, 1).unwrap(), None);
+    assert_eq!(f.disk.block_reads(40), 1);
 }
 
 #[ktest]
@@ -191,6 +197,49 @@ fn extent_deferred_reclaim_survives_owner_drop() {
     assert_eq!(f.fs.super_block().read_state().free_blocks_count(), before);
     f.fs.retry_extent_work().unwrap();
     assert_eq!(f.fs.super_block().read_state().free_blocks_count(), before);
+}
+
+#[ktest]
+fn extent_status_and_last_lookup_track_mutations() {
+    use super::{path::ExtentRun, status::ExtentStatusTree};
+    let mut status = ExtentStatusTree::default();
+    assert!(status.lookup(7).is_none());
+    status.record(ExtentRun::Hole(0..10));
+    status.invalidate(5..6);
+    assert!(status.lookup(4).is_none());
+    for i in 0..513u64 {
+        status.record(ExtentRun::Hole(i * 2..i * 2 + 1));
+    }
+    assert!(status.lookup(0).is_none());
+    assert!(status.lookup(2).is_some());
+    assert!(matches!(status.lookup(1024), Some(ExtentRun::Hole(_))));
+    status.record(ExtentRun::Mapped {
+        logical: 2000..2001,
+        extent: Extent::new(2000, 1, 50),
+    });
+    status.record(ExtentRun::Mapped {
+        logical: 2001..2002,
+        extent: Extent::new(2001, 1, 51),
+    });
+    assert!(status.covers_initialized(2000..2002));
+    assert!(!status.covers_initialized(1999..2002));
+    let f = extent_fixture_builder(1, 2048)
+        .with_free_blocks(64, 64)
+        .build()
+        .unwrap();
+    let mut tree = ExtentTree::new(RawBlockPtrs::new(0, super::empty_extent_root())).unwrap();
+    assert_eq!(tree.map_block(&f.fs, 2).unwrap(), None);
+    tree.allocate_range_blocks(&f.fs, 2, 3).unwrap();
+    let old = tree.map_block(&f.fs, 2).unwrap().unwrap();
+    tree.allocate_range_blocks(&f.fs, 10, 11).unwrap();
+    assert!(tree.lookup_cache.lock().lookup(2, 3).is_some());
+
+    tree.truncate_to_byte_len(&f.fs, 0).unwrap();
+    assert_eq!(tree.map_block(&f.fs, 2).unwrap(), None);
+    let occupied = f.fs.alloc_blocks(1, old).unwrap();
+    tree.allocate_range_blocks(&f.fs, 2, 3).unwrap();
+    assert_ne!(tree.map_block(&f.fs, 2).unwrap(), Some(old));
+    f.fs.free_blocks(occupied.start, 1).unwrap();
 }
 
 #[ktest]
