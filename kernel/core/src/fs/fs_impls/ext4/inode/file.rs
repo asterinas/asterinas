@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Regular-file data I/O for ext2 inodes: buffered reads/writes and fallocate.
+//! Regular-file data I/O for EXT2/EXT4 inodes: buffered reads/writes and fallocate.
 //!
 //! This module contains the regular-file behavior exposed through the VFS
 //! layer: page-cache I/O, direct I/O, size changes, and block preallocation.
-//! File size, page-cache state, and ext2 block mappings must stay coherent
+//! File size, page-cache state, and block mappings must stay coherent
 //! across those entry points.
 
 #![short_vis_path::add(ext4)]
@@ -314,7 +314,14 @@ impl InodeInner {
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
         let old_size = self.file_size();
 
-        if let Err(err) = self.prepare_write(fs, offset, end) {
+        if let Err(err) = (|| -> Result<()> {
+            if end > old_size {
+                self.ensure_size_within_limit(fs, end)?;
+                self.resize_page_cache(end, old_size)?;
+            }
+            self.block_manager()?
+                .allocate_direct_blocks(offset / BLOCK_SIZE, end / BLOCK_SIZE)
+        })() {
             self.rollback_write(old_size, end);
             return Err(err);
         }
@@ -331,6 +338,13 @@ impl InodeInner {
             return Err(err);
         }
 
+        if let Err(err) = self
+            .block_manager()?
+            .mark_direct_written(offset / BLOCK_SIZE, end / BLOCK_SIZE)
+        {
+            self.rollback_write(old_size, end);
+            return Err(err);
+        }
         self.set_mtime_ctime(utils::now());
         if end > self.file_size() {
             self.set_file_size(end);
@@ -350,27 +364,57 @@ impl InodeInner {
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
         let iblock_end = Iblock::try_from(end.div_ceil(BLOCK_SIZE))
             .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
-        let iblock_range = iblock_start..iblock_end;
-        let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range)?;
-
-        while let Some(range) = range_iter.next()? {
-            match range {
-                IoRange::Mapped(device_range) => {
-                    let nblocks = device_range.len();
-                    let bio_segment = BioSegment::alloc(nblocks, BioDirection::FromDevice);
-                    fs.read_blocks(device_range.start, bio_segment.clone())?;
-                    let mut segment_reader = bio_segment.reader()?;
-                    segment_reader.read_fallible(writer)?;
+        enum ReadRun {
+            Data(BioSegment),
+            Zeros(usize),
+        }
+        // Bound both temporary memory (128 KiB) and outstanding requests
+        // (at most 32 one-block runs), independently of the caller's size.
+        let mut current = iblock_start;
+        while current < iblock_end {
+            let stop = current
+                .saturating_add(DIRECT_READ_WINDOW_BLOCKS)
+                .min(iblock_end);
+            let mut ranges = self.block_manager()?.iter_io_ranges(current..stop)?;
+            let mut batch = IoBatch::new();
+            let mut plan = Vec::new();
+            let submitted = (|| -> Result<()> {
+                while let Some(range) = ranges.next()? {
+                    match range {
+                        IoRange::Mapped(physical) => {
+                            let mut bid = physical.start;
+                            while bid < physical.end {
+                                let blocks =
+                                    (physical.end - bid).min(DIRECT_READ_BIO_BLOCKS) as usize;
+                                let segment = BioSegment::alloc(blocks, BioDirection::FromDevice);
+                                fs.read_blocks_async(bid, segment.clone(), None, &mut batch)?;
+                                plan.push(ReadRun::Data(segment));
+                                bid += blocks as u32;
+                            }
+                        }
+                        IoRange::Hole(hole) | IoRange::Unwritten(hole) => {
+                            plan.push(ReadRun::Zeros(hole.len() * BLOCK_SIZE));
+                        }
+                    }
                 }
-                IoRange::Unwritten(device_range) => {
-                    writer.fill_zeros(device_range.len() * BLOCK_SIZE)?;
-                }
-                IoRange::Hole(hole_range) => {
-                    let n_bytes =
-                        (hole_range.end as usize - hole_range.start as usize) * BLOCK_SIZE;
-                    writer.fill_zeros(n_bytes)?;
+                Ok(())
+            })();
+            // Drain every submitted request even if planning or a later
+            // submission failed. No buffer in this batch is copied on failure.
+            let completed = batch.wait_all();
+            submitted?;
+            completed?;
+            for run in plan {
+                match run {
+                    ReadRun::Data(segment) => {
+                        segment.reader()?.read_fallible(writer)?;
+                    }
+                    ReadRun::Zeros(bytes) => {
+                        writer.fill_zeros(bytes.min(writer.avail()))?;
+                    }
                 }
             }
+            current = stop;
         }
         Ok(())
     }
@@ -393,16 +437,16 @@ impl InodeInner {
         let iblock_range = iblock_start..iblock_end;
         let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range)?;
 
-        let mut io_batch = IoBatch::new();
+        let mut io_batch = PendingDirectWrites::new();
         while let Some(range) = range_iter.next()? {
             match range {
-                IoRange::Mapped(device_range) => {
+                IoRange::Mapped(device_range) | IoRange::Unwritten(device_range) => {
                     let nblocks = device_range.len();
                     let bio_segment = BioSegment::alloc(nblocks, BioDirection::ToDevice);
                     bio_segment.writer().unwrap().write_fallible(reader)?;
                     fs.write_blocks_async(device_range.start, bio_segment, None, &mut io_batch)?;
                 }
-                IoRange::Hole(_) | IoRange::Unwritten(_) => {
+                IoRange::Hole(_) => {
                     // TODO: Consider falling back to buffered write like Linux.
                     // The upper layer should have performed allocation for the write
                     // range. Linux does not allocate blocks in the direct write path;
@@ -415,7 +459,7 @@ impl InodeInner {
             }
         }
 
-        io_batch.wait_all()?;
+        io_batch.finish()?;
         Ok(())
     }
 
@@ -471,6 +515,53 @@ fn is_block_aligned(offset: usize) -> bool {
     offset.is_multiple_of(BLOCK_SIZE)
 }
 
+// Bound direct-read DMA memory independently of the requested file range.
+const DIRECT_READ_WINDOW_BLOCKS: u32 = 32;
+const DIRECT_READ_BIO_BLOCKS: u32 = 16;
+
+/// Drains submitted direct writes before rollback can release their blocks.
+struct PendingDirectWrites {
+    batch: IoBatch,
+    drained: bool,
+}
+
+impl PendingDirectWrites {
+    fn new() -> Self {
+        Self {
+            batch: IoBatch::new(),
+            drained: false,
+        }
+    }
+
+    fn finish(mut self) -> Result<()> {
+        let result = self.batch.wait_all();
+        self.drained = true;
+        result.map_err(Into::into)
+    }
+}
+
+impl Deref for PendingDirectWrites {
+    type Target = IoBatch;
+
+    fn deref(&self) -> &IoBatch {
+        &self.batch
+    }
+}
+
+impl DerefMut for PendingDirectWrites {
+    fn deref_mut(&mut self) -> &mut IoBatch {
+        &mut self.batch
+    }
+}
+
+impl Drop for PendingDirectWrites {
+    fn drop(&mut self) {
+        if !self.drained {
+            let _ = self.batch.wait_all();
+        }
+    }
+}
+
 #[cfg(ktest)]
 mod test {
     use ostd::prelude::ktest;
@@ -487,6 +578,121 @@ mod test {
         time::clocks,
         vm::page_cache::VmoMapMode,
     };
+
+    #[ktest]
+    fn direct_write_batch_drains_before_early_error_rollback() {
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        use io_util::batch::IoCompletion;
+        struct Completion(Arc<AtomicUsize>);
+        impl IoCompletion for Completion {
+            fn wait(&self) -> core::result::Result<(), io_util::IoError> {
+                self.0.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }
+        }
+        let completed = Arc::new(AtomicUsize::new(0));
+        let operation = || -> Result<()> {
+            let mut pending = PendingDirectWrites::new();
+            pending.push(Arc::new(Completion(completed.clone())));
+            return_errno!(Errno::EIO);
+        };
+        assert!(operation().is_err());
+        assert_eq!(completed.load(Ordering::Relaxed), 1);
+    }
+
+    #[ktest]
+    fn direct_read_fragmented_batch_preserves_order_and_drains_failure() {
+        use crate::fs::ext4::fs::MountFlavor;
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 2048)
+            .with_mount_flavor(MountFlavor::Ext4)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let file = create_file(&f.root(), "read_batch");
+        let payload = vec![0x5au8; BLOCK_SIZE];
+        for offset in [0, 2 * BLOCK_SIZE] {
+            file.write_direct_at(
+                offset,
+                &mut VmReader::from(payload.as_slice()).to_fallible(),
+            )
+            .unwrap();
+        }
+        let second = file
+            .inner
+            .read()
+            .block_manager()
+            .unwrap()
+            .raw_block_ptrs()
+            .block_ptrs[8] as usize;
+        f.disk.fail_read_block(Some(second));
+        let mut bytes = vec![0xa5u8; 3 * BLOCK_SIZE];
+        assert!(
+            file.read_direct_at(0, &mut VmWriter::from(bytes.as_mut_slice()).to_fallible())
+                .is_err()
+        );
+        // A failed batch has drained its requests before exposing its output.
+        assert!(bytes.iter().all(|b| *b == 0xa5));
+        f.disk.fail_read_block(None);
+        file.read_direct_at(0, &mut VmWriter::from(bytes.as_mut_slice()).to_fallible())
+            .unwrap();
+        assert_eq!(&bytes[..BLOCK_SIZE], &payload);
+        assert!(bytes[BLOCK_SIZE..2 * BLOCK_SIZE].iter().all(|b| *b == 0));
+        assert_eq!(&bytes[2 * BLOCK_SIZE..], &payload);
+    }
+
+    #[ktest]
+    fn direct_write_failure_keeps_unwritten_zero_readable_until_success() {
+        use crate::fs::ext4::fs::MountFlavor;
+        clocks::init_for_ktest();
+        let f = Ext4FixtureBuilder::new(1, 2048)
+            .with_mount_flavor(MountFlavor::Ext4)
+            .with_free_blocks(64, 64)
+            .with_free_inodes(1000, 1000)
+            .with_group0_used_dirs(1)
+            .build()
+            .unwrap();
+        let file = create_file(&f.root(), "unwritten_failure");
+        file.resize(4 * BLOCK_SIZE).unwrap();
+        let mapping = file.inner.read().block_manager().unwrap().clone();
+        mapping.allocate_direct_blocks(1, 3).unwrap();
+        let bid = mapping.raw_block_ptrs().block_ptrs[5] as usize;
+        let payload = vec![0x5au8; BLOCK_SIZE];
+        f.disk.fail_write_block(Some(bid));
+        assert!(
+            file.write_direct_at(
+                BLOCK_SIZE,
+                &mut VmReader::from(payload.as_slice()).to_fallible()
+            )
+            .is_err()
+        );
+        f.disk.fail_write_block(None);
+        let mut bytes = vec![0xa5u8; 2 * BLOCK_SIZE];
+        file.read_direct_at(
+            BLOCK_SIZE,
+            &mut VmWriter::from(bytes.as_mut_slice()).to_fallible(),
+        )
+        .unwrap();
+        assert!(bytes.iter().all(|b| *b == 0));
+        let before = f.disk.block_writes(bid);
+        file.write_direct_at(
+            BLOCK_SIZE,
+            &mut VmReader::from(payload.as_slice()).to_fallible(),
+        )
+        .unwrap();
+        assert_eq!(f.disk.block_writes(bid), before + 1);
+        file.read_direct_at(
+            BLOCK_SIZE,
+            &mut VmWriter::from(bytes.as_mut_slice()).to_fallible(),
+        )
+        .unwrap();
+        assert_eq!(&bytes[..BLOCK_SIZE], &payload);
+        assert!(bytes[BLOCK_SIZE..].iter().all(|b| *b == 0));
+        file.sync_all().unwrap();
+    }
 
     #[ktest]
     fn extent_truncate_cleanup_error_keeps_live_size_consistent() {

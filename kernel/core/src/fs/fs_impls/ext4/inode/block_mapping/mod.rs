@@ -23,7 +23,7 @@ use device_id::{decode_device_numbers, encode_device_numbers};
 
 use self::{
     block_manager::{BlockPtrTree, ResolvedBlockRange},
-    extent::ExtentTree,
+    extent::{AllocationMode, ExtentTree},
 };
 use super::{
     Iblock, RAW_BLOCK_PTRS_LEN,
@@ -252,6 +252,27 @@ impl BlockMapping {
             MappingTreeType::ExtentTree(tree) => tree.sync_metadata(self.fs()?.as_ref()),
             MappingTreeType::BlockPtrTree(tree) => tree.sync_indirect_blocks(),
         }
+    }
+
+    /// Reserves direct-write holes without exposing uninitialized data.
+    pub(super) fn allocate_direct_blocks(&self, start: usize, end: usize) -> Result<()> {
+        let fs = self.fs()?;
+        {
+            let mut manager = self.manager.write();
+            if let MappingTreeType::ExtentTree(tree) = &mut *manager {
+                return tree.allocate_range(&fs, start, end, AllocationMode::Unwritten);
+            }
+        }
+        self.allocate_range_blocks(start, end)
+    }
+
+    pub(super) fn mark_direct_written(&self, start: usize, end: usize) -> Result<()> {
+        let fs = self.fs()?;
+        let mut manager = self.manager.write();
+        if let MappingTreeType::ExtentTree(tree) = &mut *manager {
+            tree.mark_written(&fs, start, end)?;
+        }
+        Ok(())
     }
 
     /// Ensures that every logical block in `[start_block, end_block)` is mapped.
