@@ -104,7 +104,8 @@ impl SecurityFsDirectory {
 }
 
 /// Registers an immutable top-level directory and its files in securityfs.
-pub fn register_directory(
+#[cfg(ktest)]
+pub(crate) fn register_directory(
     name: &'static str,
     files: &'static [SecurityFsFile],
 ) -> Result<()> {

@@ -12,7 +12,7 @@ use aster_core::{
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     security::{
         lsm::hooks::{self as lsm_hooks, CapableContext},
-        securityfs::SecurityFsFile,
+        securityfs::{SecurityFsDirectory, SecurityFsFile},
     },
 };
 use aster_util::printer::VmPrinter;
@@ -27,8 +27,32 @@ static FILES: [SecurityFsFile; 2] = [
     SecurityFsFile::write_only(".load", write_load),
     SecurityFsFile::read_only("profiles", read_profiles),
 ];
+static VERSION_FILES: [SecurityFsFile; 1] = [SecurityFsFile::read_only("v5", read_v5_support)];
+static VERSION_DIRECTORIES: [SecurityFsDirectory; 1] =
+    [SecurityFsDirectory::new("versions", &VERSION_FILES, &[])];
+static POLICY_DIRECTORIES: [SecurityFsDirectory; 1] = [SecurityFsDirectory::new(
+    "policy",
+    &[],
+    &VERSION_DIRECTORIES,
+)];
+static FEATURE_DIRECTORIES: [SecurityFsDirectory; 1] = [SecurityFsDirectory::new(
+    "features",
+    &[],
+    &POLICY_DIRECTORIES,
+)];
+static APPARMOR_DIRECTORY: SecurityFsDirectory =
+    SecurityFsDirectory::new("apparmor", &FILES, &FEATURE_DIRECTORIES);
+
 pub(super) fn register() -> Result<()> {
-    aster_core::security::securityfs::register_directory("apparmor", &FILES)
+    aster_core::security::securityfs::register_hierarchy(&APPARMOR_DIRECTORY)
+}
+
+fn read_v5_support(offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    let mut printer = VmPrinter::new_skip(writer, offset);
+    printer
+        .write_fmt(format_args!("yes\n"))
+        .map_err(|_| Error::new(Errno::EFAULT))?;
+    Ok(printer.bytes_written())
 }
 
 fn check_policy_admin() -> Result<()> {
