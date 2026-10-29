@@ -94,7 +94,7 @@ jobs:
         include:
           - { variant: 'handover64-debug', release: false, boot_protocol: 'linux-efi-handover64' }
           - { variant: 'multiboot2-smp4',  boot_protocol: 'multiboot2', smp: 4 }
-          - { variant: 'apparmor-lsm', scheme: 'apparmor' }
+          - { variant: 'apparmor-smp4', scheme: 'apparmor', boot_protocol: 'multiboot2', smp: 4 }
           - { variant: 'apparmor-security', scheme: 'apparmor-legacy' }
           - { variant: 'apparmor-precedence', scheme: 'apparmor-precedence' }
     steps:
@@ -106,10 +106,10 @@ jobs:
         uses: ./.github/actions/test
         with:
           auto_test: 'regression'
+          scheme: ${{ matrix.scheme }}
           release: ${{ !contains(matrix.release, 'false') }}
           smp: ${{ matrix.smp }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
-          scheme: ${{ matrix.scheme }}
 
   conformance-test:
     runs-on: ubuntu-latest
