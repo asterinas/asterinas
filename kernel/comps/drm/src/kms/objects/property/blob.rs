@@ -2,7 +2,7 @@
 
 use alloc::boxed::Box;
 
-use crate::kms::objects::KmsObjectId;
+use crate::kms::objects::{KmsObjectId, OwnedKmsObjectId};
 
 /// A blob object referenced by a blob-typed DRM property.
 ///
@@ -13,17 +13,17 @@ use crate::kms::objects::KmsObjectId;
 /// rather than embedding the blob payload directly in the property attachment.
 #[derive(Debug)]
 pub(crate) struct DrmPropertyBlob {
-    id: KmsObjectId,
+    id: OwnedKmsObjectId,
     data: Box<[u8]>,
 }
 
 impl DrmPropertyBlob {
-    pub(crate) fn new(id: KmsObjectId, data: Box<[u8]>) -> Self {
+    pub(crate) fn new(id: OwnedKmsObjectId, data: Box<[u8]>) -> Self {
         Self { id, data }
     }
 
     pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+        self.id.value()
     }
 
     pub(crate) fn data(&self) -> &[u8] {

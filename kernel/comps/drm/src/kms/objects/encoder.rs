@@ -4,24 +4,30 @@ use alloc::sync::Weak;
 
 use ostd::sync::Mutex;
 
-use crate::kms::objects::{KmsObjectId, KmsObjectIndex, KmsObjectMask, crtc::DrmCrtc};
+use crate::kms::objects::{
+    KmsObjectId, KmsObjectIndex, KmsObjectMask, OwnedKmsObjectId, crtc::DrmCrtc,
+};
 
 /// A hardware or virtual block that converts a CRTC's pixel stream for output.
 ///
 /// An encoder records which CRTCs can feed it and which peer encoders may clone the same output.
 ///
 /// Its current CRTC is mutable routing state,
-/// while the compatibility masks use per-type object indices to describe the device's fixed KMS topology.
+/// while the compatibility masks use per-type object indices to describe the device's fixed connection capabilities.
 #[derive(Debug)]
 pub struct DrmEncoder {
-    id: KmsObjectId,
+    id: OwnedKmsObjectId,
     index: KmsObjectIndex,
     config: DrmEncoderConfig,
     current_crtc: Mutex<Weak<DrmCrtc>>,
 }
 
 impl DrmEncoder {
-    pub(super) fn new(id: KmsObjectId, index: KmsObjectIndex, config: DrmEncoderConfig) -> Self {
+    pub(super) fn new(
+        id: OwnedKmsObjectId,
+        index: KmsObjectIndex,
+        config: DrmEncoderConfig,
+    ) -> Self {
         Self {
             id,
             index,
@@ -31,7 +37,7 @@ impl DrmEncoder {
     }
 
     pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+        self.id.value()
     }
 
     pub(crate) fn index(&self) -> KmsObjectIndex {

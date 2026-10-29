@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
 use core::fmt::Debug;
 
 use aster_core::prelude::*;
+use ostd::sync::Mutex;
 
 use crate::{
     gem::object::DrmGemObject,
-    kms::{objects::KmsObjectId, pixel_format::DrmPixelFormat},
+    kms::{
+        objects::{KmsDynamicObjects, KmsObjectId, OwnedKmsObjectId},
+        pixel_format::DrmPixelFormat,
+    },
     utils::DrmSize,
 };
 
@@ -19,7 +23,7 @@ use crate::{
 // TODO: Support framebuffers backed by multiple planes.
 #[derive(Debug)]
 pub struct DrmFramebuffer {
-    id: KmsObjectId,
+    id: OwnedKmsObjectId,
     size: DrmSize,
     pixel_format: DrmPixelFormat,
     #[expect(dead_code)]
@@ -29,13 +33,14 @@ pub struct DrmFramebuffer {
     #[expect(dead_code)]
     modifier: u64,
     gem_object: Arc<DrmGemObject>,
+    dynamic_objects: Weak<Mutex<KmsDynamicObjects>>,
 }
 
 impl DrmFramebuffer {
     /// Creates a single-plane framebuffer over the supplied GEM object.
     #[expect(clippy::too_many_arguments)]
     pub(crate) fn new(
-        id: KmsObjectId,
+        id: OwnedKmsObjectId,
         size: DrmSize,
         pixel_format: DrmPixelFormat,
         flags: DrmFramebufferFlags,
@@ -43,6 +48,7 @@ impl DrmFramebuffer {
         offset: u32,
         modifier: u64,
         gem_object: Arc<DrmGemObject>,
+        dynamic_objects: &Arc<Mutex<KmsDynamicObjects>>,
     ) -> Result<Self> {
         if size.is_empty() {
             return Err(errno!(EINVAL, "the DRM framebuffer size must not be empty"));
@@ -79,11 +85,12 @@ impl DrmFramebuffer {
             offset,
             modifier,
             gem_object,
+            dynamic_objects: Arc::downgrade(dynamic_objects),
         })
     }
 
     pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+        self.id.value()
     }
 
     pub fn size(&self) -> DrmSize {
@@ -104,6 +111,14 @@ impl DrmFramebuffer {
 
     pub fn gem_object(&self) -> &DrmGemObject {
         &self.gem_object
+    }
+}
+
+impl Drop for DrmFramebuffer {
+    fn drop(&mut self) {
+        if let Some(dynamic_objects) = self.dynamic_objects.upgrade() {
+            dynamic_objects.lock().remove_framebuffer(self.id());
+        }
     }
 }
 
