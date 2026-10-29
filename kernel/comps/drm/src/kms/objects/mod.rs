@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! KMS objects and their device-local object store.
+//! KMS object collections and device-local ID registry.
 //!
-//! This module defines planes, CRTCs, encoders, connectors, framebuffers, properties, and property blobs.
-//!
-//! Static objects belonging to a DRM device are registered by type in [`DrmKmsObjectStore`].
-//!
-//! Static objects and per-file objects such as framebuffers share a device-local `KmsObjectId` namespace.
-//!
-//! [`builder::DrmKmsObjectStoreBuilder`] constructs and validates the static KMS topology
-//! before materializing the objects in the store.
+//! [`DrmKmsObjects`] owns static objects; [`DrmKmsObjectRegistry`] weakly indexes dynamic objects.
+//! Both share the device's `u32` ID namespace.
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::{
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 use core::fmt::Debug;
 
 use aster_core::prelude::*;
@@ -19,12 +16,14 @@ use aster_util::ranged_integer::RangedUsize;
 use bitvec::array::BitArray;
 use hashbrown::HashMap;
 use int_to_c_enum::TryFromInt;
+use ostd::sync::Mutex;
 use sparse_id_alloc::SparseIdAlloc;
 
 use crate::kms::objects::{
     connector::DrmConnector,
     crtc::DrmCrtc,
     encoder::DrmEncoder,
+    framebuffer::DrmFramebuffer,
     plane::DrmPlane,
     property::{DrmProperty, DrmPropertyAttachments, DrmStandardProperty, blob::DrmPropertyBlob},
 };
@@ -37,8 +36,6 @@ pub mod framebuffer;
 pub mod plane;
 pub mod property;
 
-pub(crate) type KmsObjectId = u32;
-
 pub(crate) const MAX_OBJECTS_PER_TYPE: usize = u32::BITS as usize;
 
 /// A zero-based position in one KMS object type's registration order.
@@ -50,57 +47,90 @@ pub type KmsObjectIndex = RangedUsize<0, { MAX_OBJECTS_PER_TYPE - 1 }>;
 
 type KmsObjectMask = BitArray<[u32; MAX_OBJECTS_PER_TYPE / u32::BITS as usize]>;
 
-/// Registers all KMS objects belonging to a DRM device.
-///
-/// Static objects are grouped by type and looked up by their device-local `KmsObjectId`.
-/// Each object stores its own per-type registration index.
-///
-/// The ID allocator is also used for per-file KMS objects,
-/// but those objects are owned and tracked outside this store.
+/// Owns a DRM device's static KMS objects and provides access to its shared object registry.
 #[derive(Debug)]
 pub struct DrmKmsObjectStore {
-    id_allocator: SparseIdAlloc,
-    planes: HashMap<KmsObjectId, Arc<DrmPlane>>,
-    crtcs: HashMap<KmsObjectId, Arc<DrmCrtc>>,
-    encoders: HashMap<KmsObjectId, Arc<DrmEncoder>>,
-    connectors: HashMap<KmsObjectId, Arc<DrmConnector>>,
-
-    properties: HashMap<KmsObjectId, Arc<DrmProperty>>,
-    /// Provides a semantic index for standard properties;
-    /// driver-specific properties remain accessible through `properties` by object ID.
-    standard_property_ids: HashMap<DrmStandardProperty, KmsObjectId>,
-    // TODO: Support both device-lifetime blobs created by the kernel and
-    // per-file blobs created and owned by userspace clients.
-    property_blobs: HashMap<KmsObjectId, Arc<DrmPropertyBlob>>,
+    registry: Weak<Mutex<DrmKmsObjectRegistry>>,
+    objects: DrmKmsObjects,
 }
 
 impl DrmKmsObjectStore {
-    fn new_empty() -> Self {
+    fn new(registry: Arc<Mutex<DrmKmsObjectRegistry>>, objects: DrmKmsObjects) -> Self {
         Self {
-            id_allocator: SparseIdAlloc::new(1, u32::MAX),
-            planes: HashMap::new(),
-            crtcs: HashMap::new(),
-            encoders: HashMap::new(),
-            connectors: HashMap::new(),
-            properties: HashMap::new(),
-            standard_property_ids: HashMap::new(),
-            property_blobs: HashMap::new(),
+            registry: Arc::downgrade(&registry),
+            objects,
         }
     }
 
-    pub(crate) fn alloc_object_id(&mut self) -> Result<KmsObjectId> {
-        let id = self
-            .id_allocator
+    fn registry(&self) -> Arc<Mutex<DrmKmsObjectRegistry>> {
+        // The builder guarantees at least one CRTC whose ID keeps the registry alive.
+        self.registry.upgrade().unwrap()
+    }
+
+    pub(crate) fn objects(&self) -> &DrmKmsObjects {
+        &self.objects
+    }
+
+    pub(crate) fn alloc_object_id(&self) -> Result<KmsObjectId> {
+        let registry = self.registry();
+        let value = registry.lock().alloc_object_id()?;
+        Ok(KmsObjectId::new(registry, value))
+    }
+
+    pub(crate) fn add_framebuffer(&self, framebuffer: &Arc<DrmFramebuffer>) {
+        self.registry()
+            .lock()
+            .framebuffers
+            .insert(framebuffer.id(), Arc::downgrade(framebuffer));
+    }
+
+    pub(crate) fn lookup_framebuffer(&self, id: u32) -> Option<Arc<DrmFramebuffer>> {
+        self.registry().lock().framebuffers.get(&id)?.upgrade()
+    }
+}
+
+/// Device-wide ID allocation and weak indexes for dynamic objects.
+#[derive(Debug)]
+pub struct DrmKmsObjectRegistry {
+    id_allocator: SparseIdAlloc,
+    framebuffers: HashMap<u32, Weak<DrmFramebuffer>>,
+    property_blobs: HashMap<u32, Weak<DrmPropertyBlob>>,
+}
+
+impl DrmKmsObjectRegistry {
+    fn alloc_object_id(&mut self) -> Result<u32> {
+        self.id_allocator
             .alloc()
-            .ok_or_else(|| Error::with_message(Errno::ENOSPC, "all KMS object IDs are in use"))?;
-
-        Ok(id)
+            .ok_or_else(|| Error::with_message(Errno::ENOSPC, "all KMS object IDs are in use"))
     }
+}
 
-    pub(crate) fn free_object_id(&mut self, id: KmsObjectId) {
-        self.id_allocator.free(id);
+impl Default for DrmKmsObjectRegistry {
+    fn default() -> Self {
+        Self {
+            id_allocator: SparseIdAlloc::new(1, u32::MAX),
+            framebuffers: HashMap::new(),
+            property_blobs: HashMap::new(),
+        }
     }
+}
 
+/// The static KMS objects belonging to a DRM device.
+#[derive(Debug, Default)]
+pub struct DrmKmsObjects {
+    planes: HashMap<u32, Arc<DrmPlane>>,
+    crtcs: HashMap<u32, Arc<DrmCrtc>>,
+    encoders: HashMap<u32, Arc<DrmEncoder>>,
+    connectors: HashMap<u32, Arc<DrmConnector>>,
+    properties: HashMap<u32, Arc<DrmProperty>>,
+    /// Provides a semantic index for standard properties;
+    /// driver-specific properties remain accessible through `properties` by object ID.
+    standard_property_ids: HashMap<DrmStandardProperty, u32>,
+    /// Device-lifetime property blobs created while building the object store.
+    property_blobs: HashMap<u32, Arc<DrmPropertyBlob>>,
+}
+
+impl DrmKmsObjects {
     fn insert_plane(&mut self, plane: Arc<DrmPlane>) {
         self.planes.insert(plane.id(), plane);
     }
@@ -117,7 +147,7 @@ impl DrmKmsObjectStore {
         self.connectors.insert(connector.id(), connector);
     }
 
-    pub(crate) fn collect_sorted_crtc_ids(&self) -> Vec<KmsObjectId> {
+    pub(crate) fn collect_sorted_crtc_ids(&self) -> Vec<u32> {
         let mut indexed_ids = self
             .crtcs()
             .map(|crtc| (crtc.index(), crtc.id()))
@@ -127,7 +157,7 @@ impl DrmKmsObjectStore {
         indexed_ids.into_iter().map(|(_, id)| id).collect()
     }
 
-    pub(crate) fn collect_sorted_encoder_ids(&self) -> Vec<KmsObjectId> {
+    pub(crate) fn collect_sorted_encoder_ids(&self) -> Vec<u32> {
         let mut indexed_ids = self
             .encoders()
             .map(|encoder| (encoder.index(), encoder.id()))
@@ -137,7 +167,7 @@ impl DrmKmsObjectStore {
         indexed_ids.into_iter().map(|(_, id)| id).collect()
     }
 
-    pub(crate) fn collect_sorted_connector_ids(&self) -> Vec<KmsObjectId> {
+    pub(crate) fn collect_sorted_connector_ids(&self) -> Vec<u32> {
         let mut indexed_ids = self
             .connectors()
             .map(|connector| (connector.index(), connector.id()))
@@ -163,15 +193,15 @@ impl DrmKmsObjectStore {
         self.connectors.values()
     }
 
-    pub(crate) fn lookup_plane_by_id(&self, id: KmsObjectId) -> Option<&Arc<DrmPlane>> {
+    pub(crate) fn lookup_plane_by_id(&self, id: u32) -> Option<&Arc<DrmPlane>> {
         self.planes.get(&id)
     }
 
-    pub(crate) fn lookup_crtc_by_id(&self, id: KmsObjectId) -> Option<&Arc<DrmCrtc>> {
+    pub(crate) fn lookup_crtc_by_id(&self, id: u32) -> Option<&Arc<DrmCrtc>> {
         self.crtcs.get(&id)
     }
 
-    pub(crate) fn lookup_encoder_by_id(&self, id: KmsObjectId) -> Option<&Arc<DrmEncoder>> {
+    pub(crate) fn lookup_encoder_by_id(&self, id: u32) -> Option<&Arc<DrmEncoder>> {
         self.encoders.get(&id)
     }
 
@@ -182,15 +212,15 @@ impl DrmKmsObjectStore {
         self.encoders().find(|encoder| encoder.index() == index)
     }
 
-    pub(crate) fn lookup_connector_by_id(&self, id: KmsObjectId) -> Option<&Arc<DrmConnector>> {
+    pub(crate) fn lookup_connector_by_id(&self, id: u32) -> Option<&Arc<DrmConnector>> {
         self.connectors.get(&id)
     }
 
-    pub(crate) fn lookup_property(&self, id: KmsObjectId) -> Option<&Arc<DrmProperty>> {
+    pub(crate) fn lookup_property(&self, id: u32) -> Option<&Arc<DrmProperty>> {
         self.properties.get(&id)
     }
 
-    pub(crate) fn lookup_property_blob(&self, id: KmsObjectId) -> Option<&Arc<DrmPropertyBlob>> {
+    pub(crate) fn lookup_property_blob(&self, id: u32) -> Option<&Arc<DrmPropertyBlob>> {
         self.property_blobs.get(&id)
     }
 
@@ -204,7 +234,7 @@ impl DrmKmsObjectStore {
     /// and `None` if no supported object matches the ID.
     pub(crate) fn lookup_any_object_properties(
         &self,
-        id: KmsObjectId,
+        id: u32,
     ) -> Result<Option<&DrmPropertyAttachments>> {
         if let Some(plane) = self.lookup_plane_by_id(id) {
             return Ok(Some(plane.properties()));
@@ -225,35 +255,53 @@ impl DrmKmsObjectStore {
         Ok(None)
     }
 
-    fn get_or_create_standard_property(
-        &mut self,
-        standard: DrmStandardProperty,
-    ) -> Result<Arc<DrmProperty>> {
-        if let Some(property) = self
-            .standard_property_ids
+    fn lookup_standard_property(&self, standard: DrmStandardProperty) -> Option<&Arc<DrmProperty>> {
+        self.standard_property_ids
             .get(&standard)
             .and_then(|id| self.properties.get(id))
-        {
-            return Ok(property.clone());
-        }
-
-        let id = self.alloc_object_id()?;
-        let property = Arc::new(standard.create_property(id));
-
-        let previous = self.properties.insert(id, property.clone());
-        debug_assert!(previous.is_none());
-        let previous = self.standard_property_ids.insert(standard, id);
-        debug_assert!(previous.is_none());
-        Ok(property)
     }
 
-    fn create_property_blob(&mut self, data: Box<[u8]>) -> Result<Arc<DrmPropertyBlob>> {
-        let id = self.alloc_object_id()?;
-        let blob = Arc::new(DrmPropertyBlob::new(id, data));
+    fn insert_standard_property(
+        &mut self,
+        standard: DrmStandardProperty,
+        property: Arc<DrmProperty>,
+    ) {
+        let id = property.id();
+        self.properties.insert(id, property);
+        self.standard_property_ids.insert(standard, id);
+    }
 
-        let previous = self.property_blobs.insert(id, blob.clone());
-        debug_assert!(previous.is_none());
-        Ok(blob)
+    fn insert_property_blob(&mut self, blob: Arc<DrmPropertyBlob>) {
+        self.property_blobs.insert(blob.id(), blob);
+    }
+}
+
+/// An owned device-local object ID.
+///
+/// Dropping it removes any dynamic index entry and releases the ID.
+#[derive(Debug)]
+pub(crate) struct KmsObjectId {
+    registry: Arc<Mutex<DrmKmsObjectRegistry>>,
+    value: u32,
+}
+
+impl KmsObjectId {
+    fn new(registry: Arc<Mutex<DrmKmsObjectRegistry>>, value: u32) -> Self {
+        Self { registry, value }
+    }
+
+    fn value(&self) -> u32 {
+        self.value
+    }
+}
+
+impl Drop for KmsObjectId {
+    fn drop(&mut self) {
+        let mut registry = self.registry.lock();
+
+        registry.framebuffers.remove(&self.value);
+        registry.property_blobs.remove(&self.value);
+        registry.id_allocator.free(self.value);
     }
 }
 

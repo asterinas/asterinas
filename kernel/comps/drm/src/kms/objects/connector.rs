@@ -13,7 +13,7 @@ use crate::kms::{
     },
 };
 
-/// A display output endpoint in the DRM KMS topology.
+/// A display output endpoint of a DRM device.
 ///
 /// A connector represents a physical or virtual sink such as HDMI, DisplayPort, or a writeback connector.
 ///
@@ -47,8 +47,8 @@ impl DrmConnector {
         }
     }
 
-    pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+    pub(crate) fn id(&self) -> u32 {
+        self.id.value()
     }
 
     pub(crate) fn index(&self) -> KmsObjectIndex {

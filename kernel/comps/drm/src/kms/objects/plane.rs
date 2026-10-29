@@ -23,7 +23,7 @@ use crate::{
 /// Its runtime state selects a framebuffer, source rectangle, destination rectangle, and target CRTC.
 ///
 /// Supported CRTCs are represented by their per-type object indices in a bitmask.
-/// Runtime topology links are non-owning because the KMS object store owns both planes and CRTCs.
+/// Runtime object links are non-owning because the KMS object store owns both planes and CRTCs.
 #[derive(Debug)]
 pub(crate) struct DrmPlane {
     id: KmsObjectId,
@@ -49,8 +49,8 @@ impl DrmPlane {
         }
     }
 
-    pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+    pub(crate) fn id(&self) -> u32 {
+        self.id.value()
     }
 
     pub(crate) fn index(&self) -> KmsObjectIndex {

@@ -11,7 +11,7 @@ use crate::kms::objects::{KmsObjectId, KmsObjectIndex, KmsObjectMask, crtc::DrmC
 /// An encoder records which CRTCs can feed it and which peer encoders may clone the same output.
 ///
 /// Its current CRTC is mutable routing state,
-/// while the compatibility masks use per-type object indices to describe the device's fixed KMS topology.
+/// while the compatibility masks use per-type object indices to describe the device's fixed connection capabilities.
 #[derive(Debug)]
 pub struct DrmEncoder {
     id: KmsObjectId,
@@ -30,8 +30,8 @@ impl DrmEncoder {
         }
     }
 
-    pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+    pub(crate) fn id(&self) -> u32 {
+        self.id.value()
     }
 
     pub(crate) fn index(&self) -> KmsObjectIndex {

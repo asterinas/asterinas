@@ -22,8 +22,8 @@ impl DrmPropertyBlob {
         Self { id, data }
     }
 
-    pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+    pub(crate) fn id(&self) -> u32 {
+        self.id.value()
     }
 
     pub(crate) fn data(&self) -> &[u8] {
