@@ -269,6 +269,37 @@ impl PathResolver {
         }
     }
 
+    /// Returns a reachable name for an already opened executable.
+    ///
+    /// `make_abs_path` alone also renders stale/unlinked dentries. Verify the
+    /// rendered name still resolves to this same path without checking the
+    /// caller's search permissions (exec through an fd does not require them).
+    /// This also excludes anonymous and pseudo paths, and replaced names.
+    pub(crate) fn make_attachment_path(&self, path: &Path) -> Result<Option<String>> {
+        let AbsPathResult::Reachable(name) = self.make_abs_path(path) else {
+            return Ok(None);
+        };
+        let mut resolved = self.root.clone();
+        for component in name[1..].split('/') {
+            if component.is_empty() || super::is_dot_or_dotdot(component) {
+                return Ok(None);
+            }
+            resolved = match resolved.lookup_child(component) {
+                Ok(child) => child.get_top_path(),
+                Err(error)
+                    if matches!(
+                        error.error(),
+                        Errno::ENOENT | Errno::ENOTDIR | Errno::ESTALE
+                    ) =>
+                {
+                    return Ok(None);
+                }
+                Err(error) => return Err(error),
+            };
+        }
+        Ok((resolved == *path).then_some(name))
+    }
+
     /// Resolves the name of a `Path`.
     ///
     /// The method resolves the name by the following rules:

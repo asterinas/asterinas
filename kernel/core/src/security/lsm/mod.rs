@@ -10,8 +10,12 @@
 //! built-in modules such as `capability` and `yama`. Module selection follows
 //! the `lsm=` and legacy `security=` kernel command-line parameters.
 
+mod cred;
 pub mod hooks;
 mod modules;
+
+pub(crate) use cred::CredSecurity;
+pub use cred::LsmState;
 
 pub(crate) mod yama {
     pub(crate) use super::modules::yama::{YamaScope, get_scope, set_scope};
@@ -37,6 +41,27 @@ pub trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
 
     /// Returns the module flags.
     fn flags(&self) -> LsmFlags;
+
+    /// Creates the module's initial credential state.
+    /// `None` needs no allocation.
+    fn init_cred_state(&self) -> Result<Option<LsmState>> {
+        Ok(None)
+    }
+
+    /// Returns whether exec preparation needs the original executable's resolved pathname.
+    fn needs_exec_path(&self, _current: Option<&LsmState>) -> bool {
+        false
+    }
+
+    /// Prepares immutable state without modifying the task's committed credentials.
+    /// An unavailable path is distinct from an error preparing a state.
+    fn prepare_exec_state(
+        &self,
+        current: Option<&LsmState>,
+        _path: Option<&str>,
+    ) -> Result<Option<LsmState>> {
+        Ok(current.cloned())
+    }
 
     /// Initializes the module after it has been selected.
     fn init(&self) -> Result<()> {
