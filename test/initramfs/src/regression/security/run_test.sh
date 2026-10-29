@@ -14,6 +14,7 @@ set -e
 ./capability/trusted_xattr
 
 ./lsm/apparmor
+./lsm/apparmor_label
 ./lsm/module_selection
 ./lsm/yama
 

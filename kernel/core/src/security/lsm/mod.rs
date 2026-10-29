@@ -48,6 +48,11 @@ pub trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
         Ok(None)
     }
 
+    /// Formats the current task attribute, or returns `None` if unsupported.
+    fn current_attr(&self, _state: Option<&LsmState>) -> Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Returns whether exec preparation needs the original executable's resolved pathname.
     fn needs_exec_path(&self, _current: Option<&LsmState>) -> bool {
         false

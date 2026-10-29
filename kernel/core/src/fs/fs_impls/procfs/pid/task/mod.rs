@@ -9,12 +9,12 @@ use crate::{
         procfs::{
             StaticEntryWithOps,
             pid::task::{
-                auxv::AuxvFileOps, cgroup::CgroupFileOps, cmdline::CmdlineFileOps,
-                comm::CommFileOps, environ::EnvironFileOps, exe::ExeSymOps, fd::FdDirOps,
-                gid_map::GidMapFileOps, maps::MapsFileOps, mem::MemFileOps,
-                mountinfo::MountInfoFileOps, mounts::MountsFileOps, mountstats::MountStatsFileOps,
-                ns::NsDirOps, oom_score_adj::OomScoreAdjFileOps, stat::StatFileOps,
-                status::StatusFileOps, uid_map::UidMapFileOps,
+                attr::AttrDirOps, auxv::AuxvFileOps, cgroup::CgroupFileOps,
+                cmdline::CmdlineFileOps, comm::CommFileOps, environ::EnvironFileOps,
+                exe::ExeSymOps, fd::FdDirOps, gid_map::GidMapFileOps, maps::MapsFileOps,
+                mem::MemFileOps, mountinfo::MountInfoFileOps, mounts::MountsFileOps,
+                mountstats::MountStatsFileOps, ns::NsDirOps, oom_score_adj::OomScoreAdjFileOps,
+                stat::StatFileOps, status::StatusFileOps, uid_map::UidMapFileOps,
             },
             template::{
                 ListedEntry, ProcDir, ProcDirOps, ReaddirEntry, keyed_readdir_entries,
@@ -29,6 +29,7 @@ use crate::{
     thread::{Thread, Tid},
 };
 
+mod attr;
 mod auxv;
 mod cgroup;
 mod cmdline;
@@ -105,6 +106,7 @@ impl TidDirOps {
     }
 
     const STATIC_ENTRIES: &'static [StaticEntryWithOps<TidDirOps>] = &[
+        ("attr", InodeType::Dir, AttrDirOps::new_inode),
         ("auxv", InodeType::File, AuxvFileOps::new_inode),
         ("cgroup", InodeType::File, CgroupFileOps::new_inode),
         ("cmdline", InodeType::File, CmdlineFileOps::new_inode),

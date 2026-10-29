@@ -12,6 +12,8 @@
 
 extern crate alloc;
 
+use alloc::string::String;
+
 use aster_core::{
     prelude::*,
     security::lsm::{
@@ -29,7 +31,6 @@ macro_rules! __log_prefix {
 }
 
 mod exec;
-#[cfg(ktest)]
 mod label;
 mod policy;
 mod securityfs;
@@ -49,6 +50,10 @@ impl LsmModule for AppArmorLsm {
 
     fn init(&self) -> Result<()> {
         securityfs::register()
+    }
+
+    fn current_attr(&self, state: Option<&LsmState>) -> Result<Option<String>> {
+        label::current_attr(state).map(Some)
     }
 
     fn needs_exec_path(&self, current: Option<&LsmState>) -> bool {

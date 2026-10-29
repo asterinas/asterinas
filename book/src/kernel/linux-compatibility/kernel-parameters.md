@@ -232,8 +232,8 @@ Notes:
   AppArmor is exclusive, while Yama can coexist with it.
 - If both selectors are present, `lsm=` takes precedence over `security=`, including when `lsm=` is empty.
 - If `lsm=` occurs more than once, its last value is used.
-- AppArmor M1 exposes policy loading and query interfaces only.
-  Selecting it does not attach profiles to tasks or enforce policy.
+- AppArmor supports single-profile loading and exact-path attachment at exec.
+  Task labels can be queried through procfs; policy modes do not yet enforce permissions.
 
 ### `security`
 

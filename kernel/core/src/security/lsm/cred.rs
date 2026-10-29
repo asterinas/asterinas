@@ -30,6 +30,15 @@ impl CredSecurity {
             .map(|(_, state)| state)
     }
 
+    pub(crate) fn current_attr(&self) -> Result<String> {
+        for module in modules::active_modules() {
+            if let Some(value) = module.current_attr(self.get(module.name()))? {
+                return Ok(value);
+            }
+        }
+        return_errno_with_message!(Errno::EINVAL, "no LSM provides the current attribute");
+    }
+
     pub(crate) fn needs_exec_path(&self) -> bool {
         modules::active_modules()
             .iter()

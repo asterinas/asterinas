@@ -1,7 +1,11 @@
-// Execute program
+// Execute program.
+// These signatures cover syscall arguments, not complete AppArmor policy semantics.
+// Exact-path attachment and read-only task labels are supported when AppArmor is selected.
+// Existing labels survive exec; profile permissions and transition rules are not enforced.
+// See the accompanying Process & Thread Management page for limitations.
 execve(pathname, argv, envp);
 
-// Execute program relative to a directory file descriptor
+// Execute program relative to a directory file descriptor, with the same AppArmor limitations.
 execveat(dirfd, path, argv, envp, flags = AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW);
 
 // Exit all threads in a process
