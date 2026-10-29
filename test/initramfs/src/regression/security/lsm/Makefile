@@ -2,7 +2,7 @@
 
 include ../../common/Makefile
 
-APPARMOR_FIXTURES := observe.bin
+APPARMOR_FIXTURES := observe.bin demo.bin wildcard.bin
 APPARMOR_FIXTURE_OUTPUT_DIR := $(OBJ_OUTPUT_DIR)/apparmor-fixtures
 
 all: $(addprefix $(APPARMOR_FIXTURE_OUTPUT_DIR)/,$(APPARMOR_FIXTURES))

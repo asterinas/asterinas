@@ -8,6 +8,7 @@ use aster_core::prelude::*;
 use ostd::sync::Mutex;
 
 mod abi;
+mod dfa;
 
 pub(super) const MAX_POLICY_BLOB_SIZE: usize = 1024 * 1024;
 const MAX_LOADED_PROFILES: usize = 1024;
@@ -42,10 +43,23 @@ impl ProfileMode {
     }
 }
 
+/// A validated exact path; the serialized DFA is discarded after proof.
+#[derive(Debug)]
+pub(super) struct AttachmentMatcher {
+    literal: String,
+}
+
+impl AttachmentMatcher {
+    fn literal_path(&self) -> &str {
+        &self.literal
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct Profile {
     name: String,
     mode: ProfileMode,
+    attachment: Option<AttachmentMatcher>,
 }
 
 impl Profile {
@@ -62,6 +76,7 @@ impl Profile {
 pub(super) struct PolicySet {
     profiles: Vec<Arc<Profile>>,
     charged_bytes: usize,
+    attachments: Vec<Arc<Profile>>,
 }
 
 impl PolicySet {
@@ -86,6 +101,23 @@ impl PolicySet {
                 Err(index) => index,
             };
 
+        let current_attachments = current.map_or(&[][..], |set| set.attachments.as_slice());
+        let attachment_index = if let Some(attachment) = profile.attachment.as_ref() {
+            match current_attachments.binary_search_by(|existing| {
+                existing
+                    .attachment
+                    .as_ref()
+                    .unwrap()
+                    .literal_path()
+                    .cmp(attachment.literal_path())
+            }) {
+                Ok(_) => return Err(Error::new(Errno::EEXIST)),
+                Err(index) => Some(index),
+            }
+        } else {
+            None
+        };
+
         let current_len = current.map_or(0, |set| set.profiles.len());
         let total_len = current_len
             .checked_add(1)
@@ -103,12 +135,38 @@ impl PolicySet {
             .try_reserve_exact(total_len)
             .map_err(|_| Error::new(Errno::ENOMEM))?;
         profiles.extend_from_slice(current_profiles);
-        profiles.insert(index, allocate_profile(profile)?);
+        let mut attachments = Vec::new();
+        attachments
+            .try_reserve_exact(current_attachments.len() + usize::from(attachment_index.is_some()))
+            .map_err(|_| Error::new(Errno::ENOMEM))?;
+        attachments.extend_from_slice(current_attachments);
+        let profile = allocate_profile(profile)?;
+        if let Some(attachment_index) = attachment_index {
+            attachments.insert(attachment_index, profile.clone());
+        }
+        profiles.insert(index, profile);
 
         Ok(Self {
             profiles,
             charged_bytes,
+            attachments,
         })
+    }
+
+    #[cfg(ktest)]
+    pub(super) fn find_attachment(&self, path: &str) -> Option<Arc<Profile>> {
+        let index = self
+            .attachments
+            .binary_search_by(|profile| {
+                profile
+                    .attachment
+                    .as_ref()
+                    .unwrap()
+                    .literal_path()
+                    .cmp(path)
+            })
+            .ok()?;
+        Some(self.attachments[index].clone())
     }
 
     pub(super) fn profiles(&self) -> &[Arc<Profile>] {
@@ -121,7 +179,7 @@ pub(super) struct PolicyStore {
 }
 
 impl PolicyStore {
-    const fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Self {
             current: Mutex::new(None),
         }
@@ -144,9 +202,15 @@ impl PolicyStore {
         }
 
         let profile = abi::decode(blob)?;
+        let derived_charge = profile.attachment.as_ref().map_or(0, |attachment| {
+            attachment.literal.capacity() + size_of::<Arc<Profile>>()
+        });
+        let charge = blob
+            .len()
+            .checked_add(derived_charge)
+            .ok_or_else(capacity_error)?;
         let mut guard = self.current.lock();
-        let next =
-            PolicySet::try_insert_with(guard.as_deref(), profile, blob.len(), allocate_profile)?;
+        let next = PolicySet::try_insert_with(guard.as_deref(), profile, charge, allocate_profile)?;
         *guard = Some(allocate_set(next)?);
         Ok(())
     }
@@ -222,6 +286,7 @@ mod tests {
         Profile {
             name: name.into(),
             mode: ProfileMode::Enforce,
+            attachment: None,
         }
     }
 
@@ -305,6 +370,7 @@ mod tests {
         let almost_full = PolicySet {
             profiles,
             charged_bytes: 1,
+            attachments: Vec::new(),
         };
         let full = PolicySet::try_insert(Some(&almost_full), profile("profile-last"), 1).unwrap();
         assert_eq!(full.profiles().len(), MAX_LOADED_PROFILES);
@@ -328,6 +394,7 @@ mod tests {
         let full = PolicySet {
             profiles,
             charged_bytes: 1,
+            attachments: Vec::new(),
         };
 
         assert_errno(
@@ -341,12 +408,78 @@ mod tests {
         let full = PolicySet {
             profiles: alloc::vec![Arc::new(profile("existing"))],
             charged_bytes: MAX_POLICY_STORE_BYTES,
+            attachments: Vec::new(),
         };
 
         assert_errno(
             PolicySet::try_insert(Some(&full), profile("existing"), 1),
             Errno::EEXIST,
         );
+    }
+
+    #[ktest]
+    fn duplicate_attachment_and_multi_profile_input_preserve_snapshot() {
+        let demo = include_bytes!(
+            "../../../../../test/initramfs/src/regression/security/lsm/apparmor-fixtures/demo.bin"
+        );
+        let store = PolicyStore::new();
+        store.load(demo).unwrap();
+        let before = store.snapshot().unwrap();
+        let mut alias = demo.to_vec();
+        let name = alias
+            .windows(5)
+            .position(|bytes| bytes == b"demo\0")
+            .unwrap();
+        alias[name..name + 4].copy_from_slice(b"copy");
+        assert_errno(store.load(&alias), Errno::EEXIST);
+        assert!(Arc::ptr_eq(&before, &store.snapshot().unwrap()));
+        alias.extend_from_slice(demo);
+        assert_errno(store.load(&alias), Errno::EOPNOTSUPP);
+        assert!(Arc::ptr_eq(&before, &store.snapshot().unwrap()));
+        assert_eq!(
+            before.find_attachment("/usr/bin/demo").unwrap().name(),
+            "demo"
+        );
+        assert!(before.find_attachment("/usr/bin/demo-extra").is_none());
+    }
+
+    #[ktest]
+    fn unsupported_attachment_preserves_snapshot() {
+        let store = PolicyStore::new();
+        store.load(&policy_unit("existing")).unwrap();
+        let before = store.snapshot().unwrap();
+        assert_errno(store.load(include_bytes!("../../../../../test/initramfs/src/regression/security/lsm/apparmor-fixtures/wildcard.bin")), Errno::EOPNOTSUPP);
+        assert!(Arc::ptr_eq(&before, &store.snapshot().unwrap()));
+    }
+
+    #[ktest]
+    fn attachment_charge_limit_preserves_the_previous_snapshot() {
+        let demo = include_bytes!(
+            "../../../../../test/initramfs/src/regression/security/lsm/apparmor-fixtures/demo.bin"
+        );
+        // The frozen parser fixture adds one literal and one attachment index slot.
+        let expected_charge = demo.len() + "/usr/bin/demo".len() + size_of::<Arc<Profile>>();
+        for excess in [0, 1] {
+            let mut current =
+                PolicySet::try_insert(None, abi::decode(&policy_unit("existing")).unwrap(), 1)
+                    .unwrap();
+            // Seed a nearly full store without decoding 16 MiB of unrelated policies.
+            current.charged_bytes = MAX_POLICY_STORE_BYTES - expected_charge + excess;
+            let store = PolicyStore {
+                current: Mutex::new(Some(Arc::new(current))),
+            };
+            let before = store.snapshot().unwrap();
+            if excess == 0 {
+                store.load(demo).unwrap();
+                let after = store.snapshot().unwrap();
+                assert_names(&after, &["demo", "existing"]);
+                assert_eq!(after.charged_bytes, MAX_POLICY_STORE_BYTES);
+            } else {
+                assert_errno(store.load(demo), Errno::ENOSPC);
+                assert!(Arc::ptr_eq(&before, &store.snapshot().unwrap()));
+                assert_names(&before, &["existing"]);
+            }
+        }
     }
 
     #[ktest]

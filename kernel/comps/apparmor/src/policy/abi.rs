@@ -4,8 +4,9 @@
 //!
 //! Type tags and profile field order follow AppArmor 5.0.2's [`sd_code` and
 //! `sd_serialize_profile`][parser] and Linux's [`unpack_profile`][linux].
-//! This subset accepts a profile name, flags, and zero capability words, including
-//! `caps64`. Rejection of other valid ABI fields is a subset limitation.
+//! This subset accepts a profile name, an optional exact-path attachment, flags,
+//! and zero capability words, including `caps64`. Rejection of other valid ABI
+//! fields is a subset limitation.
 //!
 //! [parser]: https://gitlab.com/apparmor/apparmor/-/blob/v5.0.2/parser/parser_interface.c
 //! [linux]: https://github.com/torvalds/linux/blob/db2ddb87143519e20a95aa36c60b36107b736a58/security/apparmor/policy_unpack.c
@@ -15,7 +16,7 @@ use core::str;
 
 use aster_core::prelude::*;
 
-use super::{MAX_PROFILE_NAME_LEN, Profile, ProfileMode};
+use super::{AttachmentMatcher, MAX_PROFILE_NAME_LEN, Profile, ProfileMode, dfa};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -117,6 +118,37 @@ impl<'a> Cursor<'a> {
         Ok(value)
     }
 
+    fn aligned_blob(&mut self, name: &[u8]) -> Result<&'a [u8]> {
+        self.expect_name(name)?;
+        self.expect_code(Code::Blob)?;
+        let total_len = self.u32_le()? as usize;
+        let data_start = self.pos;
+        let data_end = data_start
+            .checked_add(total_len)
+            .ok_or_else(protocol_error)?;
+        if data_end > self.bytes.len() {
+            return Err(protocol_error());
+        }
+
+        // The parser serializes each profile in its own buffer before concatenation,
+        // so later profile units may not start at a globally aligned offset. Recover
+        // the parser-local padding from `data_end`, matching Linux
+        // `security/apparmor/policy_unpack.c::unpack_dfa`; aligning `data_start`
+        // directly would reject valid multi-profile streams.
+        let rem = data_end & 7;
+        let size_before_pad = data_start.checked_sub(rem).ok_or_else(protocol_error)?;
+        let pad = (8 - (size_before_pad & 7)) & 7;
+        if pad > total_len {
+            return Err(protocol_error());
+        }
+
+        let data = self.take(total_len)?;
+        if data[..pad].iter().any(|byte| *byte != 0) {
+            return Err(protocol_error());
+        }
+        Ok(&data[pad..])
+    }
+
     fn expect_name(&mut self, expected: &[u8]) -> Result<()> {
         if self.name()? == expected {
             Ok(())
@@ -196,6 +228,7 @@ fn decode_header(cursor: &mut Cursor<'_>) -> Result<()> {
 fn decode_profile(cursor: &mut Cursor<'_>) -> Result<Profile> {
     cursor.named_struct(b"profile")?;
     let name = validate_profile_name(cursor.string()?)?;
+    let attachment = decode_attachment(cursor)?;
     let mode = decode_flags(cursor)?;
     if cursor.peek_name()? == Some(b"path_flags") {
         return Err(unsupported_error());
@@ -207,7 +240,11 @@ fn decode_profile(cursor: &mut Cursor<'_>) -> Result<Profile> {
     }
     cursor.expect_code(Code::StructEnd)?;
 
-    Ok(Profile { name, mode })
+    Ok(Profile {
+        name,
+        mode,
+        attachment,
+    })
 }
 
 fn validate_profile_name(raw: &[u8]) -> Result<String> {
@@ -225,6 +262,20 @@ fn validate_profile_name(raw: &[u8]) -> Result<String> {
         .map_err(|_| Error::new(Errno::ENOMEM))?;
     owned.push_str(name);
     Ok(owned)
+}
+
+fn decode_attachment(cursor: &mut Cursor<'_>) -> Result<Option<AttachmentMatcher>> {
+    match cursor.peek_name()? {
+        Some(b"flags") => Ok(None),
+        Some(b"aadfa") => {
+            let encoded = cursor.aligned_blob(b"aadfa")?;
+            let xmatch_len = cursor.u32()?;
+            let literal = dfa::literal_path(encoded, xmatch_len)?;
+            Ok(Some(AttachmentMatcher { literal }))
+        }
+        Some(_) => Err(unsupported_error()),
+        None => Err(protocol_error()),
+    }
 }
 
 fn decode_flags(cursor: &mut Cursor<'_>) -> Result<ProfileMode> {
@@ -471,7 +522,7 @@ mod tests {
                 ..Default::default()
             },
             UnitOptions {
-                before_flags: Some("aadfa"),
+                before_flags: Some("future_attachment"),
                 ..Default::default()
             },
             UnitOptions {

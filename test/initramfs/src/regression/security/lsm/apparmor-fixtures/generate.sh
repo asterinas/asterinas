@@ -30,6 +30,8 @@ compile()
 }
 
 compile features observe.profile observe.bin
+compile features demo.profile demo.bin
+compile features wildcard.profile wildcard.bin
 
 check_fixture()
 {
@@ -45,4 +47,7 @@ check_fixture()
 }
 
 check_fixture observe.bin 118 912a45cf505271eee29e01e01d6d41abbe32ee540f94a10886746c5874400c16
-sha256sum observe.bin > SHA256SUMS
+check_fixture demo.bin 1484 f877adf70efa115213a45d16cc11ff23d48b33ef5dee337c34ba2ee9008fa3a2
+check_fixture wildcard.bin 1500 629983cf2684f71373c12cb92f9f8bf32537c44ebb195a164bb1b65b857c7f62
+
+sha256sum observe.bin demo.bin wildcard.bin > SHA256SUMS
