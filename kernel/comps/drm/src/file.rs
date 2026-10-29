@@ -34,7 +34,7 @@ use crate::{
     device::{DrmDevice, DrmMaster},
     gem::object::DrmGemObject,
     has_current_sys_admin,
-    kms::objects::framebuffer::DrmFramebuffer,
+    kms::objects::{framebuffer::DrmFramebuffer, property::blob::DrmPropertyBlob},
     minor::{DrmMinor, DrmMinorType},
 };
 
@@ -55,6 +55,8 @@ pub(super) struct DrmFile {
     gem_handles: Mutex<DrmGemHandleTable>,
     /// Framebuffers created through this open file.
     framebuffers: Mutex<Vec<Arc<DrmFramebuffer>>>,
+    /// Property blobs created through this open file.
+    property_blobs: Mutex<Vec<Arc<DrmPropertyBlob>>>,
 }
 
 impl DrmFile {
@@ -94,6 +96,7 @@ impl DrmFile {
 
             gem_handles: Mutex::new(DrmGemHandleTable::new()),
             framebuffers: Mutex::new(Vec::new()),
+            property_blobs: Mutex::new(Vec::new()),
         }
     }
 
@@ -214,6 +217,25 @@ impl DrmFile {
             })?;
 
         Ok(framebuffers.swap_remove(position))
+    }
+
+    pub(super) fn add_property_blob(&self, blob: Arc<DrmPropertyBlob>) {
+        self.property_blobs.lock().push(blob);
+    }
+
+    pub(super) fn remove_property_blob(&self, id: u32) -> Result<Arc<DrmPropertyBlob>> {
+        let mut property_blobs = self.property_blobs.lock();
+        let position = property_blobs
+            .iter()
+            .position(|blob| blob.id() == id)
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::ENOENT,
+                    "the DRM framebuffer is not owned by this file",
+                )
+            })?;
+
+        Ok(property_blobs.swap_remove(position))
     }
 
     /// Keeps tracking the ioctl caller while this file has never been master,

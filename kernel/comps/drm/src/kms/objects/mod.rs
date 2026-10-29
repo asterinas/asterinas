@@ -77,6 +77,22 @@ impl DrmKmsObjectStore {
         let registry = self.registry.lock();
         registry.framebuffers.get(&id)?.upgrade()
     }
+
+    pub(crate) fn add_property_blob(&self, property_blob: &Arc<DrmPropertyBlob>) {
+        self.registry
+            .lock()
+            .property_blobs
+            .insert(property_blob.id(), Arc::downgrade(property_blob));
+    }
+
+    /// The caller must not hold the registry lock, as this method acquires it internally.
+    pub(crate) fn lookup_property_blob(&self, id: u32) -> Option<Arc<DrmPropertyBlob>> {
+        if let Some(blob) = self.topology.lookup_property_blob(id) {
+            return Some(Arc::clone(blob));
+        }
+
+        self.registry.lock().property_blobs.get(&id)?.upgrade()
+    }
 }
 
 /// Device-wide ID allocation and weak indexes for dynamic objects.
