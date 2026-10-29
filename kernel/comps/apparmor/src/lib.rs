@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! AppArmor M1 policy control plane.
+//! AppArmor policy loading and exec label attachment.
 //!
 //! This component decodes, validates, and stores AppArmor ABI v5 profiles.
-//! It does not attach labels to tasks or enforce policy. Profiles exposed
-//! through securityfs have only been accepted into the in-kernel store.
+//! Exact-path attachments bind immutable profile labels to credentials at exec.
+//! Procfs exposes committed labels; profile modes do not yet enforce permissions.
 
 #![no_std]
 #![deny(unsafe_code)]
@@ -15,7 +15,7 @@ extern crate alloc;
 use aster_core::{
     prelude::*,
     security::lsm::{
-        LsmFlags, LsmModule,
+        LsmFlags, LsmModule, LsmState,
         hooks::{LsmAlienAccessHook, LsmCapabilityHook},
     },
 };
@@ -28,6 +28,9 @@ macro_rules! __log_prefix {
     };
 }
 
+mod exec;
+#[cfg(ktest)]
+mod label;
 mod policy;
 mod securityfs;
 
@@ -46,6 +49,24 @@ impl LsmModule for AppArmorLsm {
 
     fn init(&self) -> Result<()> {
         securityfs::register()
+    }
+
+    fn needs_exec_path(&self, current: Option<&LsmState>) -> bool {
+        current.is_none()
+    }
+
+    fn prepare_exec_state(
+        &self,
+        current: Option<&LsmState>,
+        path: Option<&str>,
+    ) -> Result<Option<LsmState>> {
+        // A confined task inherits its label across exec in M2. There are no
+        // transition rules yet, and loading a profile does not relabel tasks.
+        if current.is_some() {
+            return Ok(current.cloned());
+        }
+        let snapshot = policy::POLICY_STORE.snapshot();
+        exec::prepare(current, path, snapshot.as_deref())
     }
 }
 

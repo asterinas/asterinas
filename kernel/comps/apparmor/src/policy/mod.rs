@@ -153,7 +153,6 @@ impl PolicySet {
         })
     }
 
-    #[cfg(ktest)]
     pub(super) fn find_attachment(&self, path: &str) -> Option<Arc<Profile>> {
         let index = self
             .attachments
