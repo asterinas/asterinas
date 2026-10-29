@@ -194,7 +194,6 @@ impl DrmFile {
         args.y = plane_state.source_rect().y();
         args.fb_id = plane_state
             .framebuffer()
-            .upgrade()
             .map_or(0, |framebuffer| framebuffer.id());
         drop(plane_state);
 
@@ -256,7 +255,7 @@ impl DrmFile {
             None
         } else if args.fb_id == u32::MAX {
             // SETCRTC uses -1 to request the primary plane's currently bound framebuffer.
-            let Some(framebuffer) = primary_plane.state().lock().framebuffer().upgrade() else {
+            let Some(framebuffer) = primary_plane.state().lock().framebuffer().cloned() else {
                 return Err(errno!(
                     EINVAL,
                     "the CRTC has no current framebuffer to reuse"
@@ -378,7 +377,7 @@ impl DrmFile {
             primary_plane.update_state(DrmPlaneState::new(
                 source_rect,
                 DrmRect::new(0, 0, display_mode.hdisplay(), display_mode.vdisplay()),
-                Arc::downgrade(framebuffer.as_ref().unwrap()),
+                framebuffer,
                 crtc_ref,
             ));
             for (connector, encoder) in matched_connector_encoders {
@@ -691,7 +690,7 @@ impl DrmFile {
                 let state = plane.state().lock();
                 state
                     .framebuffer()
-                    .ptr_eq(&Arc::downgrade(&framebuffer))
+                    .is_some_and(|current| Arc::ptr_eq(current, &framebuffer))
                     .then_some(state.source_rect())
             })
             .collect::<Vec<_>>();
@@ -760,7 +759,6 @@ impl DrmFile {
                 args.crtc_id = plane_state.crtc().upgrade().map_or(0, |crtc| crtc.id());
                 args.fb_id = plane_state
                     .framebuffer()
-                    .upgrade()
                     .map_or(0, |framebuffer| framebuffer.id());
                 drop(plane_state);
 
