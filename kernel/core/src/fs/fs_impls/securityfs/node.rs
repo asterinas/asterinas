@@ -2,19 +2,21 @@
 
 //! Immutable securityfs directory and file-node model.
 //!
-//! [`SecurityRootNode`] contains top-level [`SecurityDirectory`] instances.
-//! Each directory maps the static file declarations from the public securityfs
-//! seam into SysTree attributes consumed by the inode adapter.
+//! [`SecurityRootNode`] contains recursive [`SecurityDirectory`] instances.
+//! Each directory maps static file declarations into SysTree attributes and
+//! child directory declarations into branch nodes consumed by the inode adapter.
 
 use aster_systree::{
-    BranchNodeFields, Error as SysTreeError, NormalNodeFields, Result as SysTreeResult, SysAttrSet,
+    BranchNodeFields, Error as SysTreeError, Result as SysTreeResult, SysAttrSet,
     SysAttrSetBuilder, SysBranchNode, SysObj, SysPerms, SysStr, inherit_sys_branch_node,
-    inherit_sys_leaf_node,
 };
 use inherit_methods_macro::inherit_methods;
 use spin::Once;
 
-use crate::{prelude::*, security::securityfs::SecurityFsFile};
+use crate::{
+    prelude::*,
+    security::securityfs::{SecurityFsDirectory, SecurityFsFile},
+};
 
 const NAME_MAX: usize = 255;
 
@@ -58,13 +60,21 @@ inherit_sys_branch_node!(SecurityRootNode, fields, {
 
 #[derive(Debug)]
 pub(super) struct SecurityDirectory {
-    fields: NormalNodeFields<Self>,
+    fields: BranchNodeFields<Self, Self>,
     files: &'static [SecurityFsFile],
 }
 
+#[inherit_methods(from = "self.fields")]
 impl SecurityDirectory {
-    pub(super) fn new(name: &'static str, files: &'static [SecurityFsFile]) -> Result<Arc<Self>> {
-        if !valid_name(name) || files.is_empty() {
+    fn add_child(&self, new_child: Arc<Self>) -> SysTreeResult<()>;
+}
+
+impl SecurityDirectory {
+    pub(super) fn new(directory: &SecurityFsDirectory) -> Result<Arc<Self>> {
+        let name = directory.name();
+        let files = directory.files();
+        let directories = directory.directories();
+        if !valid_name(name) || (files.is_empty() && directories.is_empty()) {
             return Err(Error::new(Errno::EINVAL));
         }
 
@@ -83,10 +93,27 @@ impl SecurityDirectory {
         }
         let attrs = attrs.build()?;
 
-        Ok(Arc::new_cyclic(|weak_self| Self {
-            fields: NormalNodeFields::new(SysStr::from(name), attrs, weak_self.clone()),
+        for (index, child) in directories.iter().enumerate() {
+            if !valid_name(child.name()) {
+                return Err(Error::new(Errno::EINVAL));
+            }
+            if files.iter().any(|file| file.name() == child.name())
+                || directories[..index]
+                    .iter()
+                    .any(|existing| existing.name() == child.name())
+            {
+                return Err(Error::new(Errno::EEXIST));
+            }
+        }
+
+        let node = Arc::new_cyclic(|weak_self| Self {
+            fields: BranchNodeFields::new(SysStr::from(name), attrs, weak_self.clone()),
             files,
-        }))
+        });
+        for child in directories {
+            node.add_child(Self::new(child)?)?;
+        }
+        Ok(node)
     }
 
     fn file(&self, name: &str) -> Option<&SecurityFsFile> {
@@ -116,7 +143,7 @@ impl SecurityDirectory {
     }
 }
 
-inherit_sys_leaf_node!(SecurityDirectory, fields, {
+inherit_sys_branch_node!(SecurityDirectory, fields, {
     fn perms(&self) -> SysPerms {
         SysPerms::DEFAULT_RO_PERMS
     }

@@ -15,7 +15,7 @@ use aster_systree::EmptyNode;
 use fs::SecurityFsType;
 use node::{SecurityDirectory, SecurityRootNode};
 
-use crate::{fs::vfs::registry, prelude::*, security::securityfs::SecurityFsFile};
+use crate::{fs::vfs::registry, prelude::*, security::securityfs::SecurityFsDirectory};
 
 pub(super) fn init() {
     SecurityRootNode::singleton();
@@ -23,16 +23,13 @@ pub(super) fn init() {
     registry::register(&SecurityFsType).unwrap();
 }
 
-pub(crate) fn register_directory(
-    name: &'static str,
-    files: &'static [SecurityFsFile],
-) -> Result<()> {
-    SecurityRootNode::singleton().add_child(SecurityDirectory::new(name, files)?)?;
+pub(crate) fn register_directory(directory: &SecurityFsDirectory) -> Result<()> {
+    SecurityRootNode::singleton().add_child(SecurityDirectory::new(directory)?)?;
     Ok(())
 }
 
 #[cfg(ktest)]
-fn init_for_ktest() {
+pub(crate) fn init_for_ktest() {
     use spin::Once;
 
     static INIT: Once<()> = Once::new();
