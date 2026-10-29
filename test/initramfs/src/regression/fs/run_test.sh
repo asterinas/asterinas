@@ -165,6 +165,7 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 
 ./ramfs/readdir
 
+./rename/permission
 ./rename/same_inode
 
 ./statx/btime
