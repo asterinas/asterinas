@@ -25,9 +25,7 @@ Partially supported mount flags:
 * `MS_LAZYTIME` can be set but have no actual effect.
 * `MS_MANDLOCK` can be set but have no actual effect.
 * `MS_NOATIME` can be set but have no actual effect.
-* `MS_NODEV` can be set but have no actual effect.
 * `MS_NODIRATIME` can be set but have no actual effect.
-* `MS_NOEXEC` can be set but have no actual effect.
 * `MS_NOSUID` can be set but have no actual effect.
 * `MS_RDONLY` can be set but have no actual effect.
 * `MS_RELATIME` can be set but have no actual effect.

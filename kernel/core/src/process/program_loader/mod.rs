@@ -13,7 +13,7 @@ use crate::{
         vfs::{
             inode::Inode,
             notify,
-            path::{FsPath, Path, PathResolver},
+            path::{FsPath, Path, PathResolver, PerMountFlags},
         },
     },
     prelude::*,
@@ -96,6 +96,13 @@ enum DetectedExecutable {
 
 /// Opens a path as an executable file.
 fn open_executable_file(path: Path) -> Result<Arc<dyn FileLike>> {
+    if path.mount_node().flags().contains(PerMountFlags::NOEXEC) {
+        return_errno_with_message!(
+            Errno::EACCES,
+            "the executable is on a file system mounted with `noexec`"
+        );
+    }
+
     check_executable_inode(path.inode().as_ref())?;
 
     let file: Arc<dyn FileLike> = Arc::new(InodeHandle::new_unchecked_access(

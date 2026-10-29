@@ -4,7 +4,13 @@ use align_ext::AlignExt;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::{RawFileDesc, get_file_fast},
+    fs::{
+        file::{
+            StatusFlags,
+            file_table::{RawFileDesc, get_file_fast},
+        },
+        vfs::path::PerMountFlags,
+    },
     prelude::*,
     vm::{
         page_cache::VmoOptions,
@@ -125,15 +131,32 @@ fn do_sys_mmap(
             let mut file_table = ctx.thread_local.borrow_file_table_mut();
             let file = get_file_fast!(&mut file_table, raw_fd.try_into()?).into_owned();
 
+            if file.status_flags().contains(StatusFlags::O_PATH) {
+                return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+            }
+
             let access_mode = file.access_mode();
-            if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {
+            if !access_mode.is_readable() {
                 return_errno_with_message!(Errno::EACCES, "the file is not opened readable");
             }
-            if option.typ() == MMapType::Shared && !access_mode.is_writable() {
+            if option.typ().is_shared() && !access_mode.is_writable() {
                 if vm_perms.contains(VmPerms::WRITE) {
                     return_errno_with_message!(Errno::EACCES, "the file is not opened writable");
                 }
                 vm_may_perms.remove(VmPerms::MAY_WRITE);
+            }
+
+            // File access errors take precedence over the `noexec` restriction.
+            // Clear MAY_EXEC to prevent a later `mprotect` from granting execution.
+            let mount_flags = file.path().mount_node().flags();
+            if mount_flags.contains(PerMountFlags::NOEXEC) {
+                if vm_perms.contains(VmPerms::EXEC) {
+                    return_errno_with_message!(
+                        Errno::EPERM,
+                        "the file is on a file system mounted with `noexec`"
+                    );
+                }
+                vm_may_perms.remove(VmPerms::MAY_EXEC);
             }
 
             options = options
