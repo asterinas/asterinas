@@ -15,7 +15,7 @@ use crate::{
         vfs::{
             inode::{FallocMode, FileOps},
             inode_ext::InodeExt,
-            path::Path,
+            path::{Path, PerMountFlags},
             range_lock::{RangeLockItem, RangeLockOwner, RangeLockType},
             xattr::clear_file_priv,
         },
@@ -65,12 +65,19 @@ impl InodeHandle {
         status_flags: StatusFlags,
     ) -> Result<Self> {
         let inode = path.inode();
+        let inode_type = inode.type_();
         let open_file = if status_flags.contains(StatusFlags::O_PATH) {
             // The file is opened with `O_PATH`. We follow Linux to report `O_RDONLY` here (e.g.,
             // in `/proc/[pid]/fdinfo/[n]`).
             access_mode = AccessMode::O_RDONLY;
             None
-        } else if inode.type_() == InodeType::Dir && access_mode.is_writable() {
+        } else if inode_type.is_device() && path.mount_node().flags().contains(PerMountFlags::NODEV)
+        {
+            return_errno_with_message!(
+                Errno::EACCES,
+                "the device special file is on a file system mounted with `nodev`"
+            );
+        } else if inode_type.is_directory() && access_mode.is_writable() {
             return_errno_with_message!(Errno::EISDIR, "a directory cannot be opened writable");
         } else {
             inode
@@ -376,9 +383,7 @@ impl FileLike for InodeHandle {
     }
 
     fn mappable(&self, request: FileMmapRequest) -> Result<MappableObject<'_>> {
-        if self.status_flags().contains(StatusFlags::O_PATH) {
-            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
-        }
+        // The `O_PATH` flag and access mode have already been checked in the syscall layer.
 
         if let Some(ref open_file) = self.open_file {
             // If the file is a special file (e.g., device file), we should
