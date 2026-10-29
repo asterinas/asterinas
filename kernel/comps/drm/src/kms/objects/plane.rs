@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
+use alloc::sync::{Arc, Weak};
 
 use ostd::sync::Mutex;
 
@@ -23,7 +23,7 @@ use crate::{
 /// Its runtime state selects a framebuffer, source rectangle, destination rectangle, and target CRTC.
 ///
 /// Supported CRTCs are represented by their per-type object indices in a bitmask.
-/// Runtime topology links are non-owning because the KMS object store owns both planes and CRTCs.
+/// CRTC links are weak because the topology owns the CRTCs.
 #[derive(Debug)]
 pub(crate) struct DrmPlane {
     id: DrmKmsObjectId,
@@ -98,7 +98,8 @@ pub(crate) struct DrmPlaneState {
     #[expect(dead_code)]
     crtc_rect: DrmRect,
 
-    framebuffer: Weak<DrmFramebuffer>,
+    /// Keeps the bound framebuffer alive independently of its creating file.
+    framebuffer: Option<Arc<DrmFramebuffer>>,
     crtc: Weak<DrmCrtc>,
 }
 
@@ -106,7 +107,7 @@ impl DrmPlaneState {
     pub(crate) fn new(
         source_rect: DrmRect,
         crtc_rect: DrmRect,
-        framebuffer: Weak<DrmFramebuffer>,
+        framebuffer: Option<Arc<DrmFramebuffer>>,
         crtc: Weak<DrmCrtc>,
     ) -> Self {
         Self {
@@ -121,7 +122,7 @@ impl DrmPlaneState {
         self.source_rect
     }
 
-    pub(crate) fn framebuffer(&self) -> &Weak<DrmFramebuffer> {
+    pub(crate) fn framebuffer(&self) -> &Option<Arc<DrmFramebuffer>> {
         &self.framebuffer
     }
 
