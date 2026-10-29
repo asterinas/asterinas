@@ -47,8 +47,8 @@ impl DrmConnector {
         }
     }
 
-    pub(crate) fn id(&self) -> DrmKmsObjectId {
-        self.id
+    pub(crate) fn id(&self) -> u32 {
+        self.id.value()
     }
 
     pub(crate) fn index(&self) -> DrmKmsObjectIndex {

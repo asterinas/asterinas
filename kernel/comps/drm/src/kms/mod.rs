@@ -3,13 +3,12 @@
 //! Kernel Mode Setting support for DRM devices.
 //!
 //! This module defines the shared KMS interface exposed by DRM drivers.
-//! [`DrmKmsOps`] provides device-specific KMS operations and access to the synchronized KMS object store,
+//! [`DrmKmsOps`] provides device-specific KMS operations and access to the object store,
 //! while [`DrmModeConfig`] describes the device-wide mode configuration.
 //!
 //! Individual planes, CRTCs, encoders, connectors, and properties are defined in the [`objects`] module.
 
 use aster_core::prelude::*;
-use ostd::sync::Mutex;
 
 use crate::{
     device::DrmDevice,
@@ -32,10 +31,12 @@ pub mod pixel_format;
 ///
 /// It provides access to the device's mode configuration and object store and implements
 /// hardware-facing operations such as connector probing.
+///
+// TODO: Modeset and refresh requests currently rely on userspace serialization.
 pub trait DrmKmsOps: DrmDevice {
     fn mode_config(&self) -> &DrmModeConfig;
 
-    fn object_store(&self) -> &Mutex<DrmKmsObjectStore>;
+    fn object_store(&self) -> &DrmKmsObjectStore;
 
     /// Probes a connector and returns its refreshed probe-derived state.
     ///
@@ -49,11 +50,6 @@ pub trait DrmKmsOps: DrmDevice {
     ///
     /// The DRM core validates the mode and connector-encoder assignments before calling this
     /// method. It updates the corresponding core state only if this method returns successfully.
-    ///
-    /// # Locking
-    ///
-    /// The DRM core holds the object-store lock across this call. Implementations must not access
-    /// the object store while this method is running.
     fn set_crtc(
         &self,
         crtc_index: DrmKmsObjectIndex,
@@ -62,11 +58,6 @@ pub trait DrmKmsOps: DrmDevice {
     ) -> Result<()>;
 
     /// Refreshes the regions of a framebuffer currently scanned out by planes.
-    ///
-    /// # Locking
-    ///
-    /// The DRM core holds the object-store lock across this call. Implementations must not access
-    /// the object store while this method is running.
     fn refresh_dirty_fb(
         &self,
         framebuffer: &DrmFramebuffer,

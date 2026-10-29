@@ -47,7 +47,6 @@ use aster_framebuffer::{
     pixel::PixelFormat,
 };
 use component::{ComponentInitError, init_component};
-use ostd::sync::Mutex;
 
 const SIMPLEDRM_NAME: &str = "simpledrm";
 const SIMPLEDRM_DESC: &str = "DRM driver for simple-framebuffer platform devices";
@@ -80,7 +79,7 @@ struct SimpleDrmDevice {
     features: DrmFeatures,
     pixel_format: DrmPixelFormat,
     mode_config: DrmModeConfig,
-    object_store: Mutex<DrmKmsObjectStore>,
+    object_store: DrmKmsObjectStore,
 }
 
 impl SimpleDrmDevice {
@@ -124,7 +123,7 @@ impl SimpleDrmDevice {
             features: DrmFeatures::empty(),
             pixel_format,
             mode_config,
-            object_store: Mutex::new(object_store),
+            object_store,
         })
     }
 
@@ -227,7 +226,7 @@ impl DrmKmsOps for SimpleDrmDevice {
         &self.mode_config
     }
 
-    fn object_store(&self) -> &Mutex<DrmKmsObjectStore> {
+    fn object_store(&self) -> &DrmKmsObjectStore {
         &self.object_store
     }
 

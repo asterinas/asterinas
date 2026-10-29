@@ -34,7 +34,7 @@ use crate::{
     device::{DrmDevice, DrmMaster},
     gem::object::DrmGemObject,
     has_current_sys_admin,
-    kms::objects::{DrmKmsObjectId, framebuffer::DrmFramebuffer},
+    kms::objects::framebuffer::DrmFramebuffer,
     minor::{DrmMinor, DrmMinorType},
 };
 
@@ -190,19 +190,10 @@ impl DrmFile {
     }
 
     pub(super) fn add_framebuffer(&self, framebuffer: Arc<DrmFramebuffer>) {
-        let mut framebuffers = self.framebuffers.lock();
-        framebuffers.push(framebuffer);
+        self.framebuffers.lock().push(framebuffer);
     }
 
-    pub(super) fn lookup_framebuffer(&self, id: DrmKmsObjectId) -> Option<Arc<DrmFramebuffer>> {
-        self.framebuffers
-            .lock()
-            .iter()
-            .find(|framebuffer| framebuffer.id() == id)
-            .cloned()
-    }
-
-    pub(super) fn framebuffer_ids(&self) -> Vec<DrmKmsObjectId> {
+    pub(super) fn framebuffer_ids(&self) -> Vec<u32> {
         self.framebuffers
             .lock()
             .iter()
@@ -210,12 +201,19 @@ impl DrmFile {
             .collect()
     }
 
-    pub(super) fn remove_framebuffer(&self, id: DrmKmsObjectId) -> Option<Arc<DrmFramebuffer>> {
+    pub(super) fn remove_framebuffer(&self, id: u32) -> Result<Arc<DrmFramebuffer>> {
         let mut framebuffers = self.framebuffers.lock();
         let position = framebuffers
             .iter()
-            .position(|framebuffer| framebuffer.id() == id)?;
-        Some(framebuffers.swap_remove(position))
+            .position(|framebuffer| framebuffer.id() == id)
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::ENOENT,
+                    "the DRM framebuffer is not owned by this file",
+                )
+            })?;
+
+        Ok(framebuffers.swap_remove(position))
     }
 
     /// Keeps tracking the ioctl caller while this file has never been master,
@@ -341,14 +339,6 @@ impl Pollable for DrmFile {
 
 impl Drop for DrmFile {
     fn drop(&mut self) {
-        let device = self.minor.device().clone();
-        if let Some(kms_ops) = device.as_kms_ops() {
-            let mut object_store = kms_ops.object_store().lock();
-            for framebuffer in self.framebuffers.get_mut().drain(..) {
-                object_store.free_object_id(framebuffer.id());
-            }
-        }
-
         for gem_object in self.gem_handles.get_mut().drain() {
             gem_object.revoke_mmap(self.client_id);
         }

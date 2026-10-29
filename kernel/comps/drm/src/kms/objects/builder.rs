@@ -6,27 +6,27 @@ use alloc::{
 };
 
 use aster_core::prelude::*;
+use ostd::sync::Mutex;
 
 use crate::kms::{
-    DrmKmsObjectStore,
     objects::{
-        DrmKmsObjectIndex, DrmKmsObjectMask, DrmStandardProperty, MAX_OBJECTS_PER_TYPE,
+        DrmKmsObjectId, DrmKmsObjectIndex, DrmKmsObjectMask, DrmKmsObjectStore, DrmObjectRegistry,
+        DrmObjectTopology, DrmStandardProperty, MAX_OBJECTS_PER_TYPE,
         connector::{DrmConnector, DrmConnectorConfig, DrmConnectorType},
         crtc::{DrmCrtc, DrmCrtcConfig},
         encoder::{DrmEncoder, DrmEncoderConfig, DrmEncoderType},
         plane::{DrmPlane, DrmPlaneConfig, DrmPlaneType},
-        property::{DrmPropertyAttachments, KmsObjectPropValue, in_formats::DrmInFormats},
+        property::{
+            DrmPropertyAttachments, KmsObjectPropValue, blob::DrmPropertyBlob,
+            in_formats::DrmInFormats,
+        },
     },
     pixel_format::DrmPixelFormat,
 };
 
-/// A builder for KMS object topology during driver initialization.
+/// Builds a DRM object store from a validated static topology.
 ///
-/// The builder is an init-only helper.
-/// Drivers first declare planes, CRTCs, encoders, and connectors,
-/// then attach their static topology,
-/// and finally call `build()` to validate the topology
-/// and materialize a [`DrmKmsObjectStore`].
+/// Declare objects and their links before calling [`Self::build`].
 ///
 /// Typical usage:
 ///
@@ -49,13 +49,7 @@ use crate::kms::{
 /// let object_store = builder.build().unwrap();
 /// ```
 ///
-/// The builder only records static topology.
-/// Dynamic runtime state remains inside each final KMS object state.
-/// Construction indices are confined to the builder and must come from the same builder instance.
-///
-/// Static `possible_*` topology is represented by masks whose bit positions are per-type object indices.
-///
-/// Dynamic runtime state refers to other objects through typed weak references.
+/// Indices passed to the builder must come from the same builder instance.
 ///
 /// Current topology constraints:
 ///
@@ -210,19 +204,20 @@ impl DrmKmsObjectStoreBuilder {
             connectors: connector_configs,
         } = self;
 
-        let mut object_store = DrmKmsObjectStore::new_empty();
+        let registry = Arc::new(Mutex::new(DrmObjectRegistry::default()));
+        let mut topology = DrmObjectTopology::default();
 
         let mut planes = Vec::with_capacity(plane_configs.len());
         for (plane_index, config) in plane_configs.into_iter().enumerate() {
-            let id = object_store.alloc_object_id()?;
-            let properties = build_plane_properties(&mut object_store, &config)?;
+            let id = DrmKmsObjectId::alloc(&registry)?;
+            let properties = build_plane_properties(&registry, &mut topology, &config)?;
             let plane = Arc::new(DrmPlane::new(
                 id,
                 next_object_index(plane_index)?,
                 config,
                 properties,
             ));
-            object_store.insert_plane(plane.clone());
+            topology.insert_plane(plane.clone());
             planes.push(plane);
         }
 
@@ -237,43 +232,43 @@ impl DrmKmsObjectStoreBuilder {
                 cursor_plane,
             };
 
-            let id = object_store.alloc_object_id()?;
-            let properties = build_crtc_properties(&mut object_store)?;
+            let id = DrmKmsObjectId::alloc(&registry)?;
+            let properties = build_crtc_properties(&registry, &mut topology)?;
             let crtc = Arc::new(DrmCrtc::new(
                 id,
                 next_object_index(crtc_index)?,
                 config,
                 properties,
             ));
-            object_store.insert_crtc(crtc);
+            topology.insert_crtc(crtc);
         }
 
         for (encoder_index, mut config) in encoder_configs.into_iter().enumerate() {
             // An encoder must always be compatible with itself. `add_encoder()` bounds the
             // index to the clone mask's capacity.
             config.possible_clones.set(encoder_index, true);
-            let id = object_store.alloc_object_id()?;
+            let id = DrmKmsObjectId::alloc(&registry)?;
             let encoder = Arc::new(DrmEncoder::new(
                 id,
                 next_object_index(encoder_index)?,
                 config,
             ));
-            object_store.insert_encoder(encoder);
+            topology.insert_encoder(encoder);
         }
 
         for (connector_index, config) in connector_configs.into_iter().enumerate() {
-            let id = object_store.alloc_object_id()?;
-            let properties = build_connector_properties(&mut object_store)?;
+            let id = DrmKmsObjectId::alloc(&registry)?;
+            let properties = build_connector_properties(&registry, &mut topology)?;
             let connector = Arc::new(DrmConnector::new(
                 id,
                 next_object_index(connector_index)?,
                 config,
                 properties,
             ));
-            object_store.insert_connector(connector);
+            topology.insert_connector(connector);
         }
 
-        Ok(object_store)
+        Ok(DrmKmsObjectStore::new(registry, topology))
     }
 
     fn validate_topology(&self) -> Result<()> {
@@ -360,16 +355,21 @@ impl CrtcSpec {
 }
 
 fn build_plane_properties(
-    store: &mut DrmKmsObjectStore,
+    registry: &Arc<Mutex<DrmObjectRegistry>>,
+    topology: &mut DrmObjectTopology,
     config: &DrmPlaneConfig,
 ) -> Result<DrmPropertyAttachments> {
-    let in_formats = store.create_property_blob(config.in_formats.encode_blob())?;
+    let id = DrmKmsObjectId::alloc(registry)?;
+    let in_formats = Arc::new(DrmPropertyBlob::new(id, config.in_formats.encode_blob()));
+    let in_formats_blob_id = in_formats.id();
+    topology.insert_property_blob(in_formats);
 
     build_object_properties(
-        store,
+        registry,
+        topology,
         &[
             (DrmStandardProperty::PlaneType, config.type_ as u64),
-            (DrmStandardProperty::InFormats, in_formats.id() as u64),
+            (DrmStandardProperty::InFormats, in_formats_blob_id as u64),
             (DrmStandardProperty::SrcX, 0),
             (DrmStandardProperty::SrcY, 0),
             (DrmStandardProperty::SrcW, 0),
@@ -384,9 +384,13 @@ fn build_plane_properties(
     )
 }
 
-fn build_crtc_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
+fn build_crtc_properties(
+    registry: &Arc<Mutex<DrmObjectRegistry>>,
+    topology: &mut DrmObjectTopology,
+) -> Result<DrmPropertyAttachments> {
     build_object_properties(
-        store,
+        registry,
+        topology,
         &[
             (DrmStandardProperty::Active, 0),
             // A zero `MODE_ID` means that the CRTC has no active mode.
@@ -395,18 +399,29 @@ fn build_crtc_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAtt
     )
 }
 
-fn build_connector_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
-    build_object_properties(store, &[(DrmStandardProperty::CrtcId, 0)])
+fn build_connector_properties(
+    registry: &Arc<Mutex<DrmObjectRegistry>>,
+    topology: &mut DrmObjectTopology,
+) -> Result<DrmPropertyAttachments> {
+    build_object_properties(registry, topology, &[(DrmStandardProperty::CrtcId, 0)])
 }
 
 fn build_object_properties(
-    store: &mut DrmKmsObjectStore,
+    registry: &Arc<Mutex<DrmObjectRegistry>>,
+    topology: &mut DrmObjectTopology,
     property_values: &[(DrmStandardProperty, KmsObjectPropValue)],
 ) -> Result<DrmPropertyAttachments> {
     let mut object_properties = DrmPropertyAttachments::default();
 
     for &(standard, value) in property_values {
-        let property = store.get_or_create_standard_property(standard)?;
+        let property = if let Some(property) = topology.lookup_standard_property(standard) {
+            property.clone()
+        } else {
+            let id = DrmKmsObjectId::alloc(registry)?;
+            let property = Arc::new(standard.create_property(id));
+            topology.insert_standard_property(standard, property.clone());
+            property
+        };
         object_properties.attach(&property, value)?;
     }
 
