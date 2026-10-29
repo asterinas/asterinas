@@ -15,7 +15,7 @@ use crate::{
         vfs::{file_system::FileSystem, path::Dentry},
     },
     prelude::*,
-    security::securityfs::{self, SecurityFsFile},
+    security::securityfs::{self, SecurityFsDirectory, SecurityFsFile},
 };
 
 static READ_OFFSET: AtomicUsize = AtomicUsize::new(usize::MAX);
@@ -52,6 +52,35 @@ static DUPLICATE_FILES: [SecurityFsFile; 2] = [
     SecurityFsFile::write_only("same", write_empty),
 ];
 static CREATE_FILES: [SecurityFsFile; 1] = [SecurityFsFile::read_only("status", read_empty)];
+static VERSION_FILES: [SecurityFsFile; 1] = [SecurityFsFile::read_only("v5", read_version)];
+static VERSION_DIRECTORIES: [SecurityFsDirectory; 1] =
+    [SecurityFsDirectory::new("versions", &VERSION_FILES, &[])];
+static POLICY_DIRECTORIES: [SecurityFsDirectory; 1] = [SecurityFsDirectory::new(
+    "policy",
+    &[],
+    &VERSION_DIRECTORIES,
+)];
+static FEATURE_DIRECTORIES: [SecurityFsDirectory; 1] = [SecurityFsDirectory::new(
+    "features",
+    &[],
+    &POLICY_DIRECTORIES,
+)];
+static NESTED_DIRECTORY: SecurityFsDirectory =
+    SecurityFsDirectory::new("ktest-nested", &MODE_FILES, &FEATURE_DIRECTORIES);
+
+static DUPLICATE_CHILDREN: [SecurityFsDirectory; 2] = [
+    SecurityFsDirectory::new("same", &MODE_FILES, &[]),
+    SecurityFsDirectory::new("same", &MODE_FILES, &[]),
+];
+static DUPLICATE_CHILD_DIRECTORY: SecurityFsDirectory =
+    SecurityFsDirectory::new("ktest-duplicate-child", &[], &DUPLICATE_CHILDREN);
+static FILE_DIRECTORY_COLLISION_CHILDREN: [SecurityFsDirectory; 1] =
+    [SecurityFsDirectory::new("read", &MODE_FILES, &[])];
+static FILE_DIRECTORY_COLLISION: SecurityFsDirectory = SecurityFsDirectory::new(
+    "ktest-file-directory-collision",
+    &MODE_FILES,
+    &FILE_DIRECTORY_COLLISION_CHILDREN,
+);
 
 const TOO_LONG_NAME: &str = concat!(
     "aaaaaaaaaaaaaaaa",
@@ -78,6 +107,14 @@ fn assert_errno<T>(result: Result<T>, expected: Errno) {
     assert_eq!(result.err().unwrap().error(), expected);
 }
 
+fn read_version(offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    let mut printer = aster_util::printer::VmPrinter::new_skip(writer, offset);
+    printer
+        .write_fmt(format_args!("yes\n"))
+        .map_err(|_| Error::new(Errno::EFAULT))?;
+    Ok(printer.bytes_written())
+}
+
 fn root_dentry() -> Arc<Dentry> {
     super::init_for_ktest();
     Dentry::new_root(SecurityFs::singleton().root_inode())
@@ -92,7 +129,6 @@ fn lookup_file(directory: &str, file: &str) -> Arc<dyn crate::fs::vfs::inode::In
         .unwrap()
 }
 
-// Regression for #3740: control-node ownership must not depend on lookup credentials.
 #[ktest]
 fn inode_ownership_is_independent_of_lookup_credentials() {
     use crate::{
@@ -119,11 +155,9 @@ fn inode_ownership_is_independent_of_lookup_credentials() {
 fn file_modes_and_missing_operations_are_fixed() {
     super::init_for_ktest();
     securityfs::register_directory("ktest-modes", &MODE_FILES).unwrap();
-    let directory = root_dentry().inode().lookup("ktest-modes").unwrap();
     let read = lookup_file("ktest-modes", "read");
     let write = lookup_file("ktest-modes", "write");
 
-    assert_eq!(directory.mode().unwrap(), mkmod!(a+rx));
     assert_eq!(read.mode().unwrap(), mkmod!(a+r));
     assert_eq!(write.mode().unwrap(), mkmod!(a+rw));
 
@@ -188,7 +222,12 @@ fn invalid_names_empty_files_and_duplicates_are_rejected() {
 
 #[ktest]
 fn missing_callback_file_returns_enoent() {
-    let directory = SecurityDirectory::new("ktest-missing-file", &MODE_FILES).unwrap();
+    let directory = SecurityDirectory::new(&SecurityFsDirectory::new(
+        "ktest-missing-file",
+        &MODE_FILES,
+        &[],
+    ))
+    .unwrap();
 
     let mut bytes = [];
     let mut writer = VmWriter::from(&mut bytes[..]).to_fallible();
@@ -246,4 +285,61 @@ fn root_is_parentless_and_userspace_cannot_mutate_tree() {
         .lookup_child("ktest-mutation")
         .unwrap();
     assert_errno(root.inode().unlink(&child), Errno::EPERM);
+}
+
+#[ktest]
+fn nested_directories_expose_callback_files() {
+    super::init_for_ktest();
+    securityfs::register_hierarchy(&NESTED_DIRECTORY).unwrap();
+
+    let mut inode = root_dentry().inode().lookup("ktest-nested").unwrap();
+    assert_eq!(inode.mode().unwrap(), mkmod!(a+rx));
+    for directory in ["features", "policy", "versions"] {
+        inode = inode.lookup(directory).unwrap();
+        assert_eq!(inode.mode().unwrap(), mkmod!(a+rx));
+    }
+    let version = inode.lookup("v5").unwrap();
+    assert_eq!(version.mode().unwrap(), mkmod!(a+r));
+
+    let mut bytes = [0; 4];
+    let mut writer = VmWriter::from(&mut bytes[..]).to_fallible();
+    assert_eq!(
+        version
+            .read_at(0, &mut writer, StatusFlags::empty())
+            .unwrap(),
+        4
+    );
+    assert_eq!(&bytes, b"yes\n");
+
+    let mut bytes = [0; 3];
+    let mut writer = VmWriter::from(&mut bytes[..]).to_fallible();
+    assert_eq!(
+        version
+            .read_at(1, &mut writer, StatusFlags::empty())
+            .unwrap(),
+        3
+    );
+    assert_eq!(&bytes, b"es\n");
+
+    let mut bytes = [0; 1];
+    let mut writer = VmWriter::from(&mut bytes[..]).to_fallible();
+    assert_eq!(
+        version
+            .read_at(4, &mut writer, StatusFlags::empty())
+            .unwrap(),
+        0
+    );
+}
+
+#[ktest]
+fn nested_directory_sibling_names_are_unique() {
+    super::init_for_ktest();
+    assert_errno(
+        securityfs::register_hierarchy(&DUPLICATE_CHILD_DIRECTORY),
+        Errno::EEXIST,
+    );
+    assert_errno(
+        securityfs::register_hierarchy(&FILE_DIRECTORY_COLLISION),
+        Errno::EEXIST,
+    );
 }
