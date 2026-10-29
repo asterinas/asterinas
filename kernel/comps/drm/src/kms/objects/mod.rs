@@ -77,6 +77,13 @@ impl DrmKmsObjectStore {
         let registry = self.registry.lock();
         registry.framebuffers.get(&id)?.upgrade()
     }
+
+    pub(crate) fn add_property_blob(&self, property_blob: &Arc<DrmPropertyBlob>) {
+        self.registry
+            .lock()
+            .property_blobs
+            .insert(property_blob.id(), Arc::downgrade(property_blob));
+    }
 }
 
 /// Device-wide ID allocation and weak indexes for dynamic objects.
