@@ -207,7 +207,7 @@ impl PageTableEntry {
         } else if self.0 & PteFlags::MATH.bits() != 0 {
             CachePolicy::WriteCombining
         } else {
-            CachePolicy::Writeback
+            CachePolicy::Uncacheable
         };
 
         PageProperty {
