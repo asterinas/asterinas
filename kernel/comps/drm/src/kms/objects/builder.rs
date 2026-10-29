@@ -377,7 +377,10 @@ fn build_plane_properties(
     config: &DrmPlaneConfig,
 ) -> Result<DrmPropertyAttachments> {
     let id = OwnedKmsObjectId::alloc(id_allocator)?;
-    let in_formats = Arc::new(DrmPropertyBlob::new(id, config.in_formats.encode_blob()));
+    let in_formats = Arc::new(DrmPropertyBlob::new_static(
+        id,
+        config.in_formats.encode_blob(),
+    ));
     let in_formats_blob_id = in_formats.id();
     static_objects.insert_property_blob(in_formats);
 
