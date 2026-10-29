@@ -29,7 +29,7 @@ use aster_drm::{
         display_info::{DrmDisplayInfo, SubpixelOrder},
         display_mode::DrmDisplayMode,
         objects::{
-            DrmKmsObjectStore, KmsObjectIndex,
+            DrmKmsObjectIndex, DrmKmsObjectStore,
             builder::DrmKmsObjectStoreBuilder,
             connector::{
                 DrmConnector, DrmConnectorProbeState, DrmConnectorStatus, DrmConnectorType,
@@ -253,7 +253,7 @@ impl DrmKmsOps for SimpleDrmDevice {
 
     fn set_crtc(
         &self,
-        _crtc_index: KmsObjectIndex,
+        _crtc_index: DrmKmsObjectIndex,
         framebuffer: Option<&DrmFramebuffer>,
         source_rect: DrmRect,
     ) -> Result<()> {

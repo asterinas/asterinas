@@ -10,7 +10,7 @@ use aster_core::prelude::*;
 use crate::kms::{
     DrmKmsObjectStore,
     objects::{
-        DrmStandardProperty, KmsObjectIndex, KmsObjectMask, MAX_OBJECTS_PER_TYPE,
+        DrmKmsObjectIndex, DrmKmsObjectMask, DrmStandardProperty, MAX_OBJECTS_PER_TYPE,
         connector::{DrmConnector, DrmConnectorConfig, DrmConnectorType},
         crtc::{DrmCrtc, DrmCrtcConfig},
         encoder::{DrmEncoder, DrmEncoderConfig, DrmEncoderType},
@@ -79,11 +79,11 @@ impl DrmKmsObjectStoreBuilder {
         &mut self,
         type_: DrmPlaneType,
         pixel_formats: Vec<DrmPixelFormat>,
-    ) -> Result<KmsObjectIndex> {
+    ) -> Result<DrmKmsObjectIndex> {
         let index = next_object_index(self.planes.len())?;
         let config = DrmPlaneConfig {
             type_,
-            possible_crtcs: KmsObjectMask::ZERO,
+            possible_crtcs: DrmKmsObjectMask::ZERO,
             in_formats: DrmInFormats::new(pixel_formats.into_boxed_slice()),
         };
 
@@ -94,9 +94,9 @@ impl DrmKmsObjectStoreBuilder {
     pub fn add_crtc(
         &mut self,
         gamma_lut_size: u32,
-        primary_plane: KmsObjectIndex,
-        cursor_plane: Option<KmsObjectIndex>,
-    ) -> Result<KmsObjectIndex> {
+        primary_plane: DrmKmsObjectIndex,
+        cursor_plane: Option<DrmKmsObjectIndex>,
+    ) -> Result<DrmKmsObjectIndex> {
         let index = next_object_index(self.crtcs.len())?;
         let spec = CrtcSpec::new(gamma_lut_size, primary_plane, cursor_plane);
 
@@ -104,19 +104,19 @@ impl DrmKmsObjectStoreBuilder {
         Ok(index)
     }
 
-    pub fn add_encoder(&mut self, type_: DrmEncoderType) -> Result<KmsObjectIndex> {
+    pub fn add_encoder(&mut self, type_: DrmEncoderType) -> Result<DrmKmsObjectIndex> {
         let index = next_object_index(self.encoders.len())?;
         let config = DrmEncoderConfig {
             type_,
-            possible_crtcs: KmsObjectMask::ZERO,
+            possible_crtcs: DrmKmsObjectMask::ZERO,
             // The encoder's own clone bit is added once all encoder indices are validated.
-            possible_clones: KmsObjectMask::ZERO,
+            possible_clones: DrmKmsObjectMask::ZERO,
         };
         self.encoders.push(config);
         Ok(index)
     }
 
-    pub fn add_connector(&mut self, type_: DrmConnectorType) -> Result<KmsObjectIndex> {
+    pub fn add_connector(&mut self, type_: DrmConnectorType) -> Result<DrmKmsObjectIndex> {
         let index = next_object_index(self.connectors.len())?;
         // Linux assigns connector type IDs starting at one, so userspace names
         // the first connector of each type, for example, `Virtual-1`.
@@ -129,7 +129,7 @@ impl DrmKmsObjectStoreBuilder {
         let config = DrmConnectorConfig {
             type_,
             type_index,
-            possible_encoders: KmsObjectMask::ZERO,
+            possible_encoders: DrmKmsObjectMask::ZERO,
         };
         self.connectors.push(config);
         Ok(index)
@@ -137,8 +137,8 @@ impl DrmKmsObjectStoreBuilder {
 
     pub fn attach_plane_to_crtc(
         &mut self,
-        plane_index: KmsObjectIndex,
-        crtc_index: KmsObjectIndex,
+        plane_index: DrmKmsObjectIndex,
+        crtc_index: DrmKmsObjectIndex,
     ) -> Result<()> {
         if self.crtcs.get(crtc_index.get()).is_none() {
             return_errno_with_message!(
@@ -158,8 +158,8 @@ impl DrmKmsObjectStoreBuilder {
 
     pub fn attach_encoder_to_crtc(
         &mut self,
-        encoder_index: KmsObjectIndex,
-        crtc_index: KmsObjectIndex,
+        encoder_index: DrmKmsObjectIndex,
+        crtc_index: DrmKmsObjectIndex,
     ) -> Result<()> {
         if self.crtcs.get(crtc_index.get()).is_none() {
             return_errno_with_message!(
@@ -179,8 +179,8 @@ impl DrmKmsObjectStoreBuilder {
 
     pub fn attach_connector_to_encoder(
         &mut self,
-        connector_index: KmsObjectIndex,
-        encoder_index: KmsObjectIndex,
+        connector_index: DrmKmsObjectIndex,
+        encoder_index: DrmKmsObjectIndex,
     ) -> Result<()> {
         if self.encoders.get(encoder_index.get()).is_none() {
             return_errno_with_message!(
@@ -281,7 +281,7 @@ impl DrmKmsObjectStoreBuilder {
             return_errno_with_message!(Errno::EINVAL, "the KMS topology has no CRTCs");
         }
 
-        let mut used_primary_planes = KmsObjectMask::ZERO;
+        let mut used_primary_planes = DrmKmsObjectMask::ZERO;
         for (crtc_index, crtc) in self.crtcs.iter().enumerate() {
             if used_primary_planes.replace(crtc.primary_plane.get(), true) {
                 return_errno_with_message!(
@@ -330,26 +330,26 @@ impl DrmKmsObjectStoreBuilder {
     }
 }
 
-fn next_object_index(object_count: usize) -> Result<KmsObjectIndex> {
+fn next_object_index(object_count: usize) -> Result<DrmKmsObjectIndex> {
     if object_count >= MAX_OBJECTS_PER_TYPE {
         return_errno_with_message!(Errno::EINVAL, "too many KMS objects of one type");
     }
 
-    Ok(KmsObjectIndex::new(object_count))
+    Ok(DrmKmsObjectIndex::new(object_count))
 }
 
 #[derive(Debug)]
 struct CrtcSpec {
     gamma_lut_size: u32,
-    primary_plane: KmsObjectIndex,
-    cursor_plane: Option<KmsObjectIndex>,
+    primary_plane: DrmKmsObjectIndex,
+    cursor_plane: Option<DrmKmsObjectIndex>,
 }
 
 impl CrtcSpec {
     fn new(
         gamma_lut_size: u32,
-        primary_plane: KmsObjectIndex,
-        cursor_plane: Option<KmsObjectIndex>,
+        primary_plane: DrmKmsObjectIndex,
+        cursor_plane: Option<DrmKmsObjectIndex>,
     ) -> Self {
         Self {
             gamma_lut_size,

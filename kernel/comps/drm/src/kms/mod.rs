@@ -14,7 +14,7 @@ use ostd::sync::Mutex;
 use crate::{
     device::DrmDevice,
     kms::objects::{
-        DrmKmsObjectStore, KmsObjectIndex,
+        DrmKmsObjectIndex, DrmKmsObjectStore,
         connector::{DrmConnector, DrmConnectorProbeState},
         framebuffer::DrmFramebuffer,
     },
@@ -56,7 +56,7 @@ pub trait DrmKmsOps: DrmDevice {
     /// the object store while this method is running.
     fn set_crtc(
         &self,
-        crtc_index: KmsObjectIndex,
+        crtc_index: DrmKmsObjectIndex,
         framebuffer: Option<&DrmFramebuffer>,
         source_rect: DrmRect,
     ) -> Result<()>;

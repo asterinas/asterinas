@@ -37,7 +37,7 @@ pub mod framebuffer;
 pub mod plane;
 pub mod property;
 
-pub(crate) type KmsObjectId = u32;
+pub(crate) type DrmKmsObjectId = u32;
 
 pub(crate) const MAX_OBJECTS_PER_TYPE: usize = u32::BITS as usize;
 
@@ -46,9 +46,8 @@ pub(crate) const MAX_OBJECTS_PER_TYPE: usize = u32::BITS as usize;
 /// The index is local to an object type.
 ///
 /// For example, encoder index 0 and CRTC index 0 refer to entries in different lists.
-pub type KmsObjectIndex = RangedUsize<0, { MAX_OBJECTS_PER_TYPE - 1 }>;
-
-type KmsObjectMask = BitArray<[u32; MAX_OBJECTS_PER_TYPE / u32::BITS as usize]>;
+pub type DrmKmsObjectIndex = RangedUsize<0, { MAX_OBJECTS_PER_TYPE - 1 }>;
+type DrmKmsObjectMask = BitArray<[u32; MAX_OBJECTS_PER_TYPE / u32::BITS as usize]>;
 
 /// Registers all KMS objects belonging to a DRM device.
 ///
@@ -60,18 +59,18 @@ type KmsObjectMask = BitArray<[u32; MAX_OBJECTS_PER_TYPE / u32::BITS as usize]>;
 #[derive(Debug)]
 pub struct DrmKmsObjectStore {
     id_allocator: SparseIdAlloc,
-    planes: HashMap<KmsObjectId, Arc<DrmPlane>>,
-    crtcs: HashMap<KmsObjectId, Arc<DrmCrtc>>,
-    encoders: HashMap<KmsObjectId, Arc<DrmEncoder>>,
-    connectors: HashMap<KmsObjectId, Arc<DrmConnector>>,
+    planes: HashMap<DrmKmsObjectId, Arc<DrmPlane>>,
+    crtcs: HashMap<DrmKmsObjectId, Arc<DrmCrtc>>,
+    encoders: HashMap<DrmKmsObjectId, Arc<DrmEncoder>>,
+    connectors: HashMap<DrmKmsObjectId, Arc<DrmConnector>>,
 
-    properties: HashMap<KmsObjectId, Arc<DrmProperty>>,
+    properties: HashMap<DrmKmsObjectId, Arc<DrmProperty>>,
     /// Provides a semantic index for standard properties;
     /// driver-specific properties remain accessible through `properties` by object ID.
-    standard_property_ids: HashMap<DrmStandardProperty, KmsObjectId>,
+    standard_property_ids: HashMap<DrmStandardProperty, DrmKmsObjectId>,
     // TODO: Support both device-lifetime blobs created by the kernel and
     // per-file blobs created and owned by userspace clients.
-    property_blobs: HashMap<KmsObjectId, Arc<DrmPropertyBlob>>,
+    property_blobs: HashMap<DrmKmsObjectId, Arc<DrmPropertyBlob>>,
 }
 
 impl DrmKmsObjectStore {
@@ -88,7 +87,7 @@ impl DrmKmsObjectStore {
         }
     }
 
-    pub(crate) fn alloc_object_id(&mut self) -> Result<KmsObjectId> {
+    pub(crate) fn alloc_object_id(&mut self) -> Result<DrmKmsObjectId> {
         let id = self
             .id_allocator
             .alloc()
@@ -97,7 +96,7 @@ impl DrmKmsObjectStore {
         Ok(id)
     }
 
-    pub(crate) fn free_object_id(&mut self, id: KmsObjectId) {
+    pub(crate) fn free_object_id(&mut self, id: DrmKmsObjectId) {
         self.id_allocator.free(id);
     }
 
@@ -117,7 +116,7 @@ impl DrmKmsObjectStore {
         self.connectors.insert(connector.id(), connector);
     }
 
-    pub(crate) fn collect_sorted_crtc_ids(&self) -> Vec<KmsObjectId> {
+    pub(crate) fn collect_sorted_crtc_ids(&self) -> Vec<DrmKmsObjectId> {
         let mut indexed_ids = self
             .crtcs()
             .map(|crtc| (crtc.index(), crtc.id()))
@@ -127,7 +126,7 @@ impl DrmKmsObjectStore {
         indexed_ids.into_iter().map(|(_, id)| id).collect()
     }
 
-    pub(crate) fn collect_sorted_encoder_ids(&self) -> Vec<KmsObjectId> {
+    pub(crate) fn collect_sorted_encoder_ids(&self) -> Vec<DrmKmsObjectId> {
         let mut indexed_ids = self
             .encoders()
             .map(|encoder| (encoder.index(), encoder.id()))
@@ -137,7 +136,7 @@ impl DrmKmsObjectStore {
         indexed_ids.into_iter().map(|(_, id)| id).collect()
     }
 
-    pub(crate) fn collect_sorted_connector_ids(&self) -> Vec<KmsObjectId> {
+    pub(crate) fn collect_sorted_connector_ids(&self) -> Vec<DrmKmsObjectId> {
         let mut indexed_ids = self
             .connectors()
             .map(|connector| (connector.index(), connector.id()))
@@ -163,34 +162,34 @@ impl DrmKmsObjectStore {
         self.connectors.values()
     }
 
-    pub(crate) fn lookup_plane_by_id(&self, id: KmsObjectId) -> Option<&Arc<DrmPlane>> {
+    pub(crate) fn lookup_plane_by_id(&self, id: DrmKmsObjectId) -> Option<&Arc<DrmPlane>> {
         self.planes.get(&id)
     }
 
-    pub(crate) fn lookup_crtc_by_id(&self, id: KmsObjectId) -> Option<&Arc<DrmCrtc>> {
+    pub(crate) fn lookup_crtc_by_id(&self, id: DrmKmsObjectId) -> Option<&Arc<DrmCrtc>> {
         self.crtcs.get(&id)
     }
 
-    pub(crate) fn lookup_encoder_by_id(&self, id: KmsObjectId) -> Option<&Arc<DrmEncoder>> {
+    pub(crate) fn lookup_encoder_by_id(&self, id: DrmKmsObjectId) -> Option<&Arc<DrmEncoder>> {
         self.encoders.get(&id)
     }
 
     pub(crate) fn lookup_encoder_by_index(
         &self,
-        index: KmsObjectIndex,
+        index: DrmKmsObjectIndex,
     ) -> Option<&Arc<DrmEncoder>> {
         self.encoders().find(|encoder| encoder.index() == index)
     }
 
-    pub(crate) fn lookup_connector_by_id(&self, id: KmsObjectId) -> Option<&Arc<DrmConnector>> {
+    pub(crate) fn lookup_connector_by_id(&self, id: DrmKmsObjectId) -> Option<&Arc<DrmConnector>> {
         self.connectors.get(&id)
     }
 
-    pub(crate) fn lookup_property(&self, id: KmsObjectId) -> Option<&Arc<DrmProperty>> {
+    pub(crate) fn lookup_property(&self, id: DrmKmsObjectId) -> Option<&Arc<DrmProperty>> {
         self.properties.get(&id)
     }
 
-    pub(crate) fn lookup_property_blob(&self, id: KmsObjectId) -> Option<&Arc<DrmPropertyBlob>> {
+    pub(crate) fn lookup_property_blob(&self, id: DrmKmsObjectId) -> Option<&Arc<DrmPropertyBlob>> {
         self.property_blobs.get(&id)
     }
 
@@ -204,7 +203,7 @@ impl DrmKmsObjectStore {
     /// and `None` if no supported object matches the ID.
     pub(crate) fn lookup_any_object_properties(
         &self,
-        id: KmsObjectId,
+        id: DrmKmsObjectId,
     ) -> Result<Option<&DrmPropertyAttachments>> {
         if let Some(plane) = self.lookup_plane_by_id(id) {
             return Ok(Some(plane.properties()));

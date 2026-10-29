@@ -19,7 +19,7 @@ use crate::{
     kms::{
         display_mode::{DrmDisplayMode, DrmModeInfo},
         objects::{
-            DrmKmsObjectType, KmsObjectIndex,
+            DrmKmsObjectIndex, DrmKmsObjectType,
             connector::{DrmConnector, DrmConnectorState},
             crtc::DrmCrtcState,
             encoder::DrmEncoder,
@@ -324,7 +324,7 @@ impl DrmFile {
                         .iter_ones()
                         .find_map(|encoder_index| {
                             let candidate_encoder = object_store
-                                .lookup_encoder_by_index(KmsObjectIndex::new(encoder_index))?;
+                                .lookup_encoder_by_index(DrmKmsObjectIndex::new(encoder_index))?;
                             if !candidate_encoder.possible_crtcs()[crtc_index] {
                                 return None;
                             }
@@ -450,7 +450,7 @@ impl DrmFile {
             let possible_encoders = connector.possible_encoders();
             let mut encoder_ids = Vec::with_capacity(possible_encoders.count_ones());
             for index in possible_encoders.iter_ones() {
-                let encoder_index = KmsObjectIndex::new(index);
+                let encoder_index = DrmKmsObjectIndex::new(index);
                 let encoder_id = object_store
                     .lookup_encoder_by_index(encoder_index)
                     .map(|encoder| encoder.id())

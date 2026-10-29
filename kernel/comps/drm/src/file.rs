@@ -34,7 +34,7 @@ use crate::{
     device::{DrmDevice, DrmMaster},
     gem::object::DrmGemObject,
     has_current_sys_admin,
-    kms::objects::{KmsObjectId, framebuffer::DrmFramebuffer},
+    kms::objects::{DrmKmsObjectId, framebuffer::DrmFramebuffer},
     minor::{DrmMinor, DrmMinorType},
 };
 
@@ -194,7 +194,7 @@ impl DrmFile {
         framebuffers.push(framebuffer);
     }
 
-    pub(super) fn lookup_framebuffer(&self, id: KmsObjectId) -> Option<Arc<DrmFramebuffer>> {
+    pub(super) fn lookup_framebuffer(&self, id: DrmKmsObjectId) -> Option<Arc<DrmFramebuffer>> {
         self.framebuffers
             .lock()
             .iter()
@@ -202,7 +202,7 @@ impl DrmFile {
             .cloned()
     }
 
-    pub(super) fn framebuffer_ids(&self) -> Vec<KmsObjectId> {
+    pub(super) fn framebuffer_ids(&self) -> Vec<DrmKmsObjectId> {
         self.framebuffers
             .lock()
             .iter()
@@ -210,7 +210,7 @@ impl DrmFile {
             .collect()
     }
 
-    pub(super) fn remove_framebuffer(&self, id: KmsObjectId) -> Option<Arc<DrmFramebuffer>> {
+    pub(super) fn remove_framebuffer(&self, id: DrmKmsObjectId) -> Option<Arc<DrmFramebuffer>> {
         let mut framebuffers = self.framebuffers.lock();
         let position = framebuffers
             .iter()
