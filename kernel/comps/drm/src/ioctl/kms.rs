@@ -27,6 +27,7 @@ use crate::{
             plane::{DrmPlaneState, DrmPlaneType},
             property::{
                 DRM_PROP_NAME_LEN, DrmPropertyAttachments, DrmPropertyFlags, DrmPropertyValueType,
+                blob::DrmPropertyBlob,
             },
         },
         pixel_format::DrmPixelFormat,
@@ -842,6 +843,49 @@ impl DrmFile {
         Ok(0)
     }
 
+    pub(super) fn drm_mode_create_prop_blob(
+        &self,
+        cmd: ioctl_defs::ModeCreatePropBlob,
+    ) -> Result<i32> {
+        let mut args: DrmModeCreateBlob = cmd.read()?;
+
+        if args.length == 0 || args.length > i32::MAX.cast_unsigned() {
+            return Err(errno!(EINVAL, "the DRM blob length is invalid"));
+        }
+
+        cmd.with_data_ptr(|args_ptr| {
+            let mut data = vec![0u8; args.length as usize];
+            args_ptr.vm().read_bytes(args.data as usize, &mut data)?;
+
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let object_store = kms_ops.kms().object_store();
+
+            let blob_id = object_store.alloc_object_id()?;
+            let dynamic_objects = object_store.dynamic_objects();
+            let prop_blob = DrmPropertyBlob::new_dynamic(blob_id, dynamic_objects, data.into());
+
+            args.blob_id = prop_blob.id();
+            args_ptr.write(&args)?;
+
+            let prop_blob = Arc::new(prop_blob);
+            dynamic_objects.add_property_blob(&prop_blob);
+            self.add_property_blob(prop_blob);
+
+            Ok(())
+        })?;
+
+        Ok(0)
+    }
+
+    pub(super) fn drm_mode_destroy_prop_blob(
+        &self,
+        cmd: ioctl_defs::ModeDestroyPropBlob,
+    ) -> Result<i32> {
+        let args: DrmModeDestroyBlob = cmd.read()?;
+        self.remove_property_blob(args.blob_id)?;
+        Ok(0)
+    }
+
     fn visible_property_values(
         &self,
         properties: &DrmPropertyAttachments,
@@ -1127,4 +1171,24 @@ pub(super) struct DrmModeObjectGetProps {
     count_props: u32,
     obj_id: KmsObjectId,
     obj_type: u32,
+}
+
+/// `struct drm_mode_create_blob` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L1213-L1226>.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(super) struct DrmModeCreateBlob {
+    data: u64,
+    length: u32,
+    blob_id: u32,
+}
+
+/// `struct drm_mode_destroy_blob` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L1228-L1242>.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(super) struct DrmModeDestroyBlob {
+    blob_id: u32,
 }

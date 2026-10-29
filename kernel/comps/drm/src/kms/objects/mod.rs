@@ -139,8 +139,19 @@ impl KmsDynamicObjects {
         self.inner.lock().framebuffers.remove(&id);
     }
 
+    pub(crate) fn add_property_blob(&self, blob: &Arc<DrmPropertyBlob>) {
+        self.inner
+            .lock()
+            .property_blobs
+            .insert(blob.id(), Arc::downgrade(blob));
+    }
+
     fn lookup_property_blob(&self, id: KmsObjectId) -> Option<Arc<DrmPropertyBlob>> {
         self.inner.lock().property_blobs.get(&id)?.upgrade()
+    }
+
+    fn remove_property_blob(&self, id: KmsObjectId) {
+        self.inner.lock().property_blobs.remove(&id);
     }
 }
 
