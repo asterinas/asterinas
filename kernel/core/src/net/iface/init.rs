@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::slice::Iter;
+use core::{marker::PhantomData, slice::Iter};
 
 use aster_bigtcp::{
     device::{AnyNetworkDevice, WithDevice},
@@ -14,7 +14,7 @@ use crate::{net::iface::sched::PollScheduler, prelude::*};
 
 static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
 
-fn virtio_iface() -> Option<&'static Arc<Iface>> {
+fn ethernet_iface() -> Option<&'static Arc<Iface>> {
     IFACES.get().unwrap().get(1)
 }
 
@@ -29,21 +29,32 @@ pub(in crate::net) fn init() {
     IFACES.call_once(|| {
         let mut ifaces = Vec::with_capacity(2);
 
-        // Initialize loopback before virtio
-        // to ensure the loopback interface index is ahead of virtio.
+        // Initialize loopback before Ethernet
+        // to ensure the loopback interface index is ahead of Ethernet.
         ifaces.push(new_loopback());
 
-        if let Some(iface_virtio) = new_virtio() {
-            ifaces.push(iface_virtio);
+        let ethernet = new_ethernet::<aster_virtio::device::network::device::NetworkDevice>(
+            VIRTIO_DEVICE_NAME,
+        );
+        #[cfg(target_arch = "x86_64")]
+        let ethernet =
+            ethernet.or_else(|| new_ethernet::<aster_ne2k::Ne2k>(aster_ne2k::DEVICE_NAME));
+        if let Some(iface) = ethernet {
+            ifaces.push(iface);
         }
 
         ifaces
     });
 
-    if let Some(iface_virtio) = virtio_iface() {
-        let callback = || iface_virtio.poll();
-        aster_network::register_recv_callback(VIRTIO_DEVICE_NAME, callback);
-        aster_network::register_send_callback(VIRTIO_DEVICE_NAME, callback);
+    if let Some(iface) = ethernet_iface() {
+        let device_name = if aster_network::get_device(VIRTIO_DEVICE_NAME).is_some() {
+            VIRTIO_DEVICE_NAME
+        } else {
+            aster_ne2k::DEVICE_NAME
+        };
+        let callback = || iface.poll();
+        aster_network::register_recv_callback(device_name, callback);
+        aster_network::register_send_callback(device_name, callback);
     }
 
     poll_ifaces();
@@ -96,24 +107,27 @@ fn new_loopback() -> Arc<Iface> {
     ) as Arc<Iface>
 }
 
-fn new_virtio() -> Option<Arc<Iface>> {
+fn new_ethernet<D: AnyNetworkDevice>(device_name: &str) -> Option<Arc<Iface>> {
     use aster_bigtcp::{
         iface::EtherIface,
         wire::{Ipv4Address, Ipv4Cidr},
     };
 
-    const VIRTIO_ADDRESS: Ipv4Address = Ipv4Address::new(10, 0, 2, 15);
-    const VIRTIO_ADDRESS_PREFIX_LEN: u8 = 24; // mask: 255.255.255.0
-    const VIRTIO_GATEWAY: Ipv4Address = Ipv4Address::new(10, 0, 2, 2);
+    const ADDRESS: Ipv4Address = Ipv4Address::new(10, 0, 2, 15);
+    const ADDRESS_PREFIX_LEN: u8 = 24; // mask: 255.255.255.0
+    const GATEWAY: Ipv4Address = Ipv4Address::new(10, 0, 2, 2);
 
-    let virtio_net = aster_network::get_device(VIRTIO_DEVICE_NAME)?;
+    let device = aster_network::get_device(device_name)?;
 
-    let ether_addr = virtio_net.lock().mac_addr();
+    let ether_addr = device.lock().mac_addr();
 
-    struct Wrapper(Arc<SpinLock<dyn AnyNetworkDevice, BottomHalfDisabled>>);
+    struct Wrapper<D>(
+        Arc<SpinLock<dyn AnyNetworkDevice, BottomHalfDisabled>>,
+        PhantomData<D>,
+    );
 
-    impl WithDevice for Wrapper {
-        type Device = aster_virtio::device::network::device::NetworkDevice;
+    impl<D: AnyNetworkDevice> WithDevice for Wrapper<D> {
+        type Device = D;
 
         fn with<F, R>(&self, f: F) -> R
         where
@@ -133,10 +147,10 @@ fn new_virtio() -> Option<Arc<Iface>> {
         | InterfaceFlags::LOWER_UP;
 
     Some(EtherIface::new(
-        Wrapper(virtio_net),
+        Wrapper::<D>(device, PhantomData),
         ether_addr,
-        Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
-        VIRTIO_GATEWAY,
+        Ipv4Cidr::new(ADDRESS, ADDRESS_PREFIX_LEN),
+        GATEWAY,
         InterfaceName::from_str_truncated("eth0"),
         PollScheduler::new(),
         flags,
