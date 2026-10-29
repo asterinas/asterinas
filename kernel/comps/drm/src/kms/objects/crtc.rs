@@ -16,7 +16,7 @@ use crate::kms::{
 /// A CRTC owns the runtime mode and activation state of the pipeline.
 /// Its primary plane is mandatory,
 /// while its cursor plane is optional;
-/// both links are non-owning because the KMS object store owns the topology objects.
+/// both links are weak because the topology owns the planes.
 #[derive(Debug)]
 pub(crate) struct DrmCrtc {
     id: DrmKmsObjectId,
@@ -42,8 +42,8 @@ impl DrmCrtc {
         }
     }
 
-    pub(crate) fn id(&self) -> DrmKmsObjectId {
-        self.id
+    pub(crate) fn id(&self) -> u32 {
+        self.id.value()
     }
 
     pub(crate) fn index(&self) -> DrmKmsObjectIndex {
