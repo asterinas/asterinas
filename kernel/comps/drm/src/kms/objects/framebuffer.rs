@@ -92,8 +92,8 @@ impl DrmFramebuffer {
         })
     }
 
-    pub(crate) fn id(&self) -> DrmKmsObjectId {
-        self.id
+    pub(crate) fn id(&self) -> u32 {
+        self.id.value()
     }
 
     pub fn size(&self) -> DrmSize {
