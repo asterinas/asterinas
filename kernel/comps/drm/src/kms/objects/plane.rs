@@ -7,7 +7,7 @@ use ostd::sync::Mutex;
 use crate::{
     kms::{
         objects::{
-            KmsObjectId, KmsObjectIndex, KmsObjectMask,
+            KmsObjectId, KmsObjectIndex, KmsObjectMask, OwnedKmsObjectId,
             crtc::DrmCrtc,
             framebuffer::DrmFramebuffer,
             property::{DrmPropertyAttachments, in_formats::DrmInFormats},
@@ -23,10 +23,10 @@ use crate::{
 /// Its runtime state selects a framebuffer, source rectangle, destination rectangle, and target CRTC.
 ///
 /// Supported CRTCs are represented by their per-type object indices in a bitmask.
-/// Runtime topology links are non-owning because the KMS object store owns both planes and CRTCs.
+/// Runtime object links are non-owning because the KMS object store owns both planes and CRTCs.
 #[derive(Debug)]
 pub(crate) struct DrmPlane {
-    id: KmsObjectId,
+    id: OwnedKmsObjectId,
     index: KmsObjectIndex,
     config: DrmPlaneConfig,
     state: Mutex<DrmPlaneState>,
@@ -35,7 +35,7 @@ pub(crate) struct DrmPlane {
 
 impl DrmPlane {
     pub(super) fn new(
-        id: KmsObjectId,
+        id: OwnedKmsObjectId,
         index: KmsObjectIndex,
         config: DrmPlaneConfig,
         properties: DrmPropertyAttachments,
@@ -50,7 +50,7 @@ impl DrmPlane {
     }
 
     pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+        self.id.value()
     }
 
     pub(crate) fn index(&self) -> KmsObjectIndex {

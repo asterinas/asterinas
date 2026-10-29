@@ -8,12 +8,12 @@ use crate::kms::{
     display_info::DrmDisplayInfo,
     display_mode::DrmDisplayMode,
     objects::{
-        KmsObjectId, KmsObjectIndex, KmsObjectMask, encoder::DrmEncoder,
+        KmsObjectId, KmsObjectIndex, KmsObjectMask, OwnedKmsObjectId, encoder::DrmEncoder,
         property::DrmPropertyAttachments,
     },
 };
 
-/// A display output endpoint in the DRM KMS topology.
+/// A display output endpoint of a DRM device.
 ///
 /// A connector represents a physical or virtual sink such as HDMI, DisplayPort, or a writeback connector.
 ///
@@ -22,7 +22,7 @@ use crate::kms::{
 /// Each bit in `possible_encoders` corresponds to an index in the encoder registration order.
 #[derive(Debug)]
 pub struct DrmConnector {
-    id: KmsObjectId,
+    id: OwnedKmsObjectId,
     index: KmsObjectIndex,
     config: DrmConnectorConfig,
     state: Mutex<DrmConnectorState>,
@@ -32,7 +32,7 @@ pub struct DrmConnector {
 
 impl DrmConnector {
     pub(super) fn new(
-        id: KmsObjectId,
+        id: OwnedKmsObjectId,
         index: KmsObjectIndex,
         config: DrmConnectorConfig,
         properties: DrmPropertyAttachments,
@@ -48,7 +48,7 @@ impl DrmConnector {
     }
 
     pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+        self.id.value()
     }
 
     pub(crate) fn index(&self) -> KmsObjectIndex {

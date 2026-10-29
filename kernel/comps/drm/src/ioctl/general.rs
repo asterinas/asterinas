@@ -96,7 +96,8 @@ impl DrmFile {
         let kms_ops = device
             .as_kms_ops()
             .ok_or_else(|| errno!(EOPNOTSUPP, "the DRM device lacks modesetting"))?;
-        let mode_config = kms_ops.mode_config();
+
+        let mode_config = kms_ops.kms().mode_config();
 
         let result = match cap {
             DrmGetCapability::DumbBuffer => {

@@ -25,12 +25,12 @@ use aster_drm::{
     device::{DrmDevice, DrmFeatures},
     gem::{DrmGemOps, object::DrmGemObject, shmem::DrmGemShmemBackend},
     kms::{
-        DrmKmsOps, DrmModeConfig,
+        DrmKms, DrmKmsOps, KmsModeConfig,
         display_info::{DrmDisplayInfo, SubpixelOrder},
         display_mode::DrmDisplayMode,
         objects::{
             KmsObjectIndex,
-            builder::DrmKmsObjectStoreBuilder,
+            builder::KmsObjectStoreBuilder,
             connector::{
                 DrmConnector, DrmConnectorProbeState, DrmConnectorStatus, DrmConnectorType,
             },
@@ -78,12 +78,12 @@ struct SimpleDrmDevice {
     boot_framebuffer: Arc<FrameBuffer>,
     features: DrmFeatures,
     pixel_format: DrmPixelFormat,
-    mode_config: DrmModeConfig,
+    kms: DrmKms,
 }
 
 impl SimpleDrmDevice {
     fn new(boot_framebuffer: &Arc<FrameBuffer>) -> Result<Self> {
-        let mut builder = DrmKmsObjectStoreBuilder::default();
+        let mut builder = KmsObjectStoreBuilder::default();
         let pixel_format = match boot_framebuffer.pixel_format() {
             PixelFormat::BgrReserved => DrmPixelFormat::XRGB8888,
             format => {
@@ -109,23 +109,18 @@ impl SimpleDrmDevice {
         builder.attach_encoder_to_crtc(encoder, crtc)?;
         builder.attach_connector_to_encoder(connector, encoder)?;
 
-        let object_store = builder.build()?;
-
         let width = u32::try_from(boot_framebuffer.width())?;
         let height = u32::try_from(boot_framebuffer.height())?;
 
-        let mode_config = DrmModeConfig::new(
-            DrmSize::new(1, 1),
-            DrmSize::new(width, height),
-            object_store,
-        )?
-        .set_shadow_buffer();
+        let mode_config = KmsModeConfig::new(DrmSize::new(1, 1), DrmSize::new(width, height))?
+            .set_shadow_buffer();
+        let kms = DrmKms::new(mode_config, builder.build()?);
 
         Ok(Self {
             boot_framebuffer: boot_framebuffer.clone(),
             features: DrmFeatures::empty(),
             pixel_format,
-            mode_config,
+            kms,
         })
     }
 
@@ -224,8 +219,8 @@ impl DrmGemOps for SimpleDrmDevice {
 }
 
 impl DrmKmsOps for SimpleDrmDevice {
-    fn mode_config(&self) -> &DrmModeConfig {
-        &self.mode_config
+    fn kms(&self) -> &DrmKms {
+        &self.kms
     }
 
     fn probe_connector(&self, _connector: &DrmConnector) -> Result<DrmConnectorProbeState> {

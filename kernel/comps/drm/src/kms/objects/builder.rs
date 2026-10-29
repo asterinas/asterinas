@@ -8,30 +8,29 @@ use alloc::{
 use aster_core::prelude::*;
 
 use crate::kms::{
-    DrmKmsObjectStore,
     objects::{
-        DrmStandardProperty, KmsObjectIndex, KmsObjectMask, MAX_OBJECTS_PER_TYPE,
+        DrmStandardProperty, KmsDynamicObjects, KmsObjectIdAllocator, KmsObjectIndex,
+        KmsObjectMask, KmsObjectStore, KmsStaticObjects, MAX_OBJECTS_PER_TYPE,
         connector::{DrmConnector, DrmConnectorConfig, DrmConnectorType},
         crtc::{DrmCrtc, DrmCrtcConfig},
         encoder::{DrmEncoder, DrmEncoderConfig, DrmEncoderType},
         plane::{DrmPlane, DrmPlaneConfig, DrmPlaneType},
-        property::{DrmPropertyAttachments, KmsObjectPropValue, in_formats::DrmInFormats},
+        property::{
+            DrmPropertyAttachments, KmsObjectPropValue, blob::DrmPropertyBlob,
+            in_formats::DrmInFormats,
+        },
     },
     pixel_format::DrmPixelFormat,
 };
 
-/// A builder for KMS object topology during driver initialization.
+/// A builder for KMS object stores during driver initialization.
 ///
-/// The builder is an init-only helper.
-/// Drivers first declare planes, CRTCs, encoders, and connectors,
-/// then attach their static topology,
-/// and finally call `build()` to validate the topology
-/// and materialize a [`DrmKmsObjectStore`].
+/// Declare objects and their supported connections before calling [`Self::build`].
 ///
 /// Typical usage:
 ///
 /// ```rust,no_run
-/// let mut builder = DrmKmsObjectStoreBuilder::default();
+/// let mut builder = KmsObjectStoreBuilder::default();
 ///
 /// let primary = builder
 ///     .add_plane(DrmPlaneType::Primary, vec![DrmPixelFormat::XRGB8888])
@@ -49,15 +48,9 @@ use crate::kms::{
 /// let object_store = builder.build().unwrap();
 /// ```
 ///
-/// The builder only records static topology.
-/// Dynamic runtime state remains inside each final KMS object state.
-/// Construction indices are confined to the builder and must come from the same builder instance.
+/// Indices passed to the builder must come from the same builder instance.
 ///
-/// Static `possible_*` topology is represented by masks whose bit positions are per-type object indices.
-///
-/// Dynamic runtime state refers to other objects through typed weak references.
-///
-/// Current topology constraints:
+/// Object configuration constraints:
 ///
 /// - Each CRTC must reference its own primary plane.
 /// - The primary plane of a CRTC must have type `Primary`.
@@ -67,14 +60,14 @@ use crate::kms::{
 /// - Encoders may attach to one or more CRTCs.
 /// - Connectors may attach to one or more encoders.
 #[derive(Debug, Default)]
-pub struct DrmKmsObjectStoreBuilder {
+pub struct KmsObjectStoreBuilder {
     planes: Vec<DrmPlaneConfig>,
     crtcs: Vec<CrtcSpec>,
     encoders: Vec<DrmEncoderConfig>,
     connectors: Vec<DrmConnectorConfig>,
 }
 
-impl DrmKmsObjectStoreBuilder {
+impl KmsObjectStoreBuilder {
     pub fn add_plane(
         &mut self,
         type_: DrmPlaneType,
@@ -200,8 +193,8 @@ impl DrmKmsObjectStoreBuilder {
         Ok(())
     }
 
-    pub fn build(self) -> Result<DrmKmsObjectStore> {
-        self.validate_topology()?;
+    pub fn build(self) -> Result<KmsObjectStore> {
+        self.validate_objects()?;
 
         let Self {
             planes: plane_configs,
@@ -210,19 +203,20 @@ impl DrmKmsObjectStoreBuilder {
             connectors: connector_configs,
         } = self;
 
-        let mut object_store = DrmKmsObjectStore::new_empty();
+        let id_allocator = Arc::new(KmsObjectIdAllocator::default());
+        let mut static_objects = KmsStaticObjects::default();
 
         let mut planes = Vec::with_capacity(plane_configs.len());
         for (plane_index, config) in plane_configs.into_iter().enumerate() {
-            let id = object_store.alloc_object_id()?;
-            let properties = build_plane_properties(&mut object_store, &config)?;
+            let id = id_allocator.alloc()?;
+            let properties = build_plane_properties(&id_allocator, &mut static_objects, &config)?;
             let plane = Arc::new(DrmPlane::new(
                 id,
                 next_object_index(plane_index)?,
                 config,
                 properties,
             ));
-            object_store.insert_plane(plane.clone());
+            static_objects.insert_plane(plane.clone());
             planes.push(plane);
         }
 
@@ -237,48 +231,52 @@ impl DrmKmsObjectStoreBuilder {
                 cursor_plane,
             };
 
-            let id = object_store.alloc_object_id()?;
-            let properties = build_crtc_properties(&mut object_store)?;
+            let id = id_allocator.alloc()?;
+            let properties = build_crtc_properties(&id_allocator, &mut static_objects)?;
             let crtc = Arc::new(DrmCrtc::new(
                 id,
                 next_object_index(crtc_index)?,
                 config,
                 properties,
             ));
-            object_store.insert_crtc(crtc);
+            static_objects.insert_crtc(crtc);
         }
 
         for (encoder_index, mut config) in encoder_configs.into_iter().enumerate() {
             // An encoder must always be compatible with itself. `add_encoder()` bounds the
             // index to the clone mask's capacity.
             config.possible_clones.set(encoder_index, true);
-            let id = object_store.alloc_object_id()?;
+            let id = id_allocator.alloc()?;
             let encoder = Arc::new(DrmEncoder::new(
                 id,
                 next_object_index(encoder_index)?,
                 config,
             ));
-            object_store.insert_encoder(encoder);
+            static_objects.insert_encoder(encoder);
         }
 
         for (connector_index, config) in connector_configs.into_iter().enumerate() {
-            let id = object_store.alloc_object_id()?;
-            let properties = build_connector_properties(&mut object_store)?;
+            let id = id_allocator.alloc()?;
+            let properties = build_connector_properties(&id_allocator, &mut static_objects)?;
             let connector = Arc::new(DrmConnector::new(
                 id,
                 next_object_index(connector_index)?,
                 config,
                 properties,
             ));
-            object_store.insert_connector(connector);
+            static_objects.insert_connector(connector);
         }
 
-        Ok(object_store)
+        Ok(KmsObjectStore {
+            static_objects,
+            id_allocator,
+            dynamic_objects: Arc::new(KmsDynamicObjects::default()),
+        })
     }
 
-    fn validate_topology(&self) -> Result<()> {
+    fn validate_objects(&self) -> Result<()> {
         if self.crtcs.is_empty() {
-            return Err(errno!(EINVAL, "the KMS topology has no CRTCs"));
+            return Err(errno!(EINVAL, "the KMS object collection has no CRTCs"));
         }
 
         let mut used_primary_planes = KmsObjectMask::ZERO;
@@ -360,16 +358,21 @@ impl CrtcSpec {
 }
 
 fn build_plane_properties(
-    store: &mut DrmKmsObjectStore,
+    id_allocator: &Arc<KmsObjectIdAllocator>,
+    static_objects: &mut KmsStaticObjects,
     config: &DrmPlaneConfig,
 ) -> Result<DrmPropertyAttachments> {
-    let in_formats = store.create_property_blob(config.in_formats.encode_blob())?;
+    let id = id_allocator.alloc()?;
+    let in_formats = Arc::new(DrmPropertyBlob::new(id, config.in_formats.encode_blob()));
+    let in_formats_blob_id = in_formats.id();
+    static_objects.insert_property_blob(in_formats);
 
     build_object_properties(
-        store,
+        id_allocator,
+        static_objects,
         &[
             (DrmStandardProperty::PlaneType, config.type_ as u64),
-            (DrmStandardProperty::InFormats, in_formats.id() as u64),
+            (DrmStandardProperty::InFormats, in_formats_blob_id as u64),
             (DrmStandardProperty::SrcX, 0),
             (DrmStandardProperty::SrcY, 0),
             (DrmStandardProperty::SrcW, 0),
@@ -384,9 +387,13 @@ fn build_plane_properties(
     )
 }
 
-fn build_crtc_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
+fn build_crtc_properties(
+    id_allocator: &Arc<KmsObjectIdAllocator>,
+    static_objects: &mut KmsStaticObjects,
+) -> Result<DrmPropertyAttachments> {
     build_object_properties(
-        store,
+        id_allocator,
+        static_objects,
         &[
             (DrmStandardProperty::Active, 0),
             // A zero `MODE_ID` means that the CRTC has no active mode.
@@ -395,18 +402,33 @@ fn build_crtc_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAtt
     )
 }
 
-fn build_connector_properties(store: &mut DrmKmsObjectStore) -> Result<DrmPropertyAttachments> {
-    build_object_properties(store, &[(DrmStandardProperty::CrtcId, 0)])
+fn build_connector_properties(
+    id_allocator: &Arc<KmsObjectIdAllocator>,
+    static_objects: &mut KmsStaticObjects,
+) -> Result<DrmPropertyAttachments> {
+    build_object_properties(
+        id_allocator,
+        static_objects,
+        &[(DrmStandardProperty::CrtcId, 0)],
+    )
 }
 
 fn build_object_properties(
-    store: &mut DrmKmsObjectStore,
+    id_allocator: &Arc<KmsObjectIdAllocator>,
+    static_objects: &mut KmsStaticObjects,
     property_values: &[(DrmStandardProperty, KmsObjectPropValue)],
 ) -> Result<DrmPropertyAttachments> {
     let mut object_properties = DrmPropertyAttachments::default();
 
     for &(standard, value) in property_values {
-        let property = store.get_or_create_standard_property(standard)?;
+        let property = if let Some(property) = static_objects.lookup_standard_property(standard) {
+            property.clone()
+        } else {
+            let id = id_allocator.alloc()?;
+            let property = Arc::new(standard.create_property(id));
+            static_objects.insert_standard_property(standard, property.clone());
+            property
+        };
         object_properties.attach(&property, value)?;
     }
 
