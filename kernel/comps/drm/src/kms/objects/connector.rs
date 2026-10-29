@@ -8,7 +8,7 @@ use crate::kms::{
     display_info::DrmDisplayInfo,
     display_mode::DrmDisplayMode,
     objects::{
-        KmsObjectId, KmsObjectIndex, KmsObjectMask, encoder::DrmEncoder,
+        DrmKmsObjectId, DrmKmsObjectIndex, DrmKmsObjectMask, encoder::DrmEncoder,
         property::DrmPropertyAttachments,
     },
 };
@@ -22,8 +22,8 @@ use crate::kms::{
 /// Each bit in `possible_encoders` corresponds to an index in the encoder registration order.
 #[derive(Debug)]
 pub struct DrmConnector {
-    id: KmsObjectId,
-    index: KmsObjectIndex,
+    id: DrmKmsObjectId,
+    index: DrmKmsObjectIndex,
     config: DrmConnectorConfig,
     state: Mutex<DrmConnectorState>,
     probe_state: Mutex<DrmConnectorProbeState>,
@@ -32,8 +32,8 @@ pub struct DrmConnector {
 
 impl DrmConnector {
     pub(super) fn new(
-        id: KmsObjectId,
-        index: KmsObjectIndex,
+        id: DrmKmsObjectId,
+        index: DrmKmsObjectIndex,
         config: DrmConnectorConfig,
         properties: DrmPropertyAttachments,
     ) -> Self {
@@ -47,11 +47,11 @@ impl DrmConnector {
         }
     }
 
-    pub(crate) fn id(&self) -> KmsObjectId {
+    pub(crate) fn id(&self) -> DrmKmsObjectId {
         self.id
     }
 
-    pub(crate) fn index(&self) -> KmsObjectIndex {
+    pub(crate) fn index(&self) -> DrmKmsObjectIndex {
         self.index
     }
 
@@ -79,7 +79,7 @@ impl DrmConnector {
         *self.probe_state.lock() = probe_state;
     }
 
-    pub(crate) fn possible_encoders(&self) -> &KmsObjectMask {
+    pub(crate) fn possible_encoders(&self) -> &DrmKmsObjectMask {
         &self.config.possible_encoders
     }
 
@@ -94,7 +94,7 @@ pub(super) struct DrmConnectorConfig {
     pub type_: DrmConnectorType,
     pub type_index: u32,
     /// Each bit represents an encoder's per-type registration index.
-    pub possible_encoders: KmsObjectMask,
+    pub possible_encoders: DrmKmsObjectMask,
 }
 
 #[derive(Clone, Debug, Default)]

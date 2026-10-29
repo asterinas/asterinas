@@ -7,7 +7,7 @@ use ostd::sync::Mutex;
 use crate::{
     kms::{
         objects::{
-            KmsObjectId, KmsObjectIndex, KmsObjectMask,
+            DrmKmsObjectId, DrmKmsObjectIndex, DrmKmsObjectMask,
             crtc::DrmCrtc,
             framebuffer::DrmFramebuffer,
             property::{DrmPropertyAttachments, in_formats::DrmInFormats},
@@ -26,8 +26,8 @@ use crate::{
 /// Runtime topology links are non-owning because the KMS object store owns both planes and CRTCs.
 #[derive(Debug)]
 pub(crate) struct DrmPlane {
-    id: KmsObjectId,
-    index: KmsObjectIndex,
+    id: DrmKmsObjectId,
+    index: DrmKmsObjectIndex,
     config: DrmPlaneConfig,
     state: Mutex<DrmPlaneState>,
     properties: DrmPropertyAttachments,
@@ -35,8 +35,8 @@ pub(crate) struct DrmPlane {
 
 impl DrmPlane {
     pub(super) fn new(
-        id: KmsObjectId,
-        index: KmsObjectIndex,
+        id: DrmKmsObjectId,
+        index: DrmKmsObjectIndex,
         config: DrmPlaneConfig,
         properties: DrmPropertyAttachments,
     ) -> Self {
@@ -49,11 +49,11 @@ impl DrmPlane {
         }
     }
 
-    pub(crate) fn id(&self) -> KmsObjectId {
+    pub(crate) fn id(&self) -> DrmKmsObjectId {
         self.id
     }
 
-    pub(crate) fn index(&self) -> KmsObjectIndex {
+    pub(crate) fn index(&self) -> DrmKmsObjectIndex {
         self.index
     }
 
@@ -69,7 +69,7 @@ impl DrmPlane {
         *self.state.lock() = state;
     }
 
-    pub(crate) fn possible_crtcs(&self) -> &KmsObjectMask {
+    pub(crate) fn possible_crtcs(&self) -> &DrmKmsObjectMask {
         &self.config.possible_crtcs
     }
 
@@ -87,7 +87,7 @@ impl DrmPlane {
 pub(super) struct DrmPlaneConfig {
     pub type_: DrmPlaneType,
     /// Each bit represents a CRTC's per-type registration index.
-    pub possible_crtcs: KmsObjectMask,
+    pub possible_crtcs: DrmKmsObjectMask,
     pub in_formats: DrmInFormats,
 }
 
