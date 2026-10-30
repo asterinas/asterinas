@@ -724,6 +724,12 @@ impl DirDentry<'_> {
         remove_child_fn: impl FnOnce(&dyn Inode, &Dentry) -> Result<()>,
     ) -> Result<Arc<Dentry>> {
         let dir_inode = self.inode();
+
+        let max_namelen = dir_inode.fs().sb().namelen;
+        if name.len() > max_namelen {
+            return_errno_with_message!(Errno::ENAMETOOLONG, "the path name is too long");
+        }
+
         let mut children = self.children.upread();
         let cached_child = match children.find(name) {
             None => None,
