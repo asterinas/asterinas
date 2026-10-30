@@ -16,6 +16,7 @@ SUBDIRS := \
 	statx \
 	symlink \
 	sync \
+	sysfs \
 	tmpfile \
 	utimensat \
 

@@ -64,7 +64,7 @@ impl VirtioMsixManager {
         Some((vector, self.msix.irq_mut(vector as usize).unwrap()))
     }
 
-    /// Returns true if MSI-X is enabled.
+    /// Returns whether MSI-X is enabled.
     pub(super) fn is_enabled(&self) -> bool {
         self.msix.is_enabled()
     }

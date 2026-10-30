@@ -106,6 +106,10 @@ impl Driver<ToyBus> for ToyDiskDriver {
     fn dev_attrs(&self) -> &'static [Attr<BusDevice<ToyBus>>] {
         BOUND_BY
     }
+
+    fn suppress_bind_attrs(&self) -> bool {
+        false
+    }
 }
 
 /// A toy block class.

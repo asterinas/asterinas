@@ -7,18 +7,28 @@ mod driver;
 pub(crate) mod legacy;
 pub(super) mod msix;
 
-use alloc::sync::Arc;
+use alloc::{boxed::Box, collections::VecDeque};
 
 use aster_pci::PCI_BUS;
-use spin::Once;
+use ostd::sync::SpinLock;
 
 use self::driver::VirtioPciDriver;
+use crate::transport::VirtioTransport;
 
-pub(crate) static VIRTIO_PCI_DRIVER: Once<Arc<VirtioPciDriver>> = Once::new();
+static TRANSPORTS: SpinLock<VecDeque<Box<dyn VirtioTransport>>> = SpinLock::new(VecDeque::new());
+
+fn push_device_transport(transport: Box<dyn VirtioTransport>) {
+    TRANSPORTS.lock().push_back(transport);
+}
+
+pub(crate) fn pop_device_transport() -> Option<Box<dyn VirtioTransport>> {
+    TRANSPORTS.lock().pop_front()
+}
 
 pub(super) fn virtio_pci_init() {
-    VIRTIO_PCI_DRIVER.call_once(|| Arc::new(VirtioPciDriver::new()));
     PCI_BUS
-        .lock()
-        .register_driver(VIRTIO_PCI_DRIVER.get().unwrap().clone());
+        .get()
+        .unwrap()
+        .register_driver(Box::new(VirtioPciDriver))
+        .unwrap();
 }
