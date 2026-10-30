@@ -806,7 +806,9 @@ impl PageSelection {
             // returning from `flush()`. But we don't know whether this page is being writing back
             // because `try_lock_guard()` fails. So let's be conservative and collect this page.
             PageSelection::Flush => true,
-            PageSelection::Evict => state.is_up_to_date(),
+            // Include uninitialized pages because initialization may be in progress. The eviction
+            // path waits for the page lock and rechecks the state, evicting only up-to-date pages.
+            PageSelection::Evict => state.is_up_to_date() || state.is_uninit(),
         }
     }
 }

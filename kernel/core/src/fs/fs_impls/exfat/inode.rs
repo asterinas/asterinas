@@ -828,6 +828,12 @@ impl ExfatInode {
             let mut inner = inner.upgrade();
             inner.update_atime_mtime_and_ctime()?;
             inner.size = new_size;
+
+            // Evict pages that may have been brought in by concurrent readahead.
+            // Downgrade the lock to avoid deadlock with readahead, which may hold page locks
+            // while acquiring an inode read lock in `submit_read_bio()`.
+            let inner = inner.downgrade();
+            inner.page_cache.evict_range(start..end_offset)?;
         }
 
         let inner = self.inner.read();
@@ -837,9 +843,6 @@ impl ExfatInode {
             let fs_guard = fs.lock();
             inner.sync_metadata(&fs_guard)?;
         }
-
-        // TODO: Do `evict_range` again after write to prevent stale data from being loaded
-        // into page cache during asynchronous read-ahead.
 
         Ok(write_len)
     }

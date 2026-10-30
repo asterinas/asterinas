@@ -315,7 +315,6 @@ impl PageCache {
     /// pages are left in place. This is useful for invalidating cached data that
     /// is no longer needed and can be re-read from the backend if necessary
     /// (e.g., before direct I/O operations).
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(crate) fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let Some(vmo) = self.0.as_backed_vmo() else {
             return Ok(());
