@@ -7,6 +7,8 @@
 
 #include "../../common/test.h"
 
+#define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
+
 static int get_dev_id(const char *path, dev_t *dev_id)
 {
 	struct stat st;
@@ -34,6 +36,9 @@ FN_TEST(pseudo_fs_dev_id_major_is_zero)
 
 	TEST_RES(get_dev_id("/sys/kernel/config", &dev_id), major(dev_id) == 0);
 
+	TEST_RES(get_dev_id("/sys/kernel/security", &dev_id),
+		 major(dev_id) == 0);
+
 	TEST_RES(get_dev_id("/dev", &dev_id), major(dev_id) == 0);
 }
 END_TEST()
@@ -52,24 +57,33 @@ FN_TEST(pseudo_fs_dev_id_minor_is_positive)
 
 	TEST_RES(get_dev_id("/sys/kernel/config", &dev_id), minor(dev_id) > 0);
 
+	TEST_RES(get_dev_id("/sys/kernel/security", &dev_id),
+		 minor(dev_id) > 0);
+
 	TEST_RES(get_dev_id("/dev", &dev_id), minor(dev_id) > 0);
 }
 END_TEST()
 
 FN_TEST(pseudo_fs_dev_id_unique_per_mount)
 {
-	dev_t dev_ids[6];
+	const char *const paths[] = {
+		"/proc",
+		"/sys",
+		"/dev/pts",
+		"/sys/fs/cgroup",
+		"/sys/kernel/config",
+		"/sys/kernel/security",
+		"/dev",
+	};
+	dev_t dev_ids[ARRAY_SIZE(paths)];
 
-	TEST_SUCC(get_dev_id("/proc", &dev_ids[0]));
-	TEST_SUCC(get_dev_id("/sys", &dev_ids[1]));
-	TEST_SUCC(get_dev_id("/dev/pts", &dev_ids[2]));
-	TEST_SUCC(get_dev_id("/sys/fs/cgroup", &dev_ids[3]));
-	TEST_SUCC(get_dev_id("/sys/kernel/config", &dev_ids[4]));
-	TEST_SUCC(get_dev_id("/dev", &dev_ids[5]));
+	for (size_t i = 0; i < ARRAY_SIZE(paths); i++) {
+		TEST_SUCC(get_dev_id(paths[i], &dev_ids[i]));
+	}
 
 	// Test that each pseudo filesystem has a unique device ID
-	for (int i = 0; i < 6; i++) {
-		for (int j = i + 1; j < 6; j++) {
+	for (size_t i = 0; i < ARRAY_SIZE(dev_ids); i++) {
+		for (size_t j = i + 1; j < ARRAY_SIZE(dev_ids); j++) {
 			TEST_RES(dev_ids[i] != dev_ids[j], _ret);
 		}
 	}
