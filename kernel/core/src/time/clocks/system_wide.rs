@@ -3,14 +3,12 @@
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use aster_time::read_monotonic_time;
+use aster_time::{read_monotonic_time, read_start_time, read_system_time};
 use ostd::{cpu::PinCurrentCpu, cpu_local, sync::SpinLock, task::disable_preempt, timer::Jiffies};
 use paste::paste;
 use spin::Once;
 
-use crate::time::{
-    self, Clock, SystemTime, system_time::START_TIME_AS_DURATION, timer::TimerManager,
-};
+use crate::time::{self, Clock, timer::TimerManager};
 
 /// The Clock that reads the jiffies, and turn the counter into `Duration`.
 pub(crate) struct JiffiesClock {
@@ -151,9 +149,7 @@ impl Clock for JiffiesClock {
 
 impl Clock for RealTimeClock {
     fn read_time(&self) -> Duration {
-        SystemTime::now()
-            .duration_since(&SystemTime::UNIX_EPOCH)
-            .unwrap()
+        read_system_time().since_epoch()
     }
 }
 
@@ -171,7 +167,7 @@ impl Clock for RealTimeCoarseClock {
 
 impl Clock for MonotonicCoarseClock {
     fn read_time(&self) -> Duration {
-        RealTimeCoarseClock::get().read_time() - *START_TIME_AS_DURATION.get().unwrap()
+        RealTimeCoarseClock::get().read_time() - read_start_time().since_epoch()
     }
 }
 
