@@ -27,6 +27,7 @@ use crate::{
         ioctl::RawIoctl,
         ring_buffer::{RbConsumer, RbProducer, RingBuffer},
     },
+    vm::page_cache::Readahead,
 };
 
 pub(super) const EVDEV_BUFFER_SIZE: usize = 64;
@@ -366,6 +367,7 @@ impl FileOps for EvdevFile {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         let requested_bytes = writer.avail();
         let max_events = requested_bytes / size_of::<EvdevEvent>();

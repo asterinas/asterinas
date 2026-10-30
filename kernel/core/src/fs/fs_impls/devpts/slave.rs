@@ -18,6 +18,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    vm::page_cache::Readahead,
 };
 
 /// Same major number with Linux, the minor number is the index of slave.
@@ -56,6 +57,7 @@ impl FileOps for PtySlaveInode {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         self.device.read(writer, status_flags)
     }

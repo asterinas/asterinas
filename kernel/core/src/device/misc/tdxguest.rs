@@ -65,6 +65,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::RawIoctl,
+    vm::page_cache::Readahead,
 };
 
 const TDX_GUEST_MINOR: u32 = 0x7b;
@@ -162,6 +163,7 @@ impl FileOps for TdxGuestFile {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "the file is not valid for reading")
     }

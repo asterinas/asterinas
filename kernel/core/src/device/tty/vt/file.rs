@@ -20,6 +20,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::RawIoctl,
+    vm::page_cache::Readahead,
 };
 
 /// Open file counter of a VT.
@@ -90,6 +91,7 @@ impl FileOps for VtFile {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         self.0.read(writer, status_flags)
     }

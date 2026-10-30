@@ -24,7 +24,10 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::{page_cache::Vmo, perms::VmPerms},
+    vm::{
+        page_cache::{Readahead, Vmo},
+        perms::VmPerms,
+    },
 };
 
 pub(super) fn init() {
@@ -102,6 +105,7 @@ impl FileOps for MemfdInode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        readahead: Option<&Readahead>,
     ) -> Result<usize>;
 
     fn write_at(

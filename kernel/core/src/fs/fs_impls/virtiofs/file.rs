@@ -18,7 +18,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     thread::work_queue::{self, WorkPriority},
-    vm::vmar::FileMmapRequest,
+    vm::{page_cache::Readahead, vmar::FileMmapRequest},
 };
 
 /// A per-open file object backed by a FUSE file handle.
@@ -93,13 +93,15 @@ impl FileOps for VirtioFsFile {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        readahead: Option<&Readahead>,
     ) -> Result<usize> {
         let fh = self.open_handle.fh();
         let file_flags = self.open_handle.access_mode() as u32 | status_flags.bits();
 
         if self.cache_policy == CachePolicy::Cached && !status_flags.contains(StatusFlags::O_DIRECT)
         {
-            self.inode.cached_read_at(offset, writer, fh, file_flags)
+            self.inode
+                .cached_read_at(offset, writer, fh, file_flags, readahead)
         } else {
             self.inode.direct_read_at(offset, writer, fh, file_flags)
         }
@@ -203,6 +205,10 @@ impl PerOpenFileOps for VirtioFsFile {
         )?;
 
         Ok(())
+    }
+
+    fn supports_readahead(&self) -> bool {
+        self.cache_policy == CachePolicy::Cached
     }
 }
 

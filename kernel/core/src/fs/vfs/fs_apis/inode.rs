@@ -30,7 +30,7 @@ use crate::{
     },
     security::lsm::hooks as lsm_hooks,
     time::clocks::RealTimeCoarseClock,
-    vm::page_cache::Vmo,
+    vm::page_cache::{Readahead, Vmo},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -339,11 +339,15 @@ bitflags! {
 /// the per-`open()` object implements this trait through [`PerOpenFileOps`].
 pub trait FileOps {
     /// Reads data from the file into the given `VmWriter`.
+    ///
+    /// If `readahead` is provided, it supplies the open file's readahead state for
+    /// buffered I/O.
     fn read_at(
         &self,
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        readahead: Option<&Readahead>,
     ) -> Result<usize>;
 
     /// Writes data from the given `VmReader` into the file.
@@ -721,7 +725,7 @@ impl dyn Inode {
     #[cfg_attr(not(ktest), expect(dead_code))]
     pub(crate) fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
         let mut writer = VmWriter::from(buf).to_fallible();
-        self.read_at(offset, &mut writer, StatusFlags::empty())
+        self.read_at(offset, &mut writer, StatusFlags::empty(), None)
     }
 
     #[cfg_attr(not(ktest), expect(dead_code))]

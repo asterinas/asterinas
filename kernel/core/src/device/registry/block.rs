@@ -22,6 +22,7 @@ use crate::{
     process::signal::{PollHandle, Pollable},
     thread::kernel_thread::ThreadOptions,
     util::ioctl::RawIoctl,
+    vm::page_cache::Readahead,
 };
 
 pub(super) fn init_in_first_kthread() {
@@ -144,6 +145,7 @@ impl FileOps for OpenBlockFile {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         let total = writer.avail();
         if total == 0 {

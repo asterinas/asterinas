@@ -21,6 +21,7 @@ use crate::{
         signal::{PollHandle, Pollable},
     },
     util::ioctl::RawIoctl,
+    vm::page_cache::Readahead,
 };
 
 const IO_CAPACITY: usize = 4096;
@@ -98,6 +99,7 @@ impl FileOps for PtyMaster {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         // TODO: Add support for timeout.
         let mut buf = vec![0u8; writer.avail().min(IO_CAPACITY)];

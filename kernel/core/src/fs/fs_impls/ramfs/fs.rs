@@ -37,7 +37,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
-    vm::page_cache::{PageCache, Vmo},
+    vm::page_cache::{PageCache, Readahead, Vmo},
 };
 
 /// A volatile file system whose data and metadata exists only in memory.
@@ -1030,6 +1030,7 @@ impl FileOps for RamInode {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         let read_len = match &self.inner {
             Inner::File(page_cache) => {

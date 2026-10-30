@@ -14,6 +14,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    vm::page_cache::Readahead,
 };
 
 /// A per-open directory object backed by a FUSE open handle.
@@ -43,6 +44,7 @@ impl FileOps for VirtioFsDir {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
     }

@@ -51,6 +51,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
+    vm::page_cache::Readahead,
 };
 
 mod allocator;
@@ -244,7 +245,8 @@ impl FileOps for PseudoInode {
         &self,
         _offset: usize,
         _writer: &mut VmWriter,
-        _status: StatusFlags,
+        _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         return_errno_with_message!(
             Errno::ESPIPE,

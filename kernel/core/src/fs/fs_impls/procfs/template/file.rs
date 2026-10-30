@@ -20,6 +20,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid},
     thread::Thread,
+    vm::page_cache::Readahead,
 };
 
 pub(in procfs) struct ProcFile<F: ProcFileOps> {
@@ -57,6 +58,7 @@ impl<F: ProcFileOps + 'static> FileOps for ProcFile<F> {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         self.inner.read_at(offset, writer)
     }

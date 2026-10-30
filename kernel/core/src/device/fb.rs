@@ -20,7 +20,10 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::RawIoctl,
-    vm::vmar::{FileMmapRequest, MapHandle},
+    vm::{
+        page_cache::Readahead,
+        vmar::{FileMmapRequest, MapHandle},
+    },
 };
 
 #[derive(Debug)]
@@ -416,6 +419,7 @@ impl FileOps for FbHandle {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         if !writer.has_avail() {
             return Ok(0);

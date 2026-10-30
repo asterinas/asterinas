@@ -18,6 +18,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    vm::page_cache::Readahead,
 };
 
 /// Creates a pair of connected pipe file handles with the default capacity.
@@ -65,7 +66,8 @@ impl FileOps for AnonPipeInode {
         &self,
         _offset: usize,
         _writer: &mut VmWriter,
-        _status: StatusFlags,
+        _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize>;
     fn write_at(
         &self,

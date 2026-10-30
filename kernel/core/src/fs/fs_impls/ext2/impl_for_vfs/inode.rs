@@ -30,7 +30,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::Vmo,
+    vm::page_cache::{Readahead, Vmo},
 };
 
 impl FileOps for Ext2Inode {
@@ -39,11 +39,12 @@ impl FileOps for Ext2Inode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        readahead: Option<&Readahead>,
     ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_DIRECT) {
             self.read_direct_at(offset, writer)
         } else {
-            self.read_at(offset, writer)
+            self.read_at(offset, writer, readahead)
         }
     }
 

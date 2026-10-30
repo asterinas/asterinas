@@ -26,6 +26,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid},
     thread::Thread,
+    vm::page_cache::Readahead,
 };
 
 /// Wraps directory-specific procfs operations as a VFS inode.
@@ -101,6 +102,7 @@ impl<D: ProcDirOps + 'static> FileOps for ProcDir<D> {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }

@@ -15,6 +15,7 @@ use crate::{
         signal::{PollHandle, Pollable},
     },
     thread::Thread,
+    vm::page_cache::Readahead,
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/mem` (and also `/proc/[pid]/mem`).
@@ -75,6 +76,7 @@ impl FileOps for MemFileHandle {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         let Some(process) = self.0.process() else {
             // The process does not exist.
