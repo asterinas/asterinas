@@ -126,6 +126,6 @@ bitflags::bitflags! {
         /// The framebuffer contains interlaced image data.
         const INTERLACED = 1 << 0;
         /// The framebuffer uses an explicitly specified format modifier.
-        const MODIFIERS = 1 << 1;
+        const MODIFIERS  = 1 << 1;
     }
 }

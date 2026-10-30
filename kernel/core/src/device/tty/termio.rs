@@ -22,16 +22,16 @@ pub(crate) struct CInputFlags(u32);
 bitflags! {
     impl CInputFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h
-        const IGNBRK  = 0x001;			/* Ignore break condition */
-        const BRKINT  = 0x002;			/* Signal interrupt on break */
-        const IGNPAR  = 0x004;			/* Ignore characters with parity errors */
-        const PARMRK  = 0x008;			/* Mark parity and framing errors */
-        const INPCK   = 0x010;			/* Enable input parity check */
-        const ISTRIP  = 0x020;			/* Strip 8th bit off characters */
-        const INLCR   = 0x040;			/* Map NL to CR on input */
-        const IGNCR   = 0x080;			/* Ignore CR */
-        const ICRNL   = 0x100;			/* Map CR to NL on input */
-        const IXANY   = 0x800;			/* Any character will restart after stop */
+        const IGNBRK  = 0x001; /* Ignore break condition */
+        const BRKINT  = 0x002; /* Signal interrupt on break */
+        const IGNPAR  = 0x004; /* Ignore characters with parity errors */
+        const PARMRK  = 0x008; /* Mark parity and framing errors */
+        const INPCK   = 0x010; /* Enable input parity check */
+        const ISTRIP  = 0x020; /* Strip 8th bit off characters */
+        const INLCR   = 0x040; /* Map NL to CR on input */
+        const IGNCR   = 0x080; /* Ignore CR */
+        const ICRNL   = 0x100; /* Map CR to NL on input */
+        const IXANY   = 0x800; /* Any character will restart after stop */
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h
         const IUCLC   = 0x0200;
         const IXON    = 0x0400;
@@ -41,7 +41,7 @@ bitflags! {
 
         // This type accepts all bit patterns,
         // although only some flags are recognized.
-        const _ = !0;
+        const _       = !0;
     }
 }
 
@@ -59,7 +59,7 @@ pub(super) struct COutputFlags(u32);
 bitflags! {
     impl COutputFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h#L21
-        const OPOST  = 1 << 0;			/* Perform output processing */
+        const OPOST  = 1 << 0; /* Perform output processing */
         const OLCUC  = 1 << 1;
         const ONLCR  = 1 << 2;
         const OCRNL  = 1 << 3;
@@ -70,7 +70,7 @@ bitflags! {
 
         // This type accepts all bit patterns,
         // although only some flags are recognized.
-        const _ = !0;
+        const _      = !0;
     }
 }
 
@@ -253,7 +253,7 @@ bitflags! {
 
         // This type accepts all bit patterns,
         // although only some flags are recognized.
-        const _ = !0;
+        const _       = !0;
     }
 }
 

@@ -226,30 +226,30 @@ bitflags! {
     /// only the events they care about.
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct FsEvents: u32 {
-        const ACCESS          = 0x00000001; // File was accessed
-        const MODIFY          = 0x00000002; // File was modified
-        const ATTRIB          = 0x00000004; // Metadata changed
-        const CLOSE_WRITE     = 0x00000008; // Writable file was closed
-        const CLOSE_NOWRITE   = 0x00000010; // Unwritable file closed
-        const OPEN            = 0x00000020; // File was opened
-        const MOVED_FROM      = 0x00000040; // File was moved from X
-        const MOVED_TO        = 0x00000080; // File was moved to Y
-        const CREATE          = 0x00000100; // Subfile was created
-        const DELETE          = 0x00000200; // Subfile was deleted
-        const DELETE_SELF     = 0x00000400; // Self was deleted
-        const MOVE_SELF       = 0x00000800; // Self was moved
-        const OPEN_EXEC       = 0x00001000; // File was opened for exec
-        const UNMOUNT         = 0x00002000; // Inode on umount fs
-        const Q_OVERFLOW      = 0x00004000; // Event queued overflowed
-        const ERROR           = 0x00008000; // Filesystem Error (fanotify)
-        const IN_IGNORED      = 0x00008000; // Last inotify event here (inotify)
-        const OPEN_PERM       = 0x00010000; // Open event in a permission hook
-        const ACCESS_PERM     = 0x00020000; // Access event in a permissions hook
-        const OPEN_EXEC_PERM  = 0x00040000; // Open/exec event in a permission hook
-        const EVENT_ON_CHILD  = 0x08000000; // Set on inode mark that cares about things that happen to its children.
-        const RENAME          = 0x10000000; // File was renamed
-        const DN_MULTISHOT    = 0x20000000; // dnotify multishot
-        const ISDIR           = 0x40000000; // Event occurred against dir
+        const ACCESS         = 0x00000001; // File was accessed
+        const MODIFY         = 0x00000002; // File was modified
+        const ATTRIB         = 0x00000004; // Metadata changed
+        const CLOSE_WRITE    = 0x00000008; // Writable file was closed
+        const CLOSE_NOWRITE  = 0x00000010; // Unwritable file closed
+        const OPEN           = 0x00000020; // File was opened
+        const MOVED_FROM     = 0x00000040; // File was moved from X
+        const MOVED_TO       = 0x00000080; // File was moved to Y
+        const CREATE         = 0x00000100; // Subfile was created
+        const DELETE         = 0x00000200; // Subfile was deleted
+        const DELETE_SELF    = 0x00000400; // Self was deleted
+        const MOVE_SELF      = 0x00000800; // Self was moved
+        const OPEN_EXEC      = 0x00001000; // File was opened for exec
+        const UNMOUNT        = 0x00002000; // Inode on umount fs
+        const Q_OVERFLOW     = 0x00004000; // Event queued overflowed
+        const ERROR          = 0x00008000; // Filesystem Error (fanotify)
+        const IN_IGNORED     = 0x00008000; // Last inotify event here (inotify)
+        const OPEN_PERM      = 0x00010000; // Open event in a permission hook
+        const ACCESS_PERM    = 0x00020000; // Access event in a permissions hook
+        const OPEN_EXEC_PERM = 0x00040000; // Open/exec event in a permission hook
+        const EVENT_ON_CHILD = 0x08000000; // Set on inode mark that cares about things that happen to its children.
+        const RENAME         = 0x10000000; // File was renamed
+        const DN_MULTISHOT   = 0x20000000; // dnotify multishot
+        const ISDIR          = 0x40000000; // Event occurred against dir
     }
 }
 

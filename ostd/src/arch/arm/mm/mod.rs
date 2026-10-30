@@ -33,38 +33,38 @@ bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame or page table is valid.
-        const VALID =           1 << 0;
+        const VALID           = 1 << 0;
         /// Specifies whether the mapping does not point to a huge frame; this bit must also be set
         /// for all the valid last-level entries.
-        const NON_HUGE =        1 << 1;
+        const NON_HUGE        = 1 << 1;
         /// Controls whether accesses from userspace (i.e. EL0) are permitted.
-        const USER =            1 << 6;
+        const USER            = 1 << 6;
         /// Controls whether writes to the mapped frames are disallowed.
-        const NO_WRITE =        1 << 7;
+        const NO_WRITE        = 1 << 7;
         /// Whether the memory area represented by this entry is accessed.
-        const ACCESSED =        1 << 10;
+        const ACCESSED        = 1 << 10;
         /// Indicates that the mapping isn't present in all address spaces, so it is flushed from
         /// the TLB on an address space switch.
-        const NON_GLOBAL =      1 << 11;
+        const NON_GLOBAL      = 1 << 11;
 
         /// Whether the memory area represented by this entry is modified.
-        const DIRTY =           1 << 51;
+        const DIRTY           = 1 << 51;
         /// Forbid execute codes on the page from kernel space (i.e. EL1).
         const NO_EXECUTE_KERN = 1 << 53;
         /// Forbid execute codes on the page from userspace (i.e. EL0).
         const NO_EXECUTE_USER = 1 << 54;
 
         /// Ignored by the hardware. Free to use.
-        const HIGH_IGN1 =       1 << 55;
+        const HIGH_IGN1       = 1 << 55;
         /// Ignored by the hardware. Free to use.
-        const HIGH_IGN2 =       1 << 56;
+        const HIGH_IGN2       = 1 << 56;
 
         // Be careful that the following fields contain multiple bits!
         //
         /// Bit 2-4: Device memory, nGnRnE.
-        const ATTR_DEVICE =     1 << 2;
+        const ATTR_DEVICE     = 1 << 2;
         /// Bit 8-9: Inner shareability (effective only for Normal memory).
-        const SH_INNER =        3 << 8;
+        const SH_INNER        = 3 << 8;
     }
 }
 

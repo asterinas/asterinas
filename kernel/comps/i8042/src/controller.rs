@@ -376,15 +376,15 @@ bitflags! {
     /// Reference: <https://wiki.osdev.org/I8042_PS/2_Controller#PS/2_Controller_Configuration_Byte>.
     struct Configuration: u8 {
         /// First PS/2 port interrupt (1 = enabled, 0 = disabled)
-        const FIRST_PORT_INTERRUPT_ENABLED = 1 << 0;
+        const FIRST_PORT_INTERRUPT_ENABLED   = 1 << 0;
         /// Second PS/2 port interrupt (1 = enabled, 0 = disabled, only if 2 PS/2 ports supported)
-        const SECOND_PORT_INTERRUPT_ENABLED = 1 << 1;
+        const SECOND_PORT_INTERRUPT_ENABLED  = 1 << 1;
         /// System Flag (1 = system passed POST, 0 = your OS shouldn't be running)
-        const SYSTEM_POST_PASSED = 1 << 2;
+        const SYSTEM_POST_PASSED             = 1 << 2;
         /// First PS/2 port clock (1 = disabled, 0 = enabled)
-        const FIRST_PORT_CLOCK_DISABLED = 1 << 4;
+        const FIRST_PORT_CLOCK_DISABLED      = 1 << 4;
         /// Second PS/2 port clock (1 = disabled, 0 = enabled, only if 2 PS/2 ports supported)
-        const SECOND_PORT_CLOCK_DISABLED = 1 << 5;
+        const SECOND_PORT_CLOCK_DISABLED     = 1 << 5;
         /// First PS/2 port translation (1 = enabled, 0 = disabled)
         const FIRST_PORT_TRANSLATION_ENABLED = 1 << 6;
     }
@@ -400,18 +400,18 @@ bitflags! {
         const OUTPUT_BUFFER_IS_FULL = 1 << 0;
         /// Input buffer status (0 = empty, 1 = full)
         /// Must be clear before attempting to write data to IO port 0x60 or IO port 0x64.
-        const INPUT_BUFFER_IS_FULL = 1 << 1;
+        const INPUT_BUFFER_IS_FULL  = 1 << 1;
         /// System Flag
         /// Meant to be cleared on reset and set by firmware (via. PS/2 Controller Configuration Byte)
         /// if the system passes self tests (POST).
-        const SYSTEM_FLAG = 1 << 2;
+        const SYSTEM_FLAG           = 1 << 2;
         /// Command or data (0 = data, 1 = command)
         /// Data written to input buffer is data for PS/2 device or command for controller.
-        const IS_COMMAND = 1 << 3;
+        const IS_COMMAND            = 1 << 3;
         /// Time-out error (0 = no error, 1 = time-out error)
-        const TIME_OUT_ERROR = 1 << 6;
+        const TIME_OUT_ERROR        = 1 << 6;
         /// Parity error (0 = no error, 1 = parity error)
-        const PARITY_ERROR = 1 << 7;
+        const PARITY_ERROR          = 1 << 7;
     }
 }
 

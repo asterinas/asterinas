@@ -99,25 +99,25 @@ bitflags! {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct PageFlags: u8 {
         /// Readable.
-        const R = 0b00000001;
+        const R        = 0b00000001;
         /// Writable.
-        const W = 0b00000010;
+        const W        = 0b00000010;
         /// Executable.
-        const X = 0b00000100;
+        const X        = 0b00000100;
         /// Readable + writable.
-        const RW = Self::R.bits() | Self::W.bits();
+        const RW       = Self::R.bits() | Self::W.bits();
         /// Readable + executable.
-        const RX = Self::R.bits() | Self::X.bits();
+        const RX       = Self::R.bits() | Self::X.bits();
         /// Readable + writable + executable.
-        const RWX = Self::R.bits() | Self::W.bits() | Self::X.bits();
+        const RWX      = Self::R.bits() | Self::W.bits() | Self::X.bits();
 
         /// Has the memory page been read or written.
-        const ACCESSED  = 0b00001000;
+        const ACCESSED = 0b00001000;
         /// Has the memory page been written.
-        const DIRTY     = 0b00010000;
+        const DIRTY    = 0b00010000;
 
         /// The second bit available for software use.
-        const AVAIL2    = 0b10000000;
+        const AVAIL2   = 0b10000000;
     }
 }
 
@@ -126,19 +126,19 @@ bitflags! {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub(crate) struct PrivilegedPageFlags: u8 {
         /// Accessible from user mode.
-        const USER      = 0b00000001;
+        const USER   = 0b00000001;
         /// Global page that won't be evicted from TLB with normal TLB flush.
-        const GLOBAL    = 0b00000010;
+        const GLOBAL = 0b00000010;
 
         /// The first bit available for software use.
         /// This flag is reserved for OSTD to distinguish between tracked
         /// mappings and untracked mappings in the page table.
-        const AVAIL1    = 0b01000000;
+        const AVAIL1 = 0b01000000;
 
         /// (TEE only) If the page is shared with the host.
         /// Otherwise the page is ensured confidential and not visible outside the guest.
         #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
-        const SHARED    = 0b10000000;
+        const SHARED = 0b10000000;
     }
 }
 
@@ -147,8 +147,8 @@ bitflags! {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub(crate) struct PageTableFlags: u8 {
         /// The first bit available for software use.
-        const AVAIL1    = 0b01000000;
+        const AVAIL1 = 0b01000000;
         /// The second bit available for software use.
-        const AVAIL2    = 0b10000000;
+        const AVAIL2 = 0b10000000;
     }
 }
