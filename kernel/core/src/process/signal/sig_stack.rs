@@ -27,7 +27,7 @@ pub(crate) enum SigStackStatus {
 }
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Clone, Copy, Debug, Default)]
     pub(crate) struct SigStackFlags: u32 {
         const SS_ONSTACK = 1 << 0;
         const SS_DISABLE = 1 << 1;
@@ -97,7 +97,7 @@ impl From<&SigStack> for stack_t {
     fn from(value: &SigStack) -> Self {
         Self {
             ss_sp: value.base,
-            ss_flags: value.flags.bits as _,
+            ss_flags: value.flags.bits() as _,
             ss_size: value.size,
             ..Default::default()
         }

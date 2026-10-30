@@ -37,8 +37,7 @@ impl PagingConstsTrait for PagingConsts {
 
 bitflags::bitflags! {
     /// Possible flags for a page table entry.
-    #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame or page table is loaded in memory.
         const PRESENT =         1 << 0;

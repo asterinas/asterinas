@@ -9,7 +9,8 @@ use ostd_pod::FromZeros;
 use crate::transport::{ConfigManager, VirtioTransport};
 
 bitflags! {
-    /// Virtio Net Feature bits.
+    /// Virtio network feature bits.
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub(super) struct NetworkFeatures: u64 {
         const VIRTIO_NET_F_CSUM = 1 << 0;               // Device handles packets with partial checksum.
         const VIRTIO_NET_F_GUEST_CSUM = 1 << 1;         // Driver handles packets with partial checksum
@@ -54,12 +55,19 @@ impl NetworkFeatures {
     }
 }
 
+/// Virtio network device status.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(super) struct Status(u16);
+
 bitflags! {
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(super) struct Status: u16 {
+    impl Status: u16 {
         const VIRTIO_NET_S_LINK_UP = 1;
         const VIRTIO_NET_S_ANNOUNCE = 2;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _ = !0;
     }
 }
 
@@ -96,9 +104,10 @@ impl ConfigManager<VirtioNetConfig> {
                 .read_once::<u8>(offset_of!(VirtioNetConfig, mac) + i)
                 .unwrap();
         }
-        net_config.status.bits = self
-            .read_once::<u16>(offset_of!(VirtioNetConfig, status))
-            .unwrap();
+        net_config.status = Status::from_bits_retain(
+            self.read_once::<u16>(offset_of!(VirtioNetConfig, status))
+                .unwrap(),
+        );
 
         if self.is_modern() {
             net_config.max_virtqueue_pairs = self

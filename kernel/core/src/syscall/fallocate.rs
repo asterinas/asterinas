@@ -65,6 +65,7 @@ bitflags! {
     /// Operation mode flags for fallocate.
     ///
     /// These flags determine the operation to be performed on the given byte range.
+    #[derive(Clone, Copy, Debug)]
     struct RawFallocMode: u32 {
         /// File size will not be changed when extending the file.
         const FALLOC_FL_KEEP_SIZE = 0x01;

@@ -4,6 +4,7 @@ use super::{Events, EventsFilter};
 use crate::prelude::*;
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct IoEvents: u32 {
         const IN     = 0x0001;
         const PRI    = 0x0002;
@@ -14,7 +15,7 @@ bitflags! {
         const RDNORM = 0x0040;
         const RDHUP  = 0x2000;
         /// Events that are always polled even without specifying them.
-        const ALWAYS_POLL = Self::ERR.bits | Self::HUP.bits;
+        const ALWAYS_POLL = Self::ERR.bits() | Self::HUP.bits();
     }
 }
 

@@ -615,6 +615,7 @@ bitflags! {
     /// Interface flags.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.0.18/source/include/uapi/linux/if.h#L82>
+    #[derive(Clone, Copy, Debug)]
     pub struct InterfaceFlags: u32 {
         /// Interface is up
         const UP				= 1<<0;

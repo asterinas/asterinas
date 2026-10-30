@@ -7,6 +7,7 @@ use bitflags::bitflags;
 
 bitflags! {
     /// Represents a set of Linux capabilities.
+    #[derive(Clone, Copy, Debug)]
     pub struct CapSet: u64 {
         const CHOWN = 1 << 0;
         const DAC_OVERRIDE = 1 << 1;
@@ -54,8 +55,6 @@ bitflags! {
 }
 
 impl CapSet {
-    const MASK: u64 = (1 << (CapSet::most_significant_bit() + 1)) - 1;
-
     /// Converts two `u32`s to the capability set. The high bits are truncated.
     pub(crate) fn from_lo_hi(lo: u32, hi: u32) -> Self {
         let bits = lo as u64 | ((hi as u64) << 32);
@@ -97,11 +96,7 @@ impl TryFrom<u64> for CapSet {
     type Error = InvalidCapSetError;
 
     fn try_from(value: u64) -> Result<Self, Self::Error> {
-        if value & !CapSet::MASK != 0 {
-            Err(InvalidCapSetError)
-        } else {
-            Ok(CapSet { bits: value })
-        }
+        Self::from_bits(value).ok_or(InvalidCapSetError)
     }
 }
 

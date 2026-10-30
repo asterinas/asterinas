@@ -34,15 +34,21 @@ impl FsyncReq {
     }
 }
 
+/// Flags for `FUSE_FSYNC` and `FUSE_FSYNCDIR` requests.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fuse.h#L569-L574>
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct FsyncFlags(u32);
+
 bitflags! {
-    /// Flags for `FUSE_FSYNC` and `FUSE_FSYNCDIR` requests.
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fuse.h#L569-L574>
-    #[repr(C)]
-    #[derive(Pod)]
-    pub struct FsyncFlags: u32 {
+    impl FsyncFlags: u32 {
         /// Sync data only, not metadata.
         const FDATASYNC = 1 << 0;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _ = !0;
     }
 }
 

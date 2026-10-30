@@ -571,14 +571,20 @@ fn set_dma_buf<T: DmaBuf + ?Sized>(desc_ptr: &DescriptorPtr, buf: &T) -> u32 {
     len as u32
 }
 
+/// Descriptor flags.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+struct DescFlags(u16);
+
 bitflags! {
-    /// Descriptor flags.
-    #[repr(C)]
-    #[derive(Default, Pod)]
-    struct DescFlags: u16 {
+    impl DescFlags: u16 {
         const NEXT = 1;
         const WRITE = 2;
         const INDIRECT = 4;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _ = !0;
     }
 }
 
@@ -617,13 +623,19 @@ pub(crate) struct UsedElem {
     len: u32,
 }
 
+/// The flags used in [`AvailRing`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+struct AvailFlags(u16);
+
 bitflags! {
-    /// The flags used in [`AvailRing`].
-    #[repr(C)]
-    #[derive(Pod)]
-    struct AvailFlags: u16 {
+    impl AvailFlags: u16 {
         /// The flag used to disable virtqueue interrupts.
         const VIRTQ_AVAIL_F_NO_INTERRUPT = 1;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _ = !0;
     }
 }
 

@@ -492,7 +492,8 @@ pub struct RawPageFaultInfo {
 
 bitflags! {
     /// Page Fault error code. Following the Intel Architectures Software Developer's Manual Volume 3
-    pub struct PageFaultErrorCode : usize{
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct PageFaultErrorCode: usize {
         /// 0 if no translation for the linear address.
         const PRESENT       = 1 << 0;
         /// 1 if the access was a write.

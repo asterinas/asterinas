@@ -200,13 +200,15 @@ impl Attribute for LinkAttr {
     }
 }
 
+/// New extended info filters for [`LinkAttr::ExtMask`].
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L819>.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(crate) struct RtExtFilter(u32);
+
 bitflags! {
-    /// New extended info filters for [`NlLinkAttr::ExtMask`].
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L819>.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(crate) struct RtExtFilter: u32 {
+    impl RtExtFilter: u32 {
         const VF = 1 << 0;
         const BRVLAN = 1 << 1;
         const BRVLAN_COMPRESSED = 1 << 2;
@@ -215,5 +217,9 @@ bitflags! {
         const CFM_CONFIG = 1 << 5;
         const CFM_STATUS = 1 << 6;
         const MST = 1 << 7;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _ = !0;
     }
 }

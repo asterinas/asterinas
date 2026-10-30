@@ -91,6 +91,7 @@ impl FromStr for SubCtrlType {
 
 bitflags! {
     /// A set of sub-controller types, represented as bitflags.
+    #[derive(Clone, Copy, Debug)]
     pub(super) struct SubCtrlSet: u8 {
         const CPUSET = 1 << 0;
         const CPU = 1 << 1;

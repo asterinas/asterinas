@@ -37,7 +37,7 @@ use crate::{
 };
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Clone, Copy, Debug, Default, PartialEq)]
     pub(crate) struct CloneFlags: u32 {
         const CLONE_NEWTIME = 0x00000080;       /* New time namespace */
         const CLONE_VM      = 0x00000100;       /* Set if VM shared between processes.  */

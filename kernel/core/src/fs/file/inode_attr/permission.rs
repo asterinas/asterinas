@@ -3,6 +3,7 @@
 use crate::{fs::file::AccessMode, prelude::*};
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct Permission: u16 {
         // This implementation refers the implementation of linux
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/fs.h#L95

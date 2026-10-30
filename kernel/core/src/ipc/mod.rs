@@ -24,7 +24,8 @@ pub(crate) type IpcKey = i32;
 const IPC_PRIVATE: IpcKey = 0;
 
 bitflags! {
-    pub(crate) struct IpcFlags: u32{
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) struct IpcFlags: u32 {
         /// Create key if key does not exist
         const IPC_CREAT  = 1 << 9;
         /// Fail if key exists

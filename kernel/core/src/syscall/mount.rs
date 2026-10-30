@@ -267,6 +267,7 @@ fn open_fs(
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq)]
     struct MountFlags: u32 {
         const MS_RDONLY        =   1 << 0;       // Mount read-only.
         const MS_NOSUID        =   1 << 1;       // Ignore suid and sgid bits.

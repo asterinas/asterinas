@@ -106,6 +106,7 @@ bitflags! {
     /// Flags used in the `renameat2` system call.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.16.3/source/include/uapi/linux/fcntl.h#L140-L143>.
+    #[derive(Clone, Copy, Debug)]
     struct Flags: u32 {
         const NOREPLACE = 1 << 0;
         const EXCHANGE  = 1 << 1;

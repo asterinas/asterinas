@@ -7,7 +7,7 @@ use int_to_c_enum::TryFromInt;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
 pub(super) struct VirtioNetHdr {
-    flags: Flags,
+    flags: u8,
     gso_type: u8,
     hdr_len: u16,
     gso_size: u16,
@@ -20,8 +20,7 @@ pub(super) struct VirtioNetHdr {
 }
 
 bitflags! {
-    #[repr(C)]
-    #[derive(Default, Pod)]
+    #[derive(Clone, Copy, Debug, Default)]
     pub(super) struct Flags: u8 {
         const VIRTIO_NET_HDR_F_NEEDS_CSUM = 1;
         const VIRTIO_NET_HDR_F_DATA_VALID = 2;

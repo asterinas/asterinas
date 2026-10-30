@@ -117,6 +117,7 @@ macro_rules! define_isa_extensions {
     ) => {
         bitflags! {
             /// RISC-V ISA extensions.
+            #[derive(Clone, Copy, Debug)]
             pub struct IsaExtensions: u128 {
                 $(
                     #[doc = $doc]
