@@ -28,7 +28,6 @@ use spin::Once;
 use crate::{
     syscall::ClockId,
     time::{
-        START_TIME_AS_DURATION,
         clocks::MonotonicClock,
         timer::{Timeout, TimerGuard},
     },
@@ -186,7 +185,11 @@ impl VdsoData {
     }
 
     fn realtime_duration(instant: Instant) -> Duration {
-        let start_offset = *START_TIME_AS_DURATION.get().unwrap();
+        #[cfg(not(ktest))]
+        let start_offset = aster_time::read_start_time().since_epoch();
+        #[cfg(ktest)]
+        let start_offset = test::TEST_START_OFFSET;
+
         start_offset + Duration::new(instant.secs(), instant.nanos())
     }
 }
@@ -467,15 +470,13 @@ mod test {
     use aster_util::coeff::Coeff;
     use ostd::prelude::*;
 
-    use super::{START_TIME_AS_DURATION, VdsoData};
+    use super::VdsoData;
     use crate::syscall::ClockId;
 
-    const TEST_START_OFFSET: Duration = Duration::new(1_700_000_000, 800_000_000);
+    pub(super) const TEST_START_OFFSET: Duration = Duration::new(1_700_000_000, 800_000_000);
 
     #[ktest]
     fn realtime_duration_adds_fractional_seconds() {
-        set_test_start_offset();
-
         let base = VdsoData::realtime_duration(Instant::new(5, 100_000_000));
         assert_eq!(base, Duration::new(1_700_000_005, 900_000_000));
 
@@ -486,8 +487,6 @@ mod test {
 
     #[ktest]
     fn realtime_clocks_store_fractional_seconds() {
-        set_test_start_offset();
-
         let instant = Instant::new(5, 400_000_000);
         let expected = TEST_START_OFFSET + Duration::new(instant.secs(), instant.nanos());
 
@@ -509,9 +508,5 @@ mod test {
         let realtime_nanos = realtime.nanos_info >> coeff.shift();
         assert_eq!(realtime.secs, expected.as_secs());
         assert_eq!(realtime_nanos, expected.subsec_nanos() as u64);
-    }
-
-    fn set_test_start_offset() {
-        START_TIME_AS_DURATION.call_once(|| TEST_START_OFFSET);
     }
 }

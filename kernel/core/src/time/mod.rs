@@ -5,9 +5,6 @@
 pub(crate) use core::{Clock, timer};
 
 use ::core::time::Duration;
-#[cfg(not(target_arch = "loongarch64"))]
-pub(crate) use system_time::START_TIME_AS_DURATION;
-pub(crate) use system_time::{START_TIME, SystemTime};
 pub(crate) use timer::{Timer, TimerManager};
 
 use crate::prelude::*;
@@ -16,7 +13,6 @@ pub(crate) mod clocks;
 mod core;
 pub(crate) mod cpu_time_stats;
 mod softirq;
-mod system_time;
 pub(crate) mod timerfd;
 pub(crate) mod wait;
 
@@ -30,7 +26,6 @@ const USEC_PER_SEC: i64 = 1_000_000;
 pub(crate) const NSEC_PER_SEC: i64 = 1_000_000_000;
 
 pub(super) fn init() {
-    system_time::init();
     clocks::init();
     softirq::init();
     cpu_time_stats::init();

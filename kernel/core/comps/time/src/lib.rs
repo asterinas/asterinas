@@ -10,7 +10,6 @@ extern crate alloc;
 use alloc::sync::Arc;
 use core::time::Duration;
 
-pub use clocksource::{ClockSource, Instant};
 use component::{ComponentInitError, init_component};
 use rtc::Driver;
 use spin::Once;
@@ -24,7 +23,11 @@ macro_rules! __log_prefix {
 
 mod clocksource;
 mod rtc;
+mod system_time;
 mod tsc;
+
+pub use clocksource::{ClockSource, Instant};
+pub use system_time::SystemTime;
 
 pub static VDSO_DATA_HIGH_RES_UPDATE_FN: Once<fn(Instant, u64)> = Once::new();
 
@@ -38,41 +41,9 @@ fn time_init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct SystemTime {
-    pub year: u16,
-    pub month: u8,
-    pub day: u8,
-    pub hour: u8,
-    pub minute: u8,
-    pub second: u8,
-    pub nanos: u64,
-}
-
-#[cfg(any(
-    target_arch = "riscv64",
-    target_arch = "aarch64",
-    target_arch = "x86_64"
-))]
-impl From<chrono::NaiveDateTime> for SystemTime {
-    fn from(time: chrono::NaiveDateTime) -> Self {
-        use chrono::{Datelike, Timelike};
-
-        Self {
-            year: time.year() as u16,
-            month: time.month() as u8,
-            day: time.day() as u8,
-            hour: time.hour() as u8,
-            minute: time.minute() as u8,
-            second: time.second() as u8,
-            nanos: time.nanosecond() as u64,
-        }
-    }
-}
-
 static START_TIME: Once<SystemTime> = Once::new();
 
-/// Returns the `START_TIME`, which is the system time when calibrating.
+/// Returns the start time, which is the system time when calibrating.
 pub fn read_start_time() -> SystemTime {
     *START_TIME.get().unwrap()
 }
@@ -81,6 +52,11 @@ pub fn read_start_time() -> SystemTime {
 pub fn read_monotonic_time() -> Duration {
     let instant = tsc::read_instant();
     Duration::new(instant.secs(), instant.nanos())
+}
+
+/// Returns the current system time.
+pub fn read_system_time() -> SystemTime {
+    read_start_time() + read_monotonic_time()
 }
 
 /// Returns the default (TSC) clocksource.

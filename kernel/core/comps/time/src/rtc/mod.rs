@@ -63,14 +63,6 @@ impl Driver for RtcDummy {
     }
 
     fn read_rtc(&self) -> SystemTime {
-        SystemTime {
-            year: 1970,
-            month: 1,
-            day: 1,
-            hour: 0,
-            minute: 0,
-            second: 0,
-            nanos: 0,
-        }
+        SystemTime::UNIX_EPOCH
     }
 }

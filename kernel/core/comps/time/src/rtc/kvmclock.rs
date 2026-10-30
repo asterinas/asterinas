@@ -10,7 +10,6 @@
 
 use core::time::Duration;
 
-use chrono::DateTime;
 use ostd::arch::{
     kernel::{PvclockTimeSnapshot, read_pvclock_time_snapshot, read_wall_clock_epoch},
     read_tsc,
@@ -31,12 +30,7 @@ impl Driver for RtcKvmClock {
 
     fn read_rtc(&self) -> SystemTime {
         let duration = self.clock.read_wall_clock();
-
-        // This won't fail because `duration` is the epoch (bounded by
-        // 2^32 seconds) plus the guest uptime (bounded by 2^64 nanoseconds).
-        let secs = i64::try_from(duration.as_secs()).unwrap();
-        let datetime = DateTime::from_timestamp(secs, duration.subsec_nanos()).unwrap();
-        SystemTime::from(datetime.naive_utc())
+        SystemTime::new(duration)
     }
 }
 
@@ -66,6 +60,9 @@ impl KvmWallClock {
     /// epoch.
     fn read_wall_clock(&self) -> Duration {
         let clock_ns = snapshot_clock_ns(&self.snapshot, read_tsc());
+
+        // This won't fail because the duration is the epoch (bounded by
+        // 2^32 seconds) plus the guest uptime (bounded by 2^64 nanoseconds).
         self.epoch + Duration::from_nanos(clock_ns)
     }
 }
