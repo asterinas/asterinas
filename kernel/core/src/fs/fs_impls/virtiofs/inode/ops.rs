@@ -199,12 +199,15 @@ impl VirtioFsInode {
 
         let written = self.do_direct_write(offset, reader, fh, flags)?;
 
-        // TODO: Do `evict_range` again after write to prevent stale data from
-        // being loaded into the page cache during asynchronous read-ahead.
-
         let new_size = offset
             .checked_add(written)
             .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "virtiofs write size overflow"))?;
+
+        // Evict pages that may have been loaded by readahead while the direct
+        // write was in progress.
+        if let Some(page_cache) = inner.page_cache() {
+            page_cache.evict_range(offset..new_size)?;
+        }
 
         let new_size = self.size().max(new_size);
         let attr_version = self.fs_ref().session().bump_attr_version();
