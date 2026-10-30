@@ -2,10 +2,12 @@
 
 //! This module provides accessors to the page table entries in a node.
 
+use core::ops::Range;
+
 use super::{PageTableGuard, PageTableNode, PteState, PteStateRef, PteTrait};
 use crate::{
     mm::{
-        HasPaddr, nr_subpage_per_huge,
+        HasPaddr, nr_ptes,
         page_prop::PageProperty,
         page_size,
         page_table::{PageTableConfig, PageTableNodeRef, PteScalar},
@@ -98,9 +100,9 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let old_child = unsafe { PteState::from_pte(self.pte, self.node.level()) };
 
         if old_child.is_absent() && !new_child.is_absent() {
-            *self.node.nr_children_mut() += 1;
+            self.node.update_nr_children(self.idx, |count| *count += 1);
         } else if !old_child.is_absent() && new_child.is_absent() {
-            *self.node.nr_children_mut() -= 1;
+            self.node.update_nr_children(self.idx, |count| *count -= 1);
         }
 
         self.pte = new_child.into_pte();
@@ -117,10 +119,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Allocates a new child page table node and replaces the entry with it.
     ///
     /// If the old entry is not none, the operation will fail and return `None`.
-    /// Otherwise, the lock guard of the new child page table node is returned.
+    /// Otherwise, a guard locking the pages covering `child_entries` is returned.
     pub(in crate::mm::page_table) fn alloc_if_none(
         &mut self,
         guard: &'rcu dyn InAtomicMode,
+        child_entries: Range<usize>,
     ) -> Option<PageTableGuard<'rcu, C>> {
         if !matches!(self.to_ref(), PteStateRef::Absent) || self.node.level() == 1 {
             return None;
@@ -135,7 +138,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
 
         // Lock before writing the PTE, so no one else can operate on it.
-        let pt_lock_guard = pt_ref.lock(guard);
+        let pt_lock_guard = pt_ref.lock(guard, child_entries);
 
         self.pte = PteState::PageTable(new_page).into_pte();
 
@@ -145,7 +148,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         //  3. The ownership of the child is passed to the page table node.
         unsafe { self.node.write_pte(self.idx, self.pte) };
 
-        *self.node.nr_children_mut() += 1;
+        self.node.update_nr_children(self.idx, |count| *count += 1);
 
         Some(pt_lock_guard)
     }
@@ -153,14 +156,15 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Splits the entry to smaller pages if it maps to a huge page.
     ///
     /// If the entry does map to a huge page, it is split into smaller pages
-    /// mapped by a child page table node. The new child page table node
-    /// is returned.
+    /// mapped by a child page table node. The returned guard locks only the
+    /// backing pages covering `child_entries`.
     ///
     /// If the entry does not map to a untracked huge page, the method returns
     /// `None`.
     pub(in crate::mm::page_table) fn split_if_mapped_huge(
         &mut self,
         guard: &'rcu dyn InAtomicMode,
+        child_entries: Range<usize>,
     ) -> Option<PageTableGuard<'rcu, C>> {
         let level = self.node.level();
         let PteScalar::Mapped(pa, prop) = self.pte.to_repr(level) else {
@@ -169,18 +173,14 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1));
 
-        let paddr = new_page.paddr();
-        // SAFETY: The page table won't be dropped before the RCU grace period
-        // ends, so it outlives `'rcu`.
-        let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
-
-        // Lock before writing the PTE, so no one else can operate on it.
-        let mut pt_lock_guard = pt_ref.lock(guard);
+        // SAFETY: The RCU-dropped node outlives `'rcu`.
+        let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(new_page.paddr()) };
+        let mut pt_lock_guard = pt_ref.lock(guard, 0..nr_ptes::<C>(level - 1));
 
         // Prevent double-dropping the small items when panicking (e.g., debug assertion fails).
         let panic_guard = PanicGuard::new();
 
-        for i in 0..nr_subpage_per_huge::<C>() {
+        for i in 0..nr_ptes::<C>(level - 1) {
             let small_pa = pa + i * page_size::<C>(level - 1);
             let mut entry = pt_lock_guard.entry(i);
             // SAFETY: It's a part of the mapped item, and the ownership is
@@ -188,6 +188,16 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
             let small_item = unsafe { C::item_from_raw(small_pa, level - 1, prop) };
             let old = entry.replace(PteState::Mapped(RcuDrop::new(small_item)));
             debug_assert!(old.is_absent());
+        }
+
+        // Release the surrounding locks if the barrier range is small.
+        if pt_lock_guard.pages_for_entries(child_entries.clone()) != pt_lock_guard.locked_pages {
+            // The child is still unpublished, so we can unlock it and reacquire
+            // only the pages belonging to the cursor's barrier before publication.
+            drop(pt_lock_guard);
+            // SAFETY: The RCU-dropped node outlives `'rcu`.
+            let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(new_page.paddr()) };
+            pt_lock_guard = pt_ref.lock(guard, child_entries);
         }
 
         self.pte = PteState::PageTable(new_page).into_pte();
@@ -207,7 +217,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the index is within the bounds of the node.
+    /// The index must be within the guard's locked entry range.
     pub(super) unsafe fn new_at(guard: &'a mut PageTableGuard<'rcu, C>, idx: usize) -> Self {
         // SAFETY: The index is within the bound.
         let pte = unsafe { guard.read_pte(idx) };

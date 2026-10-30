@@ -119,7 +119,9 @@ impl CacheOfSizes {
 
 pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Paddr> {
     let nr_frames = layout.size() / PAGE_SIZE;
-    if layout.align() > layout.size() {
+    // Cached segments are only guaranteed to be page-aligned, including
+    // segments returned through deallocation.
+    if layout.align() > PAGE_SIZE {
         return super::pools::alloc(guard, layout);
     }
 

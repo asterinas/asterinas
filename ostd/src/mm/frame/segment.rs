@@ -266,8 +266,7 @@ impl<M: AnyFrameMeta + ?Sized> HasSize for Segment<M> {
 
 impl<M: AnyFrameMeta + ?Sized> From<Frame<M>> for Segment<M> {
     fn from(frame: Frame<M>) -> Self {
-        let pa = frame.paddr();
-        let _ = ManuallyDrop::new(frame);
+        let pa = frame.into_raw();
         Self {
             range: pa..pa + PAGE_SIZE,
             _marker: core::marker::PhantomData,
@@ -365,6 +364,11 @@ mod iter {
     impl<M: AnyFrameMeta + ?Sized> Iterator for IntoIter<M> {
         type Item = Frame<M>;
 
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            let len = self.range.len() / PAGE_SIZE;
+            (len, Some(len))
+        }
+
         fn next(&mut self) -> Option<Self::Item> {
             if self.range.start < self.range.end {
                 // SAFETY: Each frame in the range would be a handle forgotten
@@ -379,6 +383,8 @@ mod iter {
             }
         }
     }
+
+    impl<M: AnyFrameMeta + ?Sized> ExactSizeIterator for IntoIter<M> {}
 
     impl<M: AnyFrameMeta + ?Sized> Drop for IntoIter<M> {
         fn drop(&mut self) {
