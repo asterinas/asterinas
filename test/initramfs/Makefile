@@ -19,6 +19,24 @@ NIXPKGS_CACHE_TTL := 2592000 # In seconds
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 BUILD_DIR := $(CUR_DIR)/build
+# Directory for the result links of the prebuilt targets. The default is Nix's GC root directory,
+# so that `make nix_gc` keeps the packages, but only root can write there. Other users, such as
+# CI runners, set a writable directory instead. Nix then records each link as a GC root itself.
+PREBUILT_ROOT ?= /nix/var/nix/gcroots/auto
+# Make the Nix commands below use the Cachix caches from `nixConfig` in `flake.nix`. Nix reads
+# `nixConfig` only for flake commands such as `nix develop`, so `make` and the Docker image build
+# would otherwise compile packages that the caches already have. Skip this on hosts without Nix,
+# so that targets such as `clean` still work.
+ifneq ($(shell command -v nix-instantiate),)
+FLAKE_NIX_SETTING = $(subst ",,$(shell nix-instantiate --eval -E \
+	'toString (import $(CUR_DIR)/../../flake.nix).nixConfig.$(1)'))
+define NIX_CONFIG :=
+$(NIX_CONFIG)
+extra-substituters = $(call FLAKE_NIX_SETTING,extra-substituters)
+extra-trusted-public-keys = $(call FLAKE_NIX_SETTING,extra-trusted-public-keys)
+endef
+export NIX_CONFIG
+endif
 INITRAMFS_DIR := $(BUILD_DIR)/initramfs
 ROOTFS_IMAGE := $(BUILD_DIR)/rootfs.img
 INITRAMFS_SKIP_GZIP ?= 0
@@ -125,7 +143,7 @@ x86_64_pkgs:
 		--argstr target x86_64 \
 		--arg enableBenchmarkTest true \
 		--arg enableConformanceTest true \
-		--out-link /nix/var/nix/gcroots/auto/x86_64-pkgs \
+		--out-link $(PREBUILT_ROOT)/x86_64-pkgs \
 		-A busybox \
 		-A benchmark.fio \
 		-A benchmark.hackbench \
@@ -153,7 +171,7 @@ riscv64_pkgs:
 		--argstr target riscv64 \
 		--arg enableBenchmarkTest false \
 		--arg enableConformanceTest true \
-		--out-link /nix/var/nix/gcroots/auto/riscv64-pkgs \
+		--out-link $(PREBUILT_ROOT)/riscv64-pkgs \
 		-A busybox \
 		-A conformance.ltp \
 		-A regression.package
@@ -169,7 +187,7 @@ aarch64_pkgs:
 		--argstr target aarch64 \
 		--arg enableBenchmarkTest false \
 		--arg enableConformanceTest true \
-		--out-link /nix/var/nix/gcroots/auto/aarch64-pkgs \
+		--out-link $(PREBUILT_ROOT)/aarch64-pkgs \
 		-A busybox \
 		-A conformance.ltp \
 		-A regression.package
@@ -196,7 +214,7 @@ initramfs_pkgs:
 		$(NIX_QUIET) \
 		--argstr target x86_64 \
 		--arg enableBenchmarkTest true \
-		--out-link /nix/var/nix/gcroots/auto/x86_64-initramfs-with-benchmark \
+		--out-link $(PREBUILT_ROOT)/x86_64-initramfs-with-benchmark \
 		-A initramfs-image
 
 $(EXT2_IMAGE):

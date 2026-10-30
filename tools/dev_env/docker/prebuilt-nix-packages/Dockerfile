@@ -28,6 +28,7 @@ RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
 
 COPY test/initramfs /tmp/asterinas/test/initramfs
 COPY distro/nixpkgs.nix /tmp/asterinas/distro/nixpkgs.nix
+COPY flake.nix /tmp/asterinas/flake.nix
 WORKDIR /tmp/asterinas/test/initramfs
 ENV PATH="/nix/var/nix/profiles/default/bin:${PATH}"
 

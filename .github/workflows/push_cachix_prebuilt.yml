@@ -1,0 +1,63 @@
+name: Push prebuilt test packages to Cachix
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/push_cachix_prebuilt.yml
+      - distro/nixpkgs.nix
+      - test/initramfs/**
+      - tools/dev_env/docker/prebuilt-nix-packages/Dockerfile
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/push_cachix_prebuilt.yml
+      - distro/nixpkgs.nix
+      - test/initramfs/**
+      - tools/dev_env/docker/prebuilt-nix-packages/Dockerfile
+
+permissions:
+  contents: read
+
+jobs:
+  push-prebuilt:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
+        with:
+          name: aster-nixos-dev
+          extraPullNames: aster-nixos-release
+          skipPush: true
+
+      - name: Build and cache the Docker prebuilt packages
+        env:
+          CACHIX_AUTH_TOKEN: ${{ github.event_name != 'pull_request' && secrets.CACHIX_AUTH_TOKEN_FOR_DEV_CACHE || '' }}
+          PUBLISH: ${{ github.event_name != 'pull_request' }}
+        run: |
+          if [[ "$PUBLISH" == true && -z "$CACHIX_AUTH_TOKEN" ]]; then
+            echo "CACHIX_AUTH_TOKEN_FOR_DEV_CACHE is required to publish packages" >&2
+            exit 1
+          fi
+          # initramfs_pkgs embeds the host resolver configuration, so Docker builds it locally.
+          for target in aarch64_pkgs riscv64_pkgs x86_64_pkgs; do
+            make --no-print-directory -C test/initramfs "$target" \
+              PREBUILT_ROOT="$RUNNER_TEMP/prebuilt" > "$RUNNER_TEMP/$target.paths"
+            if [[ "$PUBLISH" == true ]]; then
+              # Push each target once it is built, so a later failure does not discard it.
+              cachix push aster-nixos-dev < "$RUNNER_TEMP/$target.paths"
+            fi
+            make -C test/initramfs nix_gc
+          done
+          make -C test/initramfs install_host_pkgs
+          if [[ "$PUBLISH" == true ]]; then
+            cachix push aster-nixos-dev "$(readlink -f "$HOME/.nix-profile")"
+          fi
+          make -C test/initramfs nix_gc
