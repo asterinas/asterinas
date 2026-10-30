@@ -159,6 +159,11 @@ impl MockPageCacheBackend {
         self.state.lock().set_completion(kind, completion);
     }
 
+    /// Makes future read submissions for `page_idx` fail immediately.
+    pub(super) fn fail_read_submission(&self, page_idx: usize) {
+        self.state.lock().read_submit_failures.insert(page_idx);
+    }
+
     /// Waits until the backend has queued `expected_count` deferred BIOs.
     ///
     /// Tests use this to freeze the backend at the "BIO submitted but not yet
@@ -270,15 +275,20 @@ pub(super) fn wait_until(mut condition: impl FnMut() -> bool) {
 }
 
 fn wait_until_with_failure_message(mut condition: impl FnMut() -> bool, failure_message: &str) {
+    assert!(try_wait_until(&mut condition), "{failure_message}");
+}
+
+/// Waits for a predicate without panicking, so a test can clean up on timeout.
+pub(super) fn try_wait_until(mut condition_fn: impl FnMut() -> bool) -> bool {
     for _ in 0..MAX_WAIT_YIELDS {
-        if condition() {
-            return;
+        if condition_fn() {
+            return true;
         }
 
         Thread::yield_now();
     }
 
-    panic!("{failure_message}");
+    false
 }
 
 impl Debug for MockPageCacheBackend {
