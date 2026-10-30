@@ -19,15 +19,16 @@ use crate::{
 
 // The definition of WaitOptions is from Occlum
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct WaitOptions: u32 {
-        const WNOHANG = 0x1;
-        const WSTOPPED = 0x2; // Same as WUNTRACED
-        const WEXITED = 0x4;
+        const WNOHANG    = 0x1;
+        const WSTOPPED   = 0x2; // Same as WUNTRACED
+        const WEXITED    = 0x4;
         const WCONTINUED = 0x8;
-        const WNOWAIT = 0x01000000;
-        const WNOTHREAD = 0x20000000;
-        const WALL = 0x40000000;
-        const WCLONE = 0x80000000;
+        const WNOWAIT    = 0x01000000;
+        const WNOTHREAD  = 0x20000000;
+        const WALL       = 0x40000000;
+        const WCLONE     = 0x80000000;
     }
 }
 

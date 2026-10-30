@@ -198,20 +198,27 @@ impl Attribute for LinkAttr {
     }
 }
 
+/// New extended info filters for [`NlLinkAttr::ExtMask`].
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L819>.
+///
+/// Netlink accepts arbitrary filter bits; link dump handlers interpret supported filters.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(crate) struct RtExtFilter(u32);
+
 bitflags! {
-    /// New extended info filters for [`NlLinkAttr::ExtMask`].
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L819>.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(crate) struct RtExtFilter: u32 {
-        const VF = 1 << 0;
-        const BRVLAN = 1 << 1;
+    impl RtExtFilter: u32 {
+        const VF                = 1 << 0;
+        const BRVLAN            = 1 << 1;
         const BRVLAN_COMPRESSED = 1 << 2;
-        const SKIP_STATS = 1 << 3;
-        const MRP = 1 << 4;
-        const CFM_CONFIG = 1 << 5;
-        const CFM_STATUS = 1 << 6;
-        const MST = 1 << 7;
+        const SKIP_STATS        = 1 << 3;
+        const MRP               = 1 << 4;
+        const CFM_CONFIG        = 1 << 5;
+        const CFM_STATUS        = 1 << 6;
+        const MST               = 1 << 7;
+
+        // Preserve bits not interpreted by this implementation.
+        const _                 = !0;
     }
 }

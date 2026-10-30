@@ -139,6 +139,7 @@ enum Register {
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct StatusA: u8 {
         /// The update in progress (UIP) bit.
         const UIP = 1 << 7;
@@ -146,6 +147,7 @@ bitflags::bitflags! {
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct StatusB: u8 {
         /// The data mode (DM) bit.
         ///
@@ -159,6 +161,7 @@ bitflags::bitflags! {
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct StatusD: u8 {
         /// The valid RAM and time (VRT) bit.
         ///

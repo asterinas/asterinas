@@ -135,14 +135,20 @@ impl InitReply {
     }
 }
 
+/// FUSE capability and feature flags exchanged in `FUSE_INIT`.
+///
+/// The client sends its supported set in [`InitReq::new`]; the server
+/// responds with the subset it also supports in [`InitReply::flags`].
+///
+/// Every bit pattern is valid in the wire representation.
+/// The FUSE client selects supported options when constructing requests
+/// and interprets supported flags when consuming replies.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct FuseInitFlags(u32);
+
 bitflags! {
-    /// FUSE capability and feature flags exchanged in `FUSE_INIT`.
-    ///
-    /// The client sends its supported set in [`InitReq::new`]; the server
-    /// responds with the subset it also supports in [`InitReply::flags`].
-    #[repr(C)]
-    #[derive(Pod)]
-    pub struct FuseInitFlags: u32 {
+    impl FuseInitFlags: u32 {
         /// Supports asynchronous reads.
         const ASYNC_READ          = 1 << 0;
         /// Supports POSIX byte-range locks.
@@ -207,39 +213,51 @@ bitflags! {
         const INIT_EXT            = 1 << 30;
         /// Reserved by the FUSE protocol.
         const INIT_RESERVED       = 1 << 31;
+
+        // Preserve bits not interpreted by this implementation.
+        const _                   = !0;
     }
 }
 
+/// Upper FUSE capability and feature flags exchanged in `FUSE_INIT`.
+///
+/// These flags encode bits 32 through 63 of the protocol capability set
+/// after shifting them down into the `flags2` field.
+///
+/// Every bit pattern is valid in the wire representation.
+/// The FUSE client selects supported options when constructing requests
+/// and interprets supported flags when consuming replies.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct FuseInitFlags2(u32);
+
 bitflags! {
-    /// Upper FUSE capability and feature flags exchanged in `FUSE_INIT`.
-    ///
-    /// These flags encode bits 32 through 63 of the protocol capability set
-    /// after shifting them down into the `flags2` field.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub struct FuseInitFlags2: u32 {
+    impl FuseInitFlags2: u32 {
         /// Supports security context information.
-        const SECURITY_CTX             = 1 << 0;
+        const SECURITY_CTX         = 1 << 0;
         /// Supports inode DAX information.
-        const HAS_INODE_DAX           = 1 << 1;
+        const HAS_INODE_DAX        = 1 << 1;
         /// Supports supplementary groups during create.
-        const CREATE_SUPP_GROUP       = 1 << 2;
+        const CREATE_SUPP_GROUP    = 1 << 2;
         /// Supports expire-only invalidation.
-        const HAS_EXPIRE_ONLY         = 1 << 3;
+        const HAS_EXPIRE_ONLY      = 1 << 3;
         /// Allows memory maps on direct-I/O files.
-        const DIRECT_IO_ALLOW_MMAP    = 1 << 4;
+        const DIRECT_IO_ALLOW_MMAP = 1 << 4;
         /// Supports passthrough operations.
-        const PASSTHROUGH             = 1 << 5;
+        const PASSTHROUGH          = 1 << 5;
         /// Supports disabling export support.
-        const NO_EXPORT_SUPPORT       = 1 << 6;
+        const NO_EXPORT_SUPPORT    = 1 << 6;
         /// Supports resending requests.
-        const HAS_RESEND              = 1 << 7;
+        const HAS_RESEND           = 1 << 7;
         /// Allows ID-mapped mounts.
-        const ALLOW_IDMAP             = 1 << 8;
+        const ALLOW_IDMAP          = 1 << 8;
         /// Supports FUSE over io_uring.
-        const OVER_IO_URING           = 1 << 9;
+        const OVER_IO_URING        = 1 << 9;
         /// Supports request timeouts.
-        const REQUEST_TIMEOUT         = 1 << 10;
+        const REQUEST_TIMEOUT      = 1 << 10;
+
+        // Preserve bits not interpreted by this implementation.
+        const _                    = !0;
     }
 }
 

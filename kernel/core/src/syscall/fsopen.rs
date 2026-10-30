@@ -38,6 +38,7 @@ pub(super) fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Resu
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct FsOpenFlags: u32 {
         const FSOPEN_CLOEXEC = 1;
     }

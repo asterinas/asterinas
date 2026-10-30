@@ -9,23 +9,25 @@ use crate::prelude::*;
 bitflags! {
     /// The memory access permissions of memory mappings.
     // NOTE: `check` hardcodes `MAY_READ >> 3 == READ`, and so for r/w/x bits.
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub(crate) struct VmPerms: u32 {
         /// Readable.
-        const READ    = 1 << 0;
+        const READ          = 1 << 0;
         /// Writable.
-        const WRITE   = 1 << 1;
+        const WRITE         = 1 << 1;
         /// Executable.
-        const EXEC   = 1 << 2;
+        const EXEC          = 1 << 2;
         /// May be protected to readable.
-        const MAY_READ = 1 << 3;
+        const MAY_READ      = 1 << 3;
         /// May be protected to writable.
-        const MAY_WRITE = 1 << 4;
+        const MAY_WRITE     = 1 << 4;
         /// May be protected to executable.
-        const MAY_EXEC = 1 << 5;
+        const MAY_EXEC      = 1 << 5;
         /// All permissions (READ | WRITE | EXEC).
-        const ALL_PERMS = Self::READ.bits | Self::WRITE.bits | Self::EXEC.bits;
+        const ALL_PERMS     = Self::READ.bits() | Self::WRITE.bits() | Self::EXEC.bits();
         /// All `MAY_*` permissions (MAY_READ | MAY_WRITE | MAY_EXEC).
-        const ALL_MAY_PERMS =  Self::MAY_READ.bits | Self::MAY_WRITE.bits | Self::MAY_EXEC.bits;
+        const ALL_MAY_PERMS = Self::MAY_READ.bits() | Self::MAY_WRITE.bits() | Self::MAY_EXEC.bits();
     }
 }
 
@@ -35,7 +37,7 @@ impl VmPerms {
     pub(crate) fn check(&self) -> Result<()> {
         let requested = *self & Self::ALL_PERMS;
         // NOTE: `MAY_READ >> 3 == READ`, and so for r/w/x bits.
-        let allowed = VmPerms::from_bits_truncate((*self & Self::ALL_MAY_PERMS).bits >> 3);
+        let allowed = VmPerms::from_bits_truncate((*self & Self::ALL_MAY_PERMS).bits() >> 3);
         if !allowed.contains(requested) {
             return_errno_with_message!(Errno::EACCES, "permission denied");
         }

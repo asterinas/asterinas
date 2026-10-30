@@ -43,11 +43,12 @@ pub(super) fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct UmountFlags: u32 {
-        const MNT_FORCE       = 0x00000001;	// Attempt to forcibily umount.
-        const MNT_DETACH      = 0x00000002;	// Just detach from the tree.
-        const MNT_EXPIRE      = 0x00000004;	// Mark for expiry.
-        const UMOUNT_NOFOLLOW = 0x00000008;	// Don't follow symlink on umount.
+        const MNT_FORCE       = 0x00000001; // Attempt to forcibily umount.
+        const MNT_DETACH      = 0x00000002; // Just detach from the tree.
+        const MNT_EXPIRE      = 0x00000004; // Mark for expiry.
+        const UMOUNT_NOFOLLOW = 0x00000008; // Don't follow symlink on umount.
     }
 }
 

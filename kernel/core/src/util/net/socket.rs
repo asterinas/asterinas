@@ -69,11 +69,10 @@ pub(crate) enum SockType {
 pub(crate) const SOCK_TYPE_MASK: i32 = 0xf;
 
 bitflags! {
-    #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct SockFlags: i32 {
         const SOCK_NONBLOCK = 1 << 11;
-        const SOCK_CLOEXEC = 1 << 19;
+        const SOCK_CLOEXEC  = 1 << 19;
     }
 }
 

@@ -476,6 +476,7 @@ impl Clone for FileTableEntry {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct FdFlags: u8 {
         /// Close on exec
         const CLOEXEC = 1;

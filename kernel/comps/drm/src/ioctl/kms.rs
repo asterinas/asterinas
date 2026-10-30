@@ -540,7 +540,7 @@ impl DrmFile {
             };
 
             args.name = *property.name();
-            args.flags = property.flags();
+            args.flags = property.flags().bits();
             drop(object_store);
 
             copy_array_to_user(args_ptr.vm(), args.values_ptr, args.count_values, &values)?;
@@ -705,7 +705,8 @@ impl DrmFile {
                 "the DRM clip count and pointer are inconsistent"
             );
         }
-        if args.flags.contains(DrmModeFbDirtyFlags::ANNOTATE_COPY)
+        if DrmModeFbDirtyFlags::from_bits_retain(args.flags)
+            .contains(DrmModeFbDirtyFlags::ANNOTATE_COPY)
             && !args.num_clips.is_multiple_of(2)
         {
             return_errno_with_message!(
@@ -1058,7 +1059,7 @@ pub(super) struct DrmModeGetProperty {
     enum_blob_ptr: u64,
 
     prop_id: u32,
-    flags: DrmPropertyFlags,
+    flags: u32,
     name: FixedCStr<DRM_PROP_NAME_LEN>,
 
     count_values: u32,
@@ -1107,8 +1108,7 @@ bitflags::bitflags! {
     /// Framebuffer damage annotation flags in `drm_mode_fb_dirty_cmd::flags`.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L738-L740>.
-    #[repr(transparent)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug)]
     struct DrmModeFbDirtyFlags: u32 {
         /// Indicates that pixels were copied between paired source and destination rectangles.
         /// Each pair must have matching dimensions, and `num_clips` must be even.
@@ -1125,7 +1125,7 @@ bitflags::bitflags! {
 #[derive(Clone, Copy, Debug, Pod)]
 pub(super) struct DrmModeFbDirtyCmd {
     fb_id: u32,
-    flags: DrmModeFbDirtyFlags,
+    flags: u32,
     color: u32,
     num_clips: u32,
     clips_ptr: u64,

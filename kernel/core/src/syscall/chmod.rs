@@ -82,8 +82,9 @@ fn do_fchmodat(
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct ChmodFlags: u32 {
-        const AT_EMPTY_PATH = 1 << 12;
+        const AT_EMPTY_PATH       = 1 << 12;
         const AT_SYMLINK_NOFOLLOW = 1 << 8;
     }
 }

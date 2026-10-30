@@ -40,6 +40,7 @@ pub(super) fn sys_pidfd_open(pid: Pid, flags: u32, ctx: &Context) -> Result<Sysc
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct PidfdFlags: u32 {
         const PIDFD_NONBLOCK = StatusFlags::O_NONBLOCK.bits();
     }

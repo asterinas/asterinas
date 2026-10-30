@@ -121,10 +121,11 @@ bitflags::bitflags! {
     /// Framebuffer flags exposed through the DRM mode UAPI.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L666-L667>
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct DrmFramebufferFlags: u32 {
         /// The framebuffer contains interlaced image data.
         const INTERLACED = 1 << 0;
         /// The framebuffer uses an explicitly specified format modifier.
-        const MODIFIERS = 1 << 1;
+        const MODIFIERS  = 1 << 1;
     }
 }

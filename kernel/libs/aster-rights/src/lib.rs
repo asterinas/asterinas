@@ -11,19 +11,20 @@ bitflags::bitflags! {
     /// The access rights' semantics and how they would restrict the behaviors
     /// of a capability are decided by the capability's designer.
     /// Here, we give some sensible semantics for each access right.
+    #[derive(Clone, Copy, Debug)]
     pub struct Rights: u32 {
         /// Allows duplicating a capability.
         const DUP    = 1 << 0;
         /// Allows reading data from a data source (files, VM objects, etc.) or
         /// creating readable memory mappings.
-        const READ     = 1 << 1;
+        const READ   = 1 << 1;
         /// Allows writing data to a data sink (files, VM objects, etc.) or
         /// creating writable memory mappings.
-        const WRITE    = 1 << 2;
+        const WRITE  = 1 << 2;
         /// Allows creating executable memory mappings.
-        const EXEC    = 1 << 3;
+        const EXEC   = 1 << 3;
         /// Allows sending notifications or signals.
-        const SIGNAL   = 1 << 7;
+        const SIGNAL = 1 << 7;
     }
 }
 
@@ -34,17 +35,17 @@ typeflags::typeflags! {
     /// types.
     pub trait TRights: u32 {
         /// Allows duplicating a capability.
-        pub struct Dup     = Rights::DUP.bits;
+        pub struct Dup     = Rights::DUP.bits();
         /// Allows reading data from a data source (files, VM objects, etc.) or
         /// creating readable memory mappings.
-        pub struct Read     = Rights::READ.bits;
+        pub struct Read     = Rights::READ.bits();
         /// Allows writing data to a data sink (files, VM objects, etc.) or
         /// creating writable memory mappings.
-        pub struct Write    = Rights::WRITE.bits;
+        pub struct Write    = Rights::WRITE.bits();
         /// Allows creating executable memory mappings.
-        pub struct Exec     = Rights::EXEC.bits;
+        pub struct Exec     = Rights::EXEC.bits();
         /// Allows sending notifications or signals.
-        pub struct Signal   = Rights::SIGNAL.bits;
+        pub struct Signal   = Rights::SIGNAL.bits();
     }
 }
 

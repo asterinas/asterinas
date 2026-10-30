@@ -80,24 +80,28 @@ impl From<AddrSegmentBody> for CIfaddrMsg {
     }
 }
 
+/// Flags in [`CIfaddrMsg`].
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/if_addr.h#L45>.
+///
+/// Address flags are serialized in netlink replies; incoming headers are converted explicitly.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Immutable, IntoBytes)]
+pub(crate) struct AddrMessageFlags(u32);
+
 bitflags! {
-    /// Flags in [`CIfaddrMsg`].
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/if_addr.h#L45>.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(crate) struct AddrMessageFlags: u32 {
+    impl AddrMessageFlags: u32 {
         const SECONDARY      = 0x01;
         const NODAD          = 0x02;
         const OPTIMISTIC     = 0x04;
         const DADFAILED      = 0x08;
         const HOMEADDRESS    = 0x10;
-        const DEPRECATED	 = 0x20;
-        const TENTATIVE		 = 0x40;
-        const PERMANENT		 = 0x80;
+        const DEPRECATED     = 0x20;
+        const TENTATIVE      = 0x40;
+        const PERMANENT      = 0x80;
         const MANAGETEMPADDR = 0x100;
-        const NOPREFIXROUTE	 = 0x200;
-        const MCAUTOJOIN	 = 0x400;
+        const NOPREFIXROUTE  = 0x200;
+        const MCAUTOJOIN     = 0x400;
         const STABLE_PRIVACY = 0x800;
     }
 }

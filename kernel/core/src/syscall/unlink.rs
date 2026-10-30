@@ -63,6 +63,7 @@ pub(super) fn sys_unlink(path_addr: Vaddr, ctx: &Context) -> Result<SyscallRetur
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct UnlinkFlags: u32 {
         const AT_REMOVEDIR = 0x200;
     }

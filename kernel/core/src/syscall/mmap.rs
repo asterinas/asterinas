@@ -241,7 +241,9 @@ impl MMapType {
 
 bitflags! {
     // If you update the flags here, please also check and update `LEGACY_MMAP_FLAGS` below.
-    struct MMapFlags : u32 {
+
+    #[derive(Clone, Copy, Debug)]
+    struct MMapFlags: u32 {
         const MAP_FIXED           = 0x10;
         const MAP_ANONYMOUS       = 0x20;
         #[cfg(target_arch = "x86_64")]

@@ -283,8 +283,7 @@ bitflags::bitflags! {
     /// In particular, [`Self::OBJECT`] and [`Self::SIGNED_RANGE`] use Linux's extended-type bit range.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L518-L545>.
-    #[repr(transparent)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct DrmPropertyFlags: u32 {
         /// An unsigned integer range property.
         const RANGE        = 1 << 1;
@@ -299,9 +298,9 @@ bitflags::bitflags! {
         /// A property whose value is another DRM object's ID.
         const OBJECT       = 1 << 6;
         /// A signed integer range property.
-        const SIGNED_RANGE = 2 << 6;
+        const SIGNED_RANGE = 1 << 7;
         /// A property exposed only to clients that understand atomic KMS.
-        const ATOMIC       = 0x8000_0000;
+        const ATOMIC       = 1 << 31;
     }
 }
 

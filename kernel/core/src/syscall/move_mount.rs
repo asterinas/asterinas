@@ -80,6 +80,7 @@ fn get_detached_mount(from_dfd: RawFileDesc, ctx: &Context) -> Result<Arc<Mount>
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct MoveMountFlags: u32 {
         const MOVE_MOUNT_F_SYMLINKS   = 0x0000_0001;
         const MOVE_MOUNT_F_AUTOMOUNTS = 0x0000_0002;

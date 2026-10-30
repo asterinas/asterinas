@@ -285,8 +285,9 @@ fn vfs_utimes(path: &Path, times: Option<TimeSpecPair>) -> Result<SyscallReturn>
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct UtimensFlags: u32 {
-        const AT_EMPTY_PATH = 0x1000;
+        const AT_EMPTY_PATH       = 0x1000;
         const AT_SYMLINK_NOFOLLOW = 0x100;
     }
 }

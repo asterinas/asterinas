@@ -679,45 +679,46 @@ impl InodePayload {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct FileFlags: u32 {
         /// Secure deletion.
-        const SECURE_DEL = 1 << 0;
+        const SECURE_DEL   = 1 << 0;
         /// Undelete.
-        const UNDELETE = 1 << 1;
+        const UNDELETE     = 1 << 1;
         /// Compresses the file.
-        const COMPRESS = 1 << 2;
+        const COMPRESS     = 1 << 2;
         /// Synchronous updates.
-        const SYNC_UPDATE = 1 << 3;
+        const SYNC_UPDATE  = 1 << 3;
         /// Immutable file.
-        const IMMUTABLE = 1 << 4;
+        const IMMUTABLE    = 1 << 4;
         /// Append only.
-        const APPEND_ONLY = 1 << 5;
+        const APPEND_ONLY  = 1 << 5;
         /// Do not dump file.
-        const NO_DUMP = 1 << 6;
+        const NO_DUMP      = 1 << 6;
         /// Does not update `atime`.
-        const NO_ATIME = 1 << 7;
+        const NO_ATIME     = 1 << 7;
         /// Dirty.
-        const DIRTY = 1 << 8;
+        const DIRTY        = 1 << 8;
         /// One or more compressed clusters.
         const COMPRESS_BLK = 1 << 9;
         /// Does not compress.
-        const NO_COMPRESS = 1 << 10;
+        const NO_COMPRESS  = 1 << 10;
         /// Encrypted file.
-        const ENCRYPT = 1 << 11;
+        const ENCRYPT      = 1 << 11;
         /// Hash-indexed directory.
-        const INDEX_DIR = 1 << 12;
+        const INDEX_DIR    = 1 << 12;
         /// AFS directory.
-        const IMAGIC = 1 << 13;
+        const IMAGIC       = 1 << 13;
         /// Journal file data.
         const JOURNAL_DATA = 1 << 14;
         /// File tail should not be merged.
-        const NO_TAIL = 1 << 15;
+        const NO_TAIL      = 1 << 15;
         /// Dirsync behavior (directories only).
-        const DIR_SYNC = 1 << 16;
+        const DIR_SYNC     = 1 << 16;
         /// Top of directory hierarchies.
-        const TOP_DIR = 1 << 17;
+        const TOP_DIR      = 1 << 17;
         /// Reserved for the ext2 library.
-        const RESERVED = 1 << 31;
+        const RESERVED     = 1 << 31;
     }
 }
 
