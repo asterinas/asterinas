@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Regression tests for the page-cache subsystem in the
-//! concurrency scenarios.
+//! Regression tests for page-cache operations and concurrency.
 
 use alloc::vec;
 
@@ -47,6 +46,62 @@ fn write_vmo_bytes(vmo: &Vmo, bytes: &[u8]) {
     let mut reader = VmReader::from(bytes);
     let mut writer = page.writer();
     assert_eq!(writer.write(&mut reader), bytes.len());
+}
+
+#[ktest]
+fn evict_anonymous_pages() {
+    let page_cache = PageCache::new_anon(3 * PAGE_SIZE).unwrap();
+    let mut expected = vec![0x5a; 3 * PAGE_SIZE];
+    page_cache.write_bytes(0, &expected).unwrap();
+
+    // An empty range must not discard the page containing the offset.
+    page_cache.evict_range(1..1).unwrap();
+    let mut actual = vec![0; expected.len()];
+    page_cache.read_bytes(0, &mut actual).unwrap();
+    assert_eq!(actual, expected);
+
+    page_cache.evict_range(PAGE_SIZE..2 * PAGE_SIZE).unwrap();
+    expected[PAGE_SIZE..2 * PAGE_SIZE].fill(0);
+    page_cache.read_bytes(0, &mut actual).unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(page_cache.size(), 3 * PAGE_SIZE);
+
+    // Eviction covers whole pages and clips the range at the cache size.
+    page_cache
+        .evict_range(2 * PAGE_SIZE + 1..4 * PAGE_SIZE)
+        .unwrap();
+    expected[2 * PAGE_SIZE..].fill(0);
+    page_cache.read_bytes(0, &mut actual).unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[ktest]
+fn evict_backend_keeps_dirty_pages() {
+    let backend = MockPageCacheBackend::new(2);
+    backend.set_persisted_page_bytes(0, &[0x3c; PAGE_SIZE]);
+    let page_cache = new_backend_page_cache(&backend, 2);
+    let mut actual = vec![0; PAGE_SIZE];
+    page_cache.read_bytes(0, &mut actual).unwrap();
+    assert_eq!(backend.read_count(0), 1);
+    page_cache
+        .write_bytes(PAGE_SIZE, &[0x7d; PAGE_SIZE])
+        .unwrap();
+
+    page_cache.evict_range(0..2 * PAGE_SIZE).unwrap();
+    page_cache.read_bytes(0, &mut actual).unwrap();
+    assert_eq!(actual, vec![0x3c; PAGE_SIZE]);
+    assert_eq!(backend.read_count(0), 2);
+    page_cache.read_bytes(PAGE_SIZE, &mut actual).unwrap();
+    assert_eq!(actual, vec![0x7d; PAGE_SIZE]);
+    assert_eq!(backend.write_count(1), 0);
+}
+
+#[ktest]
+fn evict_with_dropped_backend_is_noop() {
+    let backend = MockPageCacheBackend::new(1);
+    let page_cache = new_backend_page_cache(&backend, 1);
+    drop(backend);
+    page_cache.evict_range(0..PAGE_SIZE).unwrap();
 }
 
 /// Serializes a cold read and a later overwrite with the caller-provided

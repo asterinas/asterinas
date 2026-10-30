@@ -161,6 +161,8 @@ Supported functionality in SCML:
 ```
 
 Ranges exceeding the signed file offset limit fail with `EFBIG`.
+On ramfs, punching a hole releases complete pages and zeroes partial boundary
+pages without changing the file size. Existing shared mappings observe the hole.
 
 Unsupported modes:
 * `FALLOC_FL_UNSHARE_RANGE`

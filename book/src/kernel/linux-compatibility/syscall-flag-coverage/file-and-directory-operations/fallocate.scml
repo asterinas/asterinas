@@ -3,4 +3,6 @@
 fallocate(fd, mode = FALLOC_FL_KEEP_SIZE, offset, size);
 
 // Deallocate space (create a hole) while keeping the file size unchanged
+// On ramfs, release complete pages and zero partial boundary pages;
+// existing shared mappings observe the updated contents.
 fallocate(fd, mode = FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, offset, size);
