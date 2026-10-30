@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Regression tests for the page-cache subsystem in the
-//! concurrency scenarios.
+//! Regression tests for page-cache concurrency and readahead.
 
 use alloc::vec;
 
@@ -10,8 +9,11 @@ use ostd::{
     prelude::ktest,
 };
 
-use self::utils::{IoCompletion, IoKind, MockPageCacheBackend, wait_until};
-use super::{PageCache, PageCacheBackend, Vmo, VmoCommitError, VmoMapMode};
+use self::utils::{IoCompletion, IoKind, MockPageCacheBackend, try_wait_until, wait_until};
+use super::{
+    PageCache, PageCacheBackend, Vmo, VmoCommitError, VmoMapMode,
+    readahead::{Readahead, ReadaheadTrigger},
+};
 use crate::{prelude::*, thread::kernel_thread::ThreadOptions};
 
 mod utils;
@@ -381,7 +383,7 @@ fn concurrent_page_faults() {
 
     let mut read_buffer = vec![0; PAGE_SIZE];
     let mut writer = VmWriter::from(read_buffer.as_mut_slice()).to_fallible();
-    vmo.read(0, &mut writer).unwrap();
+    vmo.read(0, &mut writer, None).unwrap();
     assert_eq!(read_buffer, vec![0x6b; PAGE_SIZE]);
 }
 
@@ -549,4 +551,274 @@ fn delayed_io_completion() {
     assert!(first_flush_result.lock().take().unwrap().is_ok());
     assert!(second_flush_result.lock().take().unwrap().is_ok());
     assert_eq!(backend.persisted_page_bytes(0), latest_dirty_pattern);
+}
+
+/// Anonymous reads span batches, preserve holes, and stop at the VMO boundary.
+#[ktest]
+fn anonymous_read_spans_batches_and_clamps_to_size() {
+    let size = 35 * PAGE_SIZE;
+    let page_cache = PageCache::new_anon(size).unwrap();
+    let data = [0x5a; 17];
+    page_cache.write_bytes(PAGE_SIZE - 7, &data).unwrap();
+    let mut expected = vec![0; size];
+    expected[PAGE_SIZE - 7..PAGE_SIZE - 7 + data.len()].copy_from_slice(&data);
+
+    let offset = 13;
+    let mut buf = vec![0xff; size + PAGE_SIZE];
+    let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
+    let readahead = Readahead::default();
+    page_cache
+        .read_buffered(offset, &mut writer, Some(&readahead))
+        .unwrap();
+    assert_eq!(writer.avail(), PAGE_SIZE + offset);
+    assert_eq!(&buf[..size - offset], &expected[offset..]);
+    assert!(buf[size - offset..].iter().all(|&byte| byte == 0xff));
+}
+
+/// An uninitialized page stops collection before a later readahead marker.
+#[ktest]
+fn buffered_readahead_preserves_marker_after_uninitialized_page() {
+    let backend = MockPageCacheBackend::new(16);
+    backend.set_completion(IoKind::Read, IoCompletion::Deferred);
+    backend.set_persisted_page_bytes(0, &vec![0x5a; PAGE_SIZE]);
+    let page_cache = new_backend_page_cache(&backend, 16);
+    let vmo = page_cache.as_vmo();
+    vmo.readahead(1..2, None).unwrap();
+    assert!(backend.complete_next_deferred_bio(IoKind::Read, false));
+    backend.set_completion(IoKind::Read, IoCompletion::Immediate);
+    vmo.readahead(0..4, Some(2)).unwrap();
+    backend.fail_read_submission(1);
+
+    let readahead = Readahead::default();
+    let mut buf = vec![0xff; 3 * PAGE_SIZE];
+    let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
+    assert_eq!(
+        page_cache.read_buffered(0, &mut writer, Some(&readahead)),
+        Err(ostd::Error::IoError)
+    );
+    assert_eq!(writer.avail(), 2 * PAGE_SIZE);
+    assert!(buf[..PAGE_SIZE].iter().all(|&byte| byte == 0x5a));
+    assert!(buf[PAGE_SIZE..].iter().all(|&byte| byte == 0xff));
+    assert_eq!(backend.read_count(1), 2);
+    assert_eq!(backend.read_count(4), 0);
+    assert!(matches!(
+        vmo.take_readahead_trigger(2),
+        Some(ReadaheadTrigger::Marker)
+    ));
+}
+
+/// A marker inserted during a cold read must not wait behind the rest of
+/// the demand batch. Regression for the 2026-10-28 readahead review.
+#[ktest]
+fn buffered_readahead_continues_before_later_pages_complete() {
+    let backend = MockPageCacheBackend::new(96);
+    backend.set_completion(IoKind::Read, IoCompletion::Deferred);
+    let page_cache = Arc::new(new_backend_page_cache(&backend, 96));
+    let read_thread = {
+        let page_cache = page_cache.clone();
+        ThreadOptions::new(move || {
+            let readahead = Readahead::default();
+            let mut buf = vec![0; 64 * PAGE_SIZE];
+            let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
+            page_cache
+                .read_buffered(0, &mut writer, Some(&readahead))
+                .unwrap();
+            assert_eq!(writer.avail(), 0);
+        })
+        .spawn()
+    };
+
+    backend.wait_for_deferred_bios(IoKind::Read, 32);
+    // The initial window's marker is page 16. Hold pages 17..31 pending.
+    for _ in 0..17 {
+        assert!(backend.complete_next_deferred_bio(IoKind::Read, true));
+    }
+    let continued = try_wait_until(|| backend.read_count(32) > 0);
+
+    // Release the reader even if the continuation did not happen in time.
+    backend.set_completion(IoKind::Read, IoCompletion::Immediate);
+    while backend.complete_next_deferred_bio(IoKind::Read, true) {}
+    read_thread.join();
+    assert!(continued, "readahead waited for pages after its marker");
+    // The same read must also reach the next marker and prefetch beyond
+    // its requested range without rereading any page.
+    for page_idx in 0..96 {
+        assert_eq!(backend.read_count(page_idx), 1);
+    }
+}
+
+/// A random request must not inflate the initial window of a new stream.
+/// Regression for the 2026-10-28 readahead review.
+#[ktest]
+fn buffered_readahead_initializes_after_a_random_read() {
+    let backend = MockPageCacheBackend::new(160);
+    let page_cache = new_backend_page_cache(&backend, 160);
+    let readahead = Readahead::default();
+    let mut buf = vec![0; 16 * PAGE_SIZE];
+    let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
+    page_cache
+        .read_buffered(100 * PAGE_SIZE, &mut writer, Some(&readahead))
+        .unwrap();
+    readahead.finish_read(100 * PAGE_SIZE, buf.len());
+    for page_idx in 100..116 {
+        assert_eq!(backend.read_count(page_idx), 1);
+        assert!(
+            page_cache
+                .as_vmo()
+                .take_readahead_trigger(page_idx)
+                .is_none()
+        );
+    }
+    assert_eq!(backend.read_count(116), 0);
+
+    let mut page = [0; PAGE_SIZE];
+    let mut writer = VmWriter::from(&mut page[..]).to_fallible();
+    page_cache
+        .read_buffered(116 * PAGE_SIZE, &mut writer, Some(&readahead))
+        .unwrap();
+    for page_idx in 116..120 {
+        assert_eq!(backend.read_count(page_idx), 1);
+    }
+    assert_eq!(backend.read_count(120), 0);
+}
+
+/// A cached prefix must not hide the first missing page from read readahead.
+#[ktest]
+fn buffered_readahead_starts_after_cached_prefix() {
+    let backend = MockPageCacheBackend::new(8);
+    let page_cache = new_backend_page_cache(&backend, 8);
+    let readahead = Readahead::default();
+    page_cache.write_bytes(0, &[0; PAGE_SIZE]).unwrap();
+
+    let mut buf = vec![0; 2 * PAGE_SIZE];
+    let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
+    page_cache
+        .read_buffered(0, &mut writer, Some(&readahead))
+        .unwrap();
+
+    assert_eq!(backend.read_count(0), 0);
+    for page_idx in 1..5 {
+        assert_eq!(backend.read_count(page_idx), 1);
+    }
+    assert_eq!(backend.read_count(5), 0);
+}
+
+/// Readahead clamps to the VMO size and skips cached gaps without changing
+/// the backend indices of missing runs or marking resident pages.
+#[ktest]
+fn readahead_preserves_indices_across_cached_gaps() {
+    let backend = MockPageCacheBackend::new(8);
+    let page_cache = new_backend_page_cache(&backend, 8);
+    let resident = [1, 4, 7];
+    for page_idx in 0..8 {
+        let pattern = vec![page_idx as u8; PAGE_SIZE];
+        backend.set_persisted_page_bytes(page_idx, &pattern);
+        if resident.contains(&page_idx) {
+            page_cache
+                .write_bytes(page_idx * PAGE_SIZE, &pattern)
+                .unwrap();
+        }
+    }
+
+    let vmo = page_cache.as_vmo();
+    vmo.readahead(0..12, Some(4)).unwrap();
+    assert!(vmo.take_readahead_trigger(4).is_none());
+    for page_idx in 0..8 {
+        let mut page = [0; PAGE_SIZE];
+        page_cache
+            .read_bytes(page_idx * PAGE_SIZE, &mut page)
+            .unwrap();
+        assert!(page.iter().all(|&byte| byte == page_idx as u8));
+        assert_eq!(
+            backend.read_count(page_idx),
+            usize::from(!resident.contains(&page_idx))
+        );
+    }
+}
+
+/// A demand read succeeds even after a readahead I/O completes with failure.
+#[ktest]
+fn readahead_io_failure_allows_demand_retry() {
+    let backend = MockPageCacheBackend::new(2);
+    backend.set_completion(IoKind::Read, IoCompletion::Deferred);
+
+    let page_cache = new_backend_page_cache(&backend, 2);
+    page_cache.as_vmo().readahead(0..1, None).unwrap();
+
+    backend.wait_for_deferred_bios(IoKind::Read, 1);
+    // Complete the readahead with an I/O error.
+    backend.complete_next_deferred_bio(IoKind::Read, false);
+
+    // Switch to immediate completion for the demand retry.
+    backend.set_completion(IoKind::Read, IoCompletion::Immediate);
+    let pattern = vec![0xCC; PAGE_SIZE];
+    backend.set_persisted_page_bytes(0, &pattern);
+
+    let mut buf = vec![0u8; PAGE_SIZE];
+    page_cache.read_bytes(0, &mut buf).unwrap();
+
+    // The demand read should have triggered a new backend read.
+    assert_eq!(backend.read_count(0), 2);
+    assert_eq!(buf, pattern);
+}
+
+/// A mapping can continue a marked buffered-read readahead window.
+#[ktest]
+fn readahead_marker_continues_buffered_read_window() {
+    let backend = MockPageCacheBackend::new(20);
+    let page_cache = new_backend_page_cache(&backend, 20);
+    let vmo = page_cache.as_vmo();
+    let readahead = Readahead::default();
+    readahead.on_read_miss(vmo, 0..1, 0);
+    page_cache.read_bytes(0, &mut [0; PAGE_SIZE]).unwrap();
+    readahead.finish_read(0, PAGE_SIZE);
+    for page_idx in 0..4 {
+        assert_eq!(backend.read_count(page_idx), 1);
+    }
+
+    readahead.on_fault(vmo, 2);
+    assert_eq!(backend.read_count(4), 0);
+    readahead.on_fault(vmo, 1);
+    for page_idx in 4..12 {
+        assert_eq!(backend.read_count(page_idx), 1);
+    }
+    assert_eq!(backend.read_count(12), 0);
+
+    readahead.on_fault(vmo, 1);
+    assert_eq!(backend.read_count(12), 0);
+    // The next marker advances the window, clamped to the cache capacity.
+    readahead.on_fault(vmo, 4);
+    for page_idx in 0..20 {
+        assert_eq!(backend.read_count(page_idx), 1);
+    }
+    assert!(matches!(
+        vmo.take_readahead_trigger(12),
+        Some(ReadaheadTrigger::Marker)
+    ));
+}
+
+/// An independent open infers a new window from another open's cached marker.
+#[ktest]
+fn readahead_marker_shared_between_independent_opens() {
+    let backend = MockPageCacheBackend::new(40);
+    let page_cache = new_backend_page_cache(&backend, 40);
+    let vmo = page_cache.as_vmo();
+    let first_readahead = Readahead::default();
+    let second_readahead = Readahead::default();
+
+    first_readahead.on_fault(vmo, 0);
+    for page_idx in 0..32 {
+        assert_eq!(backend.read_count(page_idx), 1);
+    }
+    assert_eq!(backend.read_count(32), 0);
+
+    second_readahead.on_fault(vmo, 24);
+    for page_idx in 0..40 {
+        assert_eq!(backend.read_count(page_idx), 1);
+    }
+    assert!(vmo.take_readahead_trigger(24).is_none());
+    assert!(matches!(
+        vmo.take_readahead_trigger(32),
+        Some(ReadaheadTrigger::Marker)
+    ));
 }
