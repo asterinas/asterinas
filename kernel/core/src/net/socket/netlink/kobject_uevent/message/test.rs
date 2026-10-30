@@ -1,24 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::vec;
-use core::str::FromStr;
 
 use ostd::prelude::*;
 
+use super::broadcast_uevent;
 use crate::{
     net::socket::{
         Socket,
-        netlink::{
-            GroupIdSet, NetlinkSocketAddr, NetlinkUeventSocket,
-            kobject_uevent::{
-                UeventMessage,
-                message::{
-                    syn_uevent::{SyntheticUevent, Uuid},
-                    uevent::Uevent,
-                },
-            },
-            table::{NetlinkUeventProtocol, SupportedNetlinkProtocol},
-        },
+        netlink::{GroupIdSet, NetlinkSocketAddr, NetlinkUeventSocket},
         util::{RecvFlags, SocketAddr},
     },
     prelude::*,
@@ -26,69 +16,59 @@ use crate::{
 };
 
 #[ktest]
-fn uuid() {
-    let uuid = Uuid::from_str("12345678-1234-1234-1234-123456789012");
-    assert!(uuid.is_ok());
-
-    let uuid = Uuid::from_str("12345678-1234-1234-1234-12345678901");
-    assert!(uuid.is_err());
-
-    let uuid = Uuid::from_str("12345678-1234-1234-1234-1234567890g");
-    assert!(uuid.is_err());
-}
-
-#[ktest]
-fn synthetic_uevent() {
-    let uevent = SyntheticUevent::from_str("add");
-    assert!(uevent.is_ok());
-
-    let uevent = SyntheticUevent::from_str("add 12345678-1234-1234-1234-123456789012");
-    assert!(uevent.is_ok());
-
-    let uevent = SyntheticUevent::from_str("add 12345678-1234-1234-1234-123456789012 NAME=lo");
-    assert!(uevent.is_ok());
-}
-
-#[ktest]
-fn multicast_synthetic_uevent() {
+fn multicast_raw_payloads() {
     crate::net::socket::netlink::init();
 
-    // Creates a new netlink uevent socket and joins the group for kobject uevents.
+    // Sending without listeners is best effort.
+    broadcast_uevent(vec![0xff, 0, 0x80]);
+
     let socket = NetlinkUeventSocket::new(true, SockType::SOCK_DGRAM);
-    let socket_addr = SocketAddr::Netlink(NetlinkSocketAddr::new(100, GroupIdSet::new(0x1)));
-    socket.bind(socket_addr).unwrap();
+    socket
+        .bind(SocketAddr::Netlink(NetlinkSocketAddr::new(
+            100,
+            GroupIdSet::new(1),
+        )))
+        .unwrap();
+    expect_empty(&socket);
 
-    // Tries to receive and returns EAGAIN if no message is available.
-    let mut buffer = vec![0u8; 1024];
+    // Payloads need not be UTF-8 or contain uevent environment entries.
+    let payloads = [vec![0xff, 0, 0x80, 0], vec![1, 2, 3]];
+    for payload in &payloads {
+        broadcast_uevent(payload.clone());
+    }
+    for payload in &payloads {
+        let mut buffer = [0u8; 16];
+        let mut writer = VmWriter::from(buffer.as_mut_slice()).to_fallible();
+        let (output, source) = socket.try_recv(&mut writer, RecvFlags::empty()).unwrap();
+        assert!(output.flags().is_empty());
+        assert_eq!(
+            source,
+            SocketAddr::Netlink(NetlinkSocketAddr::new(0, GroupIdSet::new(1)))
+        );
+        assert_eq!(&buffer[..output.len()], payload.as_slice());
+    }
+    expect_empty(&socket);
+
+    // Overflow is reported to the receiver, not to the sender.
+    const PAYLOAD_LEN: usize = 1024;
+    for _ in 0..=crate::net::socket::netlink::NETLINK_DEFAULT_BUF_SIZE / PAYLOAD_LEN {
+        broadcast_uevent(vec![0xa5; PAYLOAD_LEN]);
+    }
+    let mut buffer = [0u8; PAYLOAD_LEN];
     let mut writer = VmWriter::from(buffer.as_mut_slice()).to_fallible();
-    let flags = RecvFlags::empty();
-    let res = socket.try_recv(&mut writer, flags);
-    assert!(res.is_err_and(|err| err.error() == Errno::EAGAIN));
+    assert!(
+        socket
+            .try_recv(&mut writer, RecvFlags::empty())
+            .is_err_and(|err| err.error() == Errno::ENOBUFS)
+    );
+}
 
-    // Broadcasts a uevent message.
-    let uevent = {
-        let lo_infos = vec![
-            ("INTERFACE".to_string(), "lo".to_string()),
-            ("IFINDEX".to_string(), "1".to_string()),
-        ];
-        let synth_uevent = SyntheticUevent::from_str("add").unwrap();
-        Uevent::new_from_syn(
-            synth_uevent,
-            "/devices/virtual/net/lo".to_string(),
-            "net".to_string(),
-            lo_infos,
-        )
-    };
-    let uevent_message =
-        UeventMessage::new(uevent, NetlinkSocketAddr::new(0, GroupIdSet::new(0x1)));
-    NetlinkUeventProtocol::multicast(GroupIdSet::new(0x1), uevent_message).unwrap();
-
-    let (output, _) = socket.try_recv(&mut writer, flags).unwrap();
-    assert!(output.flags().is_empty());
-    let s = core::str::from_utf8(&buffer[..output.len()]).unwrap();
-
-    assert_eq!(
-        s,
-        "add@/devices/virtual/net/lo\0ACTION=add\0DEVPATH=/devices/virtual/net/lo\0SUBSYSTEM=net\0SYNTH_UUID=0\0INTERFACE=lo\0IFINDEX=1\0SEQNUM=1\0"
+fn expect_empty(socket: &NetlinkUeventSocket) {
+    let mut buffer = [0u8; 1];
+    let mut writer = VmWriter::from(buffer.as_mut_slice()).to_fallible();
+    assert!(
+        socket
+            .try_recv(&mut writer, RecvFlags::empty())
+            .is_err_and(|err| err.error() == Errno::EAGAIN)
     );
 }

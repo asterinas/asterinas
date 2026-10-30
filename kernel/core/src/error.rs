@@ -364,6 +364,7 @@ impl From<aster_device::common::Error> for Error {
             InvalidName | InvalidValue => Error::new(Errno::EINVAL),
             ProbeFailed | Attribute | Format | Hook => Error::new(Errno::EIO),
             ResourceUnavailable => Error::new(Errno::ENOSPC),
+            MemoryBudgetExhausted => Error::new(Errno::ENOMEM),
             SysTree(inner) => inner.into(),
         }
     }
@@ -376,6 +377,7 @@ impl From<aster_systree::Error> for Error {
             NotFound => Error::new(Errno::ENOENT),
             InvalidOperation | InvalidName => Error::new(Errno::EINVAL),
             ResourceUnavailable => Error::new(Errno::EBUSY),
+            MemoryBudgetExhausted => Error::new(Errno::ENOMEM),
             AttributeError => Error::new(Errno::EIO),
             PermissionDenied => Error::new(Errno::EACCES),
             InternalError(msg) => Error::with_message(Errno::EIO, msg),

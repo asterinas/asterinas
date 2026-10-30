@@ -7,6 +7,7 @@
 //!
 //! - `cpu_byteorder`: The endianness of the running kernel ("little" or "big")
 //! - `address_bits`: The address size of the running kernel in bits
+//! - `uevent_seqnum`: The most recently allocated device uevent sequence number
 //!
 //! These attributes follow the Linux kernel sysfs specification:
 //! - [cpu_byteorder](https://www.kernel.org/doc/Documentation/ABI/testing/sysfs-kernel-cpu_byteorder)
@@ -75,6 +76,10 @@ impl KernelSysNodeRoot {
             SysStr::from("address_bits"),
             SysPerms::DEFAULT_RO_ATTR_PERMS,
         );
+        builder.add(
+            SysStr::from("uevent_seqnum"),
+            SysPerms::DEFAULT_RO_ATTR_PERMS,
+        );
         // TODO: Add more kernel-specific attributes.
         let attrs = builder
             .build()
@@ -106,6 +111,11 @@ inherit_sys_branch_node!(KernelSysNodeRoot, fields, {
             "address_bits" => {
                 let mut printer = VmPrinter::new_skip(writer, offset);
                 writeln!(printer, "{}", usize::BITS)?;
+                Ok(printer.bytes_written())
+            }
+            "uevent_seqnum" => {
+                let mut printer = VmPrinter::new_skip(writer, offset);
+                writeln!(printer, "{}", aster_device::uevent::current_seqnum())?;
                 Ok(printer.bytes_written())
             }
             // TODO: Add support for reading other attributes.

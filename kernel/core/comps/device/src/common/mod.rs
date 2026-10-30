@@ -92,7 +92,8 @@ pub trait AnyDevice: SysBranchNode + DeviceInternals {
 
 /// A finer kind within one bus or class, such as `disk` versus `partition` in the `block` class.
 ///
-/// A device type contributes attributes and a `devnode` policy to every device that carries it.
+/// A device type contributes attributes, a `devnode` policy, and uevent
+/// entries to every device that carries it.
 pub struct DeviceType<D: 'static> {
     /// The device type name.
     pub name: &'static str,
@@ -102,6 +103,14 @@ pub struct DeviceType<D: 'static> {
     pub devnode: Option<fn(&D) -> Option<DevNode>>,
     /// Whether a class device with this device type gets the `device` symlink to its parent.
     pub has_device_link: bool,
+    /// An optional callback that appends device-type-specific entries
+    /// to the uevent environment.
+    ///
+    /// Runs after the bus/class `append_uevent_vars()`,
+    /// preserving entry order.
+    /// Only append entries.
+    /// Do not call operations that acquire the same lock.
+    pub append_uevent_vars_fn: Option<fn(&D, &mut crate::uevent::UeventVars) -> Result<()>>,
 }
 
 impl<D: 'static> DeviceType<D> {
@@ -112,6 +121,7 @@ impl<D: 'static> DeviceType<D> {
             attrs: &[],
             devnode: None,
             has_device_link: true,
+            append_uevent_vars_fn: None,
         }
     }
 }
@@ -156,6 +166,18 @@ impl<D: AnyDevice> DeclaredParts<D> {
     /// Returns whether the device type keeps the `device` symlink.
     pub(crate) fn has_device_link(&self) -> bool {
         self.dev_type.is_none_or(|t| t.has_device_link)
+    }
+
+    /// Appends device-type-specific uevent entries, if a callback is declared.
+    pub(crate) fn append_uevent_vars(
+        &self,
+        dev: &D,
+        vars: &mut crate::uevent::UeventVars,
+    ) -> Result<()> {
+        if let Some(callback_fn) = self.dev_type.and_then(|t| t.append_uevent_vars_fn) {
+            callback_fn(dev, vars)?;
+        }
+        Ok(())
     }
 }
 

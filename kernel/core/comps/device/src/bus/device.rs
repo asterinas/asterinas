@@ -153,6 +153,16 @@ impl<B: Bus> DeviceInternals for BusDevice<B> {
     fn devnode_override(&self) -> Option<DevNode> {
         self.declared.type_devnode(self)
     }
+
+    fn append_uevent_vars(&self, vars: &mut crate::uevent::UeventVars) -> Result<()> {
+        if let Some(driver) = self.driver() {
+            vars.add("DRIVER", driver.name())?;
+        }
+
+        // The bus appends its entries before the device type.
+        self.bus.bus().append_uevent_vars(self, vars)?;
+        self.declared.append_uevent_vars(self, vars)
+    }
 }
 
 impl<B: Bus> core::fmt::Debug for BusDevice<B> {

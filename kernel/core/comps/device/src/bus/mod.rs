@@ -73,6 +73,21 @@ pub trait Bus: Sized + Send + Sync + 'static {
 
     /// Returns the attributes shared by all devices on this bus.
     fn dev_attrs(&self) -> &'static [Attr<BusDevice<Self>>];
+
+    /// Appends bus-specific entries to a device's uevent environment.
+    ///
+    /// Called for automatic and explicit events and for `uevent` reads.
+    /// Do not add `DRIVER`; the model derives it.
+    ///
+    /// Automatic bind/unbind events call this with `bind_lock` held;
+    /// do not call operations that acquire the same lock.
+    fn append_uevent_vars(
+        &self,
+        _dev: &BusDevice<Self>,
+        _vars: &mut crate::uevent::UeventVars,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Registers a bus, creating `/sys/bus/<name>/{devices,drivers}`.
@@ -236,11 +251,22 @@ impl<B: Bus> BusHandle<B> {
         driver.state().lock().start_binding(dev)?;
 
         let result = self.bind_inner(dev, driver);
-        let mut state = driver.state().lock();
-        if result.is_ok() {
-            state.finish_binding(dev);
-        } else {
-            state.abort_binding(dev);
+        {
+            let mut state = driver.state().lock();
+            if result.is_ok() {
+                state.finish_binding(dev);
+            } else {
+                state.abort_binding(dev);
+            }
+        }
+        if result.is_ok()
+            && let Err(error) = crate::uevent::emit(
+                dev.as_ref(),
+                crate::uevent::UeventAction::Bind,
+                &crate::uevent::UeventVars::new(),
+            )
+        {
+            ostd::debug!("cannot emit bind for {}: {error}", dev.name());
         }
         result
     }
@@ -294,6 +320,13 @@ impl<B: Bus> BusHandle<B> {
         driver.on_release(dev);
         dev.take_driver();
         driver.state().lock().forget_bound(dev);
+        if let Err(error) = crate::uevent::emit(
+            dev.as_ref(),
+            crate::uevent::UeventAction::Unbind,
+            &crate::uevent::UeventVars::new(),
+        ) {
+            ostd::debug!("cannot emit unbind for {}: {error}", dev.name());
+        }
         Ok(())
     }
 

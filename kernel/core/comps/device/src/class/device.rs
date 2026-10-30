@@ -132,6 +132,15 @@ impl<C: Class> DeviceInternals for ClassDevice<C> {
     fn wants_device_link(&self) -> bool {
         self.declared.has_device_link()
     }
+
+    fn append_uevent_vars(
+        &self,
+        vars: &mut crate::uevent::UeventVars,
+    ) -> crate::common::Result<()> {
+        // The class appends its entries before the device type.
+        self.class.class().append_uevent_vars(self, vars)?;
+        self.declared.append_uevent_vars(self, vars)
+    }
 }
 
 impl<C: Class> core::fmt::Debug for ClassDevice<C> {

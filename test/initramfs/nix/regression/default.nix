@@ -23,6 +23,7 @@ let
     "process"
     "security"
     "time"
+    "uevent"
   ];
 
   tdxAttest = callPackage ./tdx-attest.nix { };

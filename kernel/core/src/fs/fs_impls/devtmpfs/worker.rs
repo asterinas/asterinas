@@ -100,7 +100,7 @@ enum Request {
 }
 
 #[cfg(ktest)]
-pub(super) fn init_for_ktest() {
+pub(crate) fn init_for_ktest() {
     static START: Once<()> = Once::new();
 
     crate::time::clocks::init_for_ktest();
