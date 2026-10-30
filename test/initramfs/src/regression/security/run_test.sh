@@ -13,6 +13,7 @@ set -e
 ./capability/setgroups
 ./capability/trusted_xattr
 
+./lsm/apparmor
 ./lsm/module_selection
 ./lsm/yama
 
