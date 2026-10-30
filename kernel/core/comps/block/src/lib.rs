@@ -47,6 +47,9 @@ mod partition;
 mod prelude;
 pub mod request_queue;
 
+#[cfg(ktest)]
+mod tests;
+
 use ::device_id::DeviceId;
 use component::{ComponentInitError, init_component};
 use ostd::sync::Mutex;
@@ -98,6 +101,23 @@ pub trait BlockDevice: Send + Sync + Any + Debug {
     }
 }
 
+/// A block device whose queued requests are processed by a dedicated worker.
+///
+/// Devices that process or forward requests without such a worker only need to
+/// implement [`BlockDevice`].
+pub trait BlockRequestHandler: BlockDevice {
+    /// Waits for and processes the next queued request.
+    ///
+    /// This method may sleep. The caller must use a sleepable thread context and
+    /// must not call this method concurrently on the same handler. Returning does
+    /// not imply I/O completion. I/O errors are reported through the submitted
+    /// BIO's completion status.
+    fn handle_next_request(&self);
+}
+
+/// A function that starts a dedicated worker for a block request handler.
+pub type RequestWorkerSpawner = fn(Arc<dyn BlockRequestHandler>);
+
 /// Metadata for a block device.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BlockDeviceMeta {
@@ -119,6 +139,8 @@ impl dyn BlockDevice {
 pub enum Error {
     /// Device registered
     Registered,
+    /// Request worker spawner registered
+    RequestWorkerSpawnerRegistered,
     /// Device not found
     NotFound,
     /// Invalid arguments
@@ -131,41 +153,93 @@ pub enum Error {
 
 /// Registers a new block device.
 pub fn register(device: Arc<dyn BlockDevice>) -> Result<(), Error> {
-    let mut registry = DEVICE_REGISTRY.lock();
-    let id = device.id().to_raw();
-    if registry.contains_key(&id) {
-        return Err(Error::Registered);
+    register_entry(RegisteredDevice {
+        device,
+        request_handler: None,
+    })
+}
+
+/// Registers a block device that requires a dedicated request worker.
+///
+/// If a request worker spawner is already registered, it is invoked for this device
+/// before this function returns. Otherwise, the worker is started when the spawner
+/// is registered.
+pub fn register_with_request_handler(device: Arc<dyn BlockRequestHandler>) -> Result<(), Error> {
+    register_entry(RegisteredDevice {
+        device: device.clone(),
+        request_handler: Some(device),
+    })
+}
+
+/// Registers a device entry and starts its request worker if a spawner is available.
+fn register_entry(entry: RegisteredDevice) -> Result<(), Error> {
+    let request_worker = DEVICE_REGISTRY.lock().register(entry)?;
+    if let Some((spawner, handler)) = request_worker {
+        spawner(handler);
     }
-    registry.insert(id, device);
+
+    Ok(())
+}
+
+/// Registers the function used to start block request workers.
+///
+/// The spawner is invoked for every previously registered whole-disk request
+/// handler before this function returns. Request handlers registered later invoke
+/// the spawner as part of their registration.
+///
+/// # Errors
+///
+/// Returns [`Error::RequestWorkerSpawnerRegistered`] if a spawner is already registered.
+pub fn register_request_worker_spawner(spawner: RequestWorkerSpawner) -> Result<(), Error> {
+    let handlers = DEVICE_REGISTRY
+        .lock()
+        .register_request_worker_spawner(spawner)?;
+    for handler in handlers {
+        spawner(handler);
+    }
 
     Ok(())
 }
 
 /// Unregisters an existing block device, returning the device if found.
+///
+/// This does not stop a request worker that has already been started for the device.
 pub fn unregister(id: DeviceId) -> Result<Arc<dyn BlockDevice>, Error> {
     DEVICE_REGISTRY
         .lock()
+        .devices
         .remove(&id.to_raw())
+        .map(|entry| entry.device)
         .ok_or(Error::NotFound)
 }
 
 /// Collects all block devices.
 pub fn collect_all() -> Vec<Arc<dyn BlockDevice>> {
-    DEVICE_REGISTRY.lock().values().cloned().collect()
+    DEVICE_REGISTRY
+        .lock()
+        .devices
+        .values()
+        .map(|entry| entry.device.clone())
+        .collect()
 }
 
 /// Looks up a block device of a given device ID.
 pub fn lookup(id: DeviceId) -> Option<Arc<dyn BlockDevice>> {
-    DEVICE_REGISTRY.lock().get(&id.to_raw()).cloned()
+    DEVICE_REGISTRY
+        .lock()
+        .devices
+        .get(&id.to_raw())
+        .map(|entry| entry.device.clone())
 }
 
 /// Looks up a block device by its kernel device name.
 pub fn lookup_by_name(name: &str) -> Option<Arc<dyn BlockDevice>> {
     DEVICE_REGISTRY
         .lock()
+        .devices
         .values()
-        .find(|device| device.name() == name)
-        .cloned()
+        .find(|entry| entry.device.name() == name)
+        .map(|entry| entry.device.clone())
 }
 
 /// Scans registered whole-disk devices and updates their partitions.
@@ -188,7 +262,67 @@ pub fn scan_partitions() {
     }
 }
 
-static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn BlockDevice>>> = Mutex::new(BTreeMap::new());
+struct RegisteredDevice {
+    device: Arc<dyn BlockDevice>,
+    request_handler: Option<Arc<dyn BlockRequestHandler>>,
+}
+
+type RequestWorker = (RequestWorkerSpawner, Arc<dyn BlockRequestHandler>);
+
+struct DeviceRegistry {
+    devices: BTreeMap<u32, RegisteredDevice>,
+    request_worker_spawner: Option<RequestWorkerSpawner>,
+}
+
+impl DeviceRegistry {
+    const fn new() -> Self {
+        Self {
+            devices: BTreeMap::new(),
+            request_worker_spawner: None,
+        }
+    }
+
+    fn register(&mut self, entry: RegisteredDevice) -> Result<Option<RequestWorker>, Error> {
+        let id = entry.device.id().to_raw();
+        if self.devices.contains_key(&id) {
+            return Err(Error::Registered);
+        }
+
+        let request_worker = if entry.device.is_partition() {
+            None
+        } else {
+            self.request_worker_spawner.and_then(|spawner| {
+                entry
+                    .request_handler
+                    .as_ref()
+                    .map(|handler| (spawner, handler.clone()))
+            })
+        };
+        self.devices.insert(id, entry);
+
+        Ok(request_worker)
+    }
+
+    /// Registers the spawner and returns existing whole-disk handlers awaiting workers.
+    fn register_request_worker_spawner(
+        &mut self,
+        spawner: RequestWorkerSpawner,
+    ) -> Result<Vec<Arc<dyn BlockRequestHandler>>, Error> {
+        if self.request_worker_spawner.is_some() {
+            return Err(Error::RequestWorkerSpawnerRegistered);
+        }
+        self.request_worker_spawner = Some(spawner);
+
+        Ok(self
+            .devices
+            .values()
+            .filter(|entry| !entry.device.is_partition())
+            .filter_map(|entry| entry.request_handler.clone())
+            .collect())
+    }
+}
+
+static DEVICE_REGISTRY: Mutex<DeviceRegistry> = Mutex::new(DeviceRegistry::new());
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
