@@ -57,6 +57,9 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
     - [`rust-type-invariants`](rust-specific/types-and-traits.md#rust-type-invariants): Use the type system (newtypes, enums, generics) to make illegal states unrepresentable.
     - [`enum-over-dyn`](rust-specific/types-and-traits.md#enum-over-dyn): For a closed set of variants, prefer an `enum` over `Box<dyn Trait>`.
     - [`getter-encapsulation`](rust-specific/types-and-traits.md#getter-encapsulation): Prefer a getter over a public field; it preserves naming freedom and room for invariants.
+    - [`bitflags-derives`](rust-specific/types-and-traits.md#bitflags-derives): Define an integer wrapper outside `bitflags!` for custom derives it does not natively support.
+    - [`bitflags-layout`](rust-specific/types-and-traits.md#bitflags-layout): Align flags with spaces and keep numeric notation consistent within each type.
+    - [`bitflags-retained-bits`](rust-specific/types-and-traits.md#bitflags-retained-bits): Use an unnamed mask in `bitflags!` to declare uninterpreted bits that must be retained.
 - [Functions & Methods](rust-specific/functions-and-methods.md)
     - [`no-bool-args`](rust-specific/functions-and-methods.md#no-bool-args): Avoid boolean parameters that select behavior; split the function or use a typed enum.
     - [`block-expressions`](rust-specific/functions-and-methods.md#block-expressions): Use a block expression to scope temporary state that only produces one value.
