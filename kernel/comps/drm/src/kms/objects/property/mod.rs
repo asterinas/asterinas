@@ -298,9 +298,9 @@ bitflags::bitflags! {
         /// A property whose value is another DRM object's ID.
         const OBJECT       = 1 << 6;
         /// A signed integer range property.
-        const SIGNED_RANGE = 2 << 6;
+        const SIGNED_RANGE = 1 << 7;
         /// A property exposed only to clients that understand atomic KMS.
-        const ATOMIC       = 0x8000_0000;
+        const ATOMIC       = 1 << 31;
     }
 }
 

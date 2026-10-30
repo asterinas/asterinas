@@ -49,7 +49,7 @@ bitflags! {
         const AUDIT_READ         = 1 << 37;
         const PERFMON            = 1 << 38;
         const BPF                = 1 << 39;
-        const CHECKPOINT_RESTORE = 1u64 << 40;
+        const CHECKPOINT_RESTORE = 1 << 40;
         // ... include other capabilities as needed
     }
 }
