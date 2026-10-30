@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
+use alloc::sync::{Arc, Weak};
 
 use ostd::sync::Mutex;
 
 use crate::{
     kms::{
         objects::{
-            KmsObjectId, KmsObjectIndex, KmsObjectMask,
+            DrmKmsObjectId, DrmKmsObjectIndex, DrmKmsObjectMask,
             crtc::DrmCrtc,
             framebuffer::DrmFramebuffer,
             property::{DrmPropertyAttachments, in_formats::DrmInFormats},
@@ -23,11 +23,11 @@ use crate::{
 /// Its runtime state selects a framebuffer, source rectangle, destination rectangle, and target CRTC.
 ///
 /// Supported CRTCs are represented by their per-type object indices in a bitmask.
-/// Runtime topology links are non-owning because the KMS object store owns both planes and CRTCs.
+/// CRTC links are weak because the topology owns the CRTCs.
 #[derive(Debug)]
 pub(crate) struct DrmPlane {
-    id: KmsObjectId,
-    index: KmsObjectIndex,
+    id: DrmKmsObjectId,
+    index: DrmKmsObjectIndex,
     config: DrmPlaneConfig,
     state: Mutex<DrmPlaneState>,
     properties: DrmPropertyAttachments,
@@ -35,8 +35,8 @@ pub(crate) struct DrmPlane {
 
 impl DrmPlane {
     pub(super) fn new(
-        id: KmsObjectId,
-        index: KmsObjectIndex,
+        id: DrmKmsObjectId,
+        index: DrmKmsObjectIndex,
         config: DrmPlaneConfig,
         properties: DrmPropertyAttachments,
     ) -> Self {
@@ -49,11 +49,11 @@ impl DrmPlane {
         }
     }
 
-    pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+    pub(crate) fn id(&self) -> u32 {
+        self.id.value()
     }
 
-    pub(crate) fn index(&self) -> KmsObjectIndex {
+    pub(crate) fn index(&self) -> DrmKmsObjectIndex {
         self.index
     }
 
@@ -69,7 +69,7 @@ impl DrmPlane {
         *self.state.lock() = state;
     }
 
-    pub(crate) fn possible_crtcs(&self) -> &KmsObjectMask {
+    pub(crate) fn possible_crtcs(&self) -> &DrmKmsObjectMask {
         &self.config.possible_crtcs
     }
 
@@ -87,7 +87,7 @@ impl DrmPlane {
 pub(super) struct DrmPlaneConfig {
     pub type_: DrmPlaneType,
     /// Each bit represents a CRTC's per-type registration index.
-    pub possible_crtcs: KmsObjectMask,
+    pub possible_crtcs: DrmKmsObjectMask,
     pub in_formats: DrmInFormats,
 }
 
@@ -98,7 +98,8 @@ pub(crate) struct DrmPlaneState {
     #[expect(dead_code)]
     crtc_rect: DrmRect,
 
-    framebuffer: Weak<DrmFramebuffer>,
+    /// Keeps the bound framebuffer alive independently of its creating file.
+    framebuffer: Option<Arc<DrmFramebuffer>>,
     crtc: Weak<DrmCrtc>,
 }
 
@@ -106,7 +107,7 @@ impl DrmPlaneState {
     pub(crate) fn new(
         source_rect: DrmRect,
         crtc_rect: DrmRect,
-        framebuffer: Weak<DrmFramebuffer>,
+        framebuffer: Option<Arc<DrmFramebuffer>>,
         crtc: Weak<DrmCrtc>,
     ) -> Self {
         Self {
@@ -121,7 +122,7 @@ impl DrmPlaneState {
         self.source_rect
     }
 
-    pub(crate) fn framebuffer(&self) -> &Weak<DrmFramebuffer> {
+    pub(crate) fn framebuffer(&self) -> &Option<Arc<DrmFramebuffer>> {
         &self.framebuffer
     }
 

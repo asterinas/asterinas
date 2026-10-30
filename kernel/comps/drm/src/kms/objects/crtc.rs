@@ -6,7 +6,9 @@ use ostd::sync::Mutex;
 
 use crate::kms::{
     display_mode::DrmDisplayMode,
-    objects::{KmsObjectId, KmsObjectIndex, plane::DrmPlane, property::DrmPropertyAttachments},
+    objects::{
+        DrmKmsObjectId, DrmKmsObjectIndex, plane::DrmPlane, property::DrmPropertyAttachments,
+    },
 };
 
 /// A display pipeline that scans out planes using a display mode.
@@ -14,11 +16,11 @@ use crate::kms::{
 /// A CRTC owns the runtime mode and activation state of the pipeline.
 /// Its primary plane is mandatory,
 /// while its cursor plane is optional;
-/// both links are non-owning because the KMS object store owns the topology objects.
+/// both links are weak because the topology owns the planes.
 #[derive(Debug)]
 pub(crate) struct DrmCrtc {
-    id: KmsObjectId,
-    index: KmsObjectIndex,
+    id: DrmKmsObjectId,
+    index: DrmKmsObjectIndex,
     config: DrmCrtcConfig,
     state: Mutex<DrmCrtcState>,
     properties: DrmPropertyAttachments,
@@ -26,8 +28,8 @@ pub(crate) struct DrmCrtc {
 
 impl DrmCrtc {
     pub(super) fn new(
-        id: KmsObjectId,
-        index: KmsObjectIndex,
+        id: DrmKmsObjectId,
+        index: DrmKmsObjectIndex,
         config: DrmCrtcConfig,
         properties: DrmPropertyAttachments,
     ) -> Self {
@@ -40,11 +42,11 @@ impl DrmCrtc {
         }
     }
 
-    pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+    pub(crate) fn id(&self) -> u32 {
+        self.id.value()
     }
 
-    pub(crate) fn index(&self) -> KmsObjectIndex {
+    pub(crate) fn index(&self) -> DrmKmsObjectIndex {
         self.index
     }
 

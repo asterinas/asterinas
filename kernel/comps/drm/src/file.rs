@@ -34,7 +34,7 @@ use crate::{
     device::{DrmDevice, DrmMaster},
     gem::object::DrmGemObject,
     has_current_sys_admin,
-    kms::objects::{KmsObjectId, framebuffer::DrmFramebuffer},
+    kms::objects::{framebuffer::DrmFramebuffer, property::blob::DrmPropertyBlob},
     minor::{DrmMinor, DrmMinorType},
 };
 
@@ -55,6 +55,8 @@ pub(super) struct DrmFile {
     gem_handles: Mutex<DrmGemHandleTable>,
     /// Framebuffers created through this open file.
     framebuffers: Mutex<Vec<Arc<DrmFramebuffer>>>,
+    /// Property blobs created through this open file.
+    property_blobs: Mutex<Vec<Arc<DrmPropertyBlob>>>,
 }
 
 impl DrmFile {
@@ -94,6 +96,7 @@ impl DrmFile {
 
             gem_handles: Mutex::new(DrmGemHandleTable::new()),
             framebuffers: Mutex::new(Vec::new()),
+            property_blobs: Mutex::new(Vec::new()),
         }
     }
 
@@ -190,19 +193,10 @@ impl DrmFile {
     }
 
     pub(super) fn add_framebuffer(&self, framebuffer: Arc<DrmFramebuffer>) {
-        let mut framebuffers = self.framebuffers.lock();
-        framebuffers.push(framebuffer);
+        self.framebuffers.lock().push(framebuffer);
     }
 
-    pub(super) fn lookup_framebuffer(&self, id: KmsObjectId) -> Option<Arc<DrmFramebuffer>> {
-        self.framebuffers
-            .lock()
-            .iter()
-            .find(|framebuffer| framebuffer.id() == id)
-            .cloned()
-    }
-
-    pub(super) fn framebuffer_ids(&self) -> Vec<KmsObjectId> {
+    pub(super) fn framebuffer_ids(&self) -> Vec<u32> {
         self.framebuffers
             .lock()
             .iter()
@@ -210,12 +204,38 @@ impl DrmFile {
             .collect()
     }
 
-    pub(super) fn remove_framebuffer(&self, id: KmsObjectId) -> Option<Arc<DrmFramebuffer>> {
+    pub(super) fn remove_framebuffer(&self, id: u32) -> Result<Arc<DrmFramebuffer>> {
         let mut framebuffers = self.framebuffers.lock();
         let position = framebuffers
             .iter()
-            .position(|framebuffer| framebuffer.id() == id)?;
-        Some(framebuffers.swap_remove(position))
+            .position(|framebuffer| framebuffer.id() == id)
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::ENOENT,
+                    "the DRM framebuffer is not owned by this file",
+                )
+            })?;
+
+        Ok(framebuffers.swap_remove(position))
+    }
+
+    pub(super) fn add_property_blob(&self, blob: Arc<DrmPropertyBlob>) {
+        self.property_blobs.lock().push(blob);
+    }
+
+    pub(super) fn remove_property_blob(&self, id: u32) -> Result<Arc<DrmPropertyBlob>> {
+        let mut property_blobs = self.property_blobs.lock();
+        let position = property_blobs
+            .iter()
+            .position(|blob| blob.id() == id)
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::ENOENT,
+                    "the DRM framebuffer is not owned by this file",
+                )
+            })?;
+
+        Ok(property_blobs.swap_remove(position))
     }
 
     /// Keeps tracking the ioctl caller while this file has never been master,
@@ -341,14 +361,6 @@ impl Pollable for DrmFile {
 
 impl Drop for DrmFile {
     fn drop(&mut self) {
-        let device = self.minor.device().clone();
-        if let Some(kms_ops) = device.as_kms_ops() {
-            let mut object_store = kms_ops.mode_config().object_store().lock();
-            for framebuffer in self.framebuffers.get_mut().drain(..) {
-                object_store.free_object_id(framebuffer.id());
-            }
-        }
-
         for gem_object in self.gem_handles.get_mut().drain() {
             gem_object.revoke_mmap(self.client_id);
         }

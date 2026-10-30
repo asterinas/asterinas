@@ -29,7 +29,7 @@ use aster_drm::{
         display_info::{DrmDisplayInfo, SubpixelOrder},
         display_mode::DrmDisplayMode,
         objects::{
-            KmsObjectIndex,
+            DrmKmsObjectIndex, DrmKmsObjectStore,
             builder::DrmKmsObjectStoreBuilder,
             connector::{
                 DrmConnector, DrmConnectorProbeState, DrmConnectorStatus, DrmConnectorType,
@@ -79,6 +79,7 @@ struct SimpleDrmDevice {
     features: DrmFeatures,
     pixel_format: DrmPixelFormat,
     mode_config: DrmModeConfig,
+    object_store: DrmKmsObjectStore,
 }
 
 impl SimpleDrmDevice {
@@ -114,18 +115,15 @@ impl SimpleDrmDevice {
         let width = u32::try_from(boot_framebuffer.width())?;
         let height = u32::try_from(boot_framebuffer.height())?;
 
-        let mode_config = DrmModeConfig::new(
-            DrmSize::new(1, 1),
-            DrmSize::new(width, height),
-            object_store,
-        )?
-        .set_shadow_buffer();
+        let mode_config = DrmModeConfig::new(DrmSize::new(1, 1), DrmSize::new(width, height))?
+            .set_shadow_buffer();
 
         Ok(Self {
             boot_framebuffer: boot_framebuffer.clone(),
             features: DrmFeatures::empty(),
             pixel_format,
             mode_config,
+            object_store,
         })
     }
 
@@ -228,6 +226,10 @@ impl DrmKmsOps for SimpleDrmDevice {
         &self.mode_config
     }
 
+    fn object_store(&self) -> &DrmKmsObjectStore {
+        &self.object_store
+    }
+
     fn probe_connector(&self, _connector: &DrmConnector) -> Result<DrmConnectorProbeState> {
         const SIMPLEDRM_VREFRESH_HZ: u32 = 60;
         const SIMPLEDRM_ASSUMED_DPI: u32 = 96;
@@ -250,7 +252,7 @@ impl DrmKmsOps for SimpleDrmDevice {
 
     fn set_crtc(
         &self,
-        _crtc_index: KmsObjectIndex,
+        _crtc_index: DrmKmsObjectIndex,
         framebuffer: Option<&DrmFramebuffer>,
         source_rect: DrmRect,
     ) -> Result<()> {
