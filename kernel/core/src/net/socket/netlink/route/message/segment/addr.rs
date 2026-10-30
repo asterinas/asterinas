@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::num::NonZeroU32;
-
 use super::legacy::CRtGenMsg;
 use crate::{
     net::socket::netlink::{
@@ -11,11 +9,10 @@ use crate::{
     prelude::*,
 };
 
-pub(crate) type AddrSegment = SegmentCommon<AddrSegmentBody, AddrAttr>;
+pub(in crate::net::socket::netlink::route) type AddrSegment = SegmentCommon<CIfaddrMsg, AddrAttr>;
 
-impl SegmentBody for AddrSegmentBody {
+impl SegmentBody for CIfaddrMsg {
     type CLegacyType = CRtGenMsg;
-    type CType = CIfaddrMsg;
 }
 
 /// `ifaddrmsg` in Linux.
@@ -33,51 +30,6 @@ pub(crate) struct CIfaddrMsg {
     pub scope: u8,
     /// Link index
     pub index: u32,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct AddrSegmentBody {
-    pub family: i32,
-    pub prefix_len: u8,
-    pub flags: AddrMessageFlags,
-    pub scope: RtScope,
-    pub index: Option<NonZeroU32>,
-}
-
-impl TryFrom<CIfaddrMsg> for AddrSegmentBody {
-    type Error = Error;
-
-    fn try_from(value: CIfaddrMsg) -> Result<Self> {
-        // TODO: If the attribute IFA_FLAGS exists, the flags in header should be ignored.
-        let flags = AddrMessageFlags::from_bits_truncate(value.flags as u32);
-        let scope = RtScope::try_from(value.scope)?;
-        let index = NonZeroU32::new(value.index);
-
-        Ok(Self {
-            family: value.family as i32,
-            prefix_len: value.prefix_len,
-            flags,
-            scope,
-            index,
-        })
-    }
-}
-
-impl From<AddrSegmentBody> for CIfaddrMsg {
-    fn from(value: AddrSegmentBody) -> Self {
-        let index = if let Some(index) = value.index {
-            index.get()
-        } else {
-            0
-        };
-        CIfaddrMsg {
-            family: value.family as u8,
-            prefix_len: value.prefix_len,
-            flags: value.flags.bits() as u8,
-            scope: value.scope as _,
-            index,
-        }
-    }
 }
 
 bitflags! {
