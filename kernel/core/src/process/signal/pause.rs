@@ -27,7 +27,7 @@ use crate::{
 /// which are similar to the `wait`-family methods except that the methods also return
 /// when the waiting thread is interrupted by a POSIX signal.
 /// When this happens, the `pause`-family methods return `Err(EINTR)`.
-pub(crate) trait Pause: WaitTimeout {
+pub trait Pause: WaitTimeout {
     /// Pauses until the condition is met or a signal interrupts.
     ///
     /// # Errors
@@ -252,7 +252,7 @@ impl Pause for WaitQueue {
 
 /// The reason why a process is paused by a `pause`-family method.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum PauseReason {
+pub enum PauseReason {
     Sleep,
     StopBySignal,
     StopByPtrace,

@@ -17,6 +17,8 @@ macro_rules! __log_prefix {
     };
 }
 
+mod vblank;
+
 use alloc::{sync::Arc, vec};
 use core::fmt::Debug;
 
@@ -48,8 +50,11 @@ use aster_framebuffer::{
 };
 use component::{ComponentInitError, init_component};
 
+use self::vblank::SimpleDrmVblankClock;
+
 const SIMPLEDRM_NAME: &str = "simpledrm";
 const SIMPLEDRM_DESC: &str = "DRM driver for simple-framebuffer platform devices";
+const SIMPLEDRM_VREFRESH_HZ: u32 = 60;
 
 #[init_component(process)]
 fn init() -> Result<(), ComponentInitError> {
@@ -79,6 +84,7 @@ struct SimpleDrmDevice {
     features: DrmFeatures,
     pixel_format: DrmPixelFormat,
     mode_config: DrmModeConfig,
+    vblank_clock: SimpleDrmVblankClock,
 }
 
 impl SimpleDrmDevice {
@@ -100,16 +106,20 @@ impl SimpleDrmDevice {
                 DrmPixelFormat::XRGB8888
             }
         };
-        let primary = builder.add_plane(DrmPlaneType::Primary, vec![pixel_format])?;
-        let crtc = builder.add_crtc(0, primary, None)?;
-        let encoder = builder.add_encoder(DrmEncoderType::Virtual)?;
-        let connector = builder.add_connector(DrmConnectorType::Virtual)?;
+        let primary_index = builder.add_plane(DrmPlaneType::Primary, vec![pixel_format])?;
+        let crtc_index = builder.add_crtc(0, primary_index, None)?;
+        let encoder_index = builder.add_encoder(DrmEncoderType::Virtual)?;
+        let connector_index = builder.add_connector(DrmConnectorType::Virtual)?;
 
-        builder.attach_plane_to_crtc(primary, crtc)?;
-        builder.attach_encoder_to_crtc(encoder, crtc)?;
-        builder.attach_connector_to_encoder(connector, encoder)?;
+        builder.attach_plane_to_crtc(primary_index, crtc_index)?;
+        builder.attach_encoder_to_crtc(encoder_index, crtc_index)?;
+        builder.attach_connector_to_encoder(connector_index, encoder_index)?;
 
         let object_store = builder.build()?;
+        let crtc = object_store
+            .lookup_crtc_by_index(crtc_index)
+            .expect("the simpledrm CRTC has been built")
+            .clone();
 
         let width = u32::try_from(boot_framebuffer.width())?;
         let height = u32::try_from(boot_framebuffer.height())?;
@@ -126,6 +136,7 @@ impl SimpleDrmDevice {
             features: DrmFeatures::empty(),
             pixel_format,
             mode_config,
+            vblank_clock: SimpleDrmVblankClock::new(crtc),
         })
     }
 
@@ -229,7 +240,6 @@ impl DrmKmsOps for SimpleDrmDevice {
     }
 
     fn probe_connector(&self, _connector: &DrmConnector) -> Result<DrmConnectorProbeState> {
-        const SIMPLEDRM_VREFRESH_HZ: u32 = 60;
         const SIMPLEDRM_ASSUMED_DPI: u32 = 96;
 
         let width = u32::try_from(self.boot_framebuffer.width())?;
@@ -254,12 +264,13 @@ impl DrmKmsOps for SimpleDrmDevice {
         framebuffer: Option<&DrmFramebuffer>,
         source_rect: DrmRect,
     ) -> Result<()> {
-        // simpledrm has a single CRTC backed by the boot framebuffer, so the CRTC index is unused.
-        // With no framebuffer, there is nothing to copy to the firmware framebuffer.
-        // simpledrm cannot turn off the firmware display, so the last image remains visible
-        // while the DRM core clears its state.
+        // Ignores the index because simpledrm has only one CRTC.
         if let Some(framebuffer) = framebuffer {
             self.flush_framebuffer(framebuffer, source_rect)?;
+            self.vblank_clock.start();
+        } else {
+            // Stops software vblanks while leaving the last image on the firmware display.
+            self.vblank_clock.stop();
         }
         Ok(())
     }

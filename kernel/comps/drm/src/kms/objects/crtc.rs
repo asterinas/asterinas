@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Weak;
+use core::time::Duration;
 
+use aster_core::prelude::*;
 use ostd::sync::Mutex;
 
 use crate::kms::{
     display_mode::DrmDisplayMode,
     objects::{KmsObjectId, KmsObjectIndex, plane::DrmPlane, property::DrmPropertyAttachments},
+    vblank::{DrmVblank, DrmVblankRequest, DrmVblankWaitResult},
 };
 
 /// A display pipeline that scans out planes using a display mode.
@@ -16,12 +19,13 @@ use crate::kms::{
 /// while its cursor plane is optional;
 /// both links are non-owning because the KMS object store owns the topology objects.
 #[derive(Debug)]
-pub(crate) struct DrmCrtc {
+pub struct DrmCrtc {
     id: KmsObjectId,
     index: KmsObjectIndex,
     config: DrmCrtcConfig,
     state: Mutex<DrmCrtcState>,
     properties: DrmPropertyAttachments,
+    vblank: DrmVblank,
 }
 
 impl DrmCrtc {
@@ -37,6 +41,7 @@ impl DrmCrtc {
             config,
             state: Mutex::new(DrmCrtcState::default()),
             properties,
+            vblank: DrmVblank::default(),
         }
     }
 
@@ -57,7 +62,11 @@ impl DrmCrtc {
     }
 
     pub(crate) fn update_state(&self, state: DrmCrtcState) {
-        *self.state.lock() = state;
+        // Serializes CRTC state changes and their vblank lifecycle notifications.
+        // Lock order: CRTC state -> vblank state; vblank never locks CRTC state.
+        let mut current_state = self.state.lock();
+        *current_state = state;
+        self.vblank.set_enabled(current_state.is_active());
     }
 
     pub(crate) fn primary_plane(&self) -> &Weak<DrmPlane> {
@@ -66,6 +75,31 @@ impl DrmCrtc {
 
     pub(crate) fn properties(&self) -> &DrmPropertyAttachments {
         &self.properties
+    }
+
+    pub(crate) fn vblank_sequence(&self) -> u64 {
+        self.vblank.sequence()
+    }
+
+    pub(crate) fn queue_vblank_request(&self, request: DrmVblankRequest) -> Result<u64> {
+        self.vblank.queue_request(request)
+    }
+
+    pub(crate) fn wait_target_sequence(&self, target_sequence: u64) -> Result<DrmVblankWaitResult> {
+        self.vblank.wait_target_sequence(target_sequence)
+    }
+
+    /// Handles a device notification for one or more vblanks on this CRTC.
+    ///
+    /// Devices pass `sequence_delta = 1` for a normal vblank notification.
+    /// Software clocks include missed vblanks in `sequence_delta` after a delay.
+    /// `timestamp` is the latest vblank's monotonic timestamp.
+    /// Zero increments and notifications while the CRTC is disabled or inactive
+    /// are ignored.
+    ///
+    /// The device must call this from task context because event handling may block.
+    pub fn handle_vblank(&self, timestamp: Duration, sequence_delta: u64) {
+        self.vblank.handle_vblank(timestamp, sequence_delta);
     }
 }
 
@@ -78,28 +112,50 @@ pub(super) struct DrmCrtcConfig {
     pub cursor_plane: Weak<DrmPlane>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct DrmCrtcState {
-    display_mode: Option<DrmDisplayMode>,
-    is_enabled: bool,
-    #[expect(dead_code)]
-    is_active: bool,
+    enable_state: CrtcEnableState,
+}
+
+impl Default for DrmCrtcState {
+    fn default() -> Self {
+        Self {
+            enable_state: CrtcEnableState::Disabled,
+        }
+    }
 }
 
 impl DrmCrtcState {
     pub(crate) fn new(display_mode: DrmDisplayMode) -> Self {
         Self {
-            display_mode: Some(display_mode),
-            is_enabled: true,
-            is_active: true,
+            enable_state: CrtcEnableState::Enabled {
+                display_mode,
+                is_active: true,
+            },
         }
     }
 
     pub(crate) fn display_mode(&self) -> Option<DrmDisplayMode> {
-        self.display_mode
+        match self.enable_state {
+            CrtcEnableState::Disabled => None,
+            CrtcEnableState::Enabled { display_mode, .. } => Some(display_mode),
+        }
     }
 
-    pub(crate) fn is_enabled(&self) -> bool {
-        self.is_enabled
+    fn is_active(&self) -> bool {
+        match self.enable_state {
+            CrtcEnableState::Disabled => false,
+            CrtcEnableState::Enabled { is_active, .. } => is_active,
+        }
     }
+}
+
+/// The CRTC's enable state, requiring a mode when enabled and preventing activity when disabled.
+#[derive(Clone, Debug)]
+enum CrtcEnableState {
+    Disabled,
+    Enabled {
+        display_mode: DrmDisplayMode,
+        is_active: bool,
+    },
 }
