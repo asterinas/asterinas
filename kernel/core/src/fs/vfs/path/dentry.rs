@@ -839,10 +839,21 @@ impl DirDentry<'_> {
                         .name_and_parent
                         .set(new_name, self.this())
                         .unwrap();
+                    let renamed_inode = old_dentry.inode().clone();
                     self.insert_positive_child(&mut children, new_name, old_dentry);
+
+                    fs::vfs::notify::on_rename(
+                        self.inode(),
+                        old_name,
+                        self.inode(),
+                        new_name,
+                        &renamed_inode,
+                    );
                 }
                 RenameMode::Exchange => {
                     let new_dentry = new_dentry.unwrap();
+                    let old_inode = old_dentry.inode().clone();
+                    let new_inode = new_dentry.inode().clone();
                     old_dentry
                         .name_and_parent
                         .set(new_name, self.this())
@@ -853,6 +864,21 @@ impl DirDentry<'_> {
                         .unwrap();
                     self.insert_positive_child(&mut children, new_name, old_dentry);
                     self.insert_positive_child(&mut children, old_name, new_dentry);
+
+                    fs::vfs::notify::on_rename(
+                        self.inode(),
+                        old_name,
+                        self.inode(),
+                        new_name,
+                        &old_inode,
+                    );
+                    fs::vfs::notify::on_rename(
+                        self.inode(),
+                        new_name,
+                        self.inode(),
+                        old_name,
+                        &new_inode,
+                    );
                 }
             }
         } else {
@@ -902,15 +928,26 @@ impl DirDentry<'_> {
 
             match mode {
                 RenameMode::Replace | RenameMode::NoReplace => {
+                    let renamed_inode = old_dentry.inode().clone();
                     old_children.delete(old_name);
                     old_dentry
                         .name_and_parent
                         .set(new_name, new_dir.this())
                         .unwrap();
                     new_dir.insert_positive_child(&mut new_children, new_name, old_dentry);
+
+                    fs::vfs::notify::on_rename(
+                        self.inode(),
+                        old_name,
+                        new_dir.inode(),
+                        new_name,
+                        &renamed_inode,
+                    );
                 }
                 RenameMode::Exchange => {
                     let new_dentry = new_dentry.unwrap();
+                    let old_inode = old_dentry.inode().clone();
+                    let new_inode = new_dentry.inode().clone();
                     old_dentry
                         .name_and_parent
                         .set(new_name, new_dir.this())
@@ -921,6 +958,21 @@ impl DirDentry<'_> {
                         .unwrap();
                     new_dir.insert_positive_child(&mut new_children, new_name, old_dentry);
                     self.insert_positive_child(&mut old_children, old_name, new_dentry);
+
+                    fs::vfs::notify::on_rename(
+                        self.inode(),
+                        old_name,
+                        new_dir.inode(),
+                        new_name,
+                        &old_inode,
+                    );
+                    fs::vfs::notify::on_rename(
+                        new_dir.inode(),
+                        new_name,
+                        self.inode(),
+                        old_name,
+                        &new_inode,
+                    );
                 }
             }
         }

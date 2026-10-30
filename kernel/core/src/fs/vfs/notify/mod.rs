@@ -82,7 +82,7 @@ impl FsEventPublisher {
 
         let removed = subscribers.len() != orig_len;
         if removed {
-            subscriber.deliver_event(FsEvents::IN_IGNORED, None);
+            subscriber.deliver_event(FsEvents::IN_IGNORED, None, 0);
         }
 
         removed
@@ -93,7 +93,7 @@ impl FsEventPublisher {
         let mut subscribers = self.subscribers.write();
 
         for subscriber in subscribers.iter() {
-            subscriber.deliver_event(FsEvents::IN_IGNORED, None);
+            subscriber.deliver_event(FsEvents::IN_IGNORED, None, 0);
         }
 
         let num_subscribers = subscribers.len();
@@ -117,6 +117,15 @@ impl FsEventPublisher {
 
     /// Broadcasts an event to all the subscribers of this publisher.
     pub(crate) fn publish_event(&self, events: FsEvents, name: Option<String>) {
+        self.publish_event_with_cookie(events, name, 0);
+    }
+
+    pub(crate) fn publish_event_with_cookie(
+        &self,
+        events: FsEvents,
+        name: Option<String>,
+        cookie: u32,
+    ) {
         let interesting = self.all_interesting_events.load(Ordering::Relaxed);
         if !interesting.intersects(events) {
             return;
@@ -125,7 +134,7 @@ impl FsEventPublisher {
         let subscribers = self.subscribers.read();
         let mut has_oneshot = false;
         for subscriber in subscribers.iter() {
-            has_oneshot |= subscriber.deliver_event(events, name.clone());
+            has_oneshot |= subscriber.deliver_event(events, name.clone(), cookie);
         }
         drop(subscribers);
 
@@ -203,7 +212,7 @@ pub(crate) trait FsEventSubscriber: Any + Send + Sync {
     ///
     /// Invariant: This method must not sleep or perform blocking operations. The publisher
     /// may hold a spin lock when calling this method.
-    fn deliver_event(&self, events: FsEvents, name: Option<String>) -> bool;
+    fn deliver_event(&self, events: FsEvents, name: Option<String>, cookie: u32) -> bool;
 
     /// Returns the events that this subscriber is interested in.
     fn interesting_events(&self) -> FsEvents;
@@ -411,6 +420,71 @@ fn notifiable_path(common: &FileCommon) -> Option<&Path> {
 }
 
 /// Notifies that a file's attributes changed.
+/// Allocates the cookie shared by the `IN_MOVED_FROM`/`IN_MOVED_TO` pair of one
+/// rename, so user space can pair them.
+/// Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/notify/inotify/inotify_user.c>
+fn next_rename_cookie() -> u32 {
+    static NEXT_COOKIE: AtomicU32 = AtomicU32::new(1);
+    NEXT_COOKIE.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Notifies that `inode` was renamed from `old_name` to `new_name`.
+pub(crate) fn on_rename(
+    old_dir_inode: &Arc<dyn Inode>,
+    old_name: &str,
+    new_dir_inode: &Arc<dyn Inode>,
+    new_name: &str,
+    inode: &Arc<dyn Inode>,
+) {
+    let old_fs = old_dir_inode.fs();
+    let new_fs = new_dir_inode.fs();
+    let inode_fs = inode.fs();
+    let has_subscribers = old_fs.fs_event_subscriber_stats().has_any_subscribers()
+        || new_fs.fs_event_subscriber_stats().has_any_subscribers()
+        || inode_fs.fs_event_subscriber_stats().has_any_subscribers();
+    if !has_subscribers {
+        return;
+    }
+
+    let cookie = next_rename_cookie();
+
+    if inode.type_() == InodeType::Dir {
+        if let Some(publisher) = old_dir_inode.fs_event_publisher() {
+            publisher.publish_event_with_cookie(
+                FsEvents::MOVED_FROM | FsEvents::ISDIR,
+                Some(old_name.to_string()),
+                cookie,
+            );
+        }
+        if let Some(publisher) = new_dir_inode.fs_event_publisher() {
+            publisher.publish_event_with_cookie(
+                FsEvents::MOVED_TO | FsEvents::ISDIR,
+                Some(new_name.to_string()),
+                cookie,
+            );
+        }
+    } else {
+        if let Some(publisher) = old_dir_inode.fs_event_publisher() {
+            publisher.publish_event_with_cookie(
+                FsEvents::MOVED_FROM,
+                Some(old_name.to_string()),
+                cookie,
+            );
+        }
+        if let Some(publisher) = new_dir_inode.fs_event_publisher() {
+            publisher.publish_event_with_cookie(
+                FsEvents::MOVED_TO,
+                Some(new_name.to_string()),
+                cookie,
+            );
+        }
+    }
+    // `IN_MOVE_SELF` goes to the renamed inode itself with a zero cookie; only
+    // the `IN_MOVED_FROM`/`IN_MOVED_TO` pair shares the cookie.
+    // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/fs/notify/inotify/inotify_user.c>
+    notify_inode_with_cookie(inode, FsEvents::MOVE_SELF, 0);
+}
+
 pub(crate) fn on_attr_change(path: &Path) {
     if !path.fs().fs_event_subscriber_stats().has_any_subscribers() {
         return;
@@ -444,6 +518,12 @@ fn notify_parent(path: &Path, mut events: FsEvents) {
 /// This is the main entry point for FS event notification. The VFS layer calls hook-specific
 /// functions in `fs/notify/`, which then call this function to broadcast events
 /// to all registered subscribers through the inode's publisher.
+fn notify_inode_with_cookie(inode: &Arc<dyn Inode>, events: FsEvents, cookie: u32) {
+    if let Some(publisher) = inode.fs_event_publisher() {
+        publisher.publish_event_with_cookie(events, None, cookie);
+    }
+}
+
 fn notify_inode(inode: &Arc<dyn Inode>, events: FsEvents) {
     if let Some(publisher) = inode.fs_event_publisher() {
         publisher.publish_event(events, None);
