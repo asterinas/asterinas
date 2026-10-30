@@ -38,6 +38,7 @@ use crate::{
     prelude::*,
     thread::work_queue::{self, WorkPriority},
     time::clocks::MonotonicCoarseClock,
+    vm::page_cache::Readahead,
 };
 
 /// Use one page for each `FUSE_READDIR` request.
@@ -51,6 +52,7 @@ impl VirtioFsInode {
         writer: &mut VmWriter,
         fh: FuseFileHandle,
         flags: u32,
+        readahead: Option<&Readahead>,
     ) -> Result<usize> {
         if self.inner.read().page_cache().is_none() {
             return self.direct_read_at(offset, writer, fh, flags);
@@ -74,7 +76,7 @@ impl VirtioFsInode {
         let mut limited_writer = writer.clone_exclusive();
         limited_writer.limit(read_len);
         let page_cache = inner.page_cache().unwrap();
-        page_cache.read(start, &mut limited_writer)?;
+        page_cache.read_buffered(start, &mut limited_writer, readahead)?;
         writer.skip(read_len);
 
         Ok(read_len)
