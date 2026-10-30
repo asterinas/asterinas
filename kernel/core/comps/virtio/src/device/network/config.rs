@@ -18,11 +18,11 @@ bitflags! {
         const VIRTIO_NET_F_MTU                 = 1 << 3;  // Device maximum MTU reporting is supported
         const VIRTIO_NET_F_MAC                 = 1 << 5;  // Device has given MAC address.
         const VIRTIO_NET_F_GUEST_TSO4          = 1 << 7;  // Driver can receive TSOv4.
-        const VIRTIO_NET_F_GUEST_TSO6          = 1 <<8;   // Driver can receive TSOv6.
+        const VIRTIO_NET_F_GUEST_TSO6          = 1 << 8;  // Driver can receive TSOv6.
         const VIRTIO_NET_F_GUEST_ECN           = 1 << 9;  // Driver can receive TSO with ECN.
         const VIRTIO_NET_F_GUEST_UFO           = 1 << 10; // Driver can receive UFO.
         const VIRTIO_NET_F_HOST_TSO4           = 1 << 11; // Device can receive TSOv4.
-        const VIRTIO_NET_F_HOST_TSO6           = 1 <<12;  // Device can receive TSOv6.
+        const VIRTIO_NET_F_HOST_TSO6           = 1 << 12; // Device can receive TSOv6.
         const VIRTIO_NET_F_HOST_ECN            = 1 << 13; // Device can receive TSO with ECN.
         const VIRTIO_NET_F_HOST_UFO            = 1 << 14; // Device can receive UFO.
         const VIRTIO_NET_F_MRG_RXBUF           = 1 << 15; // Driver can merge receive buffers.

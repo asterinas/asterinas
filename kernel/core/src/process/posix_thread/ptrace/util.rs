@@ -130,7 +130,7 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct PtraceOptions: usize {
         /// Marks syscall stops with signal number set to `SIGTRAP | 0x80`.
-        const PTRACE_O_TRACESYSGOOD   = 1;
+        const PTRACE_O_TRACESYSGOOD   = 1 << 0;
         /// Stops the tracee at `fork` and automatically traces the new thread.
         const PTRACE_O_TRACEFORK      = 1 << PtraceEvent::Fork(0).code();
         /// Stops the tracee at `vfork` and automatically traces the new thread.

@@ -33,7 +33,7 @@ enum PeMachineType {
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
     struct PeFlags: u16 {
-        const RELOCS_STRIPPED         = 1;
+        const RELOCS_STRIPPED         = 1 << 0;
         const EXECUTABLE_IMAGE        = 1 << 1;
         const LINE_NUMS_STRIPPED      = 1 << 2;
         const LOCAL_SYMS_STRIPPED     = 1 << 3;
