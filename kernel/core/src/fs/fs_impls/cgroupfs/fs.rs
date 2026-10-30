@@ -70,7 +70,8 @@ impl FileSystem for CgroupFs {
         let ns_proxy = thread_local.borrow_ns_proxy();
         let cgroup_namespace = ns_proxy.unwrap().cgroup_ns();
 
-        CgroupInode::new_root(cgroup_namespace.root_node(), &self.sb)
+        let fs: Arc<dyn FileSystem> = Self::singleton().clone();
+        CgroupInode::new_root(cgroup_namespace.root_node(), &self.sb, Arc::downgrade(&fs))
     }
 
     fn sb(&self) -> SuperBlock {
