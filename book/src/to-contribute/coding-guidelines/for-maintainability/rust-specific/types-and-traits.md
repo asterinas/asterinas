@@ -95,3 +95,86 @@ pub struct Vma {
     pub perms: VmPerms,
 }
 ```
+
+### Derive the traits a flags type needs (`bitflags-derives`) {#bitflags-derives}
+
+Derive `Clone`, `Copy`, and `Debug` by default for `bitflags` types.
+Flags are small values that callers copy and inspect in diagnostics.
+Add other traits, such as `Eq`, `Hash`, `Ord`, `PartialEq`, and `PartialOrd`,
+only when their uses require them.
+Follow the usual [attribute and derive ordering](attributes-and-macros.md#alphabetical-attrs).
+
+Derive `Pod` only for raw flags that accept every bit pattern.
+Define an integer wrapper outside `bitflags!`
+and add the flags API with `impl` syntax.
+Document why direct byte conversion is appropriate
+and where supported options are validated.
+For inputs requiring validation, use integer ABI fields and explicit conversion instead.
+
+See also:
+[`bitflags` custom derives](https://docs.rs/bitflags/2.13.0/bitflags/#custom-derives)
+and issue [#4120](https://github.com/asterinas/asterinas/issues/4120).
+
+### Keep flags declarations consistent (`bitflags-layout`) {#bitflags-layout}
+
+Within each flags type,
+vertically align the `=` signs and the starts of their values using spaces.
+Include unnamed masks in the alignment,
+and align existing end-of-line comments with spaces as well.
+Do not depend on tab width.
+
+Keep numeric notation consistent within a type;
+different types need not use the same notation.
+For example, octal is appropriate for Unix permissions.
+Preserve an existing consistent notation.
+When using shifts for single-bit flags, write `1 << n` rather than `2 << (n - 1)`.
+Multi-bit fields may use shifts such as `3 << 8` or `0xff << 8`.
+Zero may appear alongside either shifts or literal values.
+Composite expressions and references to other flags are exempt from the numeric notation rule.
+
+```rust
+bitflags::bitflags! {
+    /// Access permissions for a mapping.
+    #[derive(Clone, Copy, Debug)]
+    pub struct MappingPerms: u32 {
+        const NONE      = 0;
+        const READ      = 1 << 0;
+        const WRITE     = 1 << 1;
+        const EXEC      = 1 << 2;
+        const ALL_PERMS = Self::READ.bits() | Self::WRITE.bits() | Self::EXEC.bits();
+    }
+}
+```
+
+### Declare the bits that must be retained (`bitflags-retained-bits`) {#bitflags-retained-bits}
+
+When a register snapshot or protocol record must preserve uninterpreted bits,
+include those bits in the flags declaration.
+Use an unnamed mask, `const _ = !0;`, if every bit must be retained,
+or a narrower mask if only a subset must survive.
+Explain the requirement next to the mask.
+
+```rust
+bitflags::bitflags! {
+    /// A register snapshot used for read-modify-write updates.
+    #[derive(Clone, Copy, Debug)]
+    pub struct RegisterFlags: u32 {
+        const ENABLED = 1 << 0;
+
+        // Register updates must preserve bits not interpreted here.
+        const _       = !0;
+    }
+}
+```
+
+`from_bits_retain` alone does not establish this policy for the type:
+a later `from_bits_truncate` can still discard undeclared bits.
+An unnamed mask makes those bits known to `bitflags`,
+so constructors and truncating operations such as `!` account for them.
+With `const _ = !0`, `from_bits` accepts every input bit pattern;
+the mask does not mean every option is supported.
+Validate supported options separately.
+
+See also:
+[`bitflags` externally defined flags](https://docs.rs/bitflags/2.13.0/bitflags/#externally-defined-flags);
+issue [#4120](https://github.com/asterinas/asterinas/issues/4120).
