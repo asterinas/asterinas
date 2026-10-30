@@ -474,7 +474,14 @@ impl VtManagerGuard<'_> {
 pub(super) static VT_MANAGER: Once<VtManager> = Once::new();
 
 pub(super) fn init_in_first_process() -> Result<()> {
+    static REGION: Once<char::DeviceRegionOwner> = Once::new();
+    let region = char::acquire_region(
+        device_id::MajorId::new(4),
+        1..MAX_CONSOLES as u32 + 1,
+        "tty",
+    )?;
     let vtm = VtManager::new()?;
+    REGION.call_once(|| region);
     VT_MANAGER.call_once(|| vtm);
     Ok(())
 }
