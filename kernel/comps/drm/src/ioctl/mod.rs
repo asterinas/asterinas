@@ -178,11 +178,11 @@ bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
     struct DrmIoctlAccess: u32 {
         /// Requires the client to be authenticated or the current master.
-        const AUTH = 1 << 0;
+        const AUTH         = 1 << 0;
         /// Requires the current file to be the DRM master.
-        const MASTER = 1 << 1;
+        const MASTER       = 1 << 1;
         /// Requires the caller to have `CAP_SYS_ADMIN`.
-        const ROOT_ONLY = 1 << 2;
+        const ROOT_ONLY    = 1 << 2;
         /// Allows the ioctl on a render node.
         const RENDER_ALLOW = 1 << 3;
     }

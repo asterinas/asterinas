@@ -61,7 +61,7 @@ bitflags! {
 
         // This type accepts all bit patterns,
         // although only some flags are recognized.
-        const _ = !0;
+        const _              = !0;
     }
 }
 

@@ -38,19 +38,19 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     struct InputProp: u8 {
         /// Needs a pointer
-        const POINTER           = 1 << 0;
+        const POINTER        = 1 << 0;
         /// Direct input devices
-        const DIRECT            = 1 << 1;
+        const DIRECT         = 1 << 1;
         /// Has button(s) under pad
-        const BUTTONPAD         = 1 << 2;
+        const BUTTONPAD      = 1 << 2;
         /// Touch rectangle only
-        const SEMI_MT           = 1 << 3;
+        const SEMI_MT        = 1 << 3;
         /// Softbuttons at top of pad
-        const TOPBUTTONPAD      = 1 << 4;
+        const TOPBUTTONPAD   = 1 << 4;
         /// Is a pointing stick
-        const POINTING_STICK    = 1 << 5;
+        const POINTING_STICK = 1 << 5;
         /// Has accelerometer
-        const ACCELEROMETER     = 1 << 6;
+        const ACCELEROMETER  = 1 << 6;
     }
 }
 

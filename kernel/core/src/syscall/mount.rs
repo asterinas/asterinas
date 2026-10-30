@@ -269,30 +269,30 @@ fn open_fs(
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq)]
     struct MountFlags: u32 {
-        const MS_RDONLY        =   1 << 0;       // Mount read-only.
-        const MS_NOSUID        =   1 << 1;       // Ignore suid and sgid bits.
-        const MS_NODEV         =   1 << 2;       // Disallow access to device special files.
-        const MS_NOEXEC        =   1 << 3;       // Disallow program execution.
-        const MS_SYNCHRONOUS   =   1 << 4;       // Writes are synced at once.
-        const MS_REMOUNT       =   1 << 5;       // Alter flags of a mounted FS.
-        const MS_MANDLOCK      =   1 << 6;       // Allow mandatory locks on an FS.
-        const MS_DIRSYNC       =   1 << 7;       // Directory modifications are synchronous.
-        const MS_NOSYMFOLLOW   =   1 << 8;       // Do not follow symlinks.
-        const MS_NOATIME       =   1 << 10;      // Do not update access times.
-        const MS_NODIRATIME    =   1 << 11;      // Do not update directory access times.
-        const MS_BIND          =   1 << 12;      // Bind directory at different place.
-        const MS_MOVE          =   1 << 13;      // Move mount from old to new.
-        const MS_REC           =   1 << 14;      // Create recursive mount.
-        const MS_SILENT        =   1 << 15;      // Suppress certain messages in kernel log.
-        const MS_POSIXACL      =   1 << 16;      // VFS does not apply the umask.
-        const MS_UNBINDABLE    =   1 << 17;      // Change to unbindable.
-        const MS_PRIVATE       =   1 << 18; 	 // Change to private.
-        const MS_SLAVE         =   1 << 19;      // Change to slave.
-        const MS_SHARED        =   1 << 20;      // Change to shared.
-        const MS_RELATIME      =   1 << 21; 	 // Update atime relative to mtime/ctime.
-        const MS_KERNMOUNT     =   1 << 22;      // This is a kern_mount call.
-        const MS_STRICTATIME   =   1 << 24; 	 // Always perform atime updates.
-        const MS_LAZYTIME      =   1 << 25; 	 // Update the on-disk [acm]times lazily.
+        const MS_RDONLY      = 1 << 0;  // Mount read-only.
+        const MS_NOSUID      = 1 << 1;  // Ignore suid and sgid bits.
+        const MS_NODEV       = 1 << 2;  // Disallow access to device special files.
+        const MS_NOEXEC      = 1 << 3;  // Disallow program execution.
+        const MS_SYNCHRONOUS = 1 << 4;  // Writes are synced at once.
+        const MS_REMOUNT     = 1 << 5;  // Alter flags of a mounted FS.
+        const MS_MANDLOCK    = 1 << 6;  // Allow mandatory locks on an FS.
+        const MS_DIRSYNC     = 1 << 7;  // Directory modifications are synchronous.
+        const MS_NOSYMFOLLOW = 1 << 8;  // Do not follow symlinks.
+        const MS_NOATIME     = 1 << 10; // Do not update access times.
+        const MS_NODIRATIME  = 1 << 11; // Do not update directory access times.
+        const MS_BIND        = 1 << 12; // Bind directory at different place.
+        const MS_MOVE        = 1 << 13; // Move mount from old to new.
+        const MS_REC         = 1 << 14; // Create recursive mount.
+        const MS_SILENT      = 1 << 15; // Suppress certain messages in kernel log.
+        const MS_POSIXACL    = 1 << 16; // VFS does not apply the umask.
+        const MS_UNBINDABLE  = 1 << 17; // Change to unbindable.
+        const MS_PRIVATE     = 1 << 18; // Change to private.
+        const MS_SLAVE       = 1 << 19; // Change to slave.
+        const MS_SHARED      = 1 << 20; // Change to shared.
+        const MS_RELATIME    = 1 << 21; // Update atime relative to mtime/ctime.
+        const MS_KERNMOUNT   = 1 << 22; // This is a kern_mount call.
+        const MS_STRICTATIME = 1 << 24; // Always perform atime updates.
+        const MS_LAZYTIME    = 1 << 25; // Update the on-disk [acm]times lazily.
     }
 }
 

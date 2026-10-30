@@ -163,29 +163,29 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub struct Command: u16 {
         /// Sets to 1 if the device can respond to I/O Space accesses.
-        const IO_SPACE                  =  1 << 0;
+        const IO_SPACE                 = 1 << 0;
         /// Sets to 1 if the device can respond to Memory SPace accesses.
-        const MEMORY_SPACE              =  1 << 1;
+        const MEMORY_SPACE             = 1 << 1;
         /// Sets to 1 if the device can behave as a bus master.
-        const BUS_MASTER                =  1 << 2;
+        const BUS_MASTER               = 1 << 2;
         /// Sets to 1 if the device can monitor Special Cycle operations.
-        const SPECIAL_CYCLES            =  1 << 3;
+        const SPECIAL_CYCLES           = 1 << 3;
         /// Memory Write and Invalidate Enable. Set to 1 if the device can
         /// generate the Memory Write and Invalidate command.
-        const MWI_ENABLE                =  1 << 4;
+        const MWI_ENABLE               = 1 << 4;
         /// Sets to 1 if the device does not respond to palette register writes
         /// and will snoop the data.
-        const VGA_PALETTE_SNOOP         =  1 << 5;
+        const VGA_PALETTE_SNOOP        = 1 << 5;
         /// Sets to 1 if the device will takes its normal action when a parity
         /// error is detected.
-        const PARITY_ERROR_RESPONSE     =  1 << 6;
+        const PARITY_ERROR_RESPONSE    = 1 << 6;
         /// Sets to 1 if the SERR# driver is enabled.
-        const SERR_ENABLE               =  1 << 8;
+        const SERR_ENABLE              = 1 << 8;
         /// Sets to 1 if the device is allowed to generate fast back-to-back
         /// transactions
-        const FAST_BACK_TO_BACK_ENABLE  =  1 << 9;
+        const FAST_BACK_TO_BACK_ENABLE = 1 << 9;
         /// Sets to 1 if the assertion of the devices INTx# signal is disabled.
-        const INTERRUPT_DISABLE         =  1 << 10;
+        const INTERRUPT_DISABLE        = 1 << 10;
     }
 }
 

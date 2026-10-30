@@ -120,35 +120,35 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub struct CapabilityFlags: u64 {
         /// Required Write-Buffer Flushing.
-        const RWBF =        1 << 4;
+        const RWBF    = 1 << 4;
         /// Protected Low-Memory Region
-        const PLMR =        1 << 5;
+        const PLMR    = 1 << 5;
         /// Protected High-Memory Region
-        const PHMR =        1 << 6;
+        const PHMR    = 1 << 6;
         /// Caching Mode
-        const CM =          1 << 7;
+        const CM      = 1 << 7;
         /// Zero Length Read. Whether the remapping hardware unit supports zero length DMA
         /// read requests to write-only pages.
-        const ZLR =         1 << 22;
+        const ZLR     = 1 << 22;
         /// Page Selective Invalidation. Whether hardware supports page-selective invalidation
         /// for IOTLB.
-        const PSI =         1 << 39;
+        const PSI     = 1 << 39;
         /// Write Draining.
-        const DWD =         1 << 54;
+        const DWD     = 1 << 54;
         /// Read Draining.
-        const DRD =         1 << 55;
+        const DRD     = 1 << 55;
         /// First Stage 1-GByte Page Support.
-        const FS1GP =       1 << 56;
+        const FS1GP   = 1 << 56;
         /// Posted Interrupts Support.
-        const PI =          1 << 59;
+        const PI      = 1 << 59;
         /// First Stage 5-level Paging Support.
-        const FS5LP =       1 << 60;
+        const FS5LP   = 1 << 60;
         /// Enhanced Command Support.
-        const ECMDS =       1 << 61;
+        const ECMDS   = 1 << 61;
         /// Enhanced Set Interrupt Remap Table Pointer Support.
-        const ESIRTPS =     1 << 62;
+        const ESIRTPS = 1 << 62;
         /// Enhanced Set Root Table Pointer Support.
-        const ESRTPS =      1 << 63;
+        const ESRTPS  = 1 << 63;
     }
 }
 

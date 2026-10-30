@@ -17,25 +17,25 @@ bitflags! {
     pub(crate) struct SecureBits: u16 {
         /// If set, the kernel does not grant capabilities when a set-user-ID-root program
         /// is executed, or when a process with an effective or real UID of 0 calls `execve`.
-        const NOROOT = 1 << 0;
+        const NOROOT                      = 1 << 0;
         /// Make `NOROOT` bit immutable (irreversible).
-        const NOROOT_LOCKED = 1 << 1;
+        const NOROOT_LOCKED               = 1 << 1;
 
         /// If set, the kernel does not adjust the process's permitted, effective, and
         /// ambient capability sets when the UIDs are switched between zero and nonzero values.
-        const NO_SETUID_FIXUP = 1 << 2;
+        const NO_SETUID_FIXUP             = 1 << 2;
         /// Make `NO_SETUID_FIXUP` bit immutable (irreversible).
-        const NO_SETUID_FIXUP_LOCKED = 1 << 3;
+        const NO_SETUID_FIXUP_LOCKED      = 1 << 3;
 
         /// If set, the kernel preserves permitted capabilities across UID changes,
         /// specifically when all UIDs transition from root (0) to non-root values.
-        const KEEP_CAPS = 1 << 4;
+        const KEEP_CAPS                   = 1 << 4;
         /// Make `KEEP_CAPS` bit immutable (irreversible).
-        const KEEP_CAPS_LOCKED = 1 << 5;
+        const KEEP_CAPS_LOCKED            = 1 << 5;
 
         /// If set, the kernel will not permit raising ambient capabilities via the
         /// prctl PR_CAP_AMBIENT_RAISE operation.
-        const NO_CAP_AMBIENT_RAISE = 1 << 6;
+        const NO_CAP_AMBIENT_RAISE        = 1 << 6;
         /// Make `NO_CAP_AMBIENT_RAISE` bit immutable (irreversible).
         const NO_CAP_AMBIENT_RAISE_LOCKED = 1 << 7;
     }

@@ -55,9 +55,9 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     struct LineStat: u8 {
         /// Data ready (DR).
-        const DR    = 1 << 0;
+        const DR   = 1 << 0;
         /// Transmitter holding register empty (THRE).
-        const THRE  = 1 << 5;
+        const THRE = 1 << 5;
     }
 }
 

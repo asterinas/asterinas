@@ -233,34 +233,34 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub struct IrtEntryFlags: u32 {
         /// Present bit
-        const P =           1 << 0;
+        const P   = 1 << 0;
         /// Fault Processing Disable. Enables or disables recording/reporting of faults
         /// caused by interrupt messages requests processed through this entry.
         ///
         /// - 0: Enabled
         /// - 1: Disabled
-        const FPD =         1 << 1;
+        const FPD = 1 << 1;
         /// Destination Mode, indicates the Destination ID in an IRTE should be interpreted
         /// as logical or physical APIC ID.
         ///
         /// - 0: Physical
         /// - 1: Logical
-        const DM =          1 << 2;
+        const DM  = 1 << 2;
         /// Redirection Hint, indicates whether the remapped interrupt request should be
         /// directed to one among N processors specified in Destination ID.
         ///
         /// - 0: The remapped interrupt is directed to the processor.
         /// - 1: The remapped interrupt is directed to 1 of N processors.
-        const RH =          1 << 3;
+        const RH  = 1 << 3;
         /// Trigger Mode.
         ///
         /// - 0: Edge sensitive
         /// - 1: Level sensitive
-        const TM =          1 << 4;
+        const TM  = 1 << 4;
         /// IRTE Mode.
         ///
         /// - 0: Remapped Mode.
         /// - 1: Posted Mode.
-        const IM =          1 << 15;
+        const IM  = 1 << 15;
     }
 }

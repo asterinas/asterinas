@@ -246,46 +246,46 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct StatxMask: u32 {
         /// Want stx_mode & S_IFMT
-        const STATX_TYPE            = 0x00000001;
+        const STATX_TYPE           = 0x00000001;
         /// Want stx_mode & ~S_IFMT
-        const STATX_MODE            = 0x00000002;
+        const STATX_MODE           = 0x00000002;
         /// Want stx_nlink
-        const STATX_NLINK           = 0x00000004;
+        const STATX_NLINK          = 0x00000004;
         /// Want stx_uid
-        const STATX_UID             = 0x00000008;
+        const STATX_UID            = 0x00000008;
         /// Want stx_gid
-        const STATX_GID             = 0x00000010;
+        const STATX_GID            = 0x00000010;
         /// Want stx_atime
-        const STATX_ATIME           = 0x00000020;
+        const STATX_ATIME          = 0x00000020;
         /// Want stx_mtime
-        const STATX_MTIME           = 0x00000040;
+        const STATX_MTIME          = 0x00000040;
         /// Want stx_ctime
-        const STATX_CTIME           = 0x00000080;
+        const STATX_CTIME          = 0x00000080;
         /// Want stx_ino
-        const STATX_INO             = 0x00000100;
+        const STATX_INO            = 0x00000100;
         /// Want stx_size
-        const STATX_SIZE            = 0x00000200;
+        const STATX_SIZE           = 0x00000200;
         /// Want stx_blocks
-        const STATX_BLOCKS          = 0x00000400;
+        const STATX_BLOCKS         = 0x00000400;
         /// All of the above (stx_mode, stx_nlink, etc.)
-        const STATX_BASIC_STATS     = 0x000007ff;
+        const STATX_BASIC_STATS    = 0x000007ff;
         /// Want stx_btime
-        const STATX_BTIME           = 0x00000800;
+        const STATX_BTIME          = 0x00000800;
         /// Want stx_mnt_id
-        const STATX_MNT_ID          = 0x00001000;
+        const STATX_MNT_ID         = 0x00001000;
         /// Want stx_dio_mem_align and stx_dio_offset_align
-        const STATX_DIOALIGN        = 0x00002000;
+        const STATX_DIOALIGN       = 0x00002000;
         /// Want extended stx_mount_id
-        const STATX_MNT_ID_UNIQUE   = 0x00004000;
+        const STATX_MNT_ID_UNIQUE  = 0x00004000;
         /// Want stx_subvol
-        const STATX_SUBVOL          = 0x00008000;
+        const STATX_SUBVOL         = 0x00008000;
         /// Want stx_write_atomic
-        const STATX_WRITE_ATOMIC    = 0x00010000;
+        const STATX_WRITE_ATOMIC   = 0x00010000;
         /// Wand dio read alignment info
-        const STATX_DIO_READ_ALIGN  = 0x00020000;
+        const STATX_DIO_READ_ALIGN = 0x00020000;
         /// Reserved for future struct statx expansion
-        const STATX_RESERVED		= 0x80000000;
+        const STATX_RESERVED       = 0x80000000;
         /// Deprecated: The same as STATX_BASIC_STATS | STATX_BTIME
-        const STATX_ALL             = 0x00000fff;
+        const STATX_ALL            = 0x00000fff;
     }
 }

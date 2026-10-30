@@ -71,25 +71,25 @@ impl PagingConstsTrait for PagingConsts {
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
     struct PteFlags: usize {
-        const READABLE =        1 << 0;
-        const WRITABLE =        1 << 1;
-        const EXECUTABLE =      1 << 2;
+        const READABLE   = 1 << 0;
+        const WRITABLE   = 1 << 1;
+        const EXECUTABLE = 1 << 2;
 
         // Ignore the guest PAT and use the EPT memory type if CR0.CD is clear.
-        const IGNORE_PAT =      1 << 6;
+        const IGNORE_PAT = 1 << 6;
 
-        const ACCESSED =        1 << 8;
-        const DIRTY =           1 << 9;
+        const ACCESSED   = 1 << 8;
+        const DIRTY      = 1 << 9;
 
         // Bits 11 and 56:52 are ignored by EPT hardware (Intel SDM, Vol. 3C,
         // Section 29.3.2). Preserve OSTD metadata without granting access.
-        const PRESENT =         1 << 11;
-        const AVAIL2 =          1 << 52;
-        const USER =            1 << 53;
-        const GLOBAL =          1 << 54;
-        const AVAIL1 =          1 << 55;
+        const PRESENT    = 1 << 11;
+        const AVAIL2     = 1 << 52;
+        const USER       = 1 << 53;
+        const GLOBAL     = 1 << 54;
+        const AVAIL1     = 1 << 55;
         #[cfg(feature = "cvm_guest")]
-        const SHARED =          1 << 56;
+        const SHARED     = 1 << 56;
     }
 }
 

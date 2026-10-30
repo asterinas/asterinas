@@ -709,8 +709,8 @@ bitflags! {
     // Reference: <https://elixir.bootlin.com/linux/v6.18.2/source/include/uapi/linux/futex.h#L26>
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct FutexFlags: u32 {
-        const FUTEX_PRIVATE         = 128;
-        const FUTEX_CLOCK_REALTIME  = 256;
+        const FUTEX_PRIVATE        = 128;
+        const FUTEX_CLOCK_REALTIME = 256;
     }
 }
 

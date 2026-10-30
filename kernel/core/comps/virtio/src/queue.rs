@@ -578,13 +578,13 @@ struct DescFlags(u16);
 
 bitflags! {
     impl DescFlags: u16 {
-        const NEXT = 1;
-        const WRITE = 2;
+        const NEXT     = 1;
+        const WRITE    = 2;
         const INDIRECT = 4;
 
         // This type accepts all bit patterns,
         // although only some flags are recognized.
-        const _ = !0;
+        const _        = !0;
     }
 }
 
@@ -635,7 +635,7 @@ bitflags! {
 
         // This type accepts all bit patterns,
         // although only some flags are recognized.
-        const _ = !0;
+        const _                          = !0;
     }
 }
 

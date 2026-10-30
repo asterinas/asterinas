@@ -37,7 +37,7 @@ bitflags! {
     /// The flags used for timerfd-related operations.
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct TFDFlags: u32 {
-        const TFD_CLOEXEC = CreationFlags::O_CLOEXEC.bits();
+        const TFD_CLOEXEC  = CreationFlags::O_CLOEXEC.bits();
         const TFD_NONBLOCK = StatusFlags::O_NONBLOCK.bits();
     }
 }
@@ -62,7 +62,7 @@ bitflags! {
     /// The flags used for timerfd settime operations.
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct TFDSetTimeFlags: u32 {
-        const TFD_TIMER_ABSTIME = 0x1;
+        const TFD_TIMER_ABSTIME       = 0x1;
         const TFD_TIMER_CANCEL_ON_SET = 0x2;
     }
 }

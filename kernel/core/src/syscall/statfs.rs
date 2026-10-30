@@ -123,23 +123,23 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     struct StatfsFlags: u32 {
         /// Mount read-only.
-        const ST_RDONLY = 1 << 0;
+        const ST_RDONLY      = 1 << 0;
         /// Ignore suid and sgid bits.
-        const ST_NOSUID = 1 << 1;
+        const ST_NOSUID      = 1 << 1;
         /// Disallow access to device special files.
-        const ST_NODEV = 1 << 2;
+        const ST_NODEV       = 1 << 2;
         /// Disallow program execution.
-        const ST_NOEXEC = 1 << 3;
+        const ST_NOEXEC      = 1 << 3;
         /// Writes are synced at once.
         const ST_SYNCHRONOUS = 1 << 4;
         /// Allow mandatory locks on an FS.
-        const ST_MANDLOCK = 1 << 6;
+        const ST_MANDLOCK    = 1 << 6;
         /// Do not update access times.
-        const ST_NOATIME = 1 << 10;
+        const ST_NOATIME     = 1 << 10;
         /// Do not update directory access times.
-        const ST_NODIRATIME = 1 << 11;
+        const ST_NODIRATIME  = 1 << 11;
         /// Update atime relative to mtime/ctime.
-        const ST_RELATIME = 1 << 12;
+        const ST_RELATIME    = 1 << 12;
         /// Do not follow symlinks.
         const ST_NOSYMFOLLOW = 1 << 13;
     }

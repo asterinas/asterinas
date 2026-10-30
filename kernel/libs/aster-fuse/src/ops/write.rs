@@ -22,13 +22,13 @@ pub struct WriteFlags(u32);
 bitflags! {
     impl WriteFlags: u32 {
         /// The write is serviced from the page cache (writeback mode).
-        const WRITE_CACHE = 1 << 0;
+        const WRITE_CACHE     = 1 << 0;
         /// `lock_owner` is valid and should be used for lock-aware writes.
         const WRITE_LOCKOWNER = 1 << 1;
 
         // This type accepts all bit patterns,
         // although only some flags are recognized.
-        const _ = !0;
+        const _               = !0;
     }
 }
 
