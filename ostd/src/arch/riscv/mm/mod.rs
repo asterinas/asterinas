@@ -48,8 +48,7 @@ impl PagingConstsTrait for PagingConsts {
 
 bitflags::bitflags! {
     /// Possible flags for a page table entry.
-    #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame or page table is valid.
         const VALID =           1 << 0;

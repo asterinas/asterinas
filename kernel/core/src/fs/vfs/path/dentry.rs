@@ -1043,6 +1043,7 @@ impl DentryKey {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct DentryFlags: u32 {
         const MOUNTED = 1 << 0;
     }

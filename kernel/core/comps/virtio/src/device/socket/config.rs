@@ -41,6 +41,7 @@ impl VirtioVsockConfig {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(super) struct VsockFeatures: u64 {
         const VIRTIO_VSOCK_F_STREAM    = 1 << 0;
         const VIRTIO_VSOCK_F_SEQPACKET = 1 << 1;

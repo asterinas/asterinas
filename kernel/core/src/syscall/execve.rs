@@ -137,6 +137,7 @@ fn lookup_and_open_executable_file(
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct OpenFlags: u32 {
         const AT_EMPTY_PATH = 0x1000;
         const AT_SYMLINK_NOFOLLOW = 0x100;

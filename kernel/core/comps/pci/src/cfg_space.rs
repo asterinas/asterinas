@@ -160,6 +160,7 @@ pub enum PciCardbusBridgeCfgOffset {
 
 bitflags! {
     /// PCI device common config space command register.
+    #[derive(Clone, Copy, Debug)]
     pub struct Command: u16 {
         /// Sets to 1 if the device can respond to I/O Space accesses.
         const IO_SPACE                  =  1 << 0;
@@ -190,6 +191,7 @@ bitflags! {
 
 bitflags! {
     /// PCI device common config space status register.
+    #[derive(Clone, Copy, Debug)]
     pub struct Status: u16 {
         /// The status of the device's INTx# signal.
         const INTERRUPT_STATUS          = 1 << 3;

@@ -13,6 +13,7 @@ bitflags! {
     /// These flags control the behavior of capabilities when changing UIDs.
     ///
     /// Reference: <https://man7.org/linux/man-pages/man7/capabilities.7.html>
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub(crate) struct SecureBits: u16 {
         /// If set, the kernel does not grant capabilities when a set-user-ID-root program
         /// is executed, or when a process with an effective or real UID of 0 calls `execve`.
@@ -52,7 +53,7 @@ impl SecureBits {
     }
 
     pub(super) const fn locked_bits(&self) -> SecureBits {
-        Self::from_bits_truncate((self.bits & Self::LOCK_MASK) >> 1)
+        Self::from_bits_truncate((self.bits() & Self::LOCK_MASK) >> 1)
     }
 
     pub(super) fn no_root(&self) -> bool {
@@ -80,7 +81,7 @@ impl TryFrom<u16> for SecureBits {
             return_errno_with_message!(Errno::EPERM, "the bits are not valid secure bits");
         }
 
-        Ok(SecureBits { bits: value })
+        Ok(SecureBits::from_bits_retain(value))
     }
 }
 

@@ -230,7 +230,8 @@ impl Debug for IrtEntry {
 
 bitflags! {
     /// Interrupt Remapping Table Entry Flags for Remapped Interrupts.
-    pub struct IrtEntryFlags: u32{
+    #[derive(Clone, Copy, Debug)]
+    pub struct IrtEntryFlags: u32 {
         /// Present bit
         const P =           1 << 0;
         /// Fault Processing Disable. Enables or disables recording/reporting of faults

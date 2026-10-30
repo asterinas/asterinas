@@ -62,7 +62,8 @@ bitflags! {
     /// Extended Capability flags in IOMMU.
     ///
     /// TODO: Add a detailed description of each flag.
-    pub struct ExtendedCapabilityFlags: u64{
+    #[derive(Clone, Copy, Debug)]
+    pub struct ExtendedCapabilityFlags: u64 {
         /// Page-walk Coherency.
         const C =           1 << 0;
         /// Queued Invalidation Support.

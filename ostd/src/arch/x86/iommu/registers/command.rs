@@ -4,7 +4,8 @@ use bitflags::bitflags;
 
 bitflags! {
     /// Global Command to enable functions in IOMMU. All field is write-only.
-    pub struct GlobalCommand: u32{
+    #[derive(Clone, Copy, Debug)]
+    pub struct GlobalCommand: u32 {
         /// Compatibility Format Interrupt, only valid if interrupt-remapping is supported.
         ///
         /// Interrupt remapping will block Compatibility format interrupts if set to 0.

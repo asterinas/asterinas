@@ -16,7 +16,8 @@ pub const DEVICE_NAME: &str = "Virtio-Block";
 
 bitflags! {
     /// features for virtio block device
-    struct BlockFeatures : u64 {
+    #[derive(Clone, Copy, Debug)]
+    struct BlockFeatures: u64 {
         const BARRIER       = 1 << 0;
         const SIZE_MAX      = 1 << 1;
         const SEG_MAX       = 1 << 2;

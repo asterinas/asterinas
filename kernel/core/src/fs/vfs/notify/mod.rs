@@ -224,6 +224,7 @@ bitflags! {
     /// These events are used to notify subscribers about specific filesystem actions.
     /// Subscribers specify which events they are interested in to filter and receive
     /// only the events they care about.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct FsEvents: u32 {
         const ACCESS          = 0x00000001; // File was accessed
         const MODIFY          = 0x00000002; // File was modified

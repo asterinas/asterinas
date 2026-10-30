@@ -216,6 +216,7 @@ impl<'a> FsCreationCtx<'a> {
 
 bitflags! {
     /// The properties common to all FS instances.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct FsProperties: u32 {
         /// Whether a FS needs to be backed by a disk.
         ///

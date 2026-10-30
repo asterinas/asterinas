@@ -27,6 +27,7 @@ use crate::{
 
 bitflags! {
     /// Flags used internally when creating an eventfd file.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct EventFileFlags: u32 {
         const EFD_SEMAPHORE = 1;
         const EFD_CLOEXEC = CreationFlags::O_CLOEXEC.bits();

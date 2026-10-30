@@ -218,6 +218,7 @@ pub enum VirtioTransportError {
 
 bitflags::bitflags! {
     /// The device status field.
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub(crate) struct DeviceStatus: u8 {
         /// Indicates that the guest OS has found the device and recognized it
         /// as a valid virtio device.

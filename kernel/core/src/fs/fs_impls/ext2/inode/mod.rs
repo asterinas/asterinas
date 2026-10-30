@@ -679,6 +679,7 @@ impl InodePayload {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct FileFlags: u32 {
         /// Secure deletion.
         const SECURE_DEL = 1 << 0;

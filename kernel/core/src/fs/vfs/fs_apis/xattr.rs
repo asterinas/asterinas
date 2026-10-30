@@ -145,6 +145,7 @@ impl<'a> XattrName<'a> {
 
 bitflags::bitflags! {
     /// Flags for setting an xattr value.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct XattrSetFlags: u8 {
         /// Creates a new xattr if it doesn't exist, or replaces the value if it does.
         const CREATE_OR_REPLACE = 0;

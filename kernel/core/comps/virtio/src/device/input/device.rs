@@ -35,7 +35,8 @@ bitflags! {
     /// The properties of input device.
     ///
     /// Ref: Linux input-event-codes.h
-    struct InputProp : u8 {
+    #[derive(Clone, Copy, Debug)]
+    struct InputProp: u8 {
         /// Needs a pointer
         const POINTER           = 1 << 0;
         /// Direct input devices

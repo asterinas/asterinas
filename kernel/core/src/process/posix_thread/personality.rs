@@ -7,6 +7,7 @@ use bitflags::bitflags;
 use super::PosixThread;
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct Personality: u32 {
         const ADDR_NO_RANDOMIZE = 0x0040000;
     }

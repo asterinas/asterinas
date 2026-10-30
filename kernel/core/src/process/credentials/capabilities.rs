@@ -7,6 +7,7 @@ use bitflags::bitflags;
 
 bitflags! {
     /// Represents a set of Linux capabilities.
+    #[derive(Clone, Copy, Debug)]
     pub struct CapSet: u64 {
         const CHOWN = 1 << 0;
         const DAC_OVERRIDE = 1 << 1;
@@ -100,7 +101,7 @@ impl TryFrom<u64> for CapSet {
         if value & !CapSet::MASK != 0 {
             Err(InvalidCapSetError)
         } else {
-            Ok(CapSet { bits: value })
+            Ok(CapSet::from_bits_retain(value))
         }
     }
 }

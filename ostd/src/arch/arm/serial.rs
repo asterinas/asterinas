@@ -29,6 +29,8 @@ unsafe impl Sync for Pl011Uart {}
 
 bitflags! {
     // Reference: <https://developer.arm.com/documentation/ddi0183/g/programmers-model/register-descriptions/flag-register--uartfr>
+
+    #[derive(Clone, Copy, Debug)]
     struct Status: u32 {
         /// Transmit FIFO full.
         const TXFF = 1 << 5;

@@ -956,6 +956,7 @@ impl Drop for MountId {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct PerMountFlags: u32 {
         /// Mount read-only.
         const RDONLY         = 1 << 0;

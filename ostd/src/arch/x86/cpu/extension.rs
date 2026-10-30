@@ -70,7 +70,8 @@ macro_rules! define_isa_extension_type {
     { $($name:ident, $doc:literal;)* } => {
         bitflags! {
             /// x86 ISA extensions.
-            pub struct IsaExtensions: u128 {
+    #[derive(Clone, Copy, Debug)]
+    pub struct IsaExtensions: u128 {
                 $(
                     #[doc = $doc]
                     const $name = 1u128 << ${index()};

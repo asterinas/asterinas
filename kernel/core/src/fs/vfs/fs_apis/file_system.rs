@@ -107,6 +107,7 @@ impl SuperBlock {
 
 bitflags! {
     /// Flags for per file system.
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub(crate) struct FsFlags: u32 {
         /// The filesystem is mounted read-only.
         const RDONLY        =   1 << 0;

@@ -632,6 +632,7 @@ impl SuperBlock {
 
 bitflags! {
     /// Compatible feature set.
+    #[derive(Clone, Copy, Debug)]
     struct FeatureCompatSet: u32 {
         /// Preallocate some number of blocks to a directory when creating a new one.
         const DIR_PREALLOC = 1 << 0;
@@ -650,6 +651,7 @@ bitflags! {
 
 bitflags! {
     /// Incompatible feature set.
+    #[derive(Clone, Copy, Debug)]
     struct FeatureInCompatSet: u32 {
         /// Compression is used.
         const COMPRESSION = 1 << 0;
@@ -666,6 +668,7 @@ bitflags! {
 
 bitflags! {
     /// Read-only-compatible feature set.
+    #[derive(Clone, Copy, Debug)]
     struct FeatureRoCompatSet: u32 {
         /// Sparse superblocks and group descriptor tables.
         const SPARSE_SUPER = 1 << 0;
@@ -680,6 +683,7 @@ bitflags! {
     /// File system state.
     ///
     /// Reference: <https://www.nongnu.org/ext2-doc/ext2.html#s-state>
+    #[derive(Clone, Copy, Debug)]
     pub(super) struct FsState: u16 {
         /// Unmounted cleanly.
         const VALID = 1 << 0;

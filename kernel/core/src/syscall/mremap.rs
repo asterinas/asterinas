@@ -112,6 +112,7 @@ fn do_sys_mremap(
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct MremapFlags: i32 {
         const MREMAP_MAYMOVE = 1 << 0;
         const MREMAP_FIXED = 1 << 1;

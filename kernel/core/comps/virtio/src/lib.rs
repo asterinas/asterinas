@@ -151,7 +151,7 @@ fn negotiate_features(transport: &mut Box<dyn VirtioTransport>) {
     let mut support_feature = Feature::from_bits_truncate(features);
     support_feature.remove(Feature::RING_EVENT_IDX);
     transport
-        .write_driver_features(features & (support_feature.bits | device_support_features))
+        .write_driver_features(features & (support_feature.bits() | device_support_features))
         .unwrap();
 }
 
@@ -159,6 +159,7 @@ bitflags! {
     /// all device features, bits 0~23 and 50~63 are specified by device.
     /// if using this struct to translate u64, use from_bits_truncate function instead of from_bits
     ///
+    #[derive(Clone, Copy, Debug)]
     struct Feature: u64 {
 
         // device independent

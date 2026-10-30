@@ -5,7 +5,8 @@ use bitflags::bitflags;
 bitflags! {
     /// Global Status of the IOMMU. All fields is read-only. Some description of the fields
     /// is related to the fields in `GlobalCommand`.
-    pub struct GlobalStatus: u32{
+    #[derive(Clone, Copy, Debug)]
+    pub struct GlobalStatus: u32 {
         /// Compatibility Format Interrupt Status. The value reported in this field is
         /// applicable only when interrupt-remapping is enabled and extended interrupt
         /// model (x2APIC) mode is not enables.

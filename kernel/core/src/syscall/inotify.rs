@@ -134,6 +134,7 @@ fn parse_inotify_watch_request(flags: u32) -> Result<(InotifyEvents, InotifyCont
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct InotifyFileFlags: u32 {
         const NONBLOCK = 1 << 11; // Non-blocking
         const CLOEXEC = 1 << 19; // Close on exec

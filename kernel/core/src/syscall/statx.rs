@@ -221,6 +221,7 @@ bitflags! {
     /// Flags can be used to influence a pathname-based lookup.
     /// Flags can also be used to control what sort of synchronization the
     /// kernel will do when querying a file on a remote filesystem.
+    #[derive(Clone, Copy, Debug)]
     struct StatxFlags: u32 {
         /// Allow empty relative pathname to operate on dirfd directly.
         const AT_EMPTY_PATH         = 1 << 12;
@@ -242,6 +243,7 @@ bitflags! {
     /// Query request/result mask for statx() and struct statx::stx_mask.
     /// These bits should be set in the mask argument of statx() to request
     /// particular items when calling statx().
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct StatxMask: u32 {
         /// Want stx_mode & S_IFMT
         const STATX_TYPE            = 0x00000001;

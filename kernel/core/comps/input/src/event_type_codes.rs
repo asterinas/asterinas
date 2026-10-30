@@ -14,6 +14,7 @@ use bitvec::prelude::*;
 
 bitflags! {
     /// Input event types.
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct EventTypes: u32 {
         /// Synchronization events.
         const SYN = 1 << 0x00;

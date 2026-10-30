@@ -12,6 +12,7 @@ impl SocketEventObserver for () {
 
 bitflags::bitflags! {
     /// Socket events caused by the _network_.
+    #[derive(Clone, Copy, Debug)]
     pub struct SocketEvents: u8 {
         const CAN_RECV = 1;
         const CAN_SEND = 2;

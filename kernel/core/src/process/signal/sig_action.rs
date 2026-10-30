@@ -93,6 +93,7 @@ impl SigAction {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub(crate) struct SigActionFlags: u32 {
         const SA_NOCLDSTOP  = 1;
         const SA_NOCLDWAIT  = 2;

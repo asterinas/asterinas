@@ -47,10 +47,13 @@ pub(super) fn sys_fsmount(
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct FsMountFlags: u32 {
         const FSMOUNT_CLOEXEC = 1;
     }
 
+
+    #[derive(Clone, Copy, Debug)]
     struct MountAttrs: u32 {
         const RDONLY = 0x0000_0001;
         const NOSUID = 0x0000_0002;

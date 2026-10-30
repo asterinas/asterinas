@@ -175,6 +175,7 @@ impl DrmFile {
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct DrmIoctlAccess: u32 {
         /// Requires the client to be authenticated or the current master.
         const AUTH = 1 << 0;

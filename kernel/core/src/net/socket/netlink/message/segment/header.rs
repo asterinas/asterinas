@@ -50,6 +50,7 @@ bitflags! {
     /// Common flags used in [`CMsgSegHdr`].
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L62>.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct SegHdrCommonFlags: u16 {
         /// Indicates a request message
         const REQUEST = 0x01;
@@ -70,6 +71,7 @@ bitflags! {
     /// Modifiers for GET requests.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L70>.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct GetRequestFlags: u16 {
         /// Specify the tree root
         const ROOT = 0x100;
@@ -78,7 +80,7 @@ bitflags! {
         /// Atomic get request
         const ATOMIC = 0x400;
         /// Combination flag for root and match
-        const DUMP = Self::ROOT.bits | Self::MATCH.bits;
+        const DUMP = Self::ROOT.bits() | Self::MATCH.bits();
     }
 }
 
@@ -86,6 +88,7 @@ bitflags! {
     /// Modifiers for NEW requests.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L76>.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct NewRequestFlags: u16 {
         /// Override existing entries
         const REPLACE = 0x100;
@@ -102,6 +105,7 @@ bitflags! {
     /// Modifiers for DELETE requests.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L82>.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct DeleteRequestFlags: u16 {
         /// Do not delete recursively
         const NONREC = 0x100;
@@ -114,6 +118,7 @@ bitflags! {
     /// Flags for ACK messages.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L86>.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct AckFlags: u16 {
         const CAPPED = 0x100;
         const ACK_TLVS = 0x100;

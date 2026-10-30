@@ -12,17 +12,26 @@ use ostd::mm::{Infallible, VmReader, VmWriter};
 use super::util::read_payload;
 use crate::{FuseError, FuseFileHandle, FuseOpcode, FuseOperation, FuseResult, ReplyExpectation};
 
+/// Flags for `FUSE_WRITE` requests.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fuse.h#L522-L531>
+///
+/// Every bit pattern is valid in the wire representation.
+/// The FUSE client selects supported options when constructing requests
+/// and interprets supported flags when consuming replies.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct WriteFlags(u32);
+
 bitflags! {
-    /// Flags for `FUSE_WRITE` requests.
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fuse.h#L522-L531>
-    #[repr(C)]
-    #[derive(Pod)]
-    pub struct WriteFlags: u32 {
+    impl WriteFlags: u32 {
         /// The write is serviced from the page cache (writeback mode).
         const WRITE_CACHE = 1 << 0;
         /// `lock_owner` is valid and should be used for lock-aware writes.
         const WRITE_LOCKOWNER = 1 << 1;
+
+        // Preserve bits not interpreted by this implementation.
+        const _ = !0;
     }
 }
 

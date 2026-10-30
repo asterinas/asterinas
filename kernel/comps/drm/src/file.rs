@@ -445,6 +445,7 @@ bitflags::bitflags! {
     ///
     /// These bit positions are internal to Asterinas and do not correspond
     /// to DRM UAPI capability values.
+    #[derive(Clone, Copy, Debug)]
     pub(super) struct DrmClientCaps: u32 {
         /// The client has asked us to expose stereo 3D mode flags.
         const STEREO_3D = 1 << 0;

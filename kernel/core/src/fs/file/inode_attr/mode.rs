@@ -5,6 +5,7 @@ use aster_systree::SysPerms;
 use crate::prelude::*;
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub(crate) struct InodeMode: u16 {
         /// set-user-ID
         const S_ISUID = 0o4000;

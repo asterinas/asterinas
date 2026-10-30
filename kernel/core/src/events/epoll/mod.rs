@@ -17,6 +17,7 @@ pub(crate) enum EpollCtl {
 
 bitflags! {
     /// Linux's epoll flags.
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub(crate) struct EpollFlags: u32 {
         const EXCLUSIVE      = (1 << 28);
         const WAKE_UP        = (1 << 29);

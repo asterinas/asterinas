@@ -31,6 +31,7 @@ enum PeMachineType {
 
 // The `flags` field choices in PE header.
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct PeFlags: u16 {
         const RELOCS_STRIPPED           = 1;
         const EXECUTABLE_IMAGE          = 1 << 1;
@@ -146,6 +147,7 @@ impl Pe32PlusOptDataDirs {
 // The `flags` field choices in the PE section header.
 // Excluding the alignment flags, which is not bitflags.
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct PeSectionHdrFlags: u32 {
         const CNT_CODE                  = 1 << 5;
         const CNT_INITIALIZED_DATA      = 1 << 6;
@@ -198,7 +200,7 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8]) -> Vec<u8> {
         symbols: 1, // I don't know why, Linux header.S says it's 1
         opt_hdr_size: (size_of::<Pe32PlusOptHdr>() + size_of::<Pe32PlusOptDataDirs>()) as u16,
         flags: (PeFlags::EXECUTABLE_IMAGE | PeFlags::DEBUG_STRIPPED | PeFlags::LINE_NUMS_STRIPPED)
-            .bits,
+            .bits(),
     };
 
     let sec_hdrs = build_pe_sec_headers_from(&elf);

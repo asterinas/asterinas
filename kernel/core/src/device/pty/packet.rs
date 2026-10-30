@@ -80,6 +80,7 @@ impl PacketCtrl {
 
 bitflags! {
     /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h#L110>.
+    #[derive(Clone, Copy, Debug)]
     pub(super) struct PacketStatus: u8 {
         const DATA = 0;
         const FLUSHREAD = 1 << 0;

@@ -15,11 +15,17 @@ use crate::{
     ReplyExpectation,
 };
 
+/// Selects which fields in [`SetattrReq`] are valid.
+///
+/// Every bit pattern is valid in the wire representation.
+/// The FUSE client selects supported options when constructing requests
+/// and interprets supported flags when consuming replies.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+pub struct SetattrValid(u32);
+
 bitflags! {
-    /// Selects which fields in [`SetattrReq`] are valid.
-    #[repr(C)]
-    #[derive(Pod, Default)]
-    pub struct SetattrValid: u32 {
+    impl SetattrValid: u32 {
         const FATTR_MODE = 1 << 0;
         const FATTR_UID = 1 << 1;
         const FATTR_GID = 1 << 2;
@@ -31,6 +37,9 @@ bitflags! {
         const FATTR_MTIME_NOW = 1 << 8;
         const FATTR_LOCKOWNER = 1 << 9;
         const FATTR_CTIME = 1 << 10;
+
+        // Preserve bits not interpreted by this implementation.
+        const _ = !0;
     }
 }
 

@@ -14,11 +14,15 @@ type CCtrlChar = u8;
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h#L6>.
 type CSpeed = u32;
 
+/// The input flags; `c_iflags` bits in Linux.
+///
+/// Termios retains all input bits for read-back; the line discipline interprets supported flags.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(crate) struct CInputFlags(u32);
+
 bitflags! {
-    /// The input flags; `c_iflags` bits in Linux.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(crate) struct CInputFlags: u32 {
+    impl CInputFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h
         const IGNBRK  = 0x001;			/* Ignore break condition */
         const BRKINT  = 0x002;			/* Signal interrupt on break */
@@ -36,6 +40,9 @@ bitflags! {
         const IXOFF   = 0x1000;
         const IMAXBEL = 0x2000;
         const IUTF8   = 0x4000;
+
+        // Preserve bits not interpreted by this implementation.
+        const _ = !0;
     }
 }
 
@@ -45,11 +52,15 @@ impl Default for CInputFlags {
     }
 }
 
+/// The output flags; `c_oflags` bits in Linux.
+///
+/// Termios retains all output bits for read-back; output processing interprets supported flags.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(super) struct COutputFlags(u32);
+
 bitflags! {
-    /// The output flags; `c_oflags` bits in Linux.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(super) struct COutputFlags: u32 {
+    impl COutputFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h#L21
         const OPOST  = 1 << 0;			/* Perform output processing */
         const OLCUC  = 1 << 1;
@@ -59,6 +70,9 @@ bitflags! {
         const ONLRET = 1 << 5;
         const OFILL  = 1 << 6;
         const OFDEL  = 1 << 7;
+
+        // Preserve bits not interpreted by this implementation.
+        const _ = !0;
     }
 }
 
@@ -214,11 +228,15 @@ impl CCtrlBaud {
     }
 }
 
+/// The local flags; `c_lflags` bits in Linux.
+///
+/// Termios retains all local bits for read-back; the line discipline interprets supported flags.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(crate) struct CLocalFlags(u32);
+
 bitflags! {
-    /// The local flags; `c_lflags` bits in Linux.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(crate) struct CLocalFlags: u32 {
+    impl CLocalFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L127
         const ISIG    = 0x00001;
         const ICANON  = 0x00002;
@@ -236,6 +254,9 @@ bitflags! {
         const PENDIN  = 0x04000;
         const IEXTEN  = 0x08000;
         const EXTPROC = 0x10000;
+
+        // Preserve bits not interpreted by this implementation.
+        const _ = !0;
     }
 }
 

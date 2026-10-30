@@ -127,6 +127,7 @@ impl StopDeliverySignal {
 
 bitflags! {
     /// Options accepted by `PTRACE_SETOPTIONS`.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct PtraceOptions: usize {
         /// Marks syscall stops with signal number set to `SIGTRAP | 0x80`.
         const PTRACE_O_TRACESYSGOOD = 1;

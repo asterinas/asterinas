@@ -120,6 +120,7 @@ bitflags! {
     /// User-visible flags in [`Statfs`].
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/include/linux/statfs.h#L31>
+    #[derive(Clone, Copy, Debug)]
     struct StatfsFlags: u32 {
         /// Mount read-only.
         const ST_RDONLY = 1 << 0;
