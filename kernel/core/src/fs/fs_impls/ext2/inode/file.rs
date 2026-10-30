@@ -316,10 +316,17 @@ impl InodeInner {
                 .invalidate_range(discard_start_bytes..discard_end_bytes)?;
         }
 
-        if let Err(err) = self.write_direct_blocks(fs, offset, reader) {
+        let write_result = self.write_direct_blocks(fs, offset, reader);
+
+        // Evict pages that may have been brought in by concurrent readahead.
+        // Even a failed write may have overwritten some blocks. Evict before
+        // rollback so shrinking the cache cannot dirty a stale partial page.
+        let evict_result = self.page_cache().evict_range(discard_start_bytes..end);
+        if let Err(err) = write_result {
             self.rollback_write(old_size, end);
             return Err(err);
         }
+        evict_result?;
 
         self.set_mtime_ctime(utils::now());
         if end > self.file_size() {
