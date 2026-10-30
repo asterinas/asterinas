@@ -30,8 +30,8 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct EventFileFlags: u32 {
         const EFD_SEMAPHORE = 1;
-        const EFD_CLOEXEC = CreationFlags::O_CLOEXEC.bits();
-        const EFD_NONBLOCK = StatusFlags::O_NONBLOCK.bits();
+        const EFD_CLOEXEC   = CreationFlags::O_CLOEXEC.bits();
+        const EFD_NONBLOCK  = StatusFlags::O_NONBLOCK.bits();
     }
 }
 

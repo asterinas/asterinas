@@ -72,7 +72,7 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct SockFlags: i32 {
         const SOCK_NONBLOCK = 1 << 11;
-        const SOCK_CLOEXEC = 1 << 19;
+        const SOCK_CLOEXEC  = 1 << 19;
     }
 }
 

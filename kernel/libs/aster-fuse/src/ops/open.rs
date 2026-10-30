@@ -66,24 +66,24 @@ pub struct FuseOpenFlags(u32);
 bitflags! {
     impl FuseOpenFlags: u32 {
         /// Bypasses the page cache for this open file.
-        const FOPEN_DIRECT_IO = 1 << 0;
+        const FOPEN_DIRECT_IO              = 1 << 0;
         /// Keeps cached file data valid when this file is opened.
-        const FOPEN_KEEP_CACHE = 1 << 1;
+        const FOPEN_KEEP_CACHE             = 1 << 1;
         /// Marks this open file as non-seekable.
-        const FOPEN_NONSEEKABLE = 1 << 2;
+        const FOPEN_NONSEEKABLE            = 1 << 2;
         /// Allows caching directory entries for this open directory.
-        const FOPEN_CACHE_DIR = 1 << 3;
+        const FOPEN_CACHE_DIR              = 1 << 3;
         /// Marks this open file as stream-like, with no file position.
-        const FOPEN_STREAM = 1 << 4;
+        const FOPEN_STREAM                 = 1 << 4;
         /// Skips flushing cached data on close unless writeback caching is enabled.
-        const FOPEN_NOFLUSH = 1 << 5;
+        const FOPEN_NOFLUSH                = 1 << 5;
         /// Allows concurrent direct writes on the same inode.
         const FOPEN_PARALLEL_DIRECT_WRITES = 1 << 6;
         /// Enables passthrough read and write I/O for this open file.
-        const FOPEN_PASSTHROUGH = 1 << 7;
+        const FOPEN_PASSTHROUGH            = 1 << 7;
 
         // Preserve bits not interpreted by this implementation.
-        const _ = !0;
+        const _                            = !0;
     }
 }
 

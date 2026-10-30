@@ -635,17 +635,17 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     struct FeatureCompatSet: u32 {
         /// Preallocate some number of blocks to a directory when creating a new one.
-        const DIR_PREALLOC = 1 << 0;
+        const DIR_PREALLOC  = 1 << 0;
         /// AFS server inodes exist.
         const IMAGIC_INODES = 1 << 1;
         /// File system has a journal.
-        const HAS_JOURNAL = 1 << 2;
+        const HAS_JOURNAL   = 1 << 2;
         /// Inodes have extended attributes.
-        const EXT_ATTR = 1 << 3;
+        const EXT_ATTR      = 1 << 3;
         /// File system can resize itself for larger partitions.
-        const RESIZE_INO = 1 << 4;
+        const RESIZE_INO    = 1 << 4;
         /// Directories use hash index.
-        const DIR_INDEX = 1 << 5;
+        const DIR_INDEX     = 1 << 5;
     }
 }
 
@@ -656,13 +656,13 @@ bitflags! {
         /// Compression is used.
         const COMPRESSION = 1 << 0;
         /// Directory entries contain a type field.
-        const FILETYPE = 1 << 1;
+        const FILETYPE    = 1 << 1;
         /// File system needs to replay its journal.
-        const RECOVER = 1 << 2;
+        const RECOVER     = 1 << 2;
         /// File system uses a journal device.
         const JOURNAL_DEV = 1 << 3;
         /// Metablock block group.
-        const META_BG = 1 << 4;
+        const META_BG     = 1 << 4;
     }
 }
 
@@ -673,9 +673,9 @@ bitflags! {
         /// Sparse superblocks and group descriptor tables.
         const SPARSE_SUPER = 1 << 0;
         /// File system uses a 64-bit file size.
-        const LARGE_FILE = 1 << 1;
+        const LARGE_FILE   = 1 << 1;
         /// Directory contents are stored in a binary tree.
-        const BTREE_DIR = 1 << 2;
+        const BTREE_DIR    = 1 << 2;
     }
 }
 

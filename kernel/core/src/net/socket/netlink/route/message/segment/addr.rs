@@ -96,12 +96,12 @@ bitflags! {
         const OPTIMISTIC     = 0x04;
         const DADFAILED      = 0x08;
         const HOMEADDRESS    = 0x10;
-        const DEPRECATED	 = 0x20;
-        const TENTATIVE		 = 0x40;
-        const PERMANENT		 = 0x80;
+        const DEPRECATED     = 0x20;
+        const TENTATIVE      = 0x40;
+        const PERMANENT      = 0x80;
         const MANAGETEMPADDR = 0x100;
-        const NOPREFIXROUTE	 = 0x200;
-        const MCAUTOJOIN	 = 0x400;
+        const NOPREFIXROUTE  = 0x200;
+        const MCAUTOJOIN     = 0x400;
         const STABLE_PRIVACY = 0x800;
     }
 }

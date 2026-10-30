@@ -55,13 +55,13 @@ bitflags! {
 
     #[derive(Clone, Copy, Debug)]
     struct MountAttrs: u32 {
-        const RDONLY = 0x0000_0001;
-        const NOSUID = 0x0000_0002;
-        const NODEV = 0x0000_0004;
-        const NOEXEC = 0x0000_0008;
-        const NOATIME = 0x0000_0010;
+        const RDONLY      = 0x0000_0001;
+        const NOSUID      = 0x0000_0002;
+        const NODEV       = 0x0000_0004;
+        const NOEXEC      = 0x0000_0008;
+        const NOATIME     = 0x0000_0010;
         const STRICTATIME = 0x0000_0020;
-        const NODIRATIME = 0x0000_0080;
+        const NODIRATIME  = 0x0000_0080;
         const NOSYMFOLLOW = 0x0020_0000;
     }
 }

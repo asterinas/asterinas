@@ -580,12 +580,12 @@ struct DescFlags(u16);
 
 bitflags! {
     impl DescFlags: u16 {
-        const NEXT = 1;
-        const WRITE = 2;
+        const NEXT     = 1;
+        const WRITE    = 2;
         const INDIRECT = 4;
 
         // Preserve bits not interpreted by this implementation.
-        const _ = !0;
+        const _        = !0;
     }
 }
 
@@ -637,7 +637,7 @@ bitflags! {
         const VIRTQ_AVAIL_F_NO_INTERRUPT = 1;
 
         // Preserve bits not interpreted by this implementation.
-        const _ = !0;
+        const _                          = !0;
     }
 }
 

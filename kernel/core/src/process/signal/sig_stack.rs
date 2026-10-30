@@ -29,8 +29,8 @@ pub(crate) enum SigStackStatus {
 bitflags! {
     #[derive(Clone, Copy, Debug, Default)]
     pub(crate) struct SigStackFlags: u32 {
-        const SS_ONSTACK = 1 << 0;
-        const SS_DISABLE = 1 << 1;
+        const SS_ONSTACK    = 1 << 0;
+        const SS_DISABLE    = 1 << 1;
         const SS_AUTODISARM = 1 << 31;
     }
 }

@@ -710,8 +710,8 @@ bitflags! {
 
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct FutexFlags: u32 {
-        const FUTEX_PRIVATE         = 128;
-        const FUTEX_CLOCK_REALTIME  = 256;
+        const FUTEX_PRIVATE        = 128;
+        const FUTEX_CLOCK_REALTIME = 256;
     }
 }
 

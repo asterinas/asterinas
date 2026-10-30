@@ -27,7 +27,7 @@ bitflags! {
         /// Marks a module as selectable through the legacy `security=` parameter.
         const LEGACY_MAJOR = 1 << 0;
         /// Marks a module as mutually exclusive with other exclusive modules.
-        const EXCLUSIVE = 1 << 1;
+        const EXCLUSIVE    = 1 << 1;
     }
 }
 

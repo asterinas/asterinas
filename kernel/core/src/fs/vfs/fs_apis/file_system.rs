@@ -110,17 +110,17 @@ bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub(crate) struct FsFlags: u32 {
         /// The filesystem is mounted read-only.
-        const RDONLY        =   1 << 0;
+        const RDONLY      = 1 << 0;
         /// Writes are synced at once.
-        const SYNCHRONOUS   =   1 << 4;
+        const SYNCHRONOUS = 1 << 4;
         /// Allow mandatory locks on an FS.
-        const MANDLOCK      =   1 << 6;
+        const MANDLOCK    = 1 << 6;
         /// Directory modifications are synchronous.
-        const DIRSYNC       =   1 << 7;
+        const DIRSYNC     = 1 << 7;
         /// Suppress certain messages in kernel log.
-        const SILENT        =   1 << 15;
+        const SILENT      = 1 << 15;
         /// Update the on-disk [acm]times lazily.
-        const LAZYTIME      =   1 << 25;
+        const LAZYTIME    = 1 << 25;
     }
 }
 

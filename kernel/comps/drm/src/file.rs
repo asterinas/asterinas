@@ -448,13 +448,13 @@ bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub(super) struct DrmClientCaps: u32 {
         /// The client has asked us to expose stereo 3D mode flags.
-        const STEREO_3D = 1 << 0;
+        const STEREO_3D            = 1 << 0;
         /// The client understands CRTC primary and cursor planes in the plane list.
-        const UNIVERSAL_PLANES = 1 << 1;
+        const UNIVERSAL_PLANES     = 1 << 1;
         /// The client understands atomic properties.
-        const ATOMIC = 1 << 2;
+        const ATOMIC               = 1 << 2;
         /// The client can handle picture aspect ratios.
-        const ASPECT_RATIO = 1 << 3;
+        const ASPECT_RATIO         = 1 << 3;
         /// The client understands writeback connectors.
         const WRITEBACK_CONNECTORS = 1 << 4;
         /// The client can handle cursor-plane hotspots for virtualized drivers.

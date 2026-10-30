@@ -29,11 +29,11 @@ bitflags! {
         /// Create key if key does not exist
         const IPC_CREAT  = 1 << 9;
         /// Fail if key exists
-        const IPC_EXCL  = 1 << 10;
+        const IPC_EXCL   = 1 << 10;
         /// Return error on wait
-        const IPC_NOWAIT  = 1 << 11;
+        const IPC_NOWAIT = 1 << 11;
         /// Undo the operation on exit
-        const SEM_UNDO = 1 << 12;
+        const SEM_UNDO   = 1 << 12;
     }
 }
 

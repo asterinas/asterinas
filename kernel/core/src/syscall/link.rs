@@ -74,7 +74,7 @@ pub(super) fn sys_link(
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct LinkFlags: u32 {
-        const AT_EMPTY_PATH = 0x1000;
+        const AT_EMPTY_PATH     = 0x1000;
         const AT_SYMLINK_FOLLOW = 0x400;
     }
 }

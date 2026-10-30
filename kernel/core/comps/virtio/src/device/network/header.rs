@@ -24,7 +24,7 @@ bitflags! {
     pub(super) struct Flags: u8 {
         const VIRTIO_NET_HDR_F_NEEDS_CSUM = 1;
         const VIRTIO_NET_HDR_F_DATA_VALID = 2;
-        const VIRTIO_NET_HDR_F_RSC_INFO = 4;
+        const VIRTIO_NET_HDR_F_RSC_INFO   = 4;
     }
 }
 

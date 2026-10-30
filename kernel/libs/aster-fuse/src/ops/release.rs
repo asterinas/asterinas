@@ -50,12 +50,12 @@ pub struct ReleaseFlags(u32);
 bitflags! {
     impl ReleaseFlags: u32 {
         /// The contents of the file should be flushed to disk.
-        const RELEASE_FLUSH = 1 << 0;
+        const RELEASE_FLUSH        = 1 << 0;
         /// Unlocks BSD flock locks held by the process on release.
         const RELEASE_FLOCK_UNLOCK = 1 << 1;
 
         // Preserve bits not interpreted by this implementation.
-        const _ = !0;
+        const _                    = !0;
     }
 }
 

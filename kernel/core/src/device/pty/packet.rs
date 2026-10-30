@@ -82,13 +82,13 @@ bitflags! {
     /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/asm-generic/ioctls.h#L110>.
     #[derive(Clone, Copy, Debug)]
     pub(super) struct PacketStatus: u8 {
-        const DATA = 0;
-        const FLUSHREAD = 1 << 0;
+        const DATA       = 0;
+        const FLUSHREAD  = 1 << 0;
         const FLUSHWRITE = 1 << 1;
-        const STOP = 1 << 2;
-        const START = 1 << 3;
-        const NOSTOP = 1 << 4;
-        const DOSTOP = 1 << 5;
-        const IOCTL = 1 << 6;
+        const STOP       = 1 << 2;
+        const START      = 1 << 3;
+        const NOSTOP     = 1 << 4;
+        const DOSTOP     = 1 << 5;
+        const IOCTL      = 1 << 6;
     }
 }

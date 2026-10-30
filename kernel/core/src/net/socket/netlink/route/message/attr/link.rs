@@ -209,16 +209,16 @@ pub(crate) struct RtExtFilter(u32);
 
 bitflags! {
     impl RtExtFilter: u32 {
-        const VF = 1 << 0;
-        const BRVLAN = 1 << 1;
+        const VF                = 1 << 0;
+        const BRVLAN            = 1 << 1;
         const BRVLAN_COMPRESSED = 1 << 2;
-        const SKIP_STATS = 1 << 3;
-        const MRP = 1 << 4;
-        const CFM_CONFIG = 1 << 5;
-        const CFM_STATUS = 1 << 6;
-        const MST = 1 << 7;
+        const SKIP_STATS        = 1 << 3;
+        const MRP               = 1 << 4;
+        const CFM_CONFIG        = 1 << 5;
+        const CFM_STATUS        = 1 << 6;
+        const MST               = 1 << 7;
 
         // Preserve bits not interpreted by this implementation.
-        const _ = !0;
+        const _                 = !0;
     }
 }

@@ -17,14 +17,14 @@ bitflags::bitflags! {
         const DUP    = 1 << 0;
         /// Allows reading data from a data source (files, VM objects, etc.) or
         /// creating readable memory mappings.
-        const READ     = 1 << 1;
+        const READ   = 1 << 1;
         /// Allows writing data to a data sink (files, VM objects, etc.) or
         /// creating writable memory mappings.
-        const WRITE    = 1 << 2;
+        const WRITE  = 1 << 2;
         /// Allows creating executable memory mappings.
-        const EXEC    = 1 << 3;
+        const EXEC   = 1 << 3;
         /// Allows sending notifications or signals.
-        const SIGNAL   = 1 << 7;
+        const SIGNAL = 1 << 7;
     }
 }
 

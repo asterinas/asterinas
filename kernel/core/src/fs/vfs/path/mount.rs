@@ -959,25 +959,25 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct PerMountFlags: u32 {
         /// Mount read-only.
-        const RDONLY         = 1 << 0;
+        const RDONLY      = 1 << 0;
         /// Ignore suid and sgid bits.
-        const NOSUID         = 1 << 1;
+        const NOSUID      = 1 << 1;
         /// Disallow access to device special files.
-        const NODEV          = 1 << 2;
+        const NODEV       = 1 << 2;
         /// Disallow program execution.
-        const NOEXEC         = 1 << 3;
+        const NOEXEC      = 1 << 3;
         /// Do not follow symlinks.
-        const NOSYMFOLLOW    = 1 << 8;
+        const NOSYMFOLLOW = 1 << 8;
         /// Do not update access times.
-        const NOATIME        = 1 << 10;
+        const NOATIME     = 1 << 10;
         /// Do not update directory access times.
-        const NODIRATIME     = 1 << 11;
+        const NODIRATIME  = 1 << 11;
         /// Update atime relative to mtime/ctime.
-        const RELATIME       = 1 << 21;
+        const RELATIME    = 1 << 21;
         /// Kernel (pseudo) mount.
-        const KERNMOUNT      = 1 << 22;
+        const KERNMOUNT   = 1 << 22;
         /// Always perform atime updates.
-        const STRICTATIME    = 1 << 24;
+        const STRICTATIME = 1 << 24;
     }
 }
 

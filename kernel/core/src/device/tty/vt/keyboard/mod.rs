@@ -57,9 +57,9 @@ bitflags::bitflags! {
     /// A set of currently active modifier keys.
     #[derive(Clone, Copy, Debug)]
     struct ModifierKeyFlags: u8 {
-        const SHIFT     = 1 << 0;
-        const ALT       = 1 << 1;
-        const CTRL      = 1 << 2;
+        const SHIFT = 1 << 0;
+        const ALT   = 1 << 1;
+        const CTRL  = 1 << 2;
     }
 
     /// A set of currently enabled lock keys.

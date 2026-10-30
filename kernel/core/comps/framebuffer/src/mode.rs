@@ -47,17 +47,17 @@ bitflags::bitflags! {
         /// The application key mode (`VC_APPLIC` in Linux).
         const APPLICATION = 1 << 0;
         /// The cursor key mode (`VC_CKMODE` in Linux).
-        const CURSOR_KEY = 1 << 1;
+        const CURSOR_KEY  = 1 << 1;
         /// The repeat mode (`VC_REPEAT` in Linux).
-        const REPEAT = 1 << 2;
+        const REPEAT      = 1 << 2;
         /// The CRLF mode (`VC_CRLF` in Linux).
         ///
         /// If set, the Enter key sends `\r\n`; otherwise, it sends `\r` only.
-        const CRLF   = 1 << 3;
+        const CRLF        = 1 << 3;
         /// The meta key mode (`VC_META` in Linux).
         ///
         /// If set, every input character has a prefix with `ESC` (0x1B) when the Alt key is
         /// pressed.
-        const META   = 1 << 4;
+        const META        = 1 << 4;
     }
 }

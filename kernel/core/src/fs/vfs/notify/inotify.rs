@@ -637,21 +637,21 @@ bitflags! {
     /// These events are used to filter notifications sent to the subscriber.
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct InotifyEvents: u32 {
-        const ACCESS        = 1 << 0;  // File was accessed
-        const MODIFY        = 1 << 1;  // File was modified
-        const ATTRIB        = 1 << 2;  // Metadata changed
-        const CLOSE_WRITE   = 1 << 3;  // Writable file was closed
-        const CLOSE_NOWRITE = 1 << 4;  // Unwritable file closed
-        const OPEN          = 1 << 5;  // File was opened
-        const MOVED_FROM    = 1 << 6;  // File was moved from X
-        const MOVED_TO      = 1 << 7;  // File was moved to Y
-        const CREATE        = 1 << 8;  // Subfile was created
-        const DELETE        = 1 << 9;  // Subfile was deleted
-        const DELETE_SELF   = 1 << 10; // Self was deleted
-        const MOVE_SELF     = 1 << 11; // Self was moved
-        const UNMOUNT       = 1 << 13; // Backing fs was unmounted
-        const Q_OVERFLOW    = 1 << 14; // Event queue overflowed
-        const IGNORED       = 1 << 15; // File was ignored
+        const ACCESS        = 1 << 0;                                                // File was accessed
+        const MODIFY        = 1 << 1;                                                // File was modified
+        const ATTRIB        = 1 << 2;                                                // Metadata changed
+        const CLOSE_WRITE   = 1 << 3;                                                // Writable file was closed
+        const CLOSE_NOWRITE = 1 << 4;                                                // Unwritable file closed
+        const OPEN          = 1 << 5;                                                // File was opened
+        const MOVED_FROM    = 1 << 6;                                                // File was moved from X
+        const MOVED_TO      = 1 << 7;                                                // File was moved to Y
+        const CREATE        = 1 << 8;                                                // Subfile was created
+        const DELETE        = 1 << 9;                                                // Subfile was deleted
+        const DELETE_SELF   = 1 << 10;                                               // Self was deleted
+        const MOVE_SELF     = 1 << 11;                                               // Self was moved
+        const UNMOUNT       = 1 << 13;                                               // Backing fs was unmounted
+        const Q_OVERFLOW    = 1 << 14;                                               // Event queue overflowed
+        const IGNORED       = 1 << 15;                                               // File was ignored
         const CLOSE         = Self::CLOSE_WRITE.bits() | Self::CLOSE_NOWRITE.bits(); // Close events
         const MOVE          = Self::MOVED_FROM.bits() | Self::MOVED_TO.bits();       // Move events
         const ALL_EVENTS    = Self::ACCESS.bits() | Self::MODIFY.bits() | Self::ATTRIB.bits() |
@@ -664,11 +664,11 @@ bitflags! {
 bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct InotifyControls: u32 {
-        const ONLYDIR       = 1 << 24; // Only watch directories
-        const DONT_FOLLOW   = 1 << 25; // Don't follow symlinks
-        const EXCL_UNLINK   = 1 << 26; // Exclude events on unlinked objects
-        const MASK_CREATE   = 1 << 28; // Only create watches
-        const MASK_ADD      = 1 << 29; // Add to existing watch mask
-        const ONESHOT       = 1 << 31; // Send event once
+        const ONLYDIR     = 1 << 24; // Only watch directories
+        const DONT_FOLLOW = 1 << 25; // Don't follow symlinks
+        const EXCL_UNLINK = 1 << 26; // Exclude events on unlinked objects
+        const MASK_CREATE = 1 << 28; // Only create watches
+        const MASK_ADD    = 1 << 29; // Add to existing watch mask
+        const ONESHOT     = 1 << 31; // Send event once
     }
 }

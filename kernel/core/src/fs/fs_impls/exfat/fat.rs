@@ -48,7 +48,7 @@ bitflags! {
     #[derive(Clone, Copy, Debug, Default)]
     pub(crate) struct FatChainFlags: u8 {
         // An associated allocation of clusters is possible
-        const ALLOC_POSSIBLE = 0x01;
+        const ALLOC_POSSIBLE       = 0x01;
         // The allocated clusters are contiguous and fat table is irrevalent.
         const FAT_CHAIN_NOT_IN_USE = 0x03;
     }

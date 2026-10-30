@@ -130,21 +130,21 @@ bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct PtraceOptions: usize {
         /// Marks syscall stops with signal number set to `SIGTRAP | 0x80`.
-        const PTRACE_O_TRACESYSGOOD = 1;
+        const PTRACE_O_TRACESYSGOOD   = 1;
         /// Stops the tracee at `fork` and automatically traces the new thread.
-        const PTRACE_O_TRACEFORK = 1 << PtraceEvent::Fork(0).code();
+        const PTRACE_O_TRACEFORK      = 1 << PtraceEvent::Fork(0).code();
         /// Stops the tracee at `vfork` and automatically traces the new thread.
-        const PTRACE_O_TRACEVFORK = 1 << PtraceEvent::Vfork(0).code();
+        const PTRACE_O_TRACEVFORK     = 1 << PtraceEvent::Vfork(0).code();
         /// Stops the tracee at `clone` and automatically traces the new thread.
-        const PTRACE_O_TRACECLONE = 1 << PtraceEvent::Clone(0).code();
+        const PTRACE_O_TRACECLONE     = 1 << PtraceEvent::Clone(0).code();
         /// Stops the tracee at `execve`.
-        const PTRACE_O_TRACEEXEC = 1 << PtraceEvent::Exec(0).code();
+        const PTRACE_O_TRACEEXEC      = 1 << PtraceEvent::Exec(0).code();
         /// Stops the tracee at the completion of `vfork`.
         const PTRACE_O_TRACEVFORKDONE = 1 << PtraceEvent::VforkDone(0).code();
         /// Stops the tracee at `exit`.
-        const PTRACE_O_TRACEEXIT = 1 << PtraceEvent::Exit(0).code();
+        const PTRACE_O_TRACEEXIT      = 1 << PtraceEvent::Exit(0).code();
         /// Send a `SIGKILL` signal to the tracee if the tracer exits.
-        const PTRACE_O_EXITKILL = 1 << 20;
+        const PTRACE_O_EXITKILL       = 1 << 20;
     }
 }
 

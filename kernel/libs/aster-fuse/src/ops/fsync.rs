@@ -51,7 +51,7 @@ bitflags! {
         const FDATASYNC = 1 << 0;
 
         // Preserve bits not interpreted by this implementation.
-        const _ = !0;
+        const _         = !0;
     }
 }
 

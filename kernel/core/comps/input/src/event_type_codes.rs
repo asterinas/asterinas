@@ -17,27 +17,27 @@ bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub struct EventTypes: u32 {
         /// Synchronization events.
-        const SYN = 1 << 0x00;
+        const SYN       = 1 << 0x00;
         /// Key press/release events.
-        const KEY = 1 << 0x01;
+        const KEY       = 1 << 0x01;
         /// Relative movement events. (mouse, trackball, etc.)
-        const REL = 1 << 0x02;
+        const REL       = 1 << 0x02;
         /// Absolute position events. (touchpad, tablet, etc.)
-        const ABS = 1 << 0x03;
+        const ABS       = 1 << 0x03;
         /// Miscellaneous events.
-        const MSC = 1 << 0x04;
+        const MSC       = 1 << 0x04;
         /// Switch events.
-        const SW = 1 << 0x05;
+        const SW        = 1 << 0x05;
         /// LED events.
-        const LED = 1 << 0x11;
+        const LED       = 1 << 0x11;
         /// Sound events.
-        const SND = 1 << 0x12;
+        const SND       = 1 << 0x12;
         /// Repeat events.
-        const REP = 1 << 0x14;
+        const REP       = 1 << 0x14;
         /// Force feedback events.
-        const FF = 1 << 0x15;
+        const FF        = 1 << 0x15;
         /// Power management events.
-        const PWR = 1 << 0x16;
+        const PWR       = 1 << 0x16;
         /// Force feedback status events.
         const FF_STATUS = 1 << 0x17;
     }

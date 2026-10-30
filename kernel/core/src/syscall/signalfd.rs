@@ -124,7 +124,7 @@ bitflags! {
     /// Signal file descriptor creation flags.
     #[derive(Clone, Copy, Debug)]
     struct SignalFileFlags: u32 {
-        const O_CLOEXEC = CreationFlags::O_CLOEXEC.bits();
+        const O_CLOEXEC  = CreationFlags::O_CLOEXEC.bits();
         const O_NONBLOCK = StatusFlags::O_NONBLOCK.bits();
     }
 }
