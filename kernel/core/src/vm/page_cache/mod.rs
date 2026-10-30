@@ -307,19 +307,32 @@ impl PageCache {
         vmo.flush_dirty_pages(&range)
     }
 
-    /// Evicts clean pages within the specified range from the page cache.
+    /// Evicts pages overlapping the specified range from the page cache.
     ///
-    /// Only pages in the `UpToDate` state are removed. Dirty and uninitialized
-    /// pages are left in place. This is useful for invalidating cached data that
-    /// is no longer needed and can be re-read from the backend if necessary
-    /// (e.g., before direct I/O operations).
-    #[cfg_attr(not(ktest), expect(dead_code))]
+    /// For a cache with a backend, only clean (`UpToDate`) pages are removed;
+    /// dirty and uninitialized pages are kept. Removed pages can be reloaded
+    /// from the backend. For an anonymous cache, all pages in the range are
+    /// discarded and subsequent reads return zeros.
+    ///
+    /// Callers must hold the filesystem-level lock that serializes operations
+    /// in the target range. Partial boundary pages are evicted in full; callers
+    /// that need to preserve bytes outside the range must handle them separately.
     pub(crate) fn evict_range(&self, range: Range<usize>) -> Result<()> {
-        let Some(vmo) = self.0.as_backed_vmo() else {
-            return Ok(());
-        };
+        if self.0.backend.is_some() {
+            let Some(vmo) = self.0.as_backed_vmo() else {
+                return Ok(());
+            };
+            return vmo.evict_up_to_date_pages(&range);
+        }
 
-        vmo.evict_up_to_date_pages(&range)
+        let range = range.start..range.end.min(self.size());
+        if range.is_empty() {
+            return Ok(());
+        }
+
+        let locked_rmap = self.0.rmap().lock();
+        let locked_pages = self.0.pages.lock();
+        self.0.decommit_anon_pages(locked_rmap, locked_pages, range)
     }
 
     /// Flushes dirty pages and then evicts clean pages in the specified range.

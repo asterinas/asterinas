@@ -80,6 +80,20 @@ Silently-ignored flags:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/newfstatat.2.html).
 
+### `write` and `pwrite64`
+
+The requested write range must fit in a signed file offset.
+For ramfs, the maximum file size is `INT64_MAX` bytes.
+An append that crosses this limit writes the remaining bytes;
+a nonempty append at the limit fails with `EFBIG`.
+Failed and zero-length appends preserve the file descriptor offset.
+
+Supported functionality in SCML:
+
+```c
+{{#include write_and_pwrite64.scml}}
+```
+
 ### `preadv2` and `pwritev2`
 
 Supported functionality in SCML:
@@ -145,6 +159,10 @@ Supported functionality in SCML:
 ```c
 {{#include fallocate.scml}}
 ```
+
+Ranges exceeding the signed file offset limit fail with `EFBIG`.
+On ramfs, punching a hole releases complete pages and zeroes partial boundary
+pages without changing the file size. Existing shared mappings observe the hole.
 
 Unsupported modes:
 * `FALLOC_FL_UNSHARE_RANGE`

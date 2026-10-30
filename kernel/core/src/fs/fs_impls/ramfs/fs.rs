@@ -999,6 +999,9 @@ impl RamInode {
         if self.typ != InodeType::File {
             return_errno_with_message!(Errno::EINVAL, "the inode is not a regular file");
         }
+        if new_size > MAX_FILE_SIZE {
+            return_errno_with_message!(Errno::EFBIG, "the file size exceeds the maximum");
+        }
 
         let mut page_cache = self.inner.as_file().unwrap().lock();
         let mut inode_meta = self.metadata.lock();
@@ -1071,6 +1074,12 @@ impl FileOps for RamInode {
 
                 let mut inode_meta = self.metadata.lock();
                 let file_size = inode_meta.size;
+                // `O_APPEND` can select a different offset after the requested range was checked.
+                if offset >= MAX_FILE_SIZE {
+                    return_errno_with_message!(Errno::EFBIG, "the file size exceeds the maximum");
+                }
+                let write_len = write_len.min(MAX_FILE_SIZE - offset);
+                reader.limit(write_len);
                 let new_size = offset + write_len;
                 let should_expand_size = new_size > file_size;
                 let new_size_aligned = new_size.align_up(BLOCK_SIZE);
@@ -1519,6 +1528,7 @@ impl Inode for RamInode {
         // The support for flags is consistent with Linux
         match mode {
             FallocMode::Allocate => {
+                // The allocation range has already been checked in the file handle layer.
                 let new_size = offset + len;
                 if new_size > self.size() {
                     self.resize_impl(new_size)?;
@@ -1530,13 +1540,29 @@ impl Inode for RamInode {
                 Ok(())
             }
             FallocMode::PunchHoleKeepSize => {
+                let page_cache = self.inner.as_file().unwrap().lock();
                 let file_size = self.size();
                 if offset >= file_size {
                     return Ok(());
                 }
-                let range = offset..file_size.min(offset + len);
-                // TODO: Think of a more light-weight approach
-                self.inner.as_file().unwrap().lock().fill_zeros(range)
+                let end = file_size.min(offset + len);
+                let full_start = offset.align_up(PAGE_SIZE);
+                let full_end = end.align_down(PAGE_SIZE);
+
+                // Preserve data outside the hole in partial boundary pages.
+                if end <= full_start {
+                    return page_cache.fill_zeros(offset..end);
+                }
+                if offset < full_start {
+                    page_cache.fill_zeros(offset..full_start)?;
+                }
+                if full_end < end {
+                    page_cache.fill_zeros(full_end..end)?;
+                }
+                if full_start < full_end {
+                    page_cache.evict_range(full_start..full_end)?;
+                }
+                Ok(())
             }
             _ => {
                 return_errno_with_message!(

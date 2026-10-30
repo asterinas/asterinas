@@ -163,6 +163,7 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 ./pseudofs/pseudo_inode
 ./pseudofs/pseudo_mount
 
+./ramfs/fallocate
 ./ramfs/readdir
 
 ./rename/permission
