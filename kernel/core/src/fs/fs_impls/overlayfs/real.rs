@@ -119,9 +119,9 @@ impl RealObject {
         while offset < size {
             let chunk = min(COPY_CHUNK_SIZE, size - offset);
             let mut writer = VmWriter::from(&mut buffer[..chunk]).to_fallible();
-            let read_len = self
-                .real_inode()
-                .read_at(offset, &mut writer, StatusFlags::empty())?;
+            let read_len =
+                self.real_inode()
+                    .read_at(offset, &mut writer, StatusFlags::empty(), None)?;
             // A zero-length read before the declared size ends the copy; the completeness check
             // below reports it, because a short copy is the failure this loop must not hide.
             if read_len == 0 {

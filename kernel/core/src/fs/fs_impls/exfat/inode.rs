@@ -40,7 +40,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::{BlockAsPageCacheBackend, PageCache, Vmo},
+    vm::page_cache::{BlockAsPageCacheBackend, PageCache, Readahead, Vmo},
 };
 
 /// Inode number
@@ -640,7 +640,12 @@ impl ExfatInodeInner {
 }
 
 impl ExfatInode {
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        readahead: Option<&Readahead>,
+    ) -> Result<usize> {
         let inner = self.inner.upread();
         if inner.inode_type.is_directory() {
             return_errno!(Errno::EISDIR)
@@ -651,7 +656,9 @@ impl ExfatInode {
             let end = file_size.min(offset + writer.avail());
             (start, end - start)
         };
-        inner.page_cache.read(read_off, writer)?;
+        inner
+            .page_cache
+            .read_buffered(read_off, writer, readahead)?;
 
         inner.upgrade().update_atime()?;
         Ok(read_len)
@@ -828,6 +835,12 @@ impl ExfatInode {
             let mut inner = inner.upgrade();
             inner.update_atime_mtime_and_ctime()?;
             inner.size = new_size;
+
+            // Evict pages that may have been brought in by concurrent readahead.
+            // Downgrade the lock to avoid deadlock with readahead, which may hold page locks
+            // while acquiring an inode read lock in `submit_read_bio()`.
+            let inner = inner.downgrade();
+            inner.page_cache.evict_range(start..end_offset)?;
         }
 
         let inner = self.inner.read();
@@ -837,9 +850,6 @@ impl ExfatInode {
             let fs_guard = fs.lock();
             inner.sync_metadata(&fs_guard)?;
         }
-
-        // TODO: Do `evict_range` again after write to prevent stale data from being loaded
-        // into page cache during asynchronous read-ahead.
 
         Ok(write_len)
     }
@@ -1353,11 +1363,12 @@ impl FileOps for ExfatInode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        readahead: Option<&Readahead>,
     ) -> Result<usize> {
         if status_flags.contains(StatusFlags::O_DIRECT) {
             self.read_direct_at(offset, writer)
         } else {
-            self.read_at(offset, writer)
+            self.read_at(offset, writer, readahead)
         }
     }
 

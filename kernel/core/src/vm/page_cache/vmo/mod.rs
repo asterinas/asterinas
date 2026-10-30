@@ -32,7 +32,10 @@ use xarray::{Cursor, LockedXArray, XArray};
 use crate::{
     prelude::*,
     vm::{
-        page_cache::{CachePage, CachePageExt, PageCacheBackend, PageRun, cache_page::PageState},
+        page_cache::{
+            CachePage, CachePageExt, LockedCachePage, PageCacheBackend, PageRun, Readahead,
+            cache_page::PageState, readahead::ReadaheadTrigger,
+        },
         vmar::Rmap,
     },
 };
@@ -176,18 +179,13 @@ pub(crate) enum VmoCommitError {
     Err(Error),
     /// The commit operation requires backend I/O for the page at `index`.
     NeedIo { index: usize },
-    /// The page exists but is not yet initialized.
-    ///
-    /// The caller should wait for initialization of `page` at `index` to
-    /// complete.
-    WaitUntilInit { index: usize, page: CachePage },
 }
 
 impl VmoCommitError {
-    /// Returns the page index whose commit is pending on I/O or initialization.
+    /// Returns the page index whose commit is pending on I/O.
     pub(crate) fn pending_index(&self) -> Result<usize> {
         match self {
-            Self::NeedIo { index } | Self::WaitUntilInit { index, .. } => Ok(*index),
+            Self::NeedIo { index } => Ok(*index),
             Self::Err(e) => Err(*e),
         }
     }
@@ -205,15 +203,18 @@ impl From<ostd::Error> for VmoCommitError {
     }
 }
 
+/// Controls whether committing a page initializes it from the backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CommitMode {
+    /// Reads uninitialized pages from the backend before returning.
     Read,
-    Overwrite,
+    /// Skips initialization, leaving uninitialized pages for the caller to initialize.
+    SkipInit,
 }
 
 impl CommitMode {
-    fn skips_backend_read(self) -> bool {
-        matches!(self, Self::Overwrite)
+    fn skips_init(self) -> bool {
+        matches!(self, Self::SkipInit)
     }
 }
 
@@ -360,7 +361,7 @@ impl Vmo {
             let guard = disable_preempt();
             let mut cursor = self.pages.cursor(&guard, page_idx as u64);
             // `VmoMapMode::try_ensure` checks if the page has been initialized.
-            self.try_commit_with_cursor(&mut cursor, CommitMode::Overwrite)?
+            self.try_commit_with_cursor(&mut cursor)?
         };
         let mode = map_mode.try_ensure(page_idx, &page)?;
         Ok((page, mode))
@@ -369,18 +370,18 @@ impl Vmo {
     fn try_commit_with_cursor(
         &self,
         cursor: &mut Cursor<'_, CachePage>,
-        commit_mode: CommitMode,
     ) -> Result<(usize, CachePage), VmoCommitError> {
-        if let Some(backed_vmo) = self.as_backed_vmo() {
-            return backed_vmo.try_commit_with_cursor(cursor, commit_mode);
-        } else if let Some(page) = cursor.load() {
-            let index = cursor.index() as usize;
+        let index = cursor.index() as usize;
+        if let Some(page) = cursor.load() {
+            // Mapping callers check initialization through `VmoMapMode`.
             return Ok((index, page.clone()));
+        }
+        if self.as_backed_vmo().is_some() {
+            return Err(VmoCommitError::NeedIo { index });
         }
 
         // Need to commit. Only Anonymous VMOs can reach here, because VMOs
         // with a backend will return `Err` if the page is not loaded.
-        let index = cursor.index() as usize;
         let page = self.commit_on_anonymous(index)?;
         Ok((index, page))
     }
@@ -407,32 +408,6 @@ impl Vmo {
             &mut dyn FnMut() -> Result<(usize, CachePage), VmoCommitError>,
         ) -> Result<(), VmoCommitError>,
     {
-        self.try_operate_on_range_internal(
-            range,
-            |commit_fn| {
-                let mut new_commit_fn = || {
-                    let (idx, page) = commit_fn()?;
-                    map_mode.try_ensure(idx, &page)?;
-                    Ok((idx, page))
-                };
-                operate(&mut new_commit_fn)
-            },
-            // `VmoMapMode::try_ensure` checks if the page has been initialized.
-            CommitMode::Overwrite,
-        )
-    }
-
-    fn try_operate_on_range_internal<F>(
-        &self,
-        range: &Range<usize>,
-        mut operate: F,
-        commit_mode: CommitMode,
-    ) -> Result<(), VmoCommitError>
-    where
-        F: FnMut(
-            &mut dyn FnMut() -> Result<(usize, CachePage), VmoCommitError>,
-        ) -> Result<(), VmoCommitError>,
-    {
         if range.end > self.size() {
             return Err(VmoCommitError::Err(Error::with_message(
                 Errno::EINVAL,
@@ -444,7 +419,11 @@ impl Vmo {
         let guard = disable_preempt();
         let mut cursor = self.pages.cursor(&guard, page_idx_range.start as u64);
         for _ in page_idx_range {
-            let mut commit_fn = || self.try_commit_with_cursor(&mut cursor, commit_mode);
+            let mut commit_fn = || {
+                let (idx, page) = self.try_commit_with_cursor(&mut cursor)?;
+                map_mode.try_ensure(idx, &page)?;
+                Ok((idx, page))
+            };
             operate(&mut commit_fn)?;
             cursor.next();
         }
@@ -508,6 +487,65 @@ impl Vmo {
         Ok(())
     }
 
+    /// Submits read-side page-cache population for the specified page-index range.
+    ///
+    /// Missing pages may have backend reads submitted, but this method does not
+    /// wait for the prefetched pages to become readable.
+    /// If `marker_idx` is specified and that page is newly inserted, it is
+    /// marked to trigger the next readahead window.
+    pub(super) fn readahead(
+        &self,
+        page_idx_range: Range<usize>,
+        marker_idx: Option<usize>,
+    ) -> Result<()> {
+        let Some(backed_vmo) = self.as_backed_vmo() else {
+            // Anonymous VMOs (e.g., ramfs) have no I/O latency to hide.
+            return Ok(());
+        };
+
+        backed_vmo.readahead(page_idx_range, marker_idx)
+    }
+
+    /// Returns a readahead trigger for a faulting page, consuming its marker if present.
+    ///
+    /// Returns `None` for cached pages without a consumable marker,
+    /// out-of-bounds indices, or VMOs without a backend.
+    /// Does not wait for I/O.
+    pub(super) fn take_readahead_trigger(&self, page_idx: usize) -> Option<ReadaheadTrigger> {
+        self.as_backed_vmo()?;
+        let mut locked_pages = self.pages.lock();
+        if page_idx >= self.size().div_ceil(PAGE_SIZE) {
+            return None;
+        }
+
+        match locked_pages.cursor_mut(page_idx as u64).load() {
+            None => Some(ReadaheadTrigger::CacheMiss),
+            Some(page) if page.take_readahead_marker() => Some(ReadaheadTrigger::Marker),
+            // A PTE miss alone does not justify prefetching an already cached page.
+            // Reference: <https://elixir.bootlin.com/linux/v6.12.113/source/mm/filemap.c#L3241-L3244>.
+            Some(_) => None,
+        }
+    }
+
+    /// Finds the next absent cache entry, releasing the cache lock between batches.
+    pub(super) fn next_missing_page(&self, mut range: Range<usize>) -> Option<usize> {
+        while !range.is_empty() {
+            let locked_pages = self.pages.lock();
+            let nr_pages = self.size().div_ceil(PAGE_SIZE);
+            let mut cursor = locked_pages.cursor(range.start as u64);
+            for page_idx in range.by_ref().take(Self::PAGE_BATCH_CAPACITY) {
+                if page_idx >= nr_pages {
+                    return None;
+                }
+                if cursor.load().is_none() {
+                    return Some(page_idx);
+                }
+                cursor.next();
+            }
+        }
+        None
+    }
+
     /// Converts this VMO to a backend VMO wrapper if it has a backend.
     ///
     /// Returns `None` if this is an anonymous VMO.
@@ -530,8 +568,13 @@ impl Vmo {
     /// Maximum number of pages collected per batch from the `XArray`.
     const PAGE_BATCH_CAPACITY: usize = 32;
 
-    /// Reads data from the VMO at `offset` into `writer`.
-    pub(crate) fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+    /// Reads data, using the supplied readahead for VMOs with a backend.
+    pub(crate) fn read(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        readahead: Option<&Readahead>,
+    ) -> Result<()> {
         let read_len = writer.avail().min(self.size().saturating_sub(offset));
         if read_len == 0 {
             return Ok(());
@@ -539,31 +582,17 @@ impl Vmo {
         let read_end = offset + read_len;
 
         let range = offset..read_end;
-        let page_idx_range = get_page_idx_range(&range);
-        let mut current_idx = page_idx_range.start;
         let mut page_offset = offset % PAGE_SIZE;
-        let mut page_batch =
-            Vec::with_capacity(min(page_idx_range.len(), Self::PAGE_BATCH_CAPACITY));
+        let mut page_batch = Vec::with_capacity(min(
+            get_page_idx_range(&range).len(),
+            Self::PAGE_BATCH_CAPACITY,
+        ));
 
-        while current_idx < page_idx_range.end {
-            self.collect_pages(
-                current_idx,
-                page_idx_range.end,
-                CommitMode::Read,
-                &mut page_batch,
-            )?;
-
-            for (_, page) in page_batch.iter() {
-                page.reader().skip(page_offset).read_fallible(writer)?;
-                page_offset = 0;
-            }
-
-            // `current_idx < page_idx_range.end` guarantees at least one page is successfully
-            // collected here.
-            current_idx = page_batch.last().unwrap().0 + 1;
+        if let Some(backed_vmo) = self.as_backed_vmo() {
+            backed_vmo.read(&range, &mut page_offset, writer, readahead, &mut page_batch)
+        } else {
+            self.read_anonymous_pages(&range, &mut page_offset, writer, &mut page_batch)
         }
-
-        Ok(())
     }
 
     /// Writes data from `reader` into the VMO at `offset`.
@@ -581,63 +610,11 @@ impl Vmo {
             Self::PAGE_BATCH_CAPACITY,
         ));
 
-        if !self.has_backend() {
-            return self.write_anonymous_pages(
-                &write_range,
-                &mut page_offset,
-                reader,
-                &mut page_batch,
-            );
+        if let Some(backed_vmo) = self.as_backed_vmo() {
+            backed_vmo.write(&write_range, &mut page_offset, reader, &mut page_batch)
+        } else {
+            self.write_anonymous_pages(&write_range, &mut page_offset, reader, &mut page_batch)
         }
-
-        // VMOs with a backend require dirty tracking and may skip backend reads
-        // for page-aligned ranges that will be entirely overwritten.
-        if write_range.len() < PAGE_SIZE {
-            return self.write_pages_with_backend(
-                &write_range,
-                &mut page_offset,
-                reader,
-                CommitMode::Read,
-                &mut page_batch,
-            );
-        }
-
-        // Split into head (unaligned), middle (aligned), and tail (unaligned).
-        let up_align_start = write_range.start.align_up(PAGE_SIZE);
-        let down_align_end = write_range.end.align_down(PAGE_SIZE);
-
-        if write_range.start != up_align_start {
-            let head = write_range.start..up_align_start;
-            self.write_pages_with_backend(
-                &head,
-                &mut page_offset,
-                reader,
-                CommitMode::Read,
-                &mut page_batch,
-            )?;
-        }
-        if up_align_start != down_align_end {
-            let mid = up_align_start..down_align_end;
-            self.write_pages_with_backend(
-                &mid,
-                &mut page_offset,
-                reader,
-                CommitMode::Overwrite,
-                &mut page_batch,
-            )?;
-        }
-        if down_align_end != write_range.end {
-            let tail = down_align_end..write_range.end;
-            self.write_pages_with_backend(
-                &tail,
-                &mut page_offset,
-                reader,
-                CommitMode::Read,
-                &mut page_batch,
-            )?;
-        }
-
-        Ok(())
     }
 
     /// Fills the specified range with zeros.
@@ -664,6 +641,38 @@ impl Vmo {
         Ok(())
     }
 
+    /// Reads anonymous pages, zero-filling missing pages on demand.
+    fn read_anonymous_pages(
+        &self,
+        range: &Range<usize>,
+        page_offset: &mut usize,
+        writer: &mut VmWriter,
+        page_batch: &mut Vec<(usize, CachePage)>,
+    ) -> Result<()> {
+        let page_idx_range = get_page_idx_range(range);
+        let mut current_idx = page_idx_range.start;
+
+        while current_idx < page_idx_range.end {
+            page_batch.clear();
+            if let Some(missing_idx) =
+                self.collect_cached_pages(current_idx, page_idx_range.end, |_| false, page_batch)
+                && page_batch.is_empty()
+            {
+                let page = self.commit_on_anonymous(missing_idx)?;
+                page_batch.push((missing_idx, page));
+            }
+
+            for (_, page) in page_batch.iter() {
+                page.reader().skip(*page_offset).read_fallible(writer)?;
+                *page_offset = 0;
+            }
+
+            current_idx = page_batch.last().unwrap().0 + 1;
+        }
+
+        Ok(())
+    }
+
     /// Writes data to pages without dirty tracking.
     ///
     /// Used for anonymous VMO writes where pages are always in the `UpToDate`
@@ -679,10 +688,10 @@ impl Vmo {
         let mut current_idx = page_idx_range.start;
 
         while current_idx < page_idx_range.end {
-            self.collect_pages(
+            self.collect_write_pages(
                 current_idx,
                 page_idx_range.end,
-                CommitMode::Read,
+                CommitMode::SkipInit,
                 page_batch,
             )?;
 
@@ -699,11 +708,229 @@ impl Vmo {
         Ok(())
     }
 
+    /// Appends resident pages to a batch without waiting for backend I/O.
+    ///
+    /// Returns the first missing index, if any. A page matching `stop_fn` ends
+    /// the batch, including that page. Does not allocate or initialize pages.
+    fn collect_cached_pages(
+        &self,
+        start_idx: usize,
+        end_idx: usize,
+        stop_fn: impl Fn(&CachePage) -> bool,
+        pages: &mut Vec<(usize, CachePage)>,
+    ) -> Option<usize> {
+        let end_idx = end_idx.min(start_idx + pages.capacity());
+        let next_idx = start_idx + pages.len();
+        let guard = disable_preempt();
+        let mut cursor = self.pages.cursor(&guard, next_idx as u64);
+        for index in next_idx..end_idx {
+            let Some(page) = cursor.load() else {
+                return Some(index);
+            };
+            pages.push((index, page.clone()));
+            if stop_fn(&page) {
+                return None;
+            }
+            cursor.next();
+        }
+        None
+    }
+
+    /// Collects a bounded batch of consecutive pages, initializing them when requested.
+    ///
+    /// This helper keeps the returned pages alive, but it does not pin them in
+    /// the `XArray`. Callers must still serialize against `evict_range()` /
+    /// `invalidate_range()` with a higher-level invalidation lock before they
+    /// take per-page locks, otherwise buffered writes may dirty a page that has
+    /// already been detached from the page cache.
+    fn collect_write_pages(
+        &self,
+        start_idx: usize,
+        end_idx: usize,
+        commit_mode: CommitMode,
+        pages: &mut Vec<(usize, CachePage)>,
+    ) -> Result<()> {
+        let end_idx = end_idx.min(start_idx + pages.capacity());
+        pages.clear();
+        if end_idx * PAGE_SIZE > self.size() {
+            return_errno_with_message!(Errno::EINVAL, "the range to operate exceeds the VMO size");
+        }
+
+        while start_idx + pages.len() < end_idx {
+            let page_idx = if commit_mode.skips_init() {
+                let Some(missing_idx) =
+                    self.collect_cached_pages(start_idx, end_idx, |_| false, pages)
+                else {
+                    break;
+                };
+                missing_idx
+            } else {
+                // Partial writes must initialize resident uninitialized pages
+                // as well as newly allocated ones.
+                start_idx + pages.len()
+            };
+            // The cursor's critical section has ended before allocating a page.
+            let page = self.commit_on_internal(page_idx, commit_mode)?;
+            pages.push((page_idx, page));
+        }
+
+        Ok(())
+    }
+}
+
+/// A wrapper around a VMO with a backend that provides specialized operations.
+///
+/// This structure is created by calling [`Vmo::as_backed_vmo()`] and provides
+/// access to backend-specific functionality like reading from storage and
+/// managing dirty pages.
+pub(crate) struct BackedVmo<'a> {
+    vmo: &'a Vmo,
+    backend: Arc<dyn PageCacheBackend>,
+}
+
+enum PageSelection {
+    Flush,
+    Evict,
+}
+
+impl PageSelection {
+    fn should_collect(&self, page: &CachePage) -> bool {
+        let state = page.state();
+        match self {
+            PageSelection::Flush if state.is_dirty() => true,
+            PageSelection::Flush if state.is_uninit() => false,
+            PageSelection::Flush if let Some(locked_page) = page.try_lock_guard() => {
+                locked_page.is_writing_back()
+            }
+            // We need to wait for all the pages that are being written back to finish before
+            // returning from `flush()`. But we don't know whether this page is being writing back
+            // because `try_lock_guard()` fails. So let's be conservative and collect this page.
+            PageSelection::Flush => true,
+            // Include uninitialized pages because initialization may be in progress. The eviction
+            // path waits for the page lock and rechecks the state, evicting only up-to-date pages.
+            PageSelection::Evict => state.is_up_to_date() || state.is_uninit(),
+        }
+    }
+}
+
+impl<'a> BackedVmo<'a> {
+    /// Reads a byte range, advancing readahead at cache misses and markers.
+    fn read(
+        &self,
+        range: &Range<usize>,
+        page_offset: &mut usize,
+        writer: &mut VmWriter,
+        readahead: Option<&Readahead>,
+        page_batch: &mut Vec<(usize, CachePage)>,
+    ) -> Result<()> {
+        let page_idx_range = get_page_idx_range(range);
+        let mut current_idx = page_idx_range.start;
+        // Include the boundary page, but do not scan past it.
+        // Reference: <https://elixir.bootlin.com/linux/v6.12.113/source/mm/filemap.c#L2354-L2359>.
+        let stop_fn = |page: &CachePage| {
+            page.state().is_uninit() || (readahead.is_some() && page.has_readahead_marker())
+        };
+
+        while current_idx < page_idx_range.end {
+            let batch_end = current_idx
+                .saturating_add(Vmo::PAGE_BATCH_CAPACITY)
+                .min(page_idx_range.end);
+            page_batch.clear();
+            // Consume a cached prefix before handling the next cache miss.
+            // Reference: <https://elixir.bootlin.com/linux/v6.12.113/source/mm/filemap.c#L2554-L2572>.
+            if let Some(missing_idx) =
+                self.collect_cached_pages(current_idx, batch_end, stop_fn, page_batch)
+                && page_batch.is_empty()
+            {
+                if let Some(readahead) = readahead {
+                    readahead.on_read_miss(
+                        self,
+                        missing_idx..page_idx_range.end,
+                        page_idx_range.start,
+                    );
+                }
+
+                if let Some(missing_idx) =
+                    self.collect_cached_pages(current_idx, batch_end, stop_fn, page_batch)
+                    && page_batch.is_empty()
+                {
+                    // Readahead did not populate the current page. Leave later
+                    // misses for subsequent batches and read only this page.
+                    let page = self.commit_on_internal(missing_idx, CommitMode::SkipInit)?;
+                    page_batch.push((missing_idx, page));
+                }
+            }
+
+            // Handle the marked boundary page before waiting for or copying
+            // the batch, so prefetching can overlap the requested I/O.
+            // Reference: <https://elixir.bootlin.com/linux/v6.12.113/source/mm/filemap.c#L2575-L2586>.
+            if let Some(readahead) = readahead {
+                let (index, page) = page_batch.last().unwrap();
+                if page.has_readahead_marker() {
+                    readahead.on_read_marker(self, *index, page, page_idx_range.end - index);
+                }
+            }
+
+            // Now we start handling the copy for this patch.
+            // Previously, we would stop when we hit either a marker page or a missed/uninitialized page, so now we need to
+            // `ensure_init` on the last page in the batch. We do this inside the loop rather than outside it,
+            // so that asynchronous readahead has a chance to help complete the page initialization.
+            let last_index = page_batch.last().unwrap().0;
+            for (index, page) in page_batch.iter() {
+                if *index == last_index {
+                    page.ensure_init(|locked_page| self.backend.read_page(*index, locked_page))?;
+                }
+                page.reader().skip(*page_offset).read_fallible(writer)?;
+                *page_offset = 0;
+            }
+
+            // `current_idx < page_idx_range.end` guarantees at least one page is successfully
+            // collected here.
+            current_idx = page_batch.last().unwrap().0 + 1;
+        }
+
+        Ok(())
+    }
+
+    /// Writes a byte range, preserving backend data on partial pages.
+    fn write(
+        &self,
+        range: &Range<usize>,
+        page_offset: &mut usize,
+        reader: &mut VmReader,
+        page_batch: &mut Vec<(usize, CachePage)>,
+    ) -> Result<()> {
+        // VMOs with a backend require dirty tracking and may skip backend reads
+        // for page-aligned ranges that will be entirely overwritten.
+        if range.len() < PAGE_SIZE {
+            return self.write_pages(range, page_offset, reader, CommitMode::Read, page_batch);
+        }
+
+        // Split into head (unaligned), middle (aligned), and tail (unaligned).
+        let up_align_start = range.start.align_up(PAGE_SIZE);
+        let down_align_end = range.end.align_down(PAGE_SIZE);
+
+        if range.start != up_align_start {
+            let head = range.start..up_align_start;
+            self.write_pages(&head, page_offset, reader, CommitMode::Read, page_batch)?;
+        }
+        if up_align_start != down_align_end {
+            let mid = up_align_start..down_align_end;
+            self.write_pages(&mid, page_offset, reader, CommitMode::SkipInit, page_batch)?;
+        }
+        if down_align_end != range.end {
+            let tail = down_align_end..range.end;
+            self.write_pages(&tail, page_offset, reader, CommitMode::Read, page_batch)?;
+        }
+
+        Ok(())
+    }
+
     /// Writes data to pages with backend dirty tracking.
     ///
     /// Each page is locked before writing to ensure correct state transitions
     /// and marked dirty for later writeback.
-    fn write_pages_with_backend(
+    fn write_pages(
         &self,
         range: &Range<usize>,
         page_offset: &mut usize,
@@ -715,7 +942,12 @@ impl Vmo {
         let mut current_idx = page_idx_range.start;
 
         while current_idx < page_idx_range.end {
-            self.collect_pages(current_idx, page_idx_range.end, commit_mode, page_batch)?;
+            self.vmo.collect_write_pages(
+                current_idx,
+                page_idx_range.end,
+                commit_mode,
+                page_batch,
+            )?;
 
             // `current_idx < page_idx_range.end` guarantees at least one page is successfully
             // collected here.
@@ -759,112 +991,6 @@ impl Vmo {
         Ok(())
     }
 
-    /// Collects a batch of committed pages from `start_idx` to `end_idx`.
-    ///
-    /// Returns up to a small batch of consecutive committed pages. The
-    /// caller receives only successfully committed pages and never needs to
-    /// deal with [`VmoCommitError`] directly.
-    ///
-    /// This helper keeps the returned pages alive, but it does not pin them in
-    /// the `XArray`. Callers must still serialize against `evict_range()` /
-    /// `invalidate_range()` with a higher-level invalidation lock before they
-    /// take per-page locks, otherwise buffered writes may dirty a page that has
-    /// already been detached from the page cache.
-    fn collect_pages(
-        &self,
-        start_idx: usize,
-        end_idx: usize,
-        commit_mode: CommitMode,
-        pages: &mut Vec<(usize, CachePage)>,
-    ) -> Result<()> {
-        let end_idx = end_idx.min(start_idx + pages.capacity());
-        pages.clear();
-        let range = (start_idx * PAGE_SIZE)..(end_idx * PAGE_SIZE);
-        let mut current_range = range.clone();
-
-        'retry: loop {
-            let mut operate =
-                |commit_fn: &mut dyn FnMut() -> Result<(usize, CachePage), VmoCommitError>| {
-                    let (idx, page) = commit_fn()?;
-                    pages.push((idx, page));
-                    Ok(())
-                };
-            match self.try_operate_on_range_internal(&current_range, &mut operate, commit_mode) {
-                Ok(()) => break 'retry,
-                Err(err) => {
-                    let (idx, page) = self.handle_commit_error(err, commit_mode)?;
-                    pages.push((idx, page));
-                    current_range.start = (idx + 1) * PAGE_SIZE;
-                    if current_range.start >= range.end {
-                        break 'retry;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handles a commit error by performing the necessary I/O or initialization.
-    ///
-    /// Returns the page index and page that were recovered.
-    fn handle_commit_error(
-        &self,
-        err: VmoCommitError,
-        commit_mode: CommitMode,
-    ) -> Result<(usize, CachePage)> {
-        match err {
-            VmoCommitError::Err(e) => Err(e),
-            VmoCommitError::NeedIo { index } => {
-                Ok((index, self.commit_on_internal(index, commit_mode)?))
-            }
-            VmoCommitError::WaitUntilInit { index, page } => {
-                page.ensure_init(|locked_page| {
-                    self.as_backed_vmo()
-                        .unwrap()
-                        .backend
-                        .read_page(index, locked_page)
-                })?;
-                Ok((index, page))
-            }
-        }
-    }
-}
-
-/// A wrapper around a VMO with a backend that provides specialized operations.
-///
-/// This structure is created by calling [`Vmo::as_backed_vmo()`] and provides
-/// access to backend-specific functionality like reading from storage and
-/// managing dirty pages.
-pub(crate) struct BackedVmo<'a> {
-    vmo: &'a Vmo,
-    backend: Arc<dyn PageCacheBackend>,
-}
-
-enum PageSelection {
-    Flush,
-    Evict,
-}
-
-impl PageSelection {
-    fn should_collect(&self, page: &CachePage) -> bool {
-        let state = page.state();
-        match self {
-            PageSelection::Flush if state.is_dirty() => true,
-            PageSelection::Flush if state.is_uninit() => false,
-            PageSelection::Flush if let Some(locked_page) = page.try_lock_guard() => {
-                locked_page.is_writing_back()
-            }
-            // We need to wait for all the pages that are being written back to finish before
-            // returning from `flush()`. But we don't know whether this page is being writing back
-            // because `try_lock_guard()` fails. So let's be conservative and collect this page.
-            PageSelection::Flush => true,
-            PageSelection::Evict => state.is_up_to_date(),
-        }
-    }
-}
-
-impl<'a> BackedVmo<'a> {
     /// Writes back dirty pages in the specified byte range to the backend storage.
     pub(super) fn flush_dirty_pages(&self, range: &Range<usize>) -> Result<()> {
         if range.start >= self.size() {
@@ -1046,54 +1172,19 @@ impl<'a> BackedVmo<'a> {
 
         let mut cursor = locked_pages.cursor_mut(page_idx as u64);
 
-        if let Some(page) = cursor.load() {
-            let page = page.clone();
-            drop(locked_pages);
-
-            if !commit_mode.skips_backend_read() {
-                page.ensure_init(|locked_page| self.backend.read_page(page_idx, locked_page))?;
-                return Ok(page);
-            }
-
-            return Ok(page);
+        let page = if let Some(page) = cursor.load() {
+            page.clone()
+        } else {
+            let page = CachePage::alloc_uninit()?;
+            cursor.store(page.clone());
+            page
         };
-
-        // The page is within the file bounds - need to allocate a cache page.
-        let uninit_page = CachePage::alloc_uninit()?;
-        cursor.store(uninit_page.clone());
         drop(locked_pages);
 
-        if commit_mode.skips_backend_read() {
-            // The page will be completely overwritten, no need to read.
-            Ok(uninit_page)
-        } else {
-            // Read the page from the backend storage.
-            uninit_page.ensure_init(|locked_page| self.backend.read_page(page_idx, locked_page))?;
-            Ok(uninit_page)
+        if !commit_mode.skips_init() {
+            page.ensure_init(|locked_page| self.backend.read_page(page_idx, locked_page))?;
         }
-    }
-
-    /// Attempts to commit a page using a cursor, without blocking on I/O.
-    fn try_commit_with_cursor(
-        &self,
-        cursor: &mut Cursor<'_, CachePage>,
-        commit_mode: CommitMode,
-    ) -> Result<(usize, CachePage), VmoCommitError> {
-        let page_idx = cursor.index() as usize;
-
-        let Some(page) = cursor.load() else {
-            return Err(VmoCommitError::NeedIo { index: page_idx });
-        };
-
-        // Check if the page is initialized.
-        if !commit_mode.skips_backend_read() && page.state().is_uninit() {
-            return Err(VmoCommitError::WaitUntilInit {
-                index: page_idx,
-                page: page.clone(),
-            });
-        }
-
-        Ok((page_idx, page.clone()))
+        Ok(page)
     }
 
     /// Collects pages in the specified page index range.
@@ -1163,6 +1254,68 @@ impl<'a> BackedVmo<'a> {
         }
 
         removed_pages
+    }
+
+    /// Submits read I/O for pages in the specified page-index range.
+    fn readahead(&self, page_idx_range: Range<usize>, marker_idx: Option<usize>) -> Result<()> {
+        let page_count = self.size().div_ceil(PAGE_SIZE);
+        let readahead_end_idx = page_idx_range.end.min(page_count);
+        if page_idx_range.start >= readahead_end_idx {
+            return Ok(());
+        }
+
+        let mut io_batch = None;
+        let mut page_idx = page_idx_range.start;
+        while let Some(start_idx) = self.next_missing_page(page_idx..readahead_end_idx) {
+            let (next_idx, pages) =
+                self.collect_readahead_run(start_idx, readahead_end_idx, marker_idx)?;
+            if next_idx == start_idx {
+                break;
+            }
+            if !pages.is_empty() {
+                let mut locked_pages = pages.into_iter();
+                let pages = PageRun::new(start_idx, &mut locked_pages);
+                let io_batch = io_batch
+                    .get_or_insert_with(|| IoBatch::with_capacity(Vmo::PAGE_BATCH_CAPACITY));
+                self.backend.read_pages_async(pages, io_batch)?;
+            }
+            page_idx = next_idx;
+        }
+
+        Ok(())
+    }
+
+    /// Collects a bounded run of consecutive missing pages for readahead.
+    fn collect_readahead_run(
+        &self,
+        start_idx: usize,
+        end_idx: usize,
+        marker_idx: Option<usize>,
+    ) -> Result<(usize, Vec<LockedCachePage>)> {
+        let mut pages = Vec::with_capacity(Vmo::PAGE_BATCH_CAPACITY);
+        let mut locked_pages = self.vmo.pages.lock();
+        let end_idx = end_idx.min(self.size().div_ceil(PAGE_SIZE));
+        let mut page_idx = start_idx;
+        while page_idx < end_idx && pages.len() < Vmo::PAGE_BATCH_CAPACITY {
+            let mut cursor = locked_pages.cursor_mut(page_idx as u64);
+            if cursor.load().is_some() {
+                page_idx += 1;
+                break;
+            }
+
+            let page = CachePage::alloc_uninit()?;
+            let Some(locked_page) = page.try_lock() else {
+                break;
+            };
+            if marker_idx == Some(page_idx) {
+                locked_page.set_readahead_marker();
+            }
+            cursor.store(locked_page.clone());
+            pages.push(locked_page);
+            page_idx += 1;
+        }
+
+        Ok((page_idx, pages))
     }
 }
 

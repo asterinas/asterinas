@@ -431,7 +431,7 @@ fn read_attr() {
     let mut buf = [0u8; 64];
     let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
     let bytes_read = r_attr_inode
-        .read_at(0, &mut writer, StatusFlags::empty())
+        .read_at(0, &mut writer, StatusFlags::empty(), None)
         .expect("read_at failed");
 
     assert!(bytes_read > 0);
@@ -440,7 +440,7 @@ fn read_attr() {
 
     // Reading a directory should fail (expect EINVAL as per inode.rs)
     let mut writer = VmWriter::from(&mut buf[..]).to_fallible(); // Reset writer
-    let result = leaf1_dir_inode.read_at(0, &mut writer, StatusFlags::empty());
+    let result = leaf1_dir_inode.read_at(0, &mut writer, StatusFlags::empty(), None);
     assert!(result.is_err());
 }
 
@@ -473,7 +473,7 @@ fn write_attr() {
     let mut buf = [0u8; 64];
     let mut writer = VmWriter::from(&mut buf[..]).to_fallible();
     let bytes_read = rw_attr_inode
-        .read_at(0, &mut writer, StatusFlags::empty())
+        .read_at(0, &mut writer, StatusFlags::empty(), None)
         .expect("read_at failed");
     let content = core::str::from_utf8(&buf[..bytes_read]).unwrap();
     assert_eq!(content, new_val);

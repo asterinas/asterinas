@@ -18,6 +18,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
+    vm::page_cache::Readahead,
 };
 
 const HWRNG_MINOR: u32 = 183;
@@ -83,6 +84,7 @@ impl FileOps for HwRngFile {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         // Linux looks up the selected device at `read()`.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/core.c#L215>.

@@ -29,6 +29,7 @@ use crate::{
         signal::{PollHandle, Pollable},
     },
     util::ioctl::RawIoctl,
+    vm::page_cache::Readahead,
 };
 
 pub(super) fn init() {
@@ -157,7 +158,8 @@ impl<T: NsCommonOps> FileOps for NsInode<T> {
         &self,
         _offset: usize,
         _writer: &mut VmWriter,
-        _status: StatusFlags,
+        _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize>;
     fn write_at(
         &self,
@@ -254,6 +256,7 @@ impl<T: NsCommonOps> FileOps for NsFile<T> {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         return_errno_with_message!(
             Errno::EINVAL,

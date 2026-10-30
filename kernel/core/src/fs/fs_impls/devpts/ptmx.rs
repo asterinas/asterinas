@@ -18,6 +18,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    vm::page_cache::Readahead,
 };
 
 /// Same major number with Linux.
@@ -68,6 +69,7 @@ impl FileOps for Ptmx {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         Ok(0)
     }

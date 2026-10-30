@@ -86,7 +86,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::Vmo,
+    vm::page_cache::{Readahead, Vmo},
 };
 
 pub(super) struct OverlayInode {
@@ -265,8 +265,9 @@ impl FileOps for OverlayInode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        readahead: Option<&Readahead>,
     ) -> Result<usize> {
-        self.read_at_impl(offset, writer, status_flags)
+        self.read_at_impl(offset, writer, status_flags, readahead)
     }
 
     fn write_at(

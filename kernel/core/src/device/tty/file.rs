@@ -12,6 +12,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::RawIoctl,
+    vm::page_cache::Readahead,
 };
 
 pub(super) struct TtyFile<D>(Arc<Tty<D>>);
@@ -33,6 +34,7 @@ impl<D: TtyDriver> FileOps for TtyFile<D> {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         self.0.read(writer, status_flags)
     }

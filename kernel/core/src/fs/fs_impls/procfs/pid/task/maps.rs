@@ -17,7 +17,10 @@ use crate::{
         signal::{PollHandle, Pollable},
     },
     thread::Thread,
-    vm::vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR},
+    vm::{
+        page_cache::Readahead,
+        vmar::{VMAR_CAP_ADDR, VMAR_LOWEST_ADDR},
+    },
 };
 
 /// Represents the inode at `/proc/[pid]/task/[tid]/maps` (and also `/proc/[pid]/maps`).
@@ -78,6 +81,7 @@ impl FileOps for MapsFileHandle {
         offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         let mut printer = VmPrinter::new_skip(writer, offset);
 

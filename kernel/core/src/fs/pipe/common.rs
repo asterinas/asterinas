@@ -28,6 +28,7 @@ use crate::{
         ioctl::RawIoctl,
         ring_buffer::{ConsumerU8Ext, ProducerU8Ext, RbConsumer, RbProducer, RingBuffer},
     },
+    vm::page_cache::Readahead,
 };
 
 /// A handle for a pipe that implements `PerOpenFileOps`.
@@ -103,6 +104,7 @@ impl FileOps for PipeHandle {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         if !writer.has_avail() {
             // Even the peer endpoint has been closed, reading an empty buffer is
@@ -663,6 +665,7 @@ mod test {
             0,
             &mut VmWriter::from(buf).to_fallible(),
             StatusFlags::empty(),
+            None,
         )
     }
 

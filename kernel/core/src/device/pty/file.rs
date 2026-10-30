@@ -12,6 +12,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::RawIoctl,
+    vm::page_cache::Readahead,
 };
 
 /// The file for a pseudoterminal slave.
@@ -66,6 +67,7 @@ impl FileOps for PtySlaveFile {
         _offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         self.0.read(writer, status_flags)
     }

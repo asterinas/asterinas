@@ -157,7 +157,7 @@ mod test {
         // the vmo is zeroed once allocated
         let mut read_buffer = [0; size_of::<usize>()];
         let mut writer = VmWriter::from(read_buffer.as_mut_slice()).to_fallible();
-        vmo.read(0, &mut writer).unwrap();
+        vmo.read(0, &mut writer, None).unwrap();
         assert_eq!(usize::from_ne_bytes(read_buffer), 0);
     }
 
@@ -180,7 +180,7 @@ mod test {
 
         let mut read_buffer = [0];
         let mut writer = VmWriter::from(read_buffer.as_mut_slice()).to_fallible();
-        vmo.read(111, &mut writer).unwrap();
+        vmo.read(111, &mut writer, None).unwrap();
         let read_val = read_buffer[0];
         assert_eq!(val, read_val);
         // bit endian
@@ -189,7 +189,7 @@ mod test {
 
         let mut read_buffer = [0; size_of::<u32>()];
         let mut writer = VmWriter::from(read_buffer.as_mut_slice()).to_fallible();
-        vmo.read(222, &mut writer).unwrap();
+        vmo.read(222, &mut writer, None).unwrap();
         let read_val = u32::from_ne_bytes(read_buffer);
         assert_eq!(read_val, 0x78563412)
     }

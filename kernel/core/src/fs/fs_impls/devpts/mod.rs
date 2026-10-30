@@ -26,6 +26,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
+    vm::page_cache::Readahead,
 };
 
 mod ptmx;
@@ -182,6 +183,7 @@ impl FileOps for RootInode {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }

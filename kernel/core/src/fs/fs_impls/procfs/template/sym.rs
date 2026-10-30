@@ -20,6 +20,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid},
     thread::Thread,
+    vm::page_cache::Readahead,
 };
 
 pub(in procfs) struct ProcSym<S: ProcSymOps> {
@@ -54,6 +55,7 @@ impl<S: ProcSymOps + 'static> FileOps for ProcSym<S> {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }

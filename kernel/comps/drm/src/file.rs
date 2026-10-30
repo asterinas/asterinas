@@ -20,7 +20,10 @@ use aster_core::{
         signal::{PollHandle, Pollable},
     },
     util::ioctl::RawIoctl,
-    vm::vmar::{FileMmapRequest, MapHandle},
+    vm::{
+        page_cache::Readahead,
+        vmar::{FileMmapRequest, MapHandle},
+    },
 };
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use hashbrown::HashMap;
@@ -318,6 +321,7 @@ impl FileOps for DrmFile {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "reading from a DRM file is not supported")
     }

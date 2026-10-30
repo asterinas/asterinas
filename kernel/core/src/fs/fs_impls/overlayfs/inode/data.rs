@@ -22,7 +22,7 @@ use crate::{
         },
     },
     prelude::*,
-    vm::page_cache::Vmo,
+    vm::page_cache::{Readahead, Vmo},
 };
 
 impl OverlayInode {
@@ -31,10 +31,12 @@ impl OverlayInode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        readahead: Option<&Readahead>,
     ) -> Result<usize> {
         let real = self.real_object();
+        let status_flags = real.status_flags_for_read(status_flags);
         real.real_inode()
-            .read_at(offset, writer, real.status_flags_for_read(status_flags))
+            .read_at(offset, writer, status_flags, readahead)
     }
 
     pub(super) fn write_at_impl(

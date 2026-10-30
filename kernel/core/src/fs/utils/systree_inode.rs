@@ -23,7 +23,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
-    vm::page_cache::Vmo,
+    vm::page_cache::{Readahead, Vmo},
 };
 
 type Ino = u64;
@@ -307,6 +307,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
         offset: usize,
         buf: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
             return Err(Error::new(Errno::EINVAL));

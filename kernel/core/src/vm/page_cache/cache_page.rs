@@ -88,6 +88,8 @@ pub(crate) struct CachePageMeta {
     /// cleared without the page lock only from the BIO completion callback after
     /// the VMO writeback path has handed off the writeback state.
     is_writing_back: AtomicBool,
+    /// Whether accessing this page should continue readahead.
+    readahead_marker: AtomicBool,
     // TODO: Add a reverse mapping from the page to VMO for eviction.
 }
 
@@ -97,6 +99,7 @@ impl Default for CachePageMeta {
             state: AtomicPageState::new(PageState::Uninit),
             lock: AtomicBool::new(false),
             is_writing_back: AtomicBool::new(false),
+            readahead_marker: AtomicBool::new(false),
         }
     }
 }
@@ -115,7 +118,6 @@ pub(crate) trait CachePageExt: Sized {
     fn wait_queue(&self) -> &'static WaitQueue;
 
     /// Tries to lock the cache page.
-    #[expect(dead_code)]
     fn try_lock(self) -> Option<LockedCachePage>;
 
     /// Tries to lock the cache page by reference.
@@ -175,6 +177,23 @@ pub(crate) trait CachePageExt: Sized {
     /// Returns the state of the cache page.
     fn state(&self) -> PageState {
         self.metadata().state.load(Ordering::Acquire)
+    }
+
+    /// Returns whether an access to this page should continue readahead.
+    fn has_readahead_marker(&self) -> bool {
+        self.metadata().readahead_marker.load(Ordering::Relaxed)
+    }
+
+    /// Consumes the readahead marker unless the page is being written back.
+    ///
+    /// Returns whether a marker was consumed.
+    fn take_readahead_marker(&self) -> bool {
+        if self.metadata().is_writing_back.load(Ordering::Acquire) {
+            return false;
+        }
+        self.metadata()
+            .readahead_marker
+            .swap(false, Ordering::Relaxed)
     }
 }
 
@@ -324,6 +343,13 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
     /// Checks if the page is currently being written back to storage.
     pub(super) fn is_writing_back(&self) -> bool {
         self.metadata().is_writing_back.load(Ordering::Acquire)
+    }
+
+    /// Marks this page to trigger the next readahead window.
+    pub(super) fn set_readahead_marker(&self) {
+        self.metadata()
+            .readahead_marker
+            .store(true, Ordering::Relaxed);
     }
 }
 

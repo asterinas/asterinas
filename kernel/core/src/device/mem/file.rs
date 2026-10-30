@@ -9,6 +9,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::random,
+    vm::page_cache::Readahead,
 };
 
 pub(crate) fn geturandom(writer: &mut VmWriter) -> Result<usize> {
@@ -102,6 +103,7 @@ impl FileOps for MemFile {
         _offset: usize,
         writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         match self {
             MemFile::Full | MemFile::Zero => {

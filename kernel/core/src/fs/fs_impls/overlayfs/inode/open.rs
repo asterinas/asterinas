@@ -24,7 +24,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
-    vm::vmar::FileMmapRequest,
+    vm::{page_cache::Readahead, vmar::FileMmapRequest},
 };
 
 impl OverlayInode {
@@ -169,6 +169,7 @@ impl FileOps for OverlayDirOpenHandle {
         _offset: usize,
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
     }

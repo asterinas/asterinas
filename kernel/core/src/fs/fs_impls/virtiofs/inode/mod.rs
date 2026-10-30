@@ -52,7 +52,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::{PageCache, Vmo},
+    vm::page_cache::{PageCache, Readahead, Vmo},
 };
 
 /// Represents a cached virtio-fs inode and its kernel-side state.
@@ -597,6 +597,7 @@ impl FileOps for VirtioFsInode {
         offset: usize,
         writer: &mut VmWriter,
         status_flags: StatusFlags,
+        _readahead: Option<&Readahead>,
     ) -> Result<usize> {
         if self.type_ != InodeType::File {
             return_errno_with_message!(
