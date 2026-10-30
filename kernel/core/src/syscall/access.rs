@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file::{Permission, file_table::RawFileDesc},
         utils::PATH_MAX,
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, PerMountFlags},
     },
     prelude::*,
 };
@@ -122,6 +122,19 @@ fn do_faccessat(
     };
 
     let inode = path.inode();
+
+    // Executing a regular file on a `noexec` mount is forbidden even when the
+    // file mode grants the execute bit. `access(2)` and its variants need to
+    // report the same restriction through `X_OK`.
+    if mode.contains(AccessMode::X_OK)
+        && inode.type_().is_regular_file()
+        && path.mount_node().flags().contains(PerMountFlags::NOEXEC)
+    {
+        return_errno_with_message!(
+            Errno::EACCES,
+            "execution is not allowed on a file system mounted with `noexec`"
+        );
+    }
 
     // `F_OK` is represented by `AccessMode::empty()`.
     // It only asks whether the file exists,

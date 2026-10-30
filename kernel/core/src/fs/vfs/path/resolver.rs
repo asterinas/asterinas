@@ -4,7 +4,7 @@ use alloc::str;
 
 use ostd::task::Task;
 
-use super::{Mount, MountTopology, Path};
+use super::{Mount, MountTopology, Path, PerMountFlags};
 use crate::{
     fs::{
         file::{
@@ -773,6 +773,16 @@ impl PathResolver {
                     // resolved even when `follow_tail_link` is false.
                     || target_is_dir)
             {
+                if next_path
+                    .mount_node()
+                    .flags()
+                    .contains(PerMountFlags::NOSYMFOLLOW)
+                {
+                    return_errno_with_message!(
+                        Errno::ELOOP,
+                        "the symlink is on a file system mounted with `nosymfollow`"
+                    );
+                }
                 if follows >= SYMLINKS_MAX {
                     return_errno_with_message!(Errno::ELOOP, "there are too many symlinks");
                 }
