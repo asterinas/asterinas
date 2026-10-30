@@ -12,14 +12,22 @@
 use ostd::mm::io::util::HasVmReaderWriter;
 
 use super::{super::Ext2, FileFlags, Inode, InodeInner, io_range::IoRange};
-use crate::fs::{
-    ext2::{prelude::*, utils},
-    vfs::inode::FallocMode,
+use crate::{
+    fs::{
+        ext2::{prelude::*, utils},
+        vfs::inode::FallocMode,
+    },
+    vm::page_cache::Readahead,
 };
 
 impl Inode {
     /// Reads file data at `offset` through the page cache.
-    pub(in ext2) fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    pub(in ext2) fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        readahead: Option<&Readahead>,
+    ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -28,7 +36,7 @@ impl Inode {
             return Ok(0);
         }
 
-        let read_len = self.inner.read().read_at(offset, writer)?;
+        let read_len = self.inner.read().read_at(offset, writer, readahead)?;
         if read_len > 0 {
             self.inner.write().set_atime(utils::now());
         }
@@ -226,7 +234,12 @@ impl InodeInner {
     }
 
     /// Reads file data at `offset` through the inode page cache.
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        readahead: Option<&Readahead>,
+    ) -> Result<usize> {
         if writer.avail() == 0 {
             return Ok(0);
         }
@@ -238,7 +251,7 @@ impl InodeInner {
 
         let read_len = writer.avail().min(file_size - offset);
         writer.limit(read_len);
-        self.page_cache().read(offset, writer)?;
+        self.page_cache().read_buffered(offset, writer, readahead)?;
         Ok(read_len)
     }
 

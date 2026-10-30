@@ -157,7 +157,7 @@ impl<T: NsCommonOps> FileOps for NsInode<T> {
         &self,
         _offset: usize,
         _writer: &mut VmWriter,
-        _status: StatusFlags,
+        _status_flags: StatusFlags,
     ) -> Result<usize>;
     fn write_at(
         &self,
