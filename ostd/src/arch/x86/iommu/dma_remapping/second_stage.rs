@@ -61,8 +61,7 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
-    #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug)]
     pub struct PteFlags: usize {
         /// Whether accesses to this page must snoop processor caches.
         const SNOOP =           1 << 11;

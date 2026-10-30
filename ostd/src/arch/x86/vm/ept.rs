@@ -69,8 +69,7 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
-    #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug)]
     struct PteFlags: usize {
         const READABLE =        1 << 0;
         const WRITABLE =        1 << 1;

@@ -32,6 +32,7 @@ impl VfsCapRevision {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct VfsCapFlags: u32 {
         const EFFECTIVE = 0x0000_0001;
     }

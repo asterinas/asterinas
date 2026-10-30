@@ -6,6 +6,7 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use bitflags::bitflags;
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct StatusFlags: u32 {
         /// append on each write
         const O_APPEND = 1 << 10;

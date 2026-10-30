@@ -80,6 +80,7 @@ fn do_accept(
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct Flags: u32 {
         const SOCK_NONBLOCK = NONBLOCK;
         const SOCK_CLOEXEC = CLOEXEC;

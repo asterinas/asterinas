@@ -52,6 +52,7 @@ pub struct Ns16550aUart<A: Ns16550aAccess> {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct LineStat: u8 {
         /// Data ready (DR).
         const DR    = 1 << 0;

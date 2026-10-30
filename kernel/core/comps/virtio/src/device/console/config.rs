@@ -8,7 +8,8 @@ use ostd_pod::FromZeros;
 use crate::transport::{ConfigManager, VirtioTransport};
 
 bitflags::bitflags! {
-    pub(super) struct ConsoleFeatures: u64{
+    #[derive(Clone, Copy, Debug)]
+    pub(super) struct ConsoleFeatures: u64 {
         /// Configuration cols and rows are valid.
         const VIRTIO_CONSOLE_F_SIZE = 1 << 0;
         /// Device has support for multiple ports;

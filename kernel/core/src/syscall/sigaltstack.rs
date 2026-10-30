@@ -116,12 +116,14 @@ const MINSTKSZ: usize = 2048;
 //   status flag may be set.
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct SigStackAttrFlags: u32 {
         const SS_AUTODISARM = SigStackFlags::SS_AUTODISARM.bits();
     }
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq)]
     struct SigStackStatusFlags: u32 {
         const SS_ONSTACK = SigStackFlags::SS_ONSTACK.bits();
         const SS_DISABLE = SigStackFlags::SS_DISABLE.bits();

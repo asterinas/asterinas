@@ -45,8 +45,8 @@ impl From<FatValue> for ClusterID {
 }
 
 bitflags! {
-    #[derive(Default)]
-    pub(crate) struct FatChainFlags:u8 {
+    #[derive(Clone, Copy, Debug, Default)]
+    pub(crate) struct FatChainFlags: u8 {
         // An associated allocation of clusters is possible
         const ALLOC_POSSIBLE = 0x01;
         // The allocated clusters are contiguous and fat table is irrevalent.

@@ -10,6 +10,7 @@ use crate::{
 };
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct CloseRangeFlags: u32 {
         const UNSHARE = 1 << 1;
         const CLOEXEC = 1 << 2;

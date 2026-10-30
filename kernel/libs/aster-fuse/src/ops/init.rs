@@ -135,14 +135,16 @@ impl InitReply {
     }
 }
 
+/// FUSE capability and feature flags exchanged in `FUSE_INIT`.
+///
+/// The client sends its supported set in [`InitReq::new`]; the server
+/// responds with the subset it also supports in [`InitReply::flags`].
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct FuseInitFlags(u32);
+
 bitflags! {
-    /// FUSE capability and feature flags exchanged in `FUSE_INIT`.
-    ///
-    /// The client sends its supported set in [`InitReq::new`]; the server
-    /// responds with the subset it also supports in [`InitReply::flags`].
-    #[repr(C)]
-    #[derive(Pod)]
-    pub struct FuseInitFlags: u32 {
+    impl FuseInitFlags: u32 {
         /// Supports asynchronous reads.
         const ASYNC_READ          = 1 << 0;
         /// Supports POSIX byte-range locks.
@@ -207,17 +209,23 @@ bitflags! {
         const INIT_EXT            = 1 << 30;
         /// Reserved by the FUSE protocol.
         const INIT_RESERVED       = 1 << 31;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _ = !0;
     }
 }
 
+/// Upper FUSE capability and feature flags exchanged in `FUSE_INIT`.
+///
+/// These flags encode bits 32 through 63 of the protocol capability set
+/// after shifting them down into the `flags2` field.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct FuseInitFlags2(u32);
+
 bitflags! {
-    /// Upper FUSE capability and feature flags exchanged in `FUSE_INIT`.
-    ///
-    /// These flags encode bits 32 through 63 of the protocol capability set
-    /// after shifting them down into the `flags2` field.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub struct FuseInitFlags2: u32 {
+    impl FuseInitFlags2: u32 {
         /// Supports security context information.
         const SECURITY_CTX             = 1 << 0;
         /// Supports inode DAX information.
@@ -240,6 +248,10 @@ bitflags! {
         const OVER_IO_URING           = 1 << 9;
         /// Supports request timeouts.
         const REQUEST_TIMEOUT         = 1 << 10;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _ = !0;
     }
 }
 

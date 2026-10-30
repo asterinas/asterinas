@@ -96,6 +96,7 @@ pub enum CachePolicy {
 
 bitflags! {
     /// Page protection permissions and access status.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct PageFlags: u8 {
         /// Readable.
         const R = 0b00000001;
@@ -104,11 +105,11 @@ bitflags! {
         /// Executable.
         const X = 0b00000100;
         /// Readable + writable.
-        const RW = Self::R.bits | Self::W.bits;
+        const RW = Self::R.bits() | Self::W.bits();
         /// Readable + executable.
-        const RX = Self::R.bits | Self::X.bits;
+        const RX = Self::R.bits() | Self::X.bits();
         /// Readable + writable + executable.
-        const RWX = Self::R.bits | Self::W.bits | Self::X.bits;
+        const RWX = Self::R.bits() | Self::W.bits() | Self::X.bits();
 
         /// Has the memory page been read or written.
         const ACCESSED  = 0b00001000;
@@ -122,6 +123,7 @@ bitflags! {
 
 bitflags! {
     /// Page property that are only accessible in OSTD.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub(crate) struct PrivilegedPageFlags: u8 {
         /// Accessible from user mode.
         const USER      = 0b00000001;
@@ -142,6 +144,7 @@ bitflags! {
 
 bitflags! {
     /// Flags that can be stored on intermediate page table entries.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub(crate) struct PageTableFlags: u8 {
         /// The first bit available for software use.
         const AVAIL1    = 0b01000000;

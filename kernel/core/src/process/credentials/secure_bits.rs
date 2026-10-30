@@ -13,6 +13,7 @@ bitflags! {
     /// These flags control the behavior of capabilities when changing UIDs.
     ///
     /// Reference: <https://man7.org/linux/man-pages/man7/capabilities.7.html>
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub(crate) struct SecureBits: u16 {
         /// If set, the kernel does not grant capabilities when a set-user-ID-root program
         /// is executed, or when a process with an effective or real UID of 0 calls `execve`.
@@ -43,8 +44,6 @@ bitflags! {
 impl SecureBits {
     /// Mask of all lock bits.
     const LOCK_MASK: u16 = 0b10101010;
-    /// Mask of all valid bits.
-    const ALL_VALID_BITS: u16 = Self::LOCK_MASK | (Self::LOCK_MASK >> 1);
 
     /// Creates a new `SecureBits` with default (empty) settings.
     pub(super) const fn new_empty() -> Self {
@@ -52,7 +51,7 @@ impl SecureBits {
     }
 
     pub(super) const fn locked_bits(&self) -> SecureBits {
-        Self::from_bits_truncate((self.bits & Self::LOCK_MASK) >> 1)
+        Self::from_bits_truncate((self.bits() & Self::LOCK_MASK) >> 1)
     }
 
     pub(super) fn no_root(&self) -> bool {
@@ -76,11 +75,8 @@ impl TryFrom<u16> for SecureBits {
     type Error = Error;
 
     fn try_from(value: u16) -> Result<Self> {
-        if value & !SecureBits::ALL_VALID_BITS != 0 {
-            return_errno_with_message!(Errno::EPERM, "the bits are not valid secure bits");
-        }
-
-        Ok(SecureBits { bits: value })
+        Self::from_bits(value)
+            .ok_or_else(|| Error::with_message(Errno::EPERM, "the bits are not valid secure bits"))
     }
 }
 

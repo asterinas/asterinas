@@ -3,6 +3,7 @@
 use bitflags::bitflags;
 
 bitflags! {
+    #[derive(Clone, Copy, Debug, PartialEq)]
     pub(crate) struct CreationFlags: u32 {
         /// create file if it does not exist
         const O_CREAT = 1 << 6;

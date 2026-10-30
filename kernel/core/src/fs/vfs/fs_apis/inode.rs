@@ -307,6 +307,7 @@ bitflags! {
     ///
     /// The revalidation callbacks run on every matching cache hit, so
     /// filesystems should keep them cheap.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct RevalidationPolicy: u8 {
         /// Revalidate positive cache entries (cached child inodes).
         ///

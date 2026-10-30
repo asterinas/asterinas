@@ -22,6 +22,7 @@ use crate::prelude::*;
 
 bitflags! {
     /// LSM module flags.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct LsmFlags: u32 {
         /// Marks a module as selectable through the legacy `security=` parameter.
         const LEGACY_MAJOR = 1 << 0;

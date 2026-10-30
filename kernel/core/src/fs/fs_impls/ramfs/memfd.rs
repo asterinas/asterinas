@@ -335,6 +335,7 @@ impl MemfdTmpFs {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct MemfdFlags: u32 {
         /// Close on exec.
         const MFD_CLOEXEC = 1 << 0;
@@ -350,6 +351,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct FileSeals: u32 {
         /// Prevent further seals from being set.
         const F_SEAL_SEAL = 0x0001;

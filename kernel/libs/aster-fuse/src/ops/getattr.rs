@@ -34,15 +34,21 @@ impl GetattrReq {
     }
 }
 
+/// Flags for `FUSE_GETATTR` requests.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fuse.h#L512-L515>
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct GetattrFlags(u32);
+
 bitflags! {
-    /// Flags for `FUSE_GETATTR` requests.
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fuse.h#L512-L515>
-    #[repr(C)]
-    #[derive(Pod)]
-    pub struct GetattrFlags: u32 {
+    impl GetattrFlags: u32 {
         /// The `fh` field is valid and identifies an open file.
         const GETATTR_FH = 1 << 0;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _ = !0;
     }
 }
 

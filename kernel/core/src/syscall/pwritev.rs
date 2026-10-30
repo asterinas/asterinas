@@ -176,6 +176,7 @@ fn do_sys_writev(
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct RWFFlag: u32 {
         const RWF_DSYNC = 0x00000001;
         const RWF_HIPRI = 0x00000002;

@@ -42,6 +42,7 @@ bitflags::bitflags! {
     /// The keyboard mode flags.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.17.4/source/include/linux/kbd_kern.h#L53-L58>.
+    #[derive(Clone, Copy, Debug)]
     pub struct KeyboardModeFlags: u8 {
         /// The application key mode (`VC_APPLIC` in Linux).
         const APPLICATION = 1 << 0;

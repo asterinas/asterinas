@@ -117,6 +117,7 @@ impl Debug for Capability {
 
 bitflags! {
     /// Capability flags in IOMMU.
+    #[derive(Clone, Copy, Debug)]
     pub struct CapabilityFlags: u64 {
         /// Required Write-Buffer Flushing.
         const RWBF =        1 << 4;
@@ -153,6 +154,7 @@ bitflags! {
 
 bitflags! {
     /// Supported Adjusted Guest Address Widths (SAGAW) in IOMMU.
+    #[derive(Clone, Copy, Debug)]
     pub struct CapabilitySagaw: u64 {
         /// 39-bit AGAW (3-level page-table).
         const AGAW_39BIT_3LP = 1 << 1;
@@ -166,6 +168,7 @@ bitflags! {
 
 bitflags! {
     /// Second Stage Large Page Support (SSLPS) in IOMMU.
+    #[derive(Clone, Copy, Debug)]
     pub struct CapabilitySslps: u64 {
         /// 21-bit offset to page frame (2MB).
         const PAGE_21BIT_2MB = 1 << 0;
