@@ -102,7 +102,7 @@ fn create_init_task(
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Task>> {
-    let credentials = Credentials::new_root();
+    let credentials = Credentials::new_root()?;
 
     let (elf_load_info, executable_abs_path) = {
         let path_resolver = fs.resolver().read();

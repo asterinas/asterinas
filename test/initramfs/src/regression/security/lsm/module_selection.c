@@ -15,6 +15,7 @@
 #define CMDLINE_BUFFER_SIZE 4096
 
 static const char *CMDLINE_PATH = "/proc/cmdline";
+static const char *APPARMOR_DIR_PATH = "/sys/kernel/security/apparmor";
 static const char *YAMA_DIR_PATH = "/proc/sys/kernel/yama";
 static const char *YAMA_PTRACE_SCOPE_PATH =
 	"/proc/sys/kernel/yama/ptrace_scope";
@@ -46,21 +47,24 @@ static char *trim(char *string)
 }
 
 /* Non-repeatable kernel parameters use the value from their last occurrence. */
-static bool find_effective_lsm_param(char value[CMDLINE_BUFFER_SIZE])
+static bool find_effective_param(const char *name,
+				 char value[CMDLINE_BUFFER_SIZE])
 {
 	char cmdline[CMDLINE_BUFFER_SIZE];
 	char *saveptr = NULL;
 	bool found = false;
+	size_t name_len = strlen(name);
 
 	read_cmdline(cmdline);
 	for (char *token = strtok_r(cmdline, " \n", &saveptr); token;
 	     token = strtok_r(NULL, " \n", &saveptr)) {
-		if (strncmp(token, "lsm=", strlen("lsm=")) != 0) {
+		if (strncmp(token, name, name_len) != 0 ||
+		    token[name_len] != '=') {
 			continue;
 		}
 
 		CHECK_WITH(snprintf(value, CMDLINE_BUFFER_SIZE, "%s",
-				    token + strlen("lsm=")),
+				    token + name_len + 1),
 			   _ret >= 0 && _ret < CMDLINE_BUFFER_SIZE);
 		found = true;
 	}
@@ -89,12 +93,38 @@ static bool expect_yama_enabled(void)
 {
 	char lsm_param[CMDLINE_BUFFER_SIZE] = "";
 
-	if (!find_effective_lsm_param(lsm_param)) {
+	if (!find_effective_param("lsm", lsm_param)) {
 		return true;
 	}
 
 	return module_list_contains(lsm_param, "yama");
 }
+
+static bool expect_apparmor_enabled(void)
+{
+	char lsm_param[CMDLINE_BUFFER_SIZE] = "";
+	char security_param[CMDLINE_BUFFER_SIZE] = "";
+
+	if (find_effective_param("lsm", lsm_param)) {
+		return module_list_contains(lsm_param, "apparmor");
+	}
+
+	return find_effective_param("security", security_param) &&
+	       strcmp(trim(security_param), "apparmor") == 0;
+}
+
+FN_TEST(apparmor_securityfs_visibility_follows_lsm_selection)
+{
+	struct stat statbuf;
+
+	if (expect_apparmor_enabled()) {
+		TEST_RES(stat(APPARMOR_DIR_PATH, &statbuf),
+			 S_ISDIR(statbuf.st_mode));
+	} else {
+		TEST_ERRNO(stat(APPARMOR_DIR_PATH, &statbuf), ENOENT);
+	}
+}
+END_TEST()
 
 FN_TEST(yama_procfs_visibility_follows_lsm_selection)
 {

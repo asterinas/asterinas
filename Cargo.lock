@@ -77,6 +77,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "aster-apparmor"
+version = "0.1.0"
+dependencies = [
+ "aster-core",
+ "aster-util",
+ "component",
+ "ostd",
+]
+
+[[package]]
 name = "aster-bigtcp"
 version = "0.1.0"
 dependencies = [
@@ -484,6 +494,7 @@ dependencies = [
 name = "asterinas"
 version = "0.1.0"
 dependencies = [
+ "aster-apparmor",
  "aster-core",
  "aster-drm",
  "aster-i8042",

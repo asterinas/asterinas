@@ -8,18 +8,24 @@ use super::{
     Credentials, ExecCred, FileCapabilities, Gid, SecureBits, Uid, capabilities::CapSet,
     credentials_::Credentials_,
 };
-use crate::prelude::*;
+use crate::{prelude::*, security::lsm::CredSecurity};
 
 impl<R: TRights> Credentials<R> {
     /// Creates a root `Credentials`.
     ///
     /// This method can only be used when creating the init process.
-    pub(crate) fn new_root() -> Self {
+    pub(crate) fn new_root() -> Result<Self> {
         let uid = Uid::new_root();
         let gid = Gid::new_root();
         let cap = CapSet::new_root();
-        let credentials_ = Arc::new(Credentials_::new(uid, gid, cap));
-        Self(credentials_, R::new())
+        let credentials_ = Arc::new(Credentials_::new(uid, gid, cap)?);
+        Ok(Self(credentials_, R::new()))
+    }
+
+    /// Captures the committed immutable LSM state for this credential.
+    #[require(R > Read)]
+    pub(crate) fn security(&self) -> CredSecurity {
+        self.0.security()
     }
 
     /// Clones a new `Credentials` from an existing `Credentials`.
