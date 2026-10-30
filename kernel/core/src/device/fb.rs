@@ -587,5 +587,9 @@ pub(super) fn init_in_first_kthread() {
         return;
     }
 
+    static MAJOR: spin::Once<char::MajorIdOwner> = spin::Once::new();
+    let major =
+        char::acquire_major(MajorId::new(29), "fb").expect("failed to reserve framebuffer major");
     char::register(Arc::new(Fb)).expect("failed to register framebuffer char device");
+    MAJOR.call_once(|| major);
 }

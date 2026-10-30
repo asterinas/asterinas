@@ -16,7 +16,7 @@ pub(crate) mod tdxguest;
 static MISC_MAJOR: Once<MajorIdOwner> = Once::new();
 
 pub(super) fn init_in_first_kthread() {
-    MISC_MAJOR.call_once(|| acquire_major(MajorId::new(10)).unwrap());
+    MISC_MAJOR.call_once(|| acquire_major(MajorId::new(10), "misc").unwrap());
 
     super::dm::init_in_first_kthread(MISC_MAJOR.get().unwrap().get());
     hwrng::init_in_first_kthread();
