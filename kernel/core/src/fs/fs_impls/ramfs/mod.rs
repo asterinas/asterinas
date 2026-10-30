@@ -12,6 +12,8 @@ mod xattr;
 
 const RAMFS_MAGIC: u64 = 0x8584_58f6;
 pub(super) const BLOCK_SIZE: usize = 4096;
+/// The maximum file size representable by a signed offset.
+pub(super) const MAX_FILE_SIZE: usize = isize::MAX as usize;
 const ROOT_INO: u64 = 1;
 pub(super) const NAME_MAX: usize = 255;
 

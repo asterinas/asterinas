@@ -1,0 +1,5 @@
+// Requested ranges must fit in a signed file offset.
+// On ramfs, appends are shortened at INT64_MAX, or fail with EFBIG if no room remains.
+// Failed and zero-length appends preserve the descriptor offset.
+write(fd, buf, count);
+pwrite64(fd, buf, count, offset);

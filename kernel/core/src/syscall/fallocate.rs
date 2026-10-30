@@ -45,17 +45,13 @@ fn check_offset_and_len(offset: i64, len: i64, ctx: &Context) -> Result<()> {
             "offset is less than 0, or len is less than or equal to 0"
         );
     }
-    if offset.checked_add(len).is_none() {
-        return_errno_with_message!(Errno::EINVAL, "offset+len has overflowed");
-    }
-
     let max_file_size = {
         let resource_limits = ctx.process.resource_limits();
         resource_limits
             .get_rlimit(ResourceType::RLIMIT_FSIZE)
             .get_cur() as usize
     };
-    if (offset + len) as usize > max_file_size {
+    if offset as u64 + len as u64 > max_file_size as u64 {
         return_errno_with_message!(Errno::EFBIG, "offset+len exceeds the maximum file size");
     }
     Ok(())
