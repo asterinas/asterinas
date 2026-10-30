@@ -1871,13 +1871,13 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 [[package]]
 name = "tdx-guest"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cb17ba1fb79f628dd53828b65c26bf785c85893ff9d547bed72c3e7a74aed2c"
+source = "git+https://github.com/intel/confidential-computing.tdx.tdx-guest?rev=cf919a5#cf919a53b8171f0f8886c41f89b3b9377be09365"
 dependencies = [
  "bitflags 1.3.2",
  "iced-x86",
  "log",
  "raw-cpuid",
+ "spin",
  "uefi-raw 0.14.0",
  "x86_64",
 ]
