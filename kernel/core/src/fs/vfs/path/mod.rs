@@ -199,6 +199,13 @@ impl Path {
         }
 
         if inode_type.is_regular_file()
+            && open_args.access_mode.is_writable()
+            && !status_flags.contains(StatusFlags::O_PATH)
+        {
+            self.check_mount_writable()?;
+        }
+
+        if inode_type.is_regular_file()
             && creation_flags.contains(CreationFlags::O_TRUNC)
             && !status_flags.contains(StatusFlags::O_PATH)
         {
@@ -1000,8 +1007,10 @@ impl Path {
         self.resize_unchecked_access(size)
     }
 
-    /// Resizes the file without permission checks.
+    /// Resizes the file without inode access checks, but requires a writable mount.
     pub(in crate::fs) fn resize_unchecked_access(&self, size: usize) -> Result<()> {
+        self.check_mount_writable()?;
+
         let inode = self.inode();
         xattr::clear_file_priv(&self.dentry)?;
         inode.resize(&self.dentry, size)
