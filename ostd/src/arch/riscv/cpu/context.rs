@@ -436,6 +436,26 @@ impl FFpuContext {
         // memory safety.
         unsafe { load_fpu_context_f(self as *const _) };
     }
+
+    /// Returns the value of the floating-point control and status register (FCSR).
+    pub fn fcsr(&self) -> u32 {
+        self.fcsr
+    }
+
+    /// Returns the value of the floating-point register specified by the index.
+    pub fn f(&self, index: usize) -> u32 {
+        self.f[index]
+    }
+
+    /// Set the value of the floating-point control and status register (FCSR).
+    pub fn set_fcsr(&mut self, value: u32) {
+        self.fcsr = value;
+    }
+
+    /// Set the value of the floating-point register specified by the index.
+    pub fn set_f(&mut self, index: usize, value: u32) {
+        self.f[index] = value;
+    }
 }
 
 impl DFpuContext {
@@ -448,6 +468,26 @@ impl DFpuContext {
         // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
         // memory safety.
         unsafe { load_fpu_context_d(self as *const _) };
+    }
+
+    /// Returns the value of the floating-point control and status register (FCSR).
+    pub fn fcsr(&self) -> u32 {
+        self.fcsr
+    }
+
+    /// Returns the value of the floating-point register specified by the index.
+    pub fn f(&self, index: usize) -> u64 {
+        self.f[index]
+    }
+
+    /// Set the value of the floating-point control and status register (FCSR).
+    pub fn set_fcsr(&mut self, value: u32) {
+        self.fcsr = value;
+    }
+
+    /// Set the value of the floating-point register specified by the index.
+    pub fn set_f(&mut self, index: usize, value: u64) {
+        self.f[index] = value;
     }
 }
 
