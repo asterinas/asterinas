@@ -7,6 +7,7 @@ use ostd::sync::Mutex;
 use crate::kms::{
     display_mode::DrmDisplayMode,
     objects::{KmsObjectId, KmsObjectIndex, plane::DrmPlane, property::DrmPropertyAttachments},
+    vblank::DrmVblank,
 };
 
 /// A display pipeline that scans out planes using a display mode.
@@ -22,6 +23,7 @@ pub(crate) struct DrmCrtc {
     config: DrmCrtcConfig,
     state: Mutex<DrmCrtcState>,
     properties: DrmPropertyAttachments,
+    vblank: DrmVblank,
 }
 
 impl DrmCrtc {
@@ -31,12 +33,14 @@ impl DrmCrtc {
         config: DrmCrtcConfig,
         properties: DrmPropertyAttachments,
     ) -> Self {
+        let vblank = DrmVblank::new();
         Self {
             id,
             index,
             config,
             state: Mutex::new(DrmCrtcState::default()),
             properties,
+            vblank,
         }
     }
 
@@ -66,6 +70,10 @@ impl DrmCrtc {
 
     pub(crate) fn properties(&self) -> &DrmPropertyAttachments {
         &self.properties
+    }
+
+    pub(crate) fn vblank(&self) -> &DrmVblank {
+        &self.vblank
     }
 }
 
@@ -109,7 +117,7 @@ impl DrmCrtcState {
         }
     }
 
-    fn is_active(&self) -> bool {
+    pub(crate) fn is_active(&self) -> bool {
         match self.enable_state {
             CrtcEnableState::Disabled => false,
             CrtcEnableState::Enabled { is_active, .. } => is_active,
