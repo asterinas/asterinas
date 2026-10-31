@@ -69,6 +69,18 @@ runs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Restore OSDK binary
+      uses: actions/cache@v6
+      id: osdk-cache
+      with:
+        path: ~/.cargo/bin/cargo-osdk
+        key: osdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('osdk/Cargo.toml', 'osdk/Cargo.lock', 'osdk/src/**', 'ostd/libs/linux-bzimage/builder/**', 'rust-toolchain.toml') }}
+
+    - name: Skip rebuilding the restored OSDK
+      if: ${{ steps.osdk-cache.outputs.cache-hit == 'true' }}
+      shell: bash
+      run: touch ~/.cargo/bin/cargo-osdk
+
     - name: Setup environment
       shell: bash
       run: |
