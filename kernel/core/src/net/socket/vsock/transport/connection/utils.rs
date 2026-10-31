@@ -59,20 +59,27 @@ impl ConnectionState {
         conn: &ConnectionInner,
         packet_builder: TxPacketBuilder,
     ) -> TxPacket {
-        let header = VirtioVsockHdr::new(
+        let header = self.make_data_header(conn, packet_builder.payload_len());
+        self.credit.last_reported_fwd_cnt = self.credit.local_fwd_cnt;
+        packet_builder.build(&header)
+    }
+
+    pub(super) fn make_data_header(
+        &self,
+        conn: &ConnectionInner,
+        payload_len: usize,
+    ) -> VirtioVsockHdr {
+        VirtioVsockHdr::new(
             conn.conn_id.local_cid,
             conn.conn_id.peer_cid,
             conn.conn_id.local_port,
             conn.conn_id.peer_port,
-            packet_builder.payload_len() as u32,
+            payload_len as u32,
             VirtioVsockOp::Rw,
             0,
             DEFAULT_RX_BUF_SIZE as u32,
             self.credit.local_fwd_cnt,
-        );
-        self.credit.last_reported_fwd_cnt = self.credit.local_fwd_cnt;
-
-        packet_builder.build(&header)
+        )
     }
 
     pub(super) fn arm_timeout(&mut self, conn: &ConnectionInner, duration: Duration) {
