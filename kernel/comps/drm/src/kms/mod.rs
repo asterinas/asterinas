@@ -8,6 +8,8 @@
 //!
 //! Individual planes, CRTCs, encoders, connectors, and properties are defined in the [`objects`] module.
 
+use alloc::sync::Arc;
+
 use aster_core::prelude::*;
 use ostd::sync::Mutex;
 
@@ -20,6 +22,7 @@ use crate::{
             connector::{DrmConnector, DrmConnectorProbeState},
             framebuffer::DrmFramebuffer,
         },
+        vblank::DrmVblank,
     },
     utils::{DrmRect, DrmSize},
 };
@@ -69,6 +72,14 @@ pub trait DrmKmsOps: DrmDevice {
         framebuffer: &DrmFramebuffer,
         source_rects: &[DrmRect],
     ) -> Result<()>;
+
+    fn vblank(&self, crtc_index: DrmKmsObjectIndex) -> Result<&Arc<DrmVblank>>;
+
+    /// Enables vblank notifications for the CRTC.
+    fn enable_vblank(&self, crtc_index: DrmKmsObjectIndex) -> Result<()>;
+
+    /// Disables vblank notifications for the CRTC.
+    fn disable_vblank(&self, crtc_index: DrmKmsObjectIndex);
 }
 
 /// A DRM device's global mode-setting capabilities, KMS objects, and configuration state.

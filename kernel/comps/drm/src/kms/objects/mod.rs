@@ -199,6 +199,10 @@ impl DrmKmsObjectTopology {
         self.crtcs.get(&id)
     }
 
+    pub(crate) fn lookup_crtc_by_index(&self, index: DrmKmsObjectIndex) -> Option<&Arc<DrmCrtc>> {
+        self.crtcs().find(|crtc| crtc.index() == index)
+    }
+
     pub(crate) fn lookup_encoder_by_id(&self, id: u32) -> Option<&Arc<DrmEncoder>> {
         self.encoders.get(&id)
     }

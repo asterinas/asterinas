@@ -39,6 +39,7 @@ use aster_drm::{
             plane::DrmPlaneType,
         },
         pixel_format::DrmPixelFormat,
+        vblank::DrmVblank,
     },
     utils::{DrmRect, DrmSize},
 };
@@ -78,6 +79,7 @@ struct SimpleDrmDevice {
     boot_framebuffer: Arc<FrameBuffer>,
     features: DrmFeatures,
     pixel_format: DrmPixelFormat,
+    vblank: Arc<DrmVblank>,
     mode_config: DrmModeConfig,
 }
 
@@ -100,17 +102,18 @@ impl SimpleDrmDevice {
                 DrmPixelFormat::XRGB8888
             }
         };
-        let primary = builder.add_plane(DrmPlaneType::Primary, vec![pixel_format])?;
-        let crtc = builder.add_crtc(0, primary, None)?;
-        let encoder = builder.add_encoder(DrmEncoderType::Virtual)?;
-        let connector = builder.add_connector(DrmConnectorType::Virtual)?;
+        let primary_index = builder.add_plane(DrmPlaneType::Primary, vec![pixel_format])?;
+        let crtc_index = builder.add_crtc(0, primary_index, None)?;
+        let encoder_index = builder.add_encoder(DrmEncoderType::Virtual)?;
+        let connector_index = builder.add_connector(DrmConnectorType::Virtual)?;
 
-        builder.attach_plane_to_crtc(primary, crtc)?;
-        builder.attach_encoder_to_crtc(encoder, crtc)?;
-        builder.attach_connector_to_encoder(connector, encoder)?;
+        builder.attach_plane_to_crtc(primary_index, crtc_index)?;
+        builder.attach_encoder_to_crtc(encoder_index, crtc_index)?;
+        builder.attach_connector_to_encoder(connector_index, encoder_index)?;
 
         let object_store = builder.build()?;
 
+        let vblank = Arc::new(DrmVblank::new());
         let width = u32::try_from(boot_framebuffer.width())?;
         let height = u32::try_from(boot_framebuffer.height())?;
 
@@ -125,6 +128,7 @@ impl SimpleDrmDevice {
             boot_framebuffer: boot_framebuffer.clone(),
             features: DrmFeatures::empty(),
             pixel_format,
+            vblank,
             mode_config,
         })
     }
@@ -274,5 +278,29 @@ impl DrmKmsOps for SimpleDrmDevice {
         }
 
         Ok(())
+    }
+
+    fn vblank(&self, crtc_index: DrmKmsObjectIndex) -> Result<&Arc<DrmVblank>> {
+        // Simpledrm has a single CRTC with index zero.
+        if crtc_index.get() != 0 {
+            return_errno_with_message!(Errno::EINVAL, "the DRM CRTC index is invalid");
+        }
+
+        Ok(&self.vblank)
+    }
+
+    fn enable_vblank(&self, crtc_index: DrmKmsObjectIndex) -> Result<()> {
+        if crtc_index.get() != 0 {
+            return_errno_with_message!(Errno::EINVAL, "the DRM CRTC index is invalid");
+        }
+        self.vblank.enable();
+        Ok(())
+    }
+
+    fn disable_vblank(&self, crtc_index: DrmKmsObjectIndex) {
+        if crtc_index.get() != 0 {
+            return;
+        }
+        self.vblank.disable();
     }
 }

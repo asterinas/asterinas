@@ -31,6 +31,7 @@ use crate::{
             },
         },
         pixel_format::DrmPixelFormat,
+        vblank::{DrmVblankRequest, DrmVblankResponse, DrmVblankWaitResult, MAX_PASSED_DISTANCE},
     },
     utils::{DrmRect, DrmSize},
 };
@@ -111,6 +112,138 @@ impl DrmFile {
                 );
             }
         }
+        Ok(0)
+    }
+
+    pub(super) fn drm_wait_vblank(&self, cmd: ioctl_defs::WaitVblank) -> Result<i32> {
+        let mut args: DrmWaitVblank = cmd.read()?;
+        let request = args.request();
+
+        let kms_ops = self.device().as_kms_ops().unwrap();
+        let object_topology = kms_ops.mode_config().object_store().topology();
+
+        bitflags::bitflags! {
+            /// `enum drm_vblank_seq_type` in Linux.
+            ///
+            /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L477-L487>.
+            #[derive(Clone, Copy, Debug)]
+            struct DrmWaitVblankFlags: u32 {
+                // ABSOLUTE is encoded as zero. If RELATIVE is absent, the request is absolute.
+                const RELATIVE       = 0x0000_0001;
+                const EVENT          = 0x0400_0000;
+                const FLIP           = 0x0800_0000;
+                const NEXT_ON_MISS   = 0x1000_0000;
+                const SECONDARY      = 0x2000_0000;
+                const SIGNAL         = 0x4000_0000;
+
+                const SUPPORTED = Self::RELATIVE.bits()
+                    | Self::EVENT.bits()
+                    | Self::NEXT_ON_MISS.bits()
+                    | Self::SECONDARY.bits();
+            }
+        }
+
+        const HIGH_CRTC_MASK: u32 = 0x0000_003e;
+        const HIGH_CRTC_SHIFT: u32 = 1;
+        let high_crtc_bits = request.type_ & HIGH_CRTC_MASK;
+        let mut flags = DrmWaitVblankFlags::from_bits(request.type_ & !HIGH_CRTC_MASK)
+            .filter(|flags| DrmWaitVblankFlags::SUPPORTED.contains(*flags))
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::EINVAL,
+                    "the DRM vblank request contains unsupported flags",
+                )
+            })?;
+
+        // A nonzero high CRTC index takes precedence over the legacy SECONDARY flag.
+        let high_crtc_index = high_crtc_bits >> HIGH_CRTC_SHIFT;
+        let crtc_index = if high_crtc_index != 0 {
+            DrmKmsObjectIndex::new(high_crtc_index as usize)
+        } else {
+            DrmKmsObjectIndex::new(flags.contains(DrmWaitVblankFlags::SECONDARY) as usize)
+        };
+
+        let crtc = object_topology
+            .lookup_crtc_by_index(crtc_index)
+            .cloned()
+            .ok_or(Errno::EINVAL)?;
+        let vblank = kms_ops.vblank(crtc_index)?;
+
+        let current_sequence = vblank.sequence();
+        let mut target_sequence = if flags.contains(DrmWaitVblankFlags::RELATIVE) {
+            // Clears RELATIVE because the reply sequence is absolute, not a relative offset.
+            flags.remove(DrmWaitVblankFlags::RELATIVE);
+            current_sequence.wrapping_add(request.sequence as u64)
+        } else {
+            // The legacy UAPI supplies only the low 32 bits of an absolute sequence.
+            // Reconstruct the nearest 64-bit target using a signed modular offset.
+            let offset = request.sequence.wrapping_sub(current_sequence as u32) as i32;
+            current_sequence.wrapping_add_signed(offset as i64)
+        };
+
+        // Honors NEXT_ON_MISS by moving an already reached target to the next vblank.
+        if flags.contains(DrmWaitVblankFlags::NEXT_ON_MISS)
+            && current_sequence.wrapping_sub(target_sequence) <= MAX_PASSED_DISTANCE
+        {
+            // Vblank sequences are modular counters; advancing past u64::MAX wraps to zero.
+            target_sequence = current_sequence.wrapping_add(1);
+            flags.remove(DrmWaitVblankFlags::NEXT_ON_MISS);
+        }
+
+        // Registers an asynchronous notification instead of blocking the ioctl caller.
+        if flags.contains(DrmWaitVblankFlags::EVENT) {
+            let vblank_event_len = size_of::<DrmVblankResponse>();
+            // Reserves capacity before submission, which may complete the event immediately.
+            let reservation = self
+                .event_receiver()
+                .reserve_event_space(vblank_event_len)?;
+
+            let vblank_event = DrmVblankRequest::new(
+                target_sequence,
+                request.signal as u64,
+                crtc.id(),
+                reservation,
+            );
+
+            let reply_sequence = vblank.submit_request(vblank_event)?;
+            *args.reply_mut() = DrmWaitVblankReply {
+                type_: flags.bits() | high_crtc_bits,
+                sequence: reply_sequence as u32,
+                tval_sec: 0,
+                tval_usec: 0,
+            };
+            cmd.write(&args)?;
+
+            return Ok(0);
+        }
+
+        // Blocks until the target vblank sequence is reached, the CRTC is disabled,
+        // a signal interrupts, or the wait times out.
+        let wait_result = vblank.wait_target_sequence(target_sequence)?;
+        let (sequence, timestamp) = match &wait_result {
+            DrmVblankWaitResult::Finished {
+                sequence,
+                timestamp,
+            }
+            | DrmVblankWaitResult::TimedOut {
+                sequence,
+                timestamp,
+            } => (*sequence, *timestamp),
+        };
+
+        *args.reply_mut() = DrmWaitVblankReply {
+            type_: flags.bits() | high_crtc_bits,
+            sequence: sequence as u32,
+            tval_sec: timestamp.as_secs() as isize,
+            tval_usec: timestamp.subsec_micros() as isize,
+        };
+        cmd.write(&args)?;
+
+        // Reports a timeout only after writing back the latest sequence and timestamp.
+        if matches!(wait_result, DrmVblankWaitResult::TimedOut { .. }) {
+            return_errno_with_message!(Errno::EBUSY, "the DRM vblank wait timed out");
+        }
+
         Ok(0)
     }
 
@@ -1018,6 +1151,42 @@ fn copy_array_from_user<T: Pod>(
 pub(super) struct DrmSetClientCap {
     capability: u64,
     value: u64,
+}
+
+/// `union drm_wait_vblank` in Linux.
+///
+/// The ioctl reads its input through `request` and writes its result through `reply`.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L507-L515>.
+#[pod_union]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(super) union DrmWaitVblank {
+    request: DrmWaitVblankRequest,
+    reply: DrmWaitVblankReply,
+}
+
+/// `struct drm_wait_vblank_request` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L494-L498>.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(super) struct DrmWaitVblankRequest {
+    type_: u32,
+    sequence: u32,
+    signal: usize,
+}
+
+/// `struct drm_wait_vblank_reply` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h#L500-L505>.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(super) struct DrmWaitVblankReply {
+    type_: u32,
+    sequence: u32,
+    tval_sec: isize,
+    tval_usec: isize,
 }
 
 /// `struct drm_mode_card_res` in Linux.

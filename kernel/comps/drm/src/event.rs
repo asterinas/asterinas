@@ -141,7 +141,6 @@ pub(crate) struct DrmEventReservation {
 }
 
 impl DrmEventReservation {
-    /// Queues a response and notifies readers.
     pub(crate) fn consume_with_response(mut self, response: DrmEventResponse) {
         let Some(receiver) = self.receiver.upgrade() else {
             return;
@@ -150,7 +149,7 @@ impl DrmEventReservation {
         {
             let mut queue = receiver.queue.lock();
             queue.ready_events.push_back(response);
-            // Reading the queued response now releases the reserved capacity.
+            // Keeps the capacity reserved until the queued response is read.
             self.reserved_bytes = 0;
         }
         receiver.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
