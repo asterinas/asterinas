@@ -34,9 +34,9 @@ impl MmioDriver for VirtioMmioDriver {
         &self,
         device: MmioCommonDevice,
     ) -> Result<Arc<dyn MmioDevice>, (BusProbeError, MmioCommonDevice)> {
-        let device = VirtioMmioTransport::new(device);
-        let mmio_device = device.mmio_device().clone();
-        self.devices.lock().push(device);
+        let transport = VirtioMmioTransport::new(device)?;
+        let mmio_device = transport.mmio_device().clone();
+        self.devices.lock().push(transport);
         Ok(mmio_device)
     }
 }
