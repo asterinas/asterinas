@@ -22,6 +22,17 @@ const EXFAT_EOF_CLUSTER: ClusterID = 0xFFFFFFFF;
 const EXFAT_BAD_CLUSTER: ClusterID = 0xFFFFFFF7;
 const EXFAT_FREE_CLUSTER: ClusterID = 0;
 
+fn contiguous_chain_fits_in_cluster_heap(
+    start: ClusterID,
+    num_clusters: u32,
+    cluster_heap_end: ClusterID,
+) -> bool {
+    start >= EXFAT_FIRST_CLUSTER
+        && start
+            .checked_add(num_clusters)
+            .is_some_and(|end| end <= cluster_heap_end)
+}
+
 impl From<ClusterID> for FatValue {
     fn from(value: ClusterID) -> Self {
         match value {
@@ -91,6 +102,20 @@ impl ExfatChain {
 
         chain.num_clusters = clusters;
 
+        if chain.num_clusters > 0 && !chain.is_current_cluster_valid() {
+            return_errno_with_message!(Errno::EIO, "invalid starting cluster for cluster chain");
+        }
+        if chain.num_clusters > 0
+            && !chain.fat_in_use()
+            && !contiguous_chain_fits_in_cluster_heap(
+                chain.current,
+                chain.num_clusters,
+                chain.fs().super_block().num_clusters,
+            )
+        {
+            return_errno_with_message!(Errno::EIO, "contiguous cluster chain exceeds cluster heap");
+        }
+
         Ok(chain)
     }
 
@@ -122,11 +147,17 @@ impl ExfatChain {
         self.fs.upgrade().unwrap()
     }
 
-    pub(super) fn physical_cluster_start_offset(&self) -> usize {
+    pub(super) fn physical_cluster_start_offset(&self) -> Result<usize> {
+        if !self.is_current_cluster_valid() {
+            return_errno_with_message!(
+                Errno::EIO,
+                "invalid cluster for physical offset calculation"
+            );
+        }
         let cluster_num = (self.current - EXFAT_RESERVED_CLUSTERS) as usize;
-        (cluster_num * self.cluster_size())
+        Ok((cluster_num * self.cluster_size())
             + self.fs().super_block().data_start_sector as usize
-                * self.fs().super_block().sector_size as usize
+                * self.fs().super_block().sector_size as usize)
     }
 
     // Walk to the cluster at the given offset, return the new relative offset
@@ -374,5 +405,33 @@ impl ClusterAllocator for ExfatChain {
         self.num_clusters -= drop_num;
 
         Ok(())
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    #[ktest]
+    fn validates_the_entire_contiguous_cluster_chain() {
+        let cluster_heap_end = 10;
+
+        assert!(contiguous_chain_fits_in_cluster_heap(
+            cluster_heap_end - 1,
+            1,
+            cluster_heap_end,
+        ));
+        assert!(!contiguous_chain_fits_in_cluster_heap(
+            cluster_heap_end - 1,
+            2,
+            cluster_heap_end,
+        ));
+        assert!(!contiguous_chain_fits_in_cluster_heap(
+            u32::MAX - 1,
+            2,
+            u32::MAX,
+        ));
     }
 }

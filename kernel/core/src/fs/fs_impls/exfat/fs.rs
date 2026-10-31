@@ -276,6 +276,12 @@ impl ExfatFs {
 
         let super_block = ExfatSuperBlock::try_from(boot_sector)?;
 
+        if super_block.root_dir < EXFAT_RESERVED_CLUSTERS
+            || super_block.root_dir >= super_block.num_clusters
+        {
+            return_errno_with_message!(Errno::EINVAL, "invalid root directory cluster");
+        }
+
         /* Check consistencies */
         if ((super_block.num_fat_sectors as u64) << boot_sector.sector_size_bits)
             < (super_block.num_clusters as u64) * 4
@@ -352,14 +358,18 @@ impl ExfatFs {
         self.bitmap.lock().num_free_clusters()
     }
 
-    pub(super) fn cluster_to_off(&self, cluster: u32) -> usize {
-        (((((cluster - EXFAT_RESERVED_CLUSTERS) as u64) << self.super_block.sect_per_cluster_bits)
+    pub(super) fn cluster_to_off(&self, cluster: u32) -> Result<usize> {
+        if !self.is_valid_cluster(cluster) {
+            return_errno_with_message!(Errno::EIO, "invalid cluster number");
+        }
+        Ok((((((cluster - EXFAT_RESERVED_CLUSTERS) as u64)
+            << self.super_block.sect_per_cluster_bits)
             + self.super_block.data_start_sector)
-            * self.super_block.sector_size as u64) as usize
+            * self.super_block.sector_size as u64) as usize)
     }
 
     pub(super) fn is_valid_cluster(&self, cluster: u32) -> bool {
-        cluster >= EXFAT_RESERVED_CLUSTERS && cluster <= self.super_block.num_clusters
+        cluster >= EXFAT_RESERVED_CLUSTERS && cluster < self.super_block.num_clusters
     }
 
     pub(super) fn is_cluster_range_valid(&self, clusters: Range<ClusterID>) -> bool {
