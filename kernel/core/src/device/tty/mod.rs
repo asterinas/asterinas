@@ -20,6 +20,7 @@ use crate::{
     util::ioctl::RawIoctl,
 };
 
+mod class;
 mod device;
 mod driver;
 mod file;
@@ -31,7 +32,7 @@ mod serial;
 pub(super) mod termio;
 mod vt;
 
-pub(crate) use device::CONSOLE_DEVICE_ID;
+pub(crate) use class::console_device_id;
 pub(super) use driver::TtyDriver;
 pub(super) use flags::TtyFlags;
 
@@ -40,6 +41,7 @@ pub(super) fn init_in_first_process() -> Result<()> {
     serial::init_in_first_process()?;
     device::init_in_first_process()?;
     vt::init_in_first_process()?;
+    class::init_in_first_process()?;
 
     Ok(())
 }
