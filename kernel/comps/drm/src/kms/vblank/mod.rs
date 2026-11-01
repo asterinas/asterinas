@@ -8,6 +8,8 @@ use ostd::sync::{Mutex, WaitQueue};
 
 use crate::event::{DrmEventBase, DrmEventReservation, DrmEventResponse, DrmEventType};
 
+pub mod software;
+
 // Preserves legacy 2^23-frame comparison window to distinguish
 // reached targets from future targets across counter wraparound.
 pub(crate) const MAX_PASSED_DISTANCE: u64 = 1 << 23;
@@ -97,7 +99,7 @@ impl DrmVblankCompletion {
 /// KMS commits explicitly start and stop vblank generation.
 ///
 /// Lock order: KMS object store, vblank state.
-/// Event delivery is serialized with state updates.
+/// Event delivery occurs outside the state lock and may be reordered across callers.
 /// Synchronous waiters are woken after releasing the state lock.
 pub struct DrmVblank {
     state: Mutex<DrmVblankState>,
@@ -114,6 +116,41 @@ impl DrmVblank {
 
     pub(crate) fn sequence(&self) -> u64 {
         self.state.lock().sequence
+    }
+
+    /// Enables tracking with a new sequence and an invalid timestamp.
+    pub(crate) fn enable(&self) {
+        let mut state = self.state.lock();
+        if state.is_enabled {
+            return;
+        }
+
+        state.sequence = state.sequence.wrapping_add(1);
+        state.timestamp = Duration::ZERO;
+        state.is_enabled = true;
+    }
+
+    /// Disables tracking and completes pending requests with the final snapshot.
+    pub(crate) fn disable(&self) {
+        let (requests, sequence, timestamp) = {
+            let mut state = self.state.lock();
+            if !state.is_enabled {
+                return;
+            }
+
+            state.is_enabled = false;
+            (
+                core::mem::take(&mut state.requests),
+                state.sequence,
+                state.timestamp,
+            )
+        };
+
+        self.wait_queue.wake_all();
+
+        for request in requests {
+            DrmVblankCompletion::new(request, sequence, timestamp).deliver();
+        }
     }
 
     /// Submits a request while vblank is enabled, completing reached targets immediately.
@@ -138,6 +175,7 @@ impl DrmVblank {
         // Delivers outside the state lock to keep event queue locking and reader
         // notification out of the critical section.
         // Concurrent responses may be delivered out of sequence order.
+        // `handle_vblank()` follows the same approach.
         let completed_request = DrmVblankCompletion::new(request, sequence, timestamp);
         completed_request.deliver();
 
@@ -190,10 +228,10 @@ impl DrmVblank {
         }
     }
 
-    /// Reports hardware vblanks and completes reached requests.
+    /// Reports vblanks and completes reached requests.
     ///
     /// `timestamp` is the monotonic time of the last reported vblank.
-    /// Ignores zero increments and reports received while disabled or using software vblanks.
+    /// Ignores zero increments and reports received while disabled.
     /// Must be called from task context because event handling may block.
     pub fn handle_vblank(&self, timestamp: Duration, sequence_delta: u64) {
         if sequence_delta == 0 {

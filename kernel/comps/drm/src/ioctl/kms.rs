@@ -481,8 +481,22 @@ impl DrmFile {
             }
         }
 
+        let needs_vblank_restart = {
+            let state = crtc.state().lock();
+            state.is_active() != display_mode.is_some() || state.display_mode() != display_mode
+        };
+
         // Apply the driver configuration before publishing the matching core state.
         kms_ops.set_crtc(crtc.index(), framebuffer.as_deref(), source_rect)?;
+
+        let software_vblank = kms_ops.software_vblank(crtc.index());
+        if needs_vblank_restart {
+            // Drain software callbacks before closing the old timeline.
+            if let Some(source) = software_vblank {
+                source.stop();
+            }
+            crtc.vblank().disable();
+        }
 
         // Remove the previous routing before attaching the replacement connectors.
         let crtc_ref = Arc::downgrade(crtc);
@@ -517,6 +531,15 @@ impl DrmFile {
         } else {
             crtc.update_state(DrmCrtcState::default());
             primary_plane.update_state(DrmPlaneState::default());
+        }
+
+        // Start the source only after publishing the new core state.
+        // Framebuffer-only updates preserve the current vblank timeline.
+        if needs_vblank_restart && display_mode.is_some() {
+            crtc.vblank().enable();
+            if let Some(source) = software_vblank {
+                source.start();
+            }
         }
 
         Ok(0)

@@ -171,7 +171,7 @@ impl DrmKmsObjectStore {
         self.crtcs.get(&id)
     }
 
-    pub(crate) fn lookup_crtc_by_index(&self, index: KmsObjectIndex) -> Option<&Arc<DrmCrtc>> {
+    pub fn lookup_crtc_by_index(&self, index: KmsObjectIndex) -> Option<&Arc<DrmCrtc>> {
         self.crtcs().find(|crtc| crtc.index() == index)
     }
 

@@ -17,7 +17,7 @@ use crate::kms::{
 /// while its cursor plane is optional;
 /// both links are non-owning because the KMS object store owns the topology objects.
 #[derive(Debug)]
-pub(crate) struct DrmCrtc {
+pub struct DrmCrtc {
     id: KmsObjectId,
     index: KmsObjectIndex,
     config: DrmCrtcConfig,
