@@ -165,6 +165,8 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 ./pseudofs/pseudo_inode
 ./pseudofs/pseudo_mount
 
+./ramfs/read_eof
+./ramfs/read_truncate_race
 ./ramfs/readdir
 
 ./rename/permission
