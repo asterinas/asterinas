@@ -103,10 +103,13 @@ pub(super) fn sys_futex(
             futex_wake_bitset(futex_addr as _, max_count, bitset as _, visibility)
         }
         FutexOp::FUTEX_REQUEUE => {
-            let max_nwakes = futex_val_to_max_count(futex_val);
-            // `utime_addr` is used as the maximum number of requeues in this case.
-            // When `utime_addr` is 0 or negative, it means no requeues.
-            let max_nrequeues = (utime_addr as i32).max(0) as usize;
+            let (Ok(max_nwakes), Ok(max_nrequeues)) = (
+                usize::try_from(futex_val as i32),
+                usize::try_from(utime_addr as i32),
+            ) else {
+                return_errno_with_message!(Errno::EINVAL, "the count of waiters is negative");
+            };
+            // Unlike `FUTEX_WAKE`, `FUTEX_REQUEUE` wakes no waiters if `max_nwakes` is 0.
             futex_requeue(
                 futex_addr as _,
                 max_nwakes,
