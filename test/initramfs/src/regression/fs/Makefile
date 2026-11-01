@@ -2,6 +2,7 @@
 
 SUBDIRS := \
 	empty_write \
+	exfat \
 	ext2 \
 	fdatasync \
 	getcwd \
