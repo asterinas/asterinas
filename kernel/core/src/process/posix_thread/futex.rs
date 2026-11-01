@@ -342,6 +342,10 @@ pub(crate) fn futex_wake_op(
     Ok(res)
 }
 
+/// Wakes up to `max_nwakes` waiters on `futex_addr` and requeues up to
+/// `max_nrequeues` of the remaining waiters to `futex_new_addr`.
+///
+/// Returns the total number of waiters that are woken up or requeued.
 pub(crate) fn futex_requeue(
     futex_addr: Vaddr,
     max_nwakes: usize,
@@ -350,10 +354,6 @@ pub(crate) fn futex_requeue(
     ctx: &Context,
     visibility: FutexVisibility,
 ) -> Result<usize> {
-    if futex_new_addr == futex_addr {
-        return futex_wake(futex_addr, max_nwakes, visibility);
-    }
-
     let user_space = ctx.user_space();
     let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, &user_space, visibility)?;
     let futex_new_key = FutexKey::new(
@@ -367,18 +367,18 @@ pub(crate) fn futex_requeue(
 
     let nwakes = futex_bucket.remove_and_wake_items(&futex_key, max_nwakes);
 
-    if let Some(mut futex_new_bucket) = futex_new_bucket {
+    let nrequeues = if let Some(mut futex_new_bucket) = futex_new_bucket {
         futex_bucket.requeue_items_to_another_bucket(
             &futex_key,
             &mut futex_new_bucket,
             &futex_new_key,
             max_nrequeues,
-        );
+        )
     } else {
-        futex_bucket.update_item_keys(&futex_key, &futex_new_key, max_nrequeues);
-    }
+        futex_bucket.update_item_keys(&futex_key, &futex_new_key, max_nrequeues)
+    };
 
-    Ok(nwakes)
+    Ok(nwakes + nrequeues)
 }
 
 static FUTEX_BUCKETS: Once<FutexBucketVec> = Once::new();
@@ -497,17 +497,24 @@ impl FutexBucket {
         count
     }
 
-    pub(self) fn update_item_keys(&mut self, key: &FutexKey, new_key: &FutexKey, max_count: usize) {
+    pub(self) fn update_item_keys(
+        &mut self,
+        key: &FutexKey,
+        new_key: &FutexKey,
+        max_count: usize,
+    ) -> usize {
         let mut count = 0;
-        for item in self.items.iter_mut() {
-            if item.key.match_up(key) {
-                item.key = new_key.clone();
-                count += 1;
-            }
-            if count >= max_count {
-                break;
-            }
+        for item in self
+            .items
+            .iter_mut()
+            .filter(|item| item.key.match_up(key))
+            .take(max_count)
+        {
+            item.key = new_key.clone();
+            count += 1;
         }
+
+        count
     }
 
     pub(self) fn requeue_items_to_another_bucket(
@@ -516,7 +523,7 @@ impl FutexBucket {
         another: &mut Self,
         new_key: &FutexKey,
         max_nrequeues: usize,
-    ) {
+    ) -> usize {
         let mut count = 0;
         self.items
             .extract_if(.., |item| {
@@ -531,6 +538,8 @@ impl FutexBucket {
                 extracted.key = new_key.clone();
                 another.add_item(extracted);
             });
+
+        count
     }
 }
 
