@@ -46,13 +46,16 @@ impl SocketDevice {
     }
 
     /// Initializes a virtio-vsock device from `transport` and registers it globally.
-    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
+    pub(crate) fn init(
+        device_transport: DeviceTransport,
+        _negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
         let config_manager = VirtioVsockConfig::new_manager(device_transport.as_ref());
         let guest_cid = VirtioVsockConfig::read_guest_cid(&config_manager);
 
-        let tx_queue = TxQueue::new(device_transport.as_mut())?;
-        let rx_queue = RxQueue::new(device_transport.as_mut())?;
-        let event_queue = EventQueue::new(device_transport.as_mut())?;
+        let tx_queue = TxQueue::new(device_transport.as_ref())?;
+        let rx_queue = RxQueue::new(device_transport.as_ref())?;
+        let event_queue = EventQueue::new(device_transport.as_ref())?;
 
         let device = Arc::new(Self {
             config_manager,
