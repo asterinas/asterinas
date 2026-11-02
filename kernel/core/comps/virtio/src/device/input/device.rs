@@ -77,9 +77,12 @@ pub struct InputDevice {
 impl InputDevice {
     /// Create a new VirtIO-Input driver.
     /// msix_vector_left should at least have one element or n elements where n is the virtqueue amount
-    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
-        let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, device_transport.as_mut())?;
-        let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, device_transport.as_mut())?;
+    pub(crate) fn init(
+        device_transport: DeviceTransport,
+        _negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
+        let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, device_transport.as_ref())?;
+        let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, device_transport.as_ref())?;
 
         let event_table = EventTable::new(QUEUE_SIZE as usize)?;
         for i in 0..event_table.num_events() {

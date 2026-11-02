@@ -85,7 +85,10 @@ impl ConsoleDevice {
         features.bits()
     }
 
-    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
+    pub(crate) fn init(
+        device_transport: DeviceTransport,
+        _negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
         let config_manager = VirtioConsoleConfig::new_manager(device_transport.as_ref());
         debug!("virtio_console_config = {:?}", config_manager.read_config());
 
@@ -94,12 +97,12 @@ impl ConsoleDevice {
         let receive_queue = SpinLock::new(VirtQueue::new(
             RECV0_QUEUE_INDEX,
             2,
-            device_transport.as_mut(),
+            device_transport.as_ref(),
         )?);
         let transmit_queue = SpinLock::new(VirtQueue::new(
             TRANSMIT0_QUEUE_INDEX,
             2,
-            device_transport.as_mut(),
+            device_transport.as_ref(),
         )?);
 
         let send_buffer = DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?;
