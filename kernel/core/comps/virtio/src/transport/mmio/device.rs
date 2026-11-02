@@ -104,6 +104,12 @@ impl VirtioMmioTransport {
 }
 
 impl VirtioTransport for VirtioMmioTransport {
+    fn vendor_id(&self) -> u32 {
+        field_ptr!(&self.layout, VirtioMmioLayout, vendor_id)
+            .read_once()
+            .unwrap()
+    }
+
     fn device_type(&self) -> VirtioDeviceType {
         self.device_type
     }

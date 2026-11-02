@@ -9,7 +9,7 @@ use aster_device::{
 use aster_pci::bus::{PciBus, PciDevice, PciMatch};
 
 use super::{device::VirtioPciModernTransport, legacy::VirtioPciLegacyTransport};
-use crate::transport::VirtioTransport;
+use crate::{bus, transport::VirtioTransport};
 
 // PCI device discovery identifiers (Virtio 1.2, section 4.1.2).
 // Reference: <https://docs.oasis-open.org/virtio/virtio/v1.2/virtio-v1.2.html>
@@ -61,7 +61,11 @@ impl Driver<PciBus> for VirtioPciDriver {
             }
             _ => return Err(Error::NoDriver),
         };
-        super::push_device_transport(transport);
+        let child = bus::device_builder(transport)
+            .parent(device.clone())
+            .build();
+        aster_device::add_device(&child)?;
+        super::push_device(child);
         Ok(())
     }
 

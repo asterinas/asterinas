@@ -164,7 +164,7 @@ impl DeviceInner {
         device_transport: DeviceTransport,
         negotiated_features: u64,
     ) -> Result<Arc<Self>, VirtioDeviceError> {
-        let config_manager = VirtioBlockConfig::new_manager(device_transport.as_ref());
+        let config_manager = VirtioBlockConfig::new_manager(device_transport.payload().as_ref());
 
         let config = config_manager.read_config();
         debug!("virio_blk_config = {:?}", config);
@@ -194,7 +194,7 @@ impl DeviceInner {
             );
         }
 
-        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, device_transport.as_ref())?;
+        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, device_transport.payload().as_ref())?;
 
         let block_requests =
             Arc::new(DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?);

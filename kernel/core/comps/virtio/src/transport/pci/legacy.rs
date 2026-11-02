@@ -3,7 +3,10 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
-use aster_pci::{bus::PciDevice, cfg_space::BarAccess};
+use aster_pci::{
+    bus::PciDevice,
+    cfg_space::{BarAccess, PciGeneralDeviceCfgOffset},
+};
 use aster_util::safe_ptr::SafePtr;
 use ostd::{
     bus::BusProbeError,
@@ -152,6 +155,12 @@ impl VirtioPciLegacyTransport {
 }
 
 impl VirtioTransport for VirtioPciLegacyTransport {
+    fn vendor_id(&self) -> u32 {
+        self.common_device
+            .location()
+            .read16(PciGeneralDeviceCfgOffset::SubsystemVendorId as u16) as u32
+    }
+
     fn device_type(&self) -> VirtioDeviceType {
         self.device_type
     }

@@ -27,7 +27,7 @@ use crate::{
 ///
 /// Each device can have zero or more virtqueues.
 #[derive(Debug)]
-pub(crate) struct VirtQueue {
+pub struct VirtQueue {
     /// Descriptor table
     descs: Vec<DescriptorSlot>,
     /// Available ring
@@ -61,7 +61,7 @@ pub(crate) struct VirtQueue {
 
 /// An error returned by [`VirtQueue::new`].
 #[derive(Debug)]
-pub(crate) enum CreationError {
+pub enum CreationError {
     InvalidArgs,
     ResourceAlloc(ostd::Error),
     Transport(VirtioTransportError),
@@ -69,41 +69,20 @@ pub(crate) enum CreationError {
 
 /// An error returned by [`VirtQueue::add_dma_bufs`] and its friends.
 #[derive(Debug)]
-pub(crate) enum AddBufsError {
+pub enum AddBufsError {
     InvalidArgs,
     BufferTooSmall,
 }
 
 /// An error returned by [`VirtQueue::pop_used`] and its friends.
 #[derive(Debug)]
-pub(crate) enum PopUsedError {
+pub enum PopUsedError {
     NotReady,
-}
-
-#[derive(Debug)]
-struct DescriptorSlot {
-    /// The device-visible descriptor stored in DMA-coherent memory.
-    ///
-    /// This memory is shared with the device, so descriptor contents read from it
-    /// may be stale, corrupted, or otherwise untrusted after device access.
-    ptr: SafePtr<Descriptor, Arc<DmaCoherent>>,
-
-    /// The next descriptor in the current driver-managed list.
-    ///
-    /// For an in-use descriptor, this links to the next descriptor in the same
-    /// device-visible buffer chain. For a free descriptor, this links to the next
-    /// descriptor in the free list.
-    next: Option<u16>,
-    /// The total output buffer length for an in-use descriptor chain.
-    ///
-    /// This is set only on the head descriptor of an in-use chain. It records the
-    /// total number of bytes covered by all descriptors in that chain.
-    len: Option<u32>,
 }
 
 impl VirtQueue {
     /// Creates a new virtqueue.
-    pub(crate) fn new(
+    pub fn new(
         idx: u16,
         size: u16,
         transport: &dyn VirtioTransport,
@@ -239,17 +218,14 @@ impl VirtQueue {
     /// Adds only input DMA buffers to the virtqueue and returns a token.
     ///
     /// See [`Self::add_dma_bufs`] for more information about the result.
-    pub(crate) fn add_input_bufs<I: DmaBuf>(&mut self, inputs: &[&I]) -> Result<u16, AddBufsError> {
+    pub fn add_input_bufs<I: DmaBuf>(&mut self, inputs: &[&I]) -> Result<u16, AddBufsError> {
         self.add_dma_bufs(inputs, &[] as &[&I])
     }
 
     /// Adds only output DMA buffers to the virtqueue and returns a token.
     ///
     /// See [`Self::add_dma_bufs`] for more information about the result.
-    pub(crate) fn add_output_bufs<O: DmaBuf>(
-        &mut self,
-        outputs: &[&O],
-    ) -> Result<u16, AddBufsError> {
+    pub fn add_output_bufs<O: DmaBuf>(&mut self, outputs: &[&O]) -> Result<u16, AddBufsError> {
         self.add_dma_bufs(&[] as &[&O], outputs)
     }
 
@@ -271,7 +247,7 @@ impl VirtQueue {
     /// result.
     ///
     /// Ref: linux virtio_ring.c virtqueue_add
-    pub(crate) fn add_dma_bufs<I: DmaBuf + ?Sized, O: DmaBuf + ?Sized>(
+    pub fn add_dma_bufs<I: DmaBuf + ?Sized, O: DmaBuf + ?Sized>(
         &mut self,
         inputs: &[&I],
         outputs: &[&O],
@@ -367,7 +343,7 @@ impl VirtQueue {
     ///
     /// Even if this method returns true, [`Self::pop_used`] can still return `None`. See the note
     /// about malfunctioning devices in [`Self::pop_used`] for details.
-    pub(crate) fn can_pop(&self) -> bool {
+    pub fn can_pop(&self) -> bool {
         // Read barrier.
         fence(Ordering::SeqCst);
 
@@ -375,7 +351,7 @@ impl VirtQueue {
     }
 
     /// Returns the number of free descriptors.
-    pub(crate) fn available_desc(&self) -> usize {
+    pub fn available_desc(&self) -> usize {
         self.descs.len() - self.num_used as usize
     }
 
@@ -399,7 +375,7 @@ impl VirtQueue {
     /// even if [`Self::can_pop`] returns true because [`Self::can_pop`] does not check validity.
     ///
     /// Ref: linux virtio_ring.c virtqueue_get_buf_ctx
-    pub(crate) fn pop_used(&mut self) -> Result<(u16, u32), PopUsedError> {
+    pub fn pop_used(&mut self) -> Result<(u16, u32), PopUsedError> {
         self.pop_used_with_min_bytes(0)
     }
 
@@ -411,7 +387,7 @@ impl VirtQueue {
     /// here as well, including extra cases where the used buffer is shorter than `min_bytes`.
     ///
     /// For more information, see [`Self::pop_used`].
-    pub(crate) fn pop_used_with_min_bytes(
+    pub fn pop_used_with_min_bytes(
         &mut self,
         min_bytes: usize,
     ) -> Result<(u16, u32), PopUsedError> {
@@ -458,6 +434,62 @@ impl VirtQueue {
         }
     }
 
+    /// Returns whether the driver should notify the device.
+    pub fn should_notify(&self) -> bool {
+        // Read barrier.
+        fence(Ordering::SeqCst);
+
+        let flags = field_ptr!(&self.used, UsedRing, flags).read_once().unwrap();
+        flags & 0x0001u16 == 0u16
+    }
+
+    /// Notifies the device that there are available elements.
+    pub fn notify(&mut self) {
+        if self.notify_config.is_modern() {
+            self.notify_config
+                .write_once::<u32>(0, self.queue_idx)
+                .unwrap();
+        } else {
+            self.notify_config
+                .write_once::<u16>(0, self.queue_idx as u16)
+                .unwrap();
+        }
+    }
+
+    /// Disables registered callbacks.
+    ///
+    /// That is to say, the queue won't generate interrupts after calling this method.
+    pub fn disable_callback(&mut self) {
+        if !self.is_callback_enabled {
+            return;
+        }
+
+        let flags_ptr = field_ptr!(&self.avail, AvailRing, flags);
+        let mut flags: AvailFlags = flags_ptr.read_once().unwrap();
+        debug_assert!(!flags.contains(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT));
+        flags.insert(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT);
+        flags_ptr.write_once(&flags).unwrap();
+
+        self.is_callback_enabled = false;
+    }
+
+    /// Enables registered callbacks.
+    ///
+    /// The queue will generate interrupts if any event comes after calling this method.
+    pub fn enable_callback(&mut self) {
+        if self.is_callback_enabled {
+            return;
+        }
+
+        let flags_ptr = field_ptr!(&self.avail, AvailRing, flags);
+        let mut flags: AvailFlags = flags_ptr.read_once().unwrap();
+        debug_assert!(flags.contains(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT));
+        flags.remove(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT);
+        flags_ptr.write_once(&flags).unwrap();
+
+        self.is_callback_enabled = true;
+    }
+
     /// Recycles descriptors in the list specified by `head`.
     ///
     /// This will push all linked descriptors at the front of the free list.
@@ -484,71 +516,69 @@ impl VirtQueue {
             }
         }
     }
-
-    /// Returns whether the driver should notify the device.
-    pub(crate) fn should_notify(&self) -> bool {
-        // Read barrier.
-        fence(Ordering::SeqCst);
-
-        let flags = field_ptr!(&self.used, UsedRing, flags).read_once().unwrap();
-        flags & 0x0001u16 == 0u16
-    }
-
-    /// Notifies the device that there are available elements.
-    pub(crate) fn notify(&mut self) {
-        if self.notify_config.is_modern() {
-            self.notify_config
-                .write_once::<u32>(0, self.queue_idx)
-                .unwrap();
-        } else {
-            self.notify_config
-                .write_once::<u16>(0, self.queue_idx as u16)
-                .unwrap();
-        }
-    }
-
-    /// Disables registered callbacks.
-    ///
-    /// That is to say, the queue won't generate interrupts after calling this method.
-    pub(crate) fn disable_callback(&mut self) {
-        if !self.is_callback_enabled {
-            return;
-        }
-
-        let flags_ptr = field_ptr!(&self.avail, AvailRing, flags);
-        let mut flags: AvailFlags = flags_ptr.read_once().unwrap();
-        debug_assert!(!flags.contains(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT));
-        flags.insert(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT);
-        flags_ptr.write_once(&flags).unwrap();
-
-        self.is_callback_enabled = false;
-    }
-
-    /// Enables registered callbacks.
-    ///
-    /// The queue will generate interrupts if any event comes after calling this method.
-    pub(crate) fn enable_callback(&mut self) {
-        if self.is_callback_enabled {
-            return;
-        }
-
-        let flags_ptr = field_ptr!(&self.avail, AvailRing, flags);
-        let mut flags: AvailFlags = flags_ptr.read_once().unwrap();
-        debug_assert!(flags.contains(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT));
-        flags.remove(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT);
-        flags_ptr.write_once(&flags).unwrap();
-
-        self.is_callback_enabled = true;
-    }
 }
 
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub(crate) struct Descriptor {
+pub struct Descriptor {
     addr: u64,
     len: u32,
     flags: DescFlags,
     next: u16,
+}
+
+/// The driver uses the available ring to offer buffers to the device:
+/// each ring entry refers to the head of a descriptor chain.
+/// It is only written by the driver and read by the device.
+#[repr(C, align(2))]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct AvailRing {
+    flags: AvailFlags,
+    /// A driver MUST NOT decrement the idx.
+    idx: u16,
+    ring: [u16; 64], // actual size: queue_size
+    used_event: u16, // unused
+}
+
+/// The used ring is where the device returns buffers once it is done with them.
+/// It is only written to by the device and read by the driver.
+#[padding_struct]
+#[repr(C, align(4))]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct UsedRing {
+    flags: u16,
+    /// The next index of the used element in the ring array.
+    idx: u16,
+    ring: [UsedElem; 64], // actual size: queue_size
+    avail_event: u16,     // unused
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+pub(crate) struct UsedElem {
+    id: u32,
+    len: u32,
+}
+
+#[derive(Debug)]
+struct DescriptorSlot {
+    /// The device-visible descriptor stored in DMA-coherent memory.
+    ///
+    /// This memory is shared with the device, so descriptor contents read from it
+    /// may be stale, corrupted, or otherwise untrusted after device access.
+    ptr: SafePtr<Descriptor, Arc<DmaCoherent>>,
+
+    /// The next descriptor in the current driver-managed list.
+    ///
+    /// For an in-use descriptor, this links to the next descriptor in the same
+    /// device-visible buffer chain. For a free descriptor, this links to the next
+    /// descriptor in the free list.
+    next: Option<u16>,
+    /// The total output buffer length for an in-use descriptor chain.
+    ///
+    /// This is set only on the head descriptor of an in-use chain. It records the
+    /// total number of bytes covered by all descriptors in that chain.
+    len: Option<u32>,
 }
 
 type DescriptorPtr<'a> = SafePtr<Descriptor, &'a Arc<DmaCoherent>, TRightSet<TRights![Dup, Write]>>;
@@ -589,39 +619,6 @@ bitflags! {
 }
 
 impl PodOnce for DescFlags {}
-
-/// The driver uses the available ring to offer buffers to the device:
-/// each ring entry refers to the head of a descriptor chain.
-/// It is only written by the driver and read by the device.
-#[repr(C, align(2))]
-#[derive(Clone, Copy, Debug, Pod)]
-pub(crate) struct AvailRing {
-    flags: AvailFlags,
-    /// A driver MUST NOT decrement the idx.
-    idx: u16,
-    ring: [u16; 64], // actual size: queue_size
-    used_event: u16, // unused
-}
-
-/// The used ring is where the device returns buffers once it is done with them.
-/// It is only written to by the device and read by the driver.
-#[padding_struct]
-#[repr(C, align(4))]
-#[derive(Clone, Copy, Debug, Pod)]
-pub(crate) struct UsedRing {
-    flags: u16,
-    /// The next index of the used element in the ring array.
-    idx: u16,
-    ring: [UsedElem; 64], // actual size: queue_size
-    avail_event: u16,     // unused
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Pod)]
-pub(crate) struct UsedElem {
-    id: u32,
-    len: u32,
-}
 
 /// The flags used in [`AvailRing`].
 #[repr(transparent)]

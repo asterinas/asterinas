@@ -50,12 +50,12 @@ impl SocketDevice {
         device_transport: DeviceTransport,
         _negotiated_features: u64,
     ) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioVsockConfig::new_manager(device_transport.as_ref());
+        let config_manager = VirtioVsockConfig::new_manager(device_transport.payload().as_ref());
         let guest_cid = VirtioVsockConfig::read_guest_cid(&config_manager);
 
-        let tx_queue = TxQueue::new(device_transport.as_ref())?;
-        let rx_queue = RxQueue::new(device_transport.as_ref())?;
-        let event_queue = EventQueue::new(device_transport.as_ref())?;
+        let tx_queue = TxQueue::new(device_transport.payload().as_ref())?;
+        let rx_queue = RxQueue::new(device_transport.payload().as_ref())?;
+        let event_queue = EventQueue::new(device_transport.payload().as_ref())?;
 
         let device = Arc::new(Self {
             config_manager,

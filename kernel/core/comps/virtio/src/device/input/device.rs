@@ -81,8 +81,13 @@ impl InputDevice {
         device_transport: DeviceTransport,
         _negotiated_features: u64,
     ) -> Result<(), VirtioDeviceError> {
-        let mut event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, device_transport.as_ref())?;
-        let status_queue = VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, device_transport.as_ref())?;
+        let mut event_queue =
+            VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, device_transport.payload().as_ref())?;
+        let status_queue = VirtQueue::new(
+            QUEUE_STATUS,
+            QUEUE_SIZE,
+            device_transport.payload().as_ref(),
+        )?;
 
         let event_table = EventTable::new(QUEUE_SIZE as usize)?;
         for i in 0..event_table.num_events() {
@@ -93,7 +98,7 @@ impl InputDevice {
 
         let device = {
             let mut device = Self {
-                config: VirtioInputConfig::new(device_transport.as_ref()),
+                config: VirtioInputConfig::new(device_transport.payload().as_ref()),
                 event_queue: SpinLock::new(event_queue),
                 status_queue,
                 event_table,

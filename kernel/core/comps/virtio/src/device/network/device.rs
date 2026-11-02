@@ -78,7 +78,7 @@ impl NetworkDevice {
         device_transport: DeviceTransport,
         negotiated_features: u64,
     ) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioNetConfig::new_manager(device_transport.as_ref());
+        let config_manager = VirtioNetConfig::new_manager(device_transport.payload().as_ref());
         let config = config_manager.read_config();
         debug!("virtio_net_config = {:?}", config);
         let mac_addr = EthernetAddress(config.mac);
@@ -87,10 +87,12 @@ impl NetworkDevice {
 
         let caps = init_caps(&features, &config);
 
-        let mut send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, device_transport.as_ref())?;
+        let mut send_queue =
+            VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, device_transport.payload().as_ref())?;
         send_queue.disable_callback();
 
-        let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, device_transport.as_ref())?;
+        let mut recv_queue =
+            VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, device_transport.payload().as_ref())?;
 
         let tx_buffers = (0..QUEUE_SIZE).map(|_| None).collect();
 
