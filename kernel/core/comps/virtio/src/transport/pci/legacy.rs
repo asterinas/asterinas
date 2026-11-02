@@ -5,7 +5,7 @@ use core::fmt::Debug;
 
 use aster_pci::{
     bus::{PciDevice, PciDeviceExt},
-    cfg_space::BarAccess,
+    cfg_space::{BarAccess, PciGeneralDeviceCfgOffset},
 };
 use aster_util::safe_ptr::SafePtr;
 use ostd::{
@@ -154,6 +154,12 @@ impl VirtioPciLegacyTransport {
 }
 
 impl VirtioTransport for VirtioPciLegacyTransport {
+    fn vendor_id(&self) -> u32 {
+        self.common_device
+            .location()
+            .read16(PciGeneralDeviceCfgOffset::SubsystemVendorId as u16) as u32
+    }
+
     fn device_type(&self) -> VirtioDeviceType {
         self.device_type
     }
@@ -243,7 +249,7 @@ impl VirtioTransport for VirtioPciLegacyTransport {
             .config_bar
             .read_once::<u8>(DEVICE_STATUS_OFFSET)
             .unwrap();
-        DeviceStatus::from_bits_truncate(status)
+        DeviceStatus::from_bits_retain(status)
     }
 
     fn write_device_status(&self, status: DeviceStatus) -> Result<(), VirtioTransportError> {

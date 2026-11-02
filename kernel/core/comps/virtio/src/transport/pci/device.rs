@@ -59,6 +59,12 @@ impl Debug for VirtioPciModernTransport {
 }
 
 impl VirtioTransport for VirtioPciModernTransport {
+    fn vendor_id(&self) -> u32 {
+        self.common_device
+            .location()
+            .read16(PciGeneralDeviceCfgOffset::SubsystemVendorId as u16) as u32
+    }
+
     fn device_type(&self) -> VirtioDeviceType {
         self.device_type
     }
@@ -183,7 +189,7 @@ impl VirtioTransport for VirtioPciModernTransport {
         let status = field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_status)
             .read_once()
             .unwrap();
-        DeviceStatus::from_bits(status).unwrap()
+        DeviceStatus::from_bits_retain(status)
     }
 
     fn write_device_status(&self, status: DeviceStatus) -> Result<(), VirtioTransportError> {

@@ -25,7 +25,10 @@ use ostd::{error, warn};
 use spin::Once;
 use transport::{DeviceStatus, DeviceTransport, mmio::VIRTIO_MMIO_DRIVER};
 
-use crate::transport::VirtioTransport;
+use crate::{
+    bus::{VirtioBus, VirtioDevice},
+    transport::VirtioTransport,
+};
 
 // Set this crate's log prefix for `ostd::log`.
 macro_rules! __log_prefix {
@@ -34,6 +37,7 @@ macro_rules! __log_prefix {
     };
 }
 
+mod bus;
 pub mod device;
 mod dma_buf;
 mod id_alloc;
@@ -46,6 +50,8 @@ static VIRTIO_BLOCK_MAJOR_ID: Once<MajorIdOwner> = Once::new();
 fn virtio_component_init() -> Result<(), ComponentInitError> {
     VIRTIO_BLOCK_MAJOR_ID.call_once(|| aster_block::allocate_major().unwrap());
 
+    bus::VIRTIO_BUS.call_once(|| aster_device::bus::register(VirtioBus).unwrap());
+
     // Find all devices and register them to the corresponding crate
     transport::init();
 
@@ -53,8 +59,7 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
     device::network::init();
     device::socket::init();
 
-    while let Some(transport) = pop_device_transport() {
-        let transport: Arc<dyn VirtioTransport> = Arc::from(transport);
+    while let Some(transport) = pop_device() {
         let device_type = transport.device_type();
 
         // Reset the device.
@@ -72,7 +77,7 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
             transport.add_device_status(DeviceStatus::ACKNOWLEDGE)?;
             transport.add_device_status(DeviceStatus::DRIVER)?;
 
-            let features = negotiate_features(transport.as_ref())?;
+            let features = negotiate_features(transport.payload().as_ref())?;
 
             if !transport.is_legacy_version() {
                 transport.add_device_status(DeviceStatus::FEATURES_OK)?;
@@ -109,12 +114,12 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
-fn pop_device_transport() -> Option<Box<dyn VirtioTransport>> {
-    if let Some(device) = transport::pci::pop_device_transport() {
+fn pop_device() -> Option<Arc<VirtioDevice>> {
+    if let Some(device) = transport::pci::pop_device() {
         return Some(device);
     }
     if let Some(device) = VIRTIO_MMIO_DRIVER.get().unwrap().pop_device_transport() {
-        return Some(Box::new(device));
+        return Some(bus::device_builder(Box::new(device)).build());
     }
     None
 }
