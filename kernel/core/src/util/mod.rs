@@ -10,6 +10,8 @@ mod read_with_len;
 pub(crate) mod ring_buffer;
 
 pub(crate) use copy_compact::CopyCompat;
+#[cfg(target_arch = "x86_64")]
+pub(crate) use iovec::UserIoVec;
 pub(crate) use iovec::{MultiRead, MultiWrite, VmReaderArray, VmWriterArray};
 pub(crate) use read_cstring::ReadCString;
 pub(crate) use read_with_len::ReadWithLen;
