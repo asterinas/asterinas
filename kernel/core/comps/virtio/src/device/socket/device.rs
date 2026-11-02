@@ -14,6 +14,7 @@ use ostd::{
 use spin::Once;
 
 use crate::{
+    bus::VirtioDevice,
     device::{
         VirtioDeviceError,
         socket::{
@@ -23,7 +24,7 @@ use crate::{
             queue::{EventQueue, RxQueue, TxQueue},
         },
     },
-    transport::{ConfigManager, DeviceTransport},
+    transport::{ConfigManager, DeviceStatus},
 };
 
 /// Socket devices, which facilitate data transfer between the guest and device without using the
@@ -36,7 +37,7 @@ pub struct SocketDevice {
     rx_callback: Once<fn()>,
     event_queue: SpinLock<EventQueue, BottomHalfDisabled>,
     event_callback: Once<fn()>,
-    transport: SpinLock<DeviceTransport>,
+    virtio_device: Arc<VirtioDevice>,
 }
 
 impl SocketDevice {
@@ -45,17 +46,17 @@ impl SocketDevice {
         (VsockFeatures::from_bits_truncate(features) & VsockFeatures::supported_features()).bits()
     }
 
-    /// Initializes a virtio-vsock device from `transport` and registers it globally.
+    /// Initializes a virtio-vsock device from `virtio_device` and registers it globally.
     pub(crate) fn init(
-        device_transport: DeviceTransport,
+        virtio_device: Arc<VirtioDevice>,
         _negotiated_features: u64,
     ) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioVsockConfig::new_manager(device_transport.payload().as_ref());
+        let config_manager = VirtioVsockConfig::new_manager(virtio_device.payload().as_ref());
         let guest_cid = VirtioVsockConfig::read_guest_cid(&config_manager);
 
-        let tx_queue = TxQueue::new(device_transport.payload().as_ref())?;
-        let rx_queue = RxQueue::new(device_transport.payload().as_ref())?;
-        let event_queue = EventQueue::new(device_transport.payload().as_ref())?;
+        let tx_queue = TxQueue::new(virtio_device.payload().as_ref())?;
+        let rx_queue = RxQueue::new(virtio_device.payload().as_ref())?;
+        let event_queue = EventQueue::new(virtio_device.payload().as_ref())?;
 
         let device = Arc::new(Self {
             config_manager,
@@ -65,10 +66,10 @@ impl SocketDevice {
             rx_callback: Once::new(),
             event_queue: SpinLock::new(event_queue),
             event_callback: Once::new(),
-            transport: SpinLock::new(device_transport),
+            virtio_device,
         });
 
-        let mut transport = device.transport.lock();
+        let transport = device.virtio_device.payload().as_ref();
         let weak_device = Arc::downgrade(&device);
         transport.register_queue_callback(
             RxQueue::QUEUE_INDEX,
@@ -88,8 +89,7 @@ impl SocketDevice {
             true,
         )?;
         transport.register_cfg_callback(Box::new(config_space_change))?;
-        transport.finish_init();
-        drop(transport);
+        transport.add_device_status(DeviceStatus::DRIVER_OK)?;
 
         device.rx_queue.lock().notify_if_needed();
         device.event_queue.lock().notify_if_needed();

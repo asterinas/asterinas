@@ -9,7 +9,7 @@ use ostd::{
     arch::trap::TrapFrame,
     io::IoMem,
     irq::{IrqCallbackFunction, IrqLine},
-    sync::RwLock,
+    sync::{RwLock, WriteIrqDisabled},
 };
 
 /// Multiplexing Irqs. The two interrupt types (configuration space change and queue interrupt)
@@ -28,7 +28,7 @@ impl MultiplexIrq {
         irq: IrqLine,
         interrupt_ack: SafePtr<u32, IoMem, TRightSet<WriteOp>>,
         interrupt_status: SafePtr<u32, IoMem, TRightSet<ReadOp>>,
-    ) -> Arc<RwLock<Self>> {
+    ) -> Arc<RwLock<Self, WriteIrqDisabled>> {
         let irq = Arc::new(RwLock::new(Self {
             irq,
             queue_callbacks: Vec::new(),
@@ -71,6 +71,12 @@ impl MultiplexIrq {
         drop(lock);
 
         irq
+    }
+
+    pub(super) fn take_callbacks(&mut self) -> Vec<Box<IrqCallbackFunction>> {
+        let mut callbacks = core::mem::take(&mut self.queue_callbacks);
+        callbacks.append(&mut self.cfg_callbacks);
+        callbacks
     }
 
     pub(super) fn register_queue_callback(&mut self, func: Box<IrqCallbackFunction>) {

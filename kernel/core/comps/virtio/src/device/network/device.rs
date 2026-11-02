@@ -14,6 +14,7 @@ use ostd::{arch::trap::TrapFrame, debug, sync::SpinLock, warn};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{
+    bus::VirtioDevice,
     device::{
         VirtioDeviceError,
         network::{
@@ -22,7 +23,7 @@ use crate::{
         },
     },
     queue::{self, VirtQueue},
-    transport::{ConfigManager, DeviceTransport},
+    transport::{ConfigManager, DeviceStatus},
 };
 
 pub struct NetworkDevice {
@@ -38,7 +39,7 @@ pub struct NetworkDevice {
     tx_buffers: Vec<Option<TxBuffer>>,
     rx_buffers: SlotVec<RxBuffer>,
     new_rx_buffer: Option<RxBuffer>,
-    transport: DeviceTransport,
+    virtio_device: Arc<VirtioDevice>,
     poll_stat: PollStatistics,
 }
 
@@ -75,10 +76,10 @@ impl NetworkDevice {
     }
 
     pub(crate) fn init(
-        device_transport: DeviceTransport,
+        virtio_device: Arc<VirtioDevice>,
         negotiated_features: u64,
     ) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioNetConfig::new_manager(device_transport.payload().as_ref());
+        let config_manager = VirtioNetConfig::new_manager(virtio_device.payload().as_ref());
         let config = config_manager.read_config();
         debug!("virtio_net_config = {:?}", config);
         let mac_addr = EthernetAddress(config.mac);
@@ -88,11 +89,11 @@ impl NetworkDevice {
         let caps = init_caps(&features, &config);
 
         let mut send_queue =
-            VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, device_transport.payload().as_ref())?;
+            VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, virtio_device.payload().as_ref())?;
         send_queue.disable_callback();
 
         let mut recv_queue =
-            VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, device_transport.payload().as_ref())?;
+            VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, virtio_device.payload().as_ref())?;
 
         let tx_buffers = (0..QUEUE_SIZE).map(|_| None).collect();
 
@@ -115,7 +116,7 @@ impl NetworkDevice {
             tx_buffers,
             rx_buffers,
             new_rx_buffer: None,
-            transport: device_transport,
+            virtio_device,
             poll_stat: PollStatistics::new(),
         };
 
@@ -132,17 +133,11 @@ impl NetworkDevice {
             aster_network::raise_receive_softirq();
         }
 
-        device
-            .transport
-            .register_cfg_callback(Box::new(config_space_change))?;
-        device
-            .transport
-            .register_queue_callback(QUEUE_SEND, Box::new(handle_send_event), true)?;
-        device
-            .transport
-            .register_queue_callback(QUEUE_RECV, Box::new(handle_recv_event), true)?;
-
-        device.transport.finish_init();
+        let transport = device.virtio_device.payload().as_ref();
+        transport.register_cfg_callback(Box::new(config_space_change))?;
+        transport.register_queue_callback(QUEUE_SEND, Box::new(handle_send_event), true)?;
+        transport.register_queue_callback(QUEUE_RECV, Box::new(handle_recv_event), true)?;
+        transport.add_device_status(DeviceStatus::DRIVER_OK)?;
 
         if device.recv_queue.should_notify() {
             debug!("notify receive queue");
@@ -362,7 +357,7 @@ impl Debug for NetworkDevice {
             .field("mac_addr", &self.mac_addr)
             .field("send_queue", &self.send_queue)
             .field("recv_queue", &self.recv_queue)
-            .field("transport", &self.transport)
+            .field("virtio_device", &self.virtio_device)
             .finish()
     }
 }

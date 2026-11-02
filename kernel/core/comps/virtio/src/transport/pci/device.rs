@@ -65,6 +65,12 @@ impl VirtioTransport for VirtioPciModernTransport {
             .read16(PciGeneralDeviceCfgOffset::SubsystemVendorId as u16) as u32
     }
 
+    fn clear_callbacks(&self) {
+        let irqs = self.config_lock.lock().msix_manager.take_callbacks();
+        // Callback destruction waits for running handlers without holding the config lock.
+        drop(irqs);
+    }
+
     fn device_type(&self) -> VirtioDeviceType {
         self.device_type
     }
