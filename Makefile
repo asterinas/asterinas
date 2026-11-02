@@ -23,6 +23,26 @@ COVERAGE ?= 0
 INITRAMFS ?= on
 CMDLINE ?=
 
+# Ubuntu rootfs settings.
+# Set UBUNTU_ROOTFS=1 to boot the Ubuntu image built by `make ubuntu-rootfs`
+# instead of the initramfs or the Nix-generated rootfs.
+UBUNTU_ROOTFS ?= 0
+UBUNTU_ROOTFS_TARBALL ?= $(CURDIR)/ubuntu-base-24.04.5-base-amd64.tar.gz
+UBUNTU_ROOTFS_IMAGE ?= $(CURDIR)/test/initramfs/build/ubuntu-rootfs.img
+UBUNTU_ROOTFS_SIZE ?= 4G
+# Build a full systemd-based Ubuntu rootfs by default. Set to 0 to build the
+# smaller ubuntu-base-only image, which boots straight to a root shell.
+UBUNTU_ROOTFS_WITH_SYSTEMD ?= 1
+UBUNTU_ROOTFS_DNS ?= 10.0.2.3
+UBUNTU_ROOTFS_INIT ?= /init
+ROOTFS_IMAGE ?= $(CURDIR)/test/initramfs/build/rootfs.img
+
+ifeq ($(UBUNTU_ROOTFS),1)
+override INITRAMFS := off
+override ROOTFS_IMAGE := $(UBUNTU_ROOTFS_IMAGE)
+override CMDLINE += root=/dev/vdd rootfstype=ext2 rw init=$(UBUNTU_ROOTFS_INIT)
+endif
+
 # Specify the primary system console (supported: tty0, ttyS0, hvc0).
 # - tty0: The active virtual terminal (VT).
 # - ttyS0: The serial (UART) terminal.
@@ -326,11 +346,52 @@ initramfs: check_vdso
 rootfs: check_vdso
 	@$(MAKE) --no-print-directory -C test/initramfs rootfs-boot-images
 
+# Build an ext2 rootfs image from an Ubuntu Base tarball.
+UBUNTU_ROOTFS_DEPS := \
+	$(shell find distro/ubuntu -type f 2>/dev/null)
+UBUNTU_ROOTFS_CONFIG := $(UBUNTU_ROOTFS_IMAGE).config
+
+.PHONY: FORCE
+FORCE:
+
+# Keep the build options in a stamp so that changing SYSTEMD or SIZE rebuilds
+# the image even when the tarball and overlay are unchanged.
+$(UBUNTU_ROOTFS_CONFIG): FORCE
+	@mkdir -p $(dir $@)
+	@printf 'systemd=%s\nsize=%s\ndns=%s\n' \
+		'$(UBUNTU_ROOTFS_WITH_SYSTEMD)' '$(UBUNTU_ROOTFS_SIZE)' \
+		'$(UBUNTU_ROOTFS_DNS)' > $@.tmp
+	@if cmp -s $@.tmp $@ 2>/dev/null; then rm -f $@.tmp; else mv $@.tmp $@; fi
+
+$(UBUNTU_ROOTFS_TARBALL):
+	@echo "error: Ubuntu Base tarball not found: $(UBUNTU_ROOTFS_TARBALL)" >&2
+	@echo "Download it with, for example:" >&2
+	@echo "  wget -O $@ https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-amd64.tar.gz" >&2
+	@exit 1
+
+$(UBUNTU_ROOTFS_IMAGE): $(UBUNTU_ROOTFS_TARBALL) $(UBUNTU_ROOTFS_DEPS) $(UBUNTU_ROOTFS_CONFIG)
+	@bash distro/ubuntu/build.sh \
+		--tarball "$(UBUNTU_ROOTFS_TARBALL)" \
+		--output "$(UBUNTU_ROOTFS_IMAGE)" \
+		--size "$(UBUNTU_ROOTFS_SIZE)" \
+		--dns "$(UBUNTU_ROOTFS_DNS)" \
+		$(if $(filter 1,$(UBUNTU_ROOTFS_WITH_SYSTEMD)),--with-systemd,)
+
+.PHONY: ubuntu-rootfs
+ubuntu-rootfs: $(UBUNTU_ROOTFS_IMAGE)
+
+# Build and run the Ubuntu rootfs image.
+.PHONY: run_ubuntu
+run_ubuntu:
+	@$(MAKE) --no-print-directory UBUNTU_ROOTFS=1 run_kernel
+
 # Build the kernel with an initramfs
 .PHONY: kernel
 kernel: $(CARGO_OSDK)
 ifeq ($(INITRAMFS),on)
 kernel: initramfs
+else ifeq ($(UBUNTU_ROOTFS),1)
+kernel: ubuntu-rootfs
 else
 kernel: rootfs
 endif
@@ -342,6 +403,8 @@ kernel:
 run_kernel: $(CARGO_OSDK)
 ifeq ($(INITRAMFS),on)
 run_kernel: initramfs
+else ifeq ($(UBUNTU_ROOTFS),1)
+run_kernel: ubuntu-rootfs
 else
 run_kernel: rootfs
 endif

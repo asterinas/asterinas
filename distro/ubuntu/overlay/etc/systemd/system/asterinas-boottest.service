@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: MPL-2.0
+[Unit]
+Description=Asterinas post-boot test
+ConditionKernelCommandLine=aster.boottest
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/etc/asterinas/boottest.sh
+
+[Install]
+WantedBy=multi-user.target

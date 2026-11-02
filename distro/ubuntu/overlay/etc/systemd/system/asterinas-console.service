@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MPL-2.0
+[Unit]
+Description=Asterinas serial console
+After=systemd-user-sessions.service
+Conflicts=rescue.service rescue.target
+
+[Service]
+Type=simple
+ExecStart=-/sbin/agetty --autologin root --noclear hvc0 linux
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/hvc0
+TTYReset=no
+TTYVHangup=no
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

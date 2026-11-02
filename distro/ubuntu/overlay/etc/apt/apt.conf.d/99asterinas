@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# QEMU user-mode networking is IPv4-only. Without an IPv6 route, glibc's
+# resolver can wait for AAAA queries to time out before falling back to A,
+# which is long enough for apt's default resolver timeout to fire.
+Acquire::ForceIPv4 "true";
+Acquire::http::Timeout "30";
+Acquire::https::Timeout "30";
+Acquire::Retries "2";
+
+# DNS resolution through Asterinas currently fails after apt drops privileges
+# to the _apt user. Keep apt as root in this test VM.
+APT::Sandbox::User "root";

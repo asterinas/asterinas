@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Pseudo filesystems used by systemd and the Ubuntu userland.
+proc      /proc      proc      defaults              0 0
+sysfs     /sys       sysfs     defaults              0 0
+devtmpfs  /dev       devtmpfs  defaults              0 0
+devpts    /dev/pts   devpts    gid=5,mode=620        0 0
+tmpfs     /dev/shm   tmpfs     defaults              0 0
+tmpfs     /run       tmpfs     defaults              0 0
+tmpfs     /tmp       tmpfs     defaults              0 0
+cgroup2   /sys/fs/cgroup cgroup2 defaults           0 0

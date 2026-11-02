@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# QEMU user-mode networking provides a DHCP server and DNS resolver.
+[Match]
+Name=en* eth*
+
+[Network]
+DHCP=yes
+
+[DHCPv4]
+UseDNS=yes

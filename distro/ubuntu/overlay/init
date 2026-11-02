@@ -1,0 +1,78 @@
+#!/bin/sh
+# SPDX-License-Identifier: MPL-2.0
+#
+# Ubuntu rootfs init wrapper for Asterinas.
+#
+# The kernel can boot directly from an ext2 root filesystem, but systemd
+# expects /proc, /sys, /dev, /run, and a unified cgroup hierarchy to exist
+# before it starts. This wrapper plays the role that NixOS' stage-1 init plays
+# for Asterinas NixOS: set up those mounts and then hand over to /sbin/init.
+#
+# Kernel command line switches:
+#   aster.nosystemd  Drop to a root shell instead of starting systemd.
+#   aster.selftest   Run /etc/asterinas/selftest.sh before the shell.
+
+set -e
+
+mount_if_needed() {
+    mount "$@" 2>/dev/null || true
+}
+
+mkdir -p /proc /sys /dev /dev/pts /dev/shm /run /tmp /sys/fs/cgroup
+
+mount_if_needed -t proc proc /proc
+mount_if_needed -t sysfs sysfs /sys
+# The kernel already mounts devtmpfs on /dev in rootfs boot mode, but keep
+# this for the case where the wrapper is started from another environment.
+mount_if_needed -t devtmpfs devtmpfs /dev
+
+mkdir -p /dev/pts /dev/shm
+mount_if_needed -t devpts devpts /dev/pts
+mount_if_needed -t tmpfs tmpfs /dev/shm
+mount_if_needed -t tmpfs tmpfs /run
+mount_if_needed -t tmpfs tmpfs /tmp
+chmod 1777 /dev/shm /tmp
+
+# These must be created after /run is mounted, otherwise the tmpfs hides
+# them. pam_unix/login expect a utmp database; the dbus daemon expects its
+# runtime directory even if udev and journald are unavailable.
+mkdir -p /run/dbus /run/systemd /run/log/journal
+for file in utmp btmp; do
+    if [ ! -e "/run/$file" ]; then
+        : > "/run/$file"
+        chgrp utmp "/run/$file" 2>/dev/null || true
+        chmod 0664 "/run/$file"
+    fi
+done
+
+# Linux documents this layout for devpts; Asterinas may not create /dev/ptmx
+# itself when devtmpfs is mounted by the kernel.
+[ -e /dev/ptmx ] || ln -s pts/ptmx /dev/ptmx
+
+# devtmpfs on Asterinas does not currently expose the kernel log character
+# device. systemd-journald opens it unconditionally, so create the standard
+# node if it is missing. If the kernel does not implement the device, the
+# masked journald service is used instead.
+[ -e /dev/kmsg ] || mknod -m 600 /dev/kmsg c 1 11 2>/dev/null || true
+
+if [ -d /sys/fs/cgroup ]; then
+    mount_if_needed -t cgroup2 none /sys/fs/cgroup
+fi
+
+if grep -qw 'aster.selftest' /proc/cmdline 2>/dev/null; then
+    if [ -x /etc/asterinas/selftest.sh ]; then
+        /etc/asterinas/selftest.sh || true
+    fi
+fi
+
+if grep -qw 'aster.nosystemd' /proc/cmdline 2>/dev/null; then
+    echo "[ubuntu-rootfs] aster.nosystemd set; dropping to /bin/sh"
+    exec /bin/sh -l
+fi
+
+if [ -x /sbin/init ]; then
+    exec /sbin/init
+fi
+
+echo "[ubuntu-rootfs] /sbin/init not found; dropping to /bin/sh"
+exec /bin/sh -l

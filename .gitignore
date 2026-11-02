@@ -49,3 +49,7 @@ distro/etc_nixos/_config_for_test.nix
 
 # RustRover
 .idea
+
+# Ubuntu rootfs tarball and build logs
+/ubuntu-base-*.tar.gz
+/ubuntu-*.log

@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Minimal PAM stack for the Asterinas serial console.
+#
+# The stock Ubuntu login stack requires pam_loginuid (needs
+# /proc/self/loginuid), pam_env, and pam_unix session accounting. Those
+# components depend on kernel interfaces Asterinas does not provide yet.
+# Autologin already skips authentication, so a permissive session is enough
+# for the first working Ubuntu rootfs.
+
+auth       optional   pam_permit.so
+account    optional   pam_permit.so
+session    optional   pam_permit.so
