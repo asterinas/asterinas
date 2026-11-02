@@ -87,7 +87,7 @@ impl CUserRegsStruct {
         out
     }
 
-    /// Validates the user-supplied `regs` and then applies it into saved register state.
+    /// Validates and applies only the registers in the supplied byte prefix.
     ///
     /// `orig_rax` is ignored. Callers should separately assign this
     /// field to `ThreadLocal::orig_syscall_ret`.
@@ -95,37 +95,64 @@ impl CUserRegsStruct {
     /// # Errors
     ///
     /// Returns `EIO` on any invalid value.
-    fn apply_to(
+    fn apply_prefix_to(
         &self,
         user_context: &mut UserContext,
         fs_base: &mut FsBase,
         gs_base: &mut GsBase,
+        len: usize,
     ) -> Result<()> {
         let bytes = self.as_bytes();
+        debug_assert!(len <= bytes.len() && len.is_multiple_of(size_of::<usize>()));
 
         let mut new_general_regs = *user_context.general_regs();
-        for rule in REG_RULES {
+        for rule in REG_RULES.iter().filter(|rule| rule.offset < len) {
             let value = read_word(bytes, rule.offset);
             rule.apply(&mut new_general_regs, value)?;
         }
 
-        let rflags = read_word(bytes, core::mem::offset_of!(CUserRegsStruct, rflags));
-
-        let fsbase = read_word(bytes, core::mem::offset_of!(CUserRegsStruct, fsbase));
-        if !is_user_addr(fsbase) {
+        let set_fsbase = core::mem::offset_of!(CUserRegsStruct, fsbase) < len;
+        if set_fsbase && !is_user_addr(self.fsbase) {
             return_errno_with_message!(Errno::EIO, "invalid register value");
         }
 
-        let gsbase = read_word(bytes, core::mem::offset_of!(CUserRegsStruct, gsbase));
-        if !is_user_addr(gsbase) {
+        let set_gsbase = core::mem::offset_of!(CUserRegsStruct, gsbase) < len;
+        if set_gsbase && !is_user_addr(self.gsbase) {
             return_errno_with_message!(Errno::EIO, "invalid register value");
         }
 
         *user_context.general_regs_mut() = new_general_regs;
-        user_context.set_rflags(rflags);
-        *fs_base = FsBase::new(fsbase);
-        *gs_base = GsBase::new(gsbase);
+        if core::mem::offset_of!(CUserRegsStruct, rflags) < len {
+            user_context.set_rflags(self.rflags);
+        }
+        if set_fsbase {
+            *fs_base = FsBase::new(self.fsbase);
+        }
+        if set_gsbase {
+            *gs_base = GsBase::new(self.gsbase);
+        }
         Ok(())
+    }
+}
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, TryFromInt)]
+pub(crate) enum Regset {
+    /// General-purpose registers (`NT_PRSTATUS`).
+    PrStatus = 1,
+}
+
+impl Regset {
+    /// Validates the requested byte length and truncates it to the register set size.
+    pub(crate) fn transfer_len(self, len: usize) -> Result<usize> {
+        let (size, element_size) = match self {
+            Self::PrStatus => (size_of::<CUserRegsStruct>(), size_of::<usize>()),
+        };
+
+        if !len.is_multiple_of(element_size) {
+            return_errno_with_message!(Errno::EINVAL, "invalid register set length");
+        }
+        Ok(len.min(size))
     }
 }
 
@@ -177,9 +204,45 @@ impl PtraceState {
 
     /// Applies an x86-64 general-purpose register ABI snapshot.
     pub(crate) fn set_user_regs(&mut self, regs: CUserRegsStruct) -> Result<()> {
-        regs.apply_to(&mut self.user_context, &mut self.fs_base, &mut self.gs_base)?;
-        self.orig_syscall_ret = regs.orig_rax;
+        self.set_user_regs_prefix(regs, size_of::<CUserRegsStruct>())
+    }
+
+    fn set_user_regs_prefix(&mut self, regs: CUserRegsStruct, len: usize) -> Result<()> {
+        regs.apply_prefix_to(
+            &mut self.user_context,
+            &mut self.fs_base,
+            &mut self.gs_base,
+            len,
+        )?;
+        if core::mem::offset_of!(CUserRegsStruct, orig_rax) < len {
+            self.orig_syscall_ret = regs.orig_rax;
+        }
         Ok(())
+    }
+
+    /// Copies a prefix of the register set into the writer.
+    pub(crate) fn get_regset(&self, regset: Regset, writer: &mut VmWriter) -> Result<()> {
+        match regset {
+            Regset::PrStatus => {
+                let regs = self.get_user_regs();
+                writer.write_fallible(&mut VmReader::from(regs.as_bytes()))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Applies a prefix of the register set from the reader.
+    pub(crate) fn set_regset(&mut self, regset: Regset, reader: &mut VmReader) -> Result<()> {
+        if !reader.has_remain() {
+            return Ok(());
+        }
+        match regset {
+            Regset::PrStatus => {
+                let mut regs = CUserRegsStruct::default();
+                let len = reader.read_fallible(&mut VmWriter::from(regs.as_mut_bytes()))?;
+                self.set_user_regs_prefix(regs, len)
+            }
+        }
     }
 
     /// Reads one word from the x86-64 USER area.

@@ -2,7 +2,7 @@
 
 mod copy_compact;
 pub mod ioctl;
-mod iovec;
+pub(crate) mod iovec;
 pub(crate) mod net;
 pub(crate) mod random;
 mod read_cstring;
