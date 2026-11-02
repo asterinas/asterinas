@@ -70,8 +70,11 @@ impl BlockDevice {
     }
 
     /// Creates a new VirtIO-Block driver and registers it.
-    pub(crate) fn init(device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
-        let device = DeviceInner::init(device_transport)?;
+    pub(crate) fn init(
+        device_transport: DeviceTransport,
+        negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
+        let device = DeviceInner::init(device_transport, negotiated_features)?;
 
         let index = NR_BLOCK_DEVICE.fetch_add(1, Ordering::Relaxed);
         let id = DeviceId::new(
@@ -157,14 +160,16 @@ impl DeviceInner {
     const QUEUE_SIZE: u16 = 64;
 
     /// Creates and inits the device.
-    fn init(mut device_transport: DeviceTransport) -> Result<Arc<Self>, VirtioDeviceError> {
+    fn init(
+        device_transport: DeviceTransport,
+        negotiated_features: u64,
+    ) -> Result<Arc<Self>, VirtioDeviceError> {
         let config_manager = VirtioBlockConfig::new_manager(device_transport.as_ref());
 
         let config = config_manager.read_config();
         debug!("virio_blk_config = {:?}", config);
 
-        let features =
-            BlockFeatures::negotiated_with_device(device_transport.read_device_features());
+        let features = BlockFeatures::from_bits_truncate(negotiated_features);
 
         let block_size = if features.contains(BlockFeatures::BLK_SIZE) {
             config_manager.block_size()
@@ -189,7 +194,7 @@ impl DeviceInner {
             );
         }
 
-        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, device_transport.as_mut())?;
+        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, device_transport.as_ref())?;
 
         let block_requests =
             Arc::new(DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?);
