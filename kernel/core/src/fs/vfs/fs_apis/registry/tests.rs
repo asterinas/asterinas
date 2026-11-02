@@ -120,7 +120,10 @@ fn wait_until(mut condition_fn: impl FnMut() -> bool) -> bool {
     false
 }
 
-fn check_recreation_waits(sync_result: Result<()>) {
+fn check_recreation_waits(
+    sync_result: Result<()>,
+    release_fn: impl FnOnce(FsAndRoot) + Send + 'static,
+) {
     clocks::init_for_ktest();
     const KEY: u32 = 1;
     const NUM_WAITERS: usize = 2;
@@ -138,7 +141,7 @@ fn check_recreation_waits(sync_result: Result<()>) {
     let old_fs_memory = old_fs_and_root.fs().as_arc().clone();
     let old_fs_weak = old_fs_and_root.fs().downgrade();
     let completion = old_fs_and_root.fs().shutdown_completion().clone();
-    let drop_thread = ThreadOptions::new(move || drop(old_fs_and_root)).spawn();
+    let drop_thread = ThreadOptions::new(move || release_fn(old_fs_and_root)).spawn();
     sync_gate
         .wait_queue
         .wait_until(|| sync_gate.has_started.load(Ordering::Acquire).then_some(()));
@@ -147,7 +150,7 @@ fn check_recreation_waits(sync_result: Result<()>) {
         "retired filesystem still accepts active handles"
     );
 
-    // The cache, retained allocation, worker, and local completion references
+    // The cache, retained allocation, shutdown, and local completion references
     // stay alive while sync is blocked. Each waiting lookup adds one more.
     let completion_refs_with_waiters = Arc::strong_count(&completion) + NUM_WAITERS;
 
@@ -280,12 +283,32 @@ fn check_recreation_waits(sync_result: Result<()>) {
 
 #[ktest]
 fn cache_recreation_waits_for_final_sync() {
-    check_recreation_waits(Ok(()));
+    check_recreation_waits(Ok(()), drop);
 }
 
 #[ktest]
 fn cache_recreation_reports_final_sync_error() {
-    check_recreation_waits(Err(Error::new(Errno::EIO)));
+    check_recreation_waits(Err(Error::new(Errno::EIO)), drop);
+}
+
+#[ktest]
+fn cache_recreation_waits_for_synchronous_drop() {
+    check_recreation_waits(Ok(()), |fs_and_root| {
+        let (fs, root) = fs_and_root.into_parts();
+        drop(root);
+        fs.drop_synchronously().unwrap();
+    });
+}
+
+#[ktest]
+fn cache_recreation_reports_synchronous_drop_error() {
+    check_recreation_waits(Err(Error::new(Errno::EIO)), |fs_and_root| {
+        let (fs, root) = fs_and_root.into_parts();
+        drop(root);
+        let completion = fs.shutdown_completion().clone();
+        assert_eq!(fs.drop_synchronously().unwrap_err().error(), Errno::EIO);
+        assert!(matches!(completion.result(), Some(Err(err)) if err.error() == Errno::EIO));
+    });
 }
 
 #[ktest]
