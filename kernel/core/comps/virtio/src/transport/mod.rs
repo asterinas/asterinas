@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Transport operations and device configuration access shared by VirtIO drivers.
+
 use alloc::{boxed::Box, sync::Arc};
 use core::{
     fmt::Debug,
@@ -19,6 +21,7 @@ use ostd_pod::Pod;
 use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};
 use crate::{
     VirtioDeviceType,
+    bus::VirtioDevice,
     queue::{AvailRing, Descriptor, UsedRing},
 };
 
@@ -31,11 +34,14 @@ pub(crate) mod pci;
 /// 3. Access device config memory.
 /// 4. Config virtqueue.
 /// 5. Get the interrupt resources allocated to the device.
-pub(crate) trait VirtioTransport: Sync + Send + Debug {
+pub trait VirtioTransport: Sync + Send + Debug {
     // ====================Device related APIs=======================
 
     /// Get device type.
     fn device_type(&self) -> VirtioDeviceType;
+
+    /// Returns the VirtIO vendor ID.
+    fn vendor_id(&self) -> u32;
 
     /// Get device features.
     fn read_device_features(&self) -> u64;
@@ -106,13 +112,14 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
 
 /// Manage PCI device/notify configuration space (legacy/modern).
 #[derive(Debug)]
-pub(crate) struct ConfigManager<T: Pod> {
+pub struct ConfigManager<T: Pod> {
     modern_space: Option<SafePtr<T, IoMem>>,
     legacy_space: Option<(BarAccess, usize)>,
 }
 
 impl<T: Pod> ConfigManager<T> {
-    pub(super) fn new(
+    /// Creates an accessor for a memory-backed or legacy BAR configuration region.
+    pub fn new(
         modern_space: Option<SafePtr<T, IoMem>>,
         legacy_space: Option<(BarAccess, usize)>,
     ) -> Self {
@@ -123,8 +130,35 @@ impl<T: Pod> ConfigManager<T> {
     }
 
     /// Return if the modern configuration space exists.
-    pub(super) fn is_modern(&self) -> bool {
+    pub fn is_modern(&self) -> bool {
         self.modern_space.is_some()
+    }
+
+    /// Read a specific configuration.
+    pub fn read_once<V: PodOnce + PortRead>(
+        &self,
+        offset: usize,
+    ) -> Result<V, VirtioTransportError> {
+        debug_assert!(offset + size_of::<V>() <= size_of::<T>());
+        if self.is_modern() {
+            self.read_modern(offset)
+        } else {
+            self.read_legacy(offset)
+        }
+    }
+
+    /// Write a specific configuration.
+    pub fn write_once<V: PodOnce + PortWrite>(
+        &self,
+        offset: usize,
+        value: V,
+    ) -> Result<(), VirtioTransportError> {
+        debug_assert!(offset + size_of::<V>() <= size_of::<T>());
+        if self.is_modern() {
+            self.write_modern(offset, value)
+        } else {
+            self.write_legacy(offset, value)
+        }
     }
 
     fn read_modern<V: PodOnce + PortRead>(&self, offset: usize) -> Result<V, VirtioTransportError> {
@@ -150,19 +184,6 @@ impl<T: Pod> ConfigManager<T> {
 
         bar.read_once(base + offset)
             .map_err(|_| VirtioTransportError::DeviceStatusError)
-    }
-
-    /// Read a specific configuration.
-    pub(super) fn read_once<V: PodOnce + PortRead>(
-        &self,
-        offset: usize,
-    ) -> Result<V, VirtioTransportError> {
-        debug_assert!(offset + size_of::<V>() <= size_of::<T>());
-        if self.is_modern() {
-            self.read_modern(offset)
-        } else {
-            self.read_legacy(offset)
-        }
     }
 
     fn write_modern<V: PodOnce + PortWrite>(
@@ -197,20 +218,6 @@ impl<T: Pod> ConfigManager<T> {
         bar.write_once(base + offset, value)
             .map_err(|_| VirtioTransportError::DeviceStatusError)
     }
-
-    /// Write a specific configuration.
-    pub(super) fn write_once<V: PodOnce + PortWrite>(
-        &self,
-        offset: usize,
-        value: V,
-    ) -> Result<(), VirtioTransportError> {
-        debug_assert!(offset + size_of::<V>() <= size_of::<T>());
-        if self.is_modern() {
-            self.write_modern(offset, value)
-        } else {
-            self.write_legacy(offset, value)
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -222,7 +229,7 @@ pub enum VirtioTransportError {
 bitflags::bitflags! {
     /// The device status field.
     #[derive(Clone, Copy, Debug, PartialEq)]
-    pub(crate) struct DeviceStatus: u8 {
+    pub struct DeviceStatus: u8 {
         /// Indicates that the guest OS has found the device and recognized it
         /// as a valid virtio device.
         const ACKNOWLEDGE        = 1;
@@ -249,7 +256,7 @@ bitflags::bitflags! {
     }
 }
 
-/// A wrapper around [`Arc<dyn VirtioTransport>`] that sets the device status to FAILED
+/// A wrapper around [`Arc<VirtioDevice>`] that sets the device status to FAILED
 /// on drop unless [`Self::finish_init`] has been called.
 ///
 /// This ensures that the FAILED status bit is set whenever a device initialization
@@ -261,7 +268,7 @@ bitflags::bitflags! {
 /// `finish_init` is called, the FAILED bit is no longer set on drop.
 #[derive(Debug)]
 pub(crate) struct DeviceTransport {
-    inner: Arc<dyn VirtioTransport>,
+    inner: Arc<VirtioDevice>,
     is_completed: bool,
 }
 
@@ -270,7 +277,7 @@ impl DeviceTransport {
     ///
     /// The wrapper will set the device status to [`DeviceStatus::FAILED`] on drop
     /// unless [`Self::finish_init`] is called first.
-    pub(super) fn new(transport: Arc<dyn VirtioTransport>) -> Self {
+    pub(super) fn new(transport: Arc<VirtioDevice>) -> Self {
         Self {
             inner: transport,
             is_completed: false,
@@ -289,15 +296,15 @@ impl DeviceTransport {
 }
 
 impl Deref for DeviceTransport {
-    type Target = Arc<dyn VirtioTransport>;
+    type Target = Arc<VirtioDevice>;
 
-    fn deref(&self) -> &Arc<dyn VirtioTransport> {
+    fn deref(&self) -> &Arc<VirtioDevice> {
         &self.inner
     }
 }
 
 impl DerefMut for DeviceTransport {
-    fn deref_mut(&mut self) -> &mut Arc<dyn VirtioTransport> {
+    fn deref_mut(&mut self) -> &mut Arc<VirtioDevice> {
         &mut self.inner
     }
 }
