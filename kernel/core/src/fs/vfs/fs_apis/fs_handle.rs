@@ -56,7 +56,7 @@ use core::{
     sync::atomic::{self, AtomicI32, AtomicUsize, Ordering},
 };
 
-use ostd::sync::WaitQueue;
+use ostd::{sync::WaitQueue, task::atomic_mode};
 
 use super::file_system::FileSystem;
 use crate::{
@@ -164,24 +164,57 @@ impl<F: FileSystem + ?Sized> FsHandle<F> {
         &self.lifecycle().shutdown
     }
 
-    fn queue_shutdown(fs: Arc<F>) {
+    /// Drops this handle, performing final filesystem shutdown in the calling thread
+    /// if it is the last active handle.
+    ///
+    /// The caller must be in a sleepable context and hold no locks needed by shutdown.
+    /// If other handles remain, this returns `Ok(())` without waiting for them or
+    /// shutting down the filesystem.
+    /// Otherwise, it returns the shutdown result,
+    /// which is also published to callers waiting to replace the filesystem.
+    pub(crate) fn drop_synchronously(mut self) -> Result<()> {
+        atomic_mode::might_sleep();
+        match self.release() {
+            Some(fs) => Self::shutdown_fs(fs),
+            None => Ok(()),
+        }
+    }
+
+    // Only the release that retires the filesystem receives ownership of shutdown.
+    fn release(&mut self) -> Option<Arc<F>> {
+        let fs = self.fs.take()?;
+        let previous = fs.lifecycle().num_handles.fetch_sub(1, Ordering::Release);
+        debug_assert!(previous > 0 && previous != FsLifecycle::INITIALIZING);
+        if previous != 1 {
+            return None;
+        }
+        atomic::fence(Ordering::Acquire);
+        Some(fs)
+    }
+
+    fn shutdown_fs(fs: Arc<F>) -> Result<()> {
         let shutdown = fs.lifecycle().shutdown.clone();
+        let result = fs.shutdown();
+        if let Err(err) = result {
+            error!(
+                "failed to sync filesystem {} during final cleanup: {:?}",
+                fs.name(),
+                err
+            );
+        }
+        drop(fs);
+        shutdown.complete(result);
+        result
+    }
+
+    fn queue_shutdown(fs: Arc<F>) {
         let pending: SpinLock<_> = SpinLock::new(Some(fs));
         work_queue::submit_work_func(
             move || {
                 // The submitter may release the last work-item reference under a
                 // spinlock, so the worker takes ownership before performing cleanup.
                 let fs = pending.lock().take().unwrap();
-                let result = fs.shutdown();
-                if let Err(err) = result {
-                    error!(
-                        "failed to sync filesystem {} during final cleanup: {:?}",
-                        fs.name(),
-                        err
-                    );
-                }
-                drop(fs);
-                shutdown.complete(result);
+                let _ = Self::shutdown_fs(fs);
             },
             WorkPriority::Normal,
         );
@@ -218,13 +251,7 @@ impl<F: FileSystem + ?Sized> Debug for FsHandle<F> {
 
 impl<F: FileSystem + ?Sized> Drop for FsHandle<F> {
     fn drop(&mut self) {
-        let Some(fs) = self.fs.take() else {
-            return;
-        };
-        let previous = fs.lifecycle().num_handles.fetch_sub(1, Ordering::Release);
-        debug_assert!(previous > 0 && previous != FsLifecycle::INITIALIZING);
-        if previous == 1 {
-            atomic::fence(Ordering::Acquire);
+        if let Some(fs) = self.release() {
             Self::queue_shutdown(fs);
         }
     }

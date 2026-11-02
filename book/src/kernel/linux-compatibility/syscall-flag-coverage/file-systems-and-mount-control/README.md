@@ -54,9 +54,19 @@ Supported functionality in SCML:
 {{#include umount_and_umount2.scml}}
 ```
 
+Without `MNT_DETACH`, final filesystem cleanup runs in the unmounting thread
+if it releases the last active filesystem reference.
+Otherwise, final cleanup is deferred until the remaining users,
+such as open files and mappings, release their references;
+the unmount call does not wait for them.
+
+Partially supported flags:
+* `MNT_DETACH` detaches the mount without waiting for final filesystem cleanup.
+  Asterinas still synchronizes the filesystem before detachment,
+  so this flag does not currently avoid blocking on writeback.
+
 Silently-ignored flags:
 * `MNT_FORCE`
-* `MNT_DETACH`
 * `MNT_EXPIRE`
 
 For more information,

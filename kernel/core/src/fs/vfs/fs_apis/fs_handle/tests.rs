@@ -24,6 +24,7 @@ struct Probe {
     sync_count: Arc<AtomicUsize>,
     dropped: Arc<AtomicBool>,
     releasing_task: Arc<Task>,
+    synced_on_releasing_task: AtomicBool,
 }
 
 impl Probe {
@@ -36,6 +37,7 @@ impl Probe {
             sync_count: Arc::new(AtomicUsize::new(0)),
             dropped: Arc::new(AtomicBool::new(false)),
             releasing_task: Task::current().unwrap().cloned(),
+            synced_on_releasing_task: AtomicBool::new(false),
         })
     }
 }
@@ -51,10 +53,10 @@ impl FileSystem for Probe {
     }
 
     fn sync(&self) -> Result<()> {
-        assert!(!Arc::ptr_eq(
-            &self.releasing_task,
-            &Task::current().unwrap().cloned()
-        ));
+        self.synced_on_releasing_task.store(
+            Arc::ptr_eq(&self.releasing_task, &Task::current().unwrap().cloned()),
+            Ordering::Release,
+        );
         assert!(FsHandle::try_acquire(self.weak_self.upgrade().unwrap()).is_none());
         self.sync_count.fetch_add(1, Ordering::Release);
         Ok(())
@@ -125,7 +127,49 @@ fn final_release_under_spinlock_defers_sync() {
     completion.wait().unwrap();
     assert!(weak.upgrade().is_none());
     assert_eq!(memory.sync_count.load(Ordering::Acquire), 1);
+    assert!(!memory.synced_on_releasing_task.load(Ordering::Acquire));
     assert!(!memory.dropped.load(Ordering::Acquire));
+}
+
+#[ktest]
+fn final_synchronous_drop_runs_on_calling_task() {
+    let memory = Probe::new();
+    let owner = FsHandle::new(memory.clone());
+    let completion = owner.shutdown_completion().clone();
+    let weak = owner.downgrade();
+
+    owner.into_dyn().drop_synchronously().unwrap();
+
+    // Completion must be published before returning, without waiting for a worker.
+    assert!(matches!(completion.result(), Some(Ok(()))));
+    assert!(memory.synced_on_releasing_task.load(Ordering::Acquire));
+    assert_eq!(memory.sync_count.load(Ordering::Acquire), 1);
+    assert!(weak.upgrade().is_none());
+    assert!(!memory.dropped.load(Ordering::Acquire));
+}
+
+#[ktest]
+fn nonfinal_synchronous_drop_keeps_filesystem_active() {
+    let memory = Probe::new();
+    let owner = FsHandle::new(memory.clone());
+    let completion = owner.shutdown_completion().clone();
+    let weak = owner.downgrade();
+
+    owner.clone().drop_synchronously().unwrap();
+
+    assert_eq!(memory.sync_count.load(Ordering::Acquire), 0);
+    assert!(completion.result().is_none());
+    assert!(Arc::ptr_eq(
+        owner.as_arc(),
+        weak.upgrade().unwrap().as_arc()
+    ));
+
+    // Opting into synchronous release must not change how other handles are dropped.
+    drop(owner);
+    completion.wait().unwrap();
+    assert_eq!(memory.sync_count.load(Ordering::Acquire), 1);
+    assert!(!memory.synced_on_releasing_task.load(Ordering::Acquire));
+    assert!(weak.upgrade().is_none());
 }
 
 #[ktest]
