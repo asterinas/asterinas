@@ -20,3 +20,4 @@ pub use types::{
     VSIP_VALID_MASK,
 };
 pub use vcpu::VcpuArchState;
+pub use guest_mode::RiscvGuestHooks;

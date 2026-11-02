@@ -25,7 +25,19 @@ impl ArchGuestMode {
         guest_mem: &GuestPhysMemSpace,
         hooks: &H,
     ) -> Result<Option<GuestExitInfo>> {
-        Ok(Some(GuestExitInfo::default()))
+        let guard = disable_local();
+        let arch = context.arch();
+
+        let root_paddr = guest_mem.root_paddr();
+        arch.update_hgatp(root_paddr);
+
+        hooks.pre_guest_run(arch, &guard);
+        let info = arch.enter_exit();
+        hooks.post_guest_run(arch, &guard);
+
+        drop(guard);
+
+        Ok(Some(info))
     }
 }
 
@@ -34,14 +46,19 @@ pub struct RiscvGuestHooks;
 
 impl GuestModeHooks for RiscvGuestHooks {
     fn pre_guest_run(&self, state: &mut VcpuArchState, _guard: &DisabledLocalIrqGuard) {
-        
+        state.flush_interrupts();
+
+        // Update HVIP CSR for current CPU
+        state.update_hvip();
     }
 
     fn post_guest_run(&self, state: &mut VcpuArchState, _guard: &DisabledLocalIrqGuard) {
-        
+        state.sync_interrupts();
     }
 
     fn has_kernel_event(&self) -> bool {
+        // We use `VcpuArchState`'s csr to determine whether a trap originated from the kernel.
+        // So we do not use this func
         false
     }
 }

@@ -50,5 +50,6 @@ pub use self::{
     temp_riscv_gpm::GuestPhysMemSpace,
     guest_mode::{GuestMode, GuestModeHooks, GuestReturnReason},
 };
+
 /// A guest physical address.
 pub type Gpaddr = usize;
