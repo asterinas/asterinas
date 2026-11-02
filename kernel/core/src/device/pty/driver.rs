@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_device::common::SysStr;
+
 use super::file::PtySlaveFile;
 use crate::{
     device::{
@@ -11,7 +13,7 @@ use crate::{
     },
     dispatch_ioctl,
     events::IoEvents,
-    fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
+    fs::file::PerOpenFileOps,
     prelude::*,
     process::signal::Pollee,
     util::{ioctl::RawIoctl, ring_buffer::RingBuffer},
@@ -112,7 +114,7 @@ impl TtyDriver for PtyDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L147>.
     const DEVICE_MAJOR_ID: u32 = 136;
 
-    fn devtmpfs_meta(&self, _index: u32) -> Option<DevtmpfsNodeMeta> {
+    fn devnode_name(&self, _index: u32) -> Option<SysStr> {
         None
     }
 

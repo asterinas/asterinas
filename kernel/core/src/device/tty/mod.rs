@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_device::common::SysStr;
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::sync::LocalIrqDisabled;
 
 use self::{line_discipline::LineDiscipline, termio::CFontOp};
 use crate::{
-    device::{Device, DeviceType},
+    device::{Device, DeviceType, tty::class::AnyTtyDevice},
     dispatch_ioctl,
     events::IoEvents,
     fs::{
@@ -20,6 +21,7 @@ use crate::{
     util::ioctl::RawIoctl,
 };
 
+mod class;
 mod device;
 mod driver;
 mod file;
@@ -31,15 +33,19 @@ mod serial;
 pub(super) mod termio;
 mod vt;
 
-pub(crate) use device::CONSOLE_DEVICE_ID;
+pub(crate) use class::console_device_id;
 pub(super) use driver::TtyDriver;
 pub(super) use flags::TtyFlags;
 
 pub(super) fn init_in_first_process() -> Result<()> {
+    class::register();
+
     hvc::init_in_first_process()?;
     serial::init_in_first_process()?;
     device::init_in_first_process()?;
     vt::init_in_first_process()?;
+
+    class::add_console_device()?;
 
     Ok(())
 }
@@ -362,10 +368,28 @@ impl<D: TtyDriver> Device for Tty<D> {
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
-        self.driver.devtmpfs_meta(self.index)
+        // TTYs that belong to the `tty` class get their device nodes from
+        // the device model. PTYs, which do not, have no device nodes.
+        None
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         D::open(self.weak_self.upgrade().unwrap())
+    }
+}
+
+impl<D: TtyDriver> AnyTtyDevice for Tty<D> {
+    fn devnode_name(&self) -> SysStr {
+        self.driver
+            .devnode_name(self.index)
+            .expect("a TTY in the `tty` class has a device node")
+    }
+
+    fn device_id(&self) -> DeviceId {
+        Device::id(self)
+    }
+
+    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+        Device::open(self)
     }
 }

@@ -3,16 +3,14 @@
 use alloc::format;
 
 use aster_console::AnyConsoleDevice;
+use aster_device::common::SysStr;
 use ostd::mm::Infallible;
 use spin::Once;
 
-use super::{Tty, TtyDriver};
+use super::{Tty, TtyDriver, class};
 use crate::{
-    device::{
-        registry::char,
-        tty::{file::TtyFile, termio::CTermios},
-    },
-    fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
+    device::tty::{file::TtyFile, termio::CTermios},
+    fs::file::PerOpenFileOps,
     prelude::*,
 };
 
@@ -26,8 +24,8 @@ impl TtyDriver for HvcDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/Documentation/admin-guide/devices.txt#L2936>.
     const DEVICE_MAJOR_ID: u32 = 229;
 
-    fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsNodeMeta> {
-        Some(DevtmpfsNodeMeta::new(format!("hvc{}", index)).unwrap())
+    fn devnode_name(&self, index: u32) -> Option<SysStr> {
+        Some(SysStr::from(format!("hvc{}", index)))
     }
 
     fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn PerOpenFileOps>> {
@@ -78,7 +76,7 @@ pub(super) fn init_in_first_process() -> Result<()> {
         let hvc0 = Tty::new(0, driver);
 
         HVC0.call_once(|| hvc0.clone());
-        char::register(hvc0.clone())?;
+        class::add_tty_device(hvc0.clone())?;
 
         virtio_console.register_callback(Box::leak(Box::new(
             move |mut reader: VmReader<Infallible>| {
