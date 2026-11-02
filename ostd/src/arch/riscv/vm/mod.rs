@@ -2,6 +2,8 @@
 
 //! Virtual machine (VM) support for RISC-V.
 
+pub(crate) mod gstage;
+pub(crate) mod guest_mode;
 mod context;
 mod cpu;
 mod csr;
