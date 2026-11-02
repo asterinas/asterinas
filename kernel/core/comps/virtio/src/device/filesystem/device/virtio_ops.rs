@@ -17,6 +17,7 @@ use super::{
     register_device,
 };
 use crate::{
+    bus::VirtioDevice,
     device::{
         VirtioDeviceError,
         filesystem::{
@@ -25,7 +26,7 @@ use crate::{
         },
     },
     queue::VirtQueue,
-    transport::{DeviceTransport, VirtioTransport},
+    transport::{DeviceStatus, VirtioTransport},
 };
 
 impl FileSystemDevice {
@@ -38,12 +39,12 @@ impl FileSystemDevice {
         fs_features.bits()
     }
 
-    /// Initializes one virtio-fs device from its virtio transport.
+    /// Initializes one virtio-fs device from its VirtIO bus device.
     pub(crate) fn init(
-        device_transport: DeviceTransport,
+        virtio_device: Arc<VirtioDevice>,
         negotiated_features: u64,
     ) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioFsConfig::new_manager(device_transport.payload().as_ref());
+        let config_manager = VirtioFsConfig::new_manager(virtio_device.payload().as_ref());
         let config = config_manager.read_config();
 
         let negotiated_features = FileSystemFeatures::from_bits_truncate(negotiated_features);
@@ -54,7 +55,7 @@ impl FileSystemDevice {
         // - Remaining queues: request queues.
         let request_queue_start_idx = if notify_supported { 2 } else { 1 };
 
-        let total_queues = device_transport.num_queues();
+        let total_queues = virtio_device.num_queues();
         if total_queues <= request_queue_start_idx {
             return Err(VirtioDeviceError::UnsupportedConfig);
         }
@@ -72,7 +73,7 @@ impl FileSystemDevice {
         let device = {
             let hiprio_queue = FsRequestQueue::new(Self::new_queue(
                 HIPRIO_QUEUE_INDEX,
-                device_transport.payload().as_ref(),
+                virtio_device.payload().as_ref(),
             )?);
 
             let mut request_queues = Vec::with_capacity(request_queue_count);
@@ -80,12 +81,12 @@ impl FileSystemDevice {
                 let queue_index = request_queue_start_idx + idx as u16;
                 request_queues.push(FsRequestQueue::new(Self::new_queue(
                     queue_index,
-                    device_transport.payload().as_ref(),
+                    virtio_device.payload().as_ref(),
                 )?));
             }
 
             Arc::new(Self::new(
-                device_transport,
+                virtio_device,
                 hiprio_queue,
                 request_queues,
                 config.parse_tag().to_string(),
@@ -97,7 +98,7 @@ impl FileSystemDevice {
         device.init_completion_taskless();
 
         // Register configuration callback.
-        let mut transport = device.transport.lock();
+        let transport = device.virtio_device.payload().as_ref();
         transport.register_cfg_callback(Box::new(|_: &TrapFrame| {
             debug!("Virtio-FS device configuration space changed");
         }))?;
@@ -134,8 +135,7 @@ impl FileSystemDevice {
             )?;
         }
 
-        transport.finish_init();
-        drop(transport);
+        transport.add_device_status(DeviceStatus::DRIVER_OK)?;
 
         register_device(device.clone());
 

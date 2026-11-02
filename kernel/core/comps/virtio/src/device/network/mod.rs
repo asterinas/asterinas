@@ -3,10 +3,11 @@
 mod buffer;
 mod config;
 pub mod device;
+pub(crate) mod driver;
 mod header;
 
 pub const DEVICE_NAME: &str = "Virtio-Net";
 
-pub(crate) fn init() {
+fn init() {
     buffer::init();
 }

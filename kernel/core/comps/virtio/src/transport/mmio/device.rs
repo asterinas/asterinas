@@ -9,7 +9,7 @@ use ostd::{
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaCoherent},
-    sync::{Mutex, RwLock},
+    sync::{Mutex, RwLock, WriteIrqDisabled},
     warn,
 };
 
@@ -38,7 +38,7 @@ pub(crate) struct VirtioMmioTransport {
     layout: SafePtr<VirtioMmioLayout, IoMem>,
     device: Arc<VirtioMmioDevice>,
     common_device: MmioCommonDevice,
-    multiplex: Arc<RwLock<MultiplexIrq>>,
+    multiplex: Arc<RwLock<MultiplexIrq, WriteIrqDisabled>>,
     config_lock: Mutex<()>,
 }
 
@@ -109,6 +109,11 @@ impl VirtioTransport for VirtioMmioTransport {
         field_ptr!(&self.layout, VirtioMmioLayout, vendor_id)
             .read_once()
             .unwrap()
+    }
+
+    fn clear_callbacks(&self) {
+        let callbacks = self.multiplex.write().take_callbacks();
+        drop(callbacks);
     }
 
     fn device_type(&self) -> VirtioDeviceType {
