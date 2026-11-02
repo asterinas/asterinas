@@ -46,12 +46,19 @@ if [ -b /dev/vdb ]; then
     mount -t exfat /dev/vdb /exfat
 fi
 
-# The F2FS regression image is attached as /dev/vdd by the regression-test
-# QEMU configuration. Only mount it when the regression test tree is present.
-if [ -d /test/fs ] && [ -b /dev/vdd ]; then
-    mkdir -p /f2fs
-    mount -t f2fs /dev/vdd /f2fs
-fi
+# Mount any F2FS volume among the virtio disks. The F2FS magic number
+# 0xF2F52010 is stored little-endian at byte offset 1024. Probing the magic
+# keeps the mount independent of device ordering (ext2/exfat/ltp/xfstests
+# disks may take the earlier /dev/vdX letters).
+for dev in /dev/vd*; do
+    [ -b "$dev" ] || continue
+    magic=$(dd if="$dev" bs=1 skip=1024 count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
+    if [ "$magic" = "1020f5f2" ]; then
+        mkdir -p /f2fs
+        mount -t f2fs "$dev" /f2fs
+        break
+    fi
+done
 
 # When the init process starts,
 # it does not have a process group, session, or controlling terminal.

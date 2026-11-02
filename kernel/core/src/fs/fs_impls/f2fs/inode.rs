@@ -38,7 +38,7 @@ use super::{
         DENTRY_BITMAP_SIZE, DENTRY_RESERVED_SIZE, DENTRY_SIZE, F2FS_BLKSIZE, F2FS_DATA_EXIST,
         F2FS_EXTRA_ATTR, F2FS_FEATURE_FLEXIBLE_INLINE_XATTR, F2FS_FEATURE_INODE_CRTIME,
         F2FS_INLINE_DATA, F2FS_INLINE_DENTRY, F2FS_INLINE_DOTS, F2FS_INLINE_XATTR,
-        INODE_ADDR_OFFSET, INODE_NID_OFFSET, NIDS_PER_INODE, NODE_FOOTER_OFFSET,
+        INODE_ADDR_OFFSET, INODE_NID_OFFSET, NAME_MAX, NIDS_PER_INODE, NODE_FOOTER_OFFSET,
         NR_DENTRY_IN_BLOCK, SLOT_LEN, dentry_hash, inode_type_from_dentry, inode_type_from_mode,
         read_u16, read_u32, read_u64, test_bit_le,
     },
@@ -54,8 +54,8 @@ use crate::{
     time::clocks::RealTimeCoarseClock,
 };
 
-/// Maximum length of an F2FS file name.
-const NAME_MAX: usize = 255;
+/// Upper bound on the directory size this driver is willing to scan.
+const MAX_DIRECTORY_SIZE: u64 = 1 << 30;
 
 /// A decoded F2FS timestamp.
 #[derive(Clone, Copy, Debug, Default)]
@@ -91,21 +91,6 @@ fn copy_to_writer(writer: &mut VmWriter, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Reads a VFS input buffer into a byte vector.
-fn read_to_vec(reader: &mut VmReader) -> Result<Vec<u8>> {
-    let len = reader.remain();
-    let mut buf = vec![0u8; len];
-    if len == 0 {
-        return Ok(buf);
-    }
-    let mut writer = VmWriter::from(buf.as_mut_slice()).to_fallible();
-    let read = reader
-        .read_fallible(&mut writer)
-        .map_err(|_| Error::with_message(Errno::EFAULT, "failed to read the input buffer"))?;
-    buf.truncate(read);
-    Ok(buf)
-}
-
 fn write_u16(buf: &mut [u8], offset: usize, value: u16) {
     buf[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
 }
@@ -116,6 +101,16 @@ fn write_u32(buf: &mut [u8], offset: usize, value: u32) {
 
 fn write_u64(buf: &mut [u8], offset: usize, value: u64) {
     buf[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+/// Returns the largest file size representable by the address tree.
+fn max_file_size(addr_count: usize) -> u64 {
+    let per_block = ADDRS_PER_BLOCK as u64;
+    let blocks = addr_count as u64
+        + 2 * per_block
+        + 2 * per_block * per_block
+        + per_block * per_block * per_block;
+    blocks.saturating_mul(F2FS_BLKSIZE as u64)
 }
 
 /// Returns the POSIX type bits of an inode type.
@@ -313,6 +308,26 @@ impl Inode {
             0
         };
 
+        let size = read_u64(node.as_slice(), 16);
+        let max_size = max_file_size(DEF_ADDRS_PER_INODE - extra_isize_addrs - inline_xattr_addrs);
+        if size > max_size {
+            return_errno_with_message!(Errno::EIO, "the F2FS inode size is out of range");
+        }
+        if type_ == InodeType::Dir {
+            if inline_flags & F2FS_INLINE_DENTRY != 0 {
+                let capacity = (DEF_ADDRS_PER_INODE
+                    - extra_isize_addrs
+                    - inline_xattr_addrs
+                    - DEF_INLINE_RESERVED_SIZE)
+                    * 4;
+                if size == 0 || size > capacity as u64 {
+                    return_errno_with_message!(Errno::EIO, "invalid inline directory size");
+                }
+            } else if !size.is_multiple_of(F2FS_BLKSIZE as u64) || size > MAX_DIRECTORY_SIZE {
+                return_errno_with_message!(Errno::EIO, "the F2FS directory size is invalid");
+            }
+        }
+
         let crtime = if fs.super_block().feature & F2FS_FEATURE_INODE_CRTIME != 0
             && inline_flags & F2FS_EXTRA_ATTR != 0
             && extra_isize_bytes >= 24
@@ -333,7 +348,7 @@ impl Inode {
             uid: read_u32(node.as_slice(), 4),
             gid: read_u32(node.as_slice(), 8),
             links: read_u32(node.as_slice(), 12),
-            size: read_u64(node.as_slice(), 16),
+            size,
             blocks: read_u64(node.as_slice(), 24),
             atime: Timestamp {
                 secs: read_u64(node.as_slice(), 32),
@@ -363,7 +378,9 @@ impl Inode {
             state: RwMutex::new(state),
             extension: Extension::new(),
         });
-        fs.cache_inode(ino, Arc::downgrade(&inode));
+        if let Some(existing) = fs.cache_inode(ino, Arc::downgrade(&inode)) {
+            return Ok(existing);
+        }
 
         Ok(inode)
     }
@@ -375,7 +392,7 @@ impl Inode {
         type_: InodeType,
         mode: InodeMode,
         parent_ino: u32,
-    ) -> Result<(u32, u32)> {
+    ) -> Result<(u32, u32, Option<u32>)> {
         let ino = fs.find_free_nid(state)?;
         let (_, node_addr) = fs.alloc_node(state, ino, Some(ino))?;
         state.valid_inode_count = state.valid_inode_count.saturating_add(1);
@@ -411,8 +428,10 @@ impl Inode {
             fs.checkpoint().version,
         );
 
+        let mut data_block = None;
         if type_ == InodeType::Dir {
             let data_addr = fs.alloc_block(state, BlockKind::Data)?;
+            data_block = Some(data_addr);
             write_u32(node.as_mut_slice(), INODE_ADDR_OFFSET, data_addr);
             write_u64(node.as_mut_slice(), 16, F2FS_BLKSIZE as u64);
             write_u64(node.as_mut_slice(), 24, 2);
@@ -421,11 +440,29 @@ impl Inode {
             let mut block = zeroed_block();
             write_dentry(block.as_mut_slice(), 0, ".", ino, 2)?;
             write_dentry(block.as_mut_slice(), 1, "..", parent_ino, 2)?;
-            fs.write_block(data_addr, &block)?;
+            fs.write_data_block(data_addr, &block)?;
         }
 
-        fs.write_block(node_addr, &node)?;
-        Ok((ino, node_addr))
+        fs.write_data_block(node_addr, &node)?;
+        Ok((ino, node_addr, data_block))
+    }
+
+    /// Rolls back a freshly created inode when linking it into the parent
+    /// directory fails.
+    fn discard_new_inode(
+        fs: &Arc<F2fs>,
+        alloc: &mut WriteState,
+        node_addr: u32,
+        data_addr: Option<u32>,
+        ino: u32,
+    ) -> Result<()> {
+        if let Some(data_addr) = data_addr {
+            fs.free_block(alloc, data_addr)?;
+        }
+        fs.free_block(alloc, node_addr)?;
+        fs.free_nid(ino)?;
+        alloc.valid_inode_count = alloc.valid_inode_count.saturating_sub(1);
+        Ok(())
     }
 
     /// Returns the filesystem that owns this inode.
@@ -478,7 +515,7 @@ impl Inode {
     /// Persists the inode node.
     fn write_back(fs: &Arc<F2fs>, state: &mut InodeState) -> Result<()> {
         state.sync_fields_to_node();
-        fs.write_block(state.node_addr, &state.node)
+        fs.write_data_block(state.node_addr, &state.node)
     }
 
     /// Reads file data starting at `offset` into `writer`.
@@ -513,7 +550,7 @@ impl Inode {
             if addr == 0 || addr == u32::MAX {
                 copy_to_writer(writer, &zeros[block_offset..block_offset + len])?;
             } else {
-                let block = fs.read_block(addr)?;
+                let block = fs.read_data_block(addr)?;
                 copy_to_writer(writer, &block[block_offset..block_offset + len])?;
             }
             copied += len;
@@ -538,9 +575,18 @@ impl Inode {
             materialize_inline_data(&fs, &mut alloc, &mut state)?;
         }
 
+        let end = offset
+            .checked_add(data.len())
+            .ok_or_else(|| Error::with_message(Errno::EFBIG, "F2FS write offset overflow"))?;
+        if end as u64 > max_file_size(state.addr_count()) {
+            return_errno_with_message!(Errno::EFBIG, "the F2FS file is too large");
+        }
+
         let mut done = 0;
         while done < data.len() {
-            let file_offset = offset + done;
+            let file_offset = offset
+                .checked_add(done)
+                .ok_or_else(|| Error::with_message(Errno::EFBIG, "F2FS write offset overflow"))?;
             let index = file_offset / F2FS_BLKSIZE;
             let block_offset = file_offset % F2FS_BLKSIZE;
             let len = (F2FS_BLKSIZE - block_offset).min(data.len() - done);
@@ -553,15 +599,14 @@ impl Inode {
                 state.blocks = state.blocks.saturating_add(1);
                 (new_addr, zeroed_block())
             } else {
-                (addr, fs.read_block(addr)?)
+                (addr, fs.read_data_block(addr)?)
             };
 
             block[block_offset..block_offset + len].copy_from_slice(&data[done..done + len]);
-            fs.write_block(block_addr, &block)?;
+            fs.write_data_block(block_addr, &block)?;
             done += len;
         }
 
-        let end = offset + done;
         if end as u64 > state.size {
             state.size = end as u64;
         }
@@ -571,9 +616,29 @@ impl Inode {
     }
 
     /// Writes data read from a VFS input buffer.
+    ///
+    /// The input is consumed in bounded chunks so that a large `write` does
+    /// not size a kernel allocation from the user-supplied length.
     pub(super) fn write_from_reader(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        let data = read_to_vec(reader)?;
-        self.write_bytes(offset, &data)
+        const CHUNK: usize = 64 * 1024;
+
+        let mut buf = vec![0u8; CHUNK];
+        let mut written = 0;
+        while reader.remain() > 0 {
+            let want = reader.remain().min(CHUNK);
+            let mut writer = VmWriter::from(&mut buf[..want]).to_fallible();
+            let read = reader
+                .read_fallible(&mut writer)
+                .map_err(|_| Error::with_message(Errno::EFAULT, "failed to read the input"))?;
+            if read == 0 {
+                break;
+            }
+            let chunk_offset = offset
+                .checked_add(written)
+                .ok_or_else(|| Error::with_message(Errno::EFBIG, "F2FS write offset overflow"))?;
+            written += self.write_bytes(chunk_offset, &buf[..read])?;
+        }
+        Ok(written)
     }
 
     /// Changes the size of the file, freeing blocks beyond the new end.
@@ -589,6 +654,9 @@ impl Inode {
             return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
         }
 
+        if new_size as u64 > max_file_size(state.addr_count()) {
+            return_errno_with_message!(Errno::EFBIG, "the F2FS file is too large");
+        }
         if state.has_inline_data() {
             if new_size == 0 {
                 state.inline_flags &= !(F2FS_INLINE_DATA | F2FS_DATA_EXIST);
@@ -708,7 +776,7 @@ impl Inode {
                 if addr == 0 || addr == u32::MAX {
                     continue;
                 }
-                let block = fs.read_block(addr)?;
+                let block = fs.read_data_block(addr)?;
                 Self::parse_dentry_region(
                     block.as_slice(),
                     0,
@@ -853,7 +921,7 @@ impl Inode {
             TimestampKind::Ctime => state.ctime = stamp,
         }
         state.sync_fields_to_node();
-        fs.write_block(state.node_addr, &state.node)
+        fs.write_data_block(state.node_addr, &state.node)
     }
 
     /// Creates a child inode and links it into this directory.
@@ -883,15 +951,19 @@ impl Inode {
                 return_errno_with_message!(Errno::EEXIST, "the directory entry exists");
             }
 
-            let (child_ino, _) = Self::build_new_inode(&fs, &mut alloc, type_, mode, self.ino)?;
-            insert_dentry(
+            let (child_ino, node_addr, data_addr) =
+                Self::build_new_inode(&fs, &mut alloc, type_, mode, self.ino)?;
+            if let Err(err) = insert_dentry(
                 &fs,
                 &mut alloc,
                 &mut state,
                 name,
                 child_ino,
                 dentry_file_type(type_),
-            )?;
+            ) {
+                let _ = Self::discard_new_inode(&fs, &mut alloc, node_addr, data_addr, child_ino);
+                return Err(err);
+            }
             if type_ == InodeType::Dir {
                 state.links = state.links.saturating_add(1);
             }
@@ -918,25 +990,41 @@ impl Inode {
             return_errno_with_message!(Errno::EINVAL, "cannot remove a dot entry");
         }
 
+        // Validate the child before taking the parent write lock. Loading an
+        // inode while holding a parent lock would invert the lock order, and a
+        // corrupted entry pointing back at this directory would self-deadlock.
+        let entry = {
+            let state = self.state.read();
+            Self::entries_locked(&fs, &state)?
+                .into_iter()
+                .find(|entry| entry.name == name)
+                .ok_or_else(|| Error::with_message(Errno::ENOENT, "no such entry"))?
+        };
+        if entry.ino == self.ino {
+            return_errno_with_message!(Errno::EIO, "directory entry points at its parent");
+        }
+        if is_dir && entry.type_ != InodeType::Dir {
+            return_errno_with_message!(Errno::ENOTDIR, "the entry is not a directory");
+        }
+        if !is_dir && entry.type_ == InodeType::Dir {
+            return_errno_with_message!(Errno::EISDIR, "the entry is a directory");
+        }
+        if is_dir {
+            let child = Inode::load(&fs, entry.ino)?;
+            if !child.is_empty_directory()? {
+                return_errno_with_message!(Errno::ENOTEMPTY, "the directory is not empty");
+            }
+        }
+
         let child_ino = {
             let mut alloc = fs.write_state();
             let mut state = self.state.write();
-            let entry = Self::entries_locked(&fs, &state)?
+            let current = Self::entries_locked(&fs, &state)?
                 .into_iter()
                 .find(|entry| entry.name == name)
                 .ok_or_else(|| Error::with_message(Errno::ENOENT, "no such entry"))?;
-
-            if is_dir && entry.type_ != InodeType::Dir {
-                return_errno_with_message!(Errno::ENOTDIR, "the entry is not a directory");
-            }
-            if !is_dir && entry.type_ == InodeType::Dir {
-                return_errno_with_message!(Errno::EISDIR, "the entry is a directory");
-            }
-            if is_dir {
-                let child = Inode::load(&fs, entry.ino)?;
-                if !child.is_empty_directory()? {
-                    return_errno_with_message!(Errno::ENOTEMPTY, "the directory is not empty");
-                }
+            if current.ino != entry.ino {
+                return_errno_with_message!(Errno::EAGAIN, "the entry changed during removal");
             }
 
             remove_dentry(&fs, &mut alloc, &mut state, name)?
@@ -967,21 +1055,27 @@ impl Inode {
             return_errno_with_message!(Errno::EROFS, "the F2FS volume is mounted read-only");
         }
 
-        let mut alloc = fs.write_state();
-        let mut state = self.state.write();
-        if state.type_ != InodeType::Dir {
-            state.links = state.links.saturating_sub(1);
-            if state.links > 0 {
-                state.touch();
-                return Self::write_back(&fs, &mut state);
+        {
+            let mut alloc = fs.write_state();
+            let mut state = self.state.write();
+            if state.type_ != InodeType::Dir {
+                state.links = state.links.saturating_sub(1);
+                if state.links > 0 {
+                    state.touch();
+                    return Self::write_back(&fs, &mut state);
+                }
             }
+
+            let node_addr = state.node_addr;
+            free_all_blocks(&fs, &mut alloc, &mut state)?;
+            fs.free_block(&mut alloc, node_addr)?;
+            fs.free_nid(self.ino)?;
+            alloc.valid_inode_count = alloc.valid_inode_count.saturating_sub(1);
         }
 
-        let node_addr = state.node_addr;
-        free_all_blocks(&fs, &mut alloc, &mut state)?;
-        fs.free_block(&mut alloc, node_addr)?;
-        fs.free_nid(self.ino)?;
-        alloc.valid_inode_count = alloc.valid_inode_count.saturating_sub(1);
+        // Drop the cached object so that a later inode number reuse cannot
+        // alias the freed inode.
+        fs.evict_inode(self.ino);
         Ok(())
     }
 }
@@ -1082,9 +1176,9 @@ impl Inode {
                 if addr == 0 || addr == u32::MAX {
                     continue;
                 }
-                let mut block = fs.read_block(addr)?;
+                let mut block = fs.read_data_block(addr)?;
                 if update_block_entry_ino(block.as_mut_slice(), "..", new_parent) {
-                    fs.write_block(addr, &block)?;
+                    fs.write_data_block(addr, &block)?;
                     break;
                 }
             }
@@ -1118,52 +1212,94 @@ impl Inode {
             return Ok(());
         }
 
-        let mut alloc = fs.write_state();
-        let source_ino;
-        let source_is_dir;
-        let mut to_free = None;
+        // Validate the source and target without holding the parent write
+        // locks: loading a child inode under a parent lock could invert lock
+        // order or deadlock on a corrupted entry pointing back at its parent.
+        let source = {
+            let state = self.state.read();
+            Self::entries_locked(&fs, &state)?
+                .into_iter()
+                .find(|entry| entry.name == old_name)
+                .ok_or_else(|| Error::with_message(Errno::ENOENT, "no such entry"))?
+        };
+        if source.ino == self.ino || source.ino == new_dir.ino {
+            return_errno_with_message!(Errno::EIO, "directory entry points at its parent");
+        }
+        let source_ino = source.ino;
+        let source_type = source.type_;
+        let source_is_dir = source_type == InodeType::Dir;
 
+        let target = {
+            let state = new_dir.state.read();
+            Self::entries_locked(&fs, &state)?
+                .into_iter()
+                .find(|entry| entry.name == new_name)
+        };
+        if let Some(target) = &target {
+            if target.ino == source.ino {
+                return Ok(());
+            }
+            if target.ino == self.ino || target.ino == new_dir.ino {
+                return_errno_with_message!(Errno::EIO, "directory entry points at its parent");
+            }
+            if !replace {
+                return_errno_with_message!(Errno::EEXIST, "the new path exists");
+            }
+        }
+        let to_free = match &target {
+            Some(target) => Self::check_rename_target(&fs, target, source_is_dir)?,
+            None => None,
+        };
+
+        let mut alloc = fs.write_state();
         if self.ino == new_dir.ino {
             let mut state = self.state.write();
-            let source = Self::entries_locked(&fs, &state)?
+            let current_source = Self::entries_locked(&fs, &state)?
                 .into_iter()
                 .find(|entry| entry.name == old_name)
                 .ok_or_else(|| Error::with_message(Errno::ENOENT, "no such entry"))?;
-            source_ino = source.ino;
-            source_is_dir = source.type_ == InodeType::Dir;
-
-            let target = Self::entries_locked(&fs, &state)?
+            let current_target = Self::entries_locked(&fs, &state)?
                 .into_iter()
                 .find(|entry| entry.name == new_name);
-            if let Some(target) = &target {
-                if target.ino == source.ino {
-                    return Ok(());
-                }
-                if !replace {
-                    return_errno_with_message!(Errno::EEXIST, "the new path exists");
-                }
-                to_free = Self::check_rename_target(&fs, target, source_is_dir)?;
-            }
+            Self::check_rename_consistency(&current_source, &current_target, &source, &target)?;
 
             remove_dentry(&fs, &mut alloc, &mut state, old_name)?;
-            if target.is_some() {
+            if current_target.is_some() {
                 remove_dentry(&fs, &mut alloc, &mut state, new_name)?;
             }
-            insert_dentry(
+            if let Err(err) = insert_dentry(
                 &fs,
                 &mut alloc,
                 &mut state,
                 new_name,
                 source_ino,
-                dentry_file_type(source.type_),
-            )?;
+                dentry_file_type(source_type),
+            ) {
+                let _ = insert_dentry(
+                    &fs,
+                    &mut alloc,
+                    &mut state,
+                    old_name,
+                    source_ino,
+                    dentry_file_type(source_type),
+                );
+                if let Some(target) = &current_target {
+                    let _ = insert_dentry(
+                        &fs,
+                        &mut alloc,
+                        &mut state,
+                        new_name,
+                        target.ino,
+                        dentry_file_type(target.type_),
+                    );
+                }
+                return Err(err);
+            }
 
-            // The parent loses a subdirectory if the source or the replaced
-            // entry was a directory; it gains one back for the source.
             if source_is_dir {
                 state.links = state.links.saturating_sub(1);
             }
-            if target.as_ref().map(|t| t.type_ == InodeType::Dir) == Some(true) {
+            if current_target.as_ref().map(|t| t.type_ == InodeType::Dir) == Some(true) {
                 state.links = state.links.saturating_sub(1);
             }
             if source_is_dir {
@@ -1185,44 +1321,53 @@ impl Inode {
             let old_state: &mut InodeState = old_state;
             let new_state: &mut InodeState = new_state;
 
-            let source = Self::entries_locked(&fs, old_state)?
+            let current_source = Self::entries_locked(&fs, old_state)?
                 .into_iter()
                 .find(|entry| entry.name == old_name)
                 .ok_or_else(|| Error::with_message(Errno::ENOENT, "no such entry"))?;
-            source_ino = source.ino;
-            source_is_dir = source.type_ == InodeType::Dir;
-
-            let target = Self::entries_locked(&fs, new_state)?
+            let current_target = Self::entries_locked(&fs, new_state)?
                 .into_iter()
                 .find(|entry| entry.name == new_name);
-            if let Some(target) = &target {
-                if target.ino == source.ino {
-                    return Ok(());
-                }
-                if !replace {
-                    return_errno_with_message!(Errno::EEXIST, "the new path exists");
-                }
-                to_free = Self::check_rename_target(&fs, target, source_is_dir)?;
-            }
+            Self::check_rename_consistency(&current_source, &current_target, &source, &target)?;
 
             remove_dentry(&fs, &mut alloc, old_state, old_name)?;
-            if target.is_some() {
+            if current_target.is_some() {
                 remove_dentry(&fs, &mut alloc, new_state, new_name)?;
             }
-            insert_dentry(
+            if let Err(err) = insert_dentry(
                 &fs,
                 &mut alloc,
                 new_state,
                 new_name,
                 source_ino,
-                dentry_file_type(source.type_),
-            )?;
+                dentry_file_type(source_type),
+            ) {
+                let _ = insert_dentry(
+                    &fs,
+                    &mut alloc,
+                    old_state,
+                    old_name,
+                    source_ino,
+                    dentry_file_type(source_type),
+                );
+                if let Some(target) = &current_target {
+                    let _ = insert_dentry(
+                        &fs,
+                        &mut alloc,
+                        new_state,
+                        new_name,
+                        target.ino,
+                        dentry_file_type(target.type_),
+                    );
+                }
+                return Err(err);
+            }
 
             if source_is_dir {
                 old_state.links = old_state.links.saturating_sub(1);
                 new_state.links = new_state.links.saturating_add(1);
             }
-            if target.as_ref().map(|t| t.type_ == InodeType::Dir) == Some(true) {
+            if current_target.as_ref().map(|t| t.type_ == InodeType::Dir) == Some(true) {
                 new_state.links = new_state.links.saturating_sub(1);
             }
             old_state.touch();
@@ -1241,6 +1386,26 @@ impl Inode {
             target.free_if_unlinked()?;
         }
 
+        Ok(())
+    }
+
+    /// Verifies that the directory entries still match the pre-checked state.
+    fn check_rename_consistency(
+        current_source: &DirEntry,
+        current_target: &Option<DirEntry>,
+        source: &DirEntry,
+        target: &Option<DirEntry>,
+    ) -> Result<()> {
+        let target_matches = current_target
+            .as_ref()
+            .map(|entry| (entry.ino, entry.type_))
+            == target.as_ref().map(|entry| (entry.ino, entry.type_));
+        if current_source.ino != source.ino
+            || current_source.type_ != source.type_
+            || !target_matches
+        {
+            return_errno_with_message!(Errno::EAGAIN, "the directory changed during rename");
+        }
         Ok(())
     }
 
@@ -1316,7 +1481,7 @@ fn node_for_update(
             state_owner(state),
             state.cp_ver,
         );
-        fs.write_block(addr, &block)?;
+        fs.write_data_block(addr, &block)?;
         state.set_nid(nid_index, new_nid);
         state.blocks = state.blocks.saturating_add(1);
         return Ok((new_nid, addr, block));
@@ -1414,14 +1579,14 @@ fn set_data_addr(
     if index < ADDRS_PER_BLOCK {
         let (nid, block_addr, mut block) = node_for_update(fs, alloc, state, 0)?;
         write_u32(block.as_mut_slice(), index * 4, addr);
-        fs.write_block(block_addr, &block)?;
+        fs.write_data_block(block_addr, &block)?;
         return Ok((nid, index as u16));
     }
     index -= ADDRS_PER_BLOCK;
     if index < ADDRS_PER_BLOCK {
         let (nid, block_addr, mut block) = node_for_update(fs, alloc, state, 1)?;
         write_u32(block.as_mut_slice(), index * 4, addr);
-        fs.write_block(block_addr, &block)?;
+        fs.write_data_block(block_addr, &block)?;
         return Ok((nid, index as u16));
     }
     index -= ADDRS_PER_BLOCK;
@@ -1458,9 +1623,9 @@ fn set_indirect_addr(
         let (nid, block_addr) = fs.alloc_node(alloc, state_owner(state), None)?;
         let mut block = zeroed_block();
         init_node_footer(block.as_mut_slice(), nid, state_owner(state), state.cp_ver);
-        fs.write_block(block_addr, &block)?;
+        fs.write_data_block(block_addr, &block)?;
         write_u32(indirect.as_mut_slice(), slot * 4, nid);
-        fs.write_block(indirect_addr, &indirect)?;
+        fs.write_data_block(indirect_addr, &indirect)?;
         state.blocks = state.blocks.saturating_add(1);
         (nid, block_addr, block)
     } else {
@@ -1471,7 +1636,7 @@ fn set_indirect_addr(
 
     let ofs = index % ADDRS_PER_BLOCK;
     write_u32(dnode.as_mut_slice(), ofs * 4, addr);
-    fs.write_block(dnode_addr, &dnode)?;
+    fs.write_data_block(dnode_addr, &dnode)?;
     Ok((dnode_nid, ofs as u16))
 }
 
@@ -1490,16 +1655,16 @@ fn set_double_indirect_addr(
         let (nid, block_addr) = fs.alloc_node(alloc, state_owner(state), None)?;
         let mut block = zeroed_block();
         init_node_footer(block.as_mut_slice(), nid, state_owner(state), state.cp_ver);
-        fs.write_block(block_addr, &block)?;
+        fs.write_data_block(block_addr, &block)?;
         write_u32(double.as_mut_slice(), slot * 4, nid);
-        fs.write_block(double_addr, &double)?;
+        fs.write_data_block(double_addr, &double)?;
         state.blocks = state.blocks.saturating_add(1);
         indirect_nid = nid;
     }
 
-    // Reuse the indirect-node path for the remaining two levels by storing
-    // the selected indirect node into an unused node slot is not possible;
-    // instead resolve it directly.
+    // `set_indirect_addr()` resolves an indirect node reachable from an
+    // `i_nid` slot. Here the second level is not stored in the inode, so the
+    // child nid is looked up in the NAT directly before updating its dnode.
     let rest = index % per_indirect;
     let indirect_addr = fs.lookup_nat(indirect_nid)?.block_addr;
     let mut indirect = fs.read_node(indirect_nid)?;
@@ -1509,9 +1674,9 @@ fn set_double_indirect_addr(
         let (nid, block_addr) = fs.alloc_node(alloc, state_owner(state), None)?;
         let mut block = zeroed_block();
         init_node_footer(block.as_mut_slice(), nid, state_owner(state), state.cp_ver);
-        fs.write_block(block_addr, &block)?;
+        fs.write_data_block(block_addr, &block)?;
         write_u32(indirect.as_mut_slice(), dnode_slot * 4, nid);
-        fs.write_block(indirect_addr, &indirect)?;
+        fs.write_data_block(indirect_addr, &indirect)?;
         state.blocks = state.blocks.saturating_add(1);
         (nid, block_addr, block)
     } else {
@@ -1522,7 +1687,7 @@ fn set_double_indirect_addr(
 
     let ofs = rest % ADDRS_PER_BLOCK;
     write_u32(dnode.as_mut_slice(), ofs * 4, addr);
-    fs.write_block(dnode_addr, &dnode)?;
+    fs.write_data_block(dnode_addr, &dnode)?;
     Ok((dnode_nid, ofs as u16))
 }
 
@@ -1578,7 +1743,7 @@ fn clear_dnode_addr(fs: &Arc<F2fs>, nid: u32, index: usize) -> Result<u32> {
     let old = read_u32(block.as_slice(), index * 4);
     if old != 0 {
         write_u32(block.as_mut_slice(), index * 4, 0);
-        fs.write_block(addr, &block)?;
+        fs.write_data_block(addr, &block)?;
     }
     Ok(old)
 }
@@ -1775,7 +1940,7 @@ fn materialize_inline_data(
     let data_addr = fs.alloc_block(alloc, BlockKind::Data)?;
     let (nid, ofs) = set_data_addr(fs, alloc, state, 0, data_addr)?;
     fs.write_summary(data_addr, nid, ofs, BlockKind::Data)?;
-    fs.write_block(data_addr, &block)?;
+    fs.write_data_block(data_addr, &block)?;
 
     state.blocks = state.blocks.saturating_add(1);
     state.inline_flags &= !(F2FS_INLINE_DATA | F2FS_DATA_EXIST);
@@ -1836,7 +2001,7 @@ fn convert_inline_dir(
             );
         }
     }
-    fs.write_block(data_addr, &block)?;
+    fs.write_data_block(data_addr, &block)?;
     Inode::write_back(fs, state)
 }
 
@@ -1859,10 +2024,10 @@ fn insert_dentry(
         if addr == 0 || addr == u32::MAX {
             continue;
         }
-        let mut block = fs.read_block(addr)?;
+        let mut block = fs.read_data_block(addr)?;
         if find_free_slots(block.as_slice(), name.len().div_ceil(SLOT_LEN)).is_some() {
             insert_into_block(block.as_mut_slice(), name, ino, file_type)?;
-            fs.write_block(addr, &block)?;
+            fs.write_data_block(addr, &block)?;
             return Ok(());
         }
     }
@@ -1874,7 +2039,7 @@ fn insert_dentry(
     state.size = state.size.saturating_add(F2FS_BLKSIZE as u64);
     let mut block = zeroed_block();
     insert_into_block(block.as_mut_slice(), name, ino, file_type)?;
-    fs.write_block(new_addr, &block)?;
+    fs.write_data_block(new_addr, &block)?;
     Inode::write_back(fs, state)
 }
 
@@ -1895,7 +2060,7 @@ fn remove_dentry(
         if addr == 0 || addr == u32::MAX {
             continue;
         }
-        let mut block = fs.read_block(addr)?;
+        let mut block = fs.read_data_block(addr)?;
         let bitmap_size = DENTRY_BITMAP_SIZE;
         let entry_base = bitmap_size + DENTRY_RESERVED_SIZE;
         let name_base = entry_base + NR_DENTRY_IN_BLOCK * DENTRY_SIZE;
@@ -1918,7 +2083,7 @@ fn remove_dentry(
                 for bit in slot..slot + slots {
                     clear_dentry_bit(block.as_mut_slice(), bit);
                 }
-                fs.write_block(addr, &block)?;
+                fs.write_data_block(addr, &block)?;
                 return Ok(Some(ino));
             }
             slot += slots;

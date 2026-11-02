@@ -8,10 +8,10 @@
 //! (regular dentry blocks and inline dentries).
 //!
 //! Reads go straight to the block device. Writes are applied in place: the
-//! driver allocates blocks from the SIT, updates NAT/SIT/SSA metadata
-//! immediately, and leaves the checkpoint untouched (it remains valid because
-//! all mutable metadata areas are updated in place). There is no garbage
-//! collection or log-structured relocation yet.
+//! driver allocates blocks from the SIT and updates NAT/SIT/SSA metadata
+//! immediately. `sync` rewrites the counters and checksum of the selected
+//! checkpoint block in place; it does not build a new checkpoint pack. There
+//! is no garbage collection or log-structured relocation yet.
 //!
 //! # Locking
 //!
@@ -25,6 +25,7 @@ use core::sync::atomic::Ordering;
 use aster_block::{BlockDevice, SECTOR_SIZE};
 use device_id::DeviceId;
 use ostd::mm::VmIo;
+use spin::once::Once;
 
 use super::{
     alloc::WriteState,
@@ -47,28 +48,19 @@ pub(super) fn zeroed_block() -> Block {
 }
 
 /// Top-level handle for a mounted F2FS volume.
-#[derive(Debug)]
 pub(crate) struct F2fs {
     block_device: Arc<dyn BlockDevice>,
     super_block: SuperBlock,
     checkpoint: Checkpoint,
     pub(super) checkpoint_address: u32,
     nat_journal: BTreeMap<u32, NatEntry>,
+    /// Cached at mount time so that `root_inode()` cannot fail later.
+    root: Once<Arc<Inode>>,
     pub(super) alloc_state: Mutex<WriteState>,
     inodes: RwLock<BTreeMap<u32, Weak<Inode>>>,
     flags: AtomicFsFlags,
     fs_event_subscriber_stats: FsEventSubscriberStats,
     self_ref: Weak<F2fs>,
-}
-
-impl Debug for WriteState {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("WriteState")
-            .field("segments", &self.sit.len())
-            .field("free_blocks", &self.free_blocks)
-            .field("next_free_nid", &self.next_free_nid)
-            .finish()
-    }
 }
 
 impl F2fs {
@@ -100,7 +92,7 @@ impl F2fs {
             .inspect_err(|err| {
                 error!("f2fs: failed to select a checkpoint: {:?}", err);
             })?;
-        let nat_journal = load_nat_journal(&block_device, super_block.cp_blkaddr, &checkpoint)
+        let nat_journal = load_nat_journal(&block_device, checkpoint_address, &checkpoint)
             .inspect_err(|err| {
                 error!("f2fs: failed to load the NAT journal: {:?}", err);
             })?;
@@ -115,6 +107,7 @@ impl F2fs {
             checkpoint,
             checkpoint_address,
             nat_journal,
+            root: Once::new(),
             alloc_state: Mutex::new(write_state),
             inodes: RwLock::new(BTreeMap::new()),
             flags: AtomicFsFlags::new(flags),
@@ -122,10 +115,12 @@ impl F2fs {
             self_ref: weak_self.clone(),
         });
 
-        // Fail the mount early if the root inode cannot be parsed.
-        let _ = Inode::load(&fs, fs.super_block.root_ino).inspect_err(|err| {
+        // Load the root inode eagerly: this both validates the volume at
+        // mount time and makes `root_inode()` infallible afterwards.
+        let root = Inode::load(&fs, fs.super_block.root_ino).inspect_err(|err| {
             error!("f2fs: failed to load the root inode: {:?}", err);
         })?;
+        fs.root.call_once(|| root);
 
         Ok(fs)
     }
@@ -176,24 +171,65 @@ impl F2fs {
     }
 
     /// Caches a newly loaded inode.
-    pub(super) fn cache_inode(&self, ino: u32, inode: Weak<Inode>) {
-        self.inodes.write().insert(ino, inode);
+    ///
+    /// If another task inserted an inode for `ino` first, the existing
+    /// instance is returned so that all callers share one mutex.
+    pub(super) fn cache_inode(&self, ino: u32, inode: Weak<Inode>) -> Option<Arc<Inode>> {
+        let mut cache = self.inodes.write();
+        if let Some(existing) = cache.get(&ino).and_then(|weak| weak.upgrade()) {
+            return Some(existing);
+        }
+        cache.insert(ino, inode);
+        None
+    }
+
+    /// Drops a freed inode from the cache so that a reused inode number does
+    /// not alias the old object.
+    pub(super) fn evict_inode(&self, ino: u32) {
+        self.inodes.write().remove(&ino);
     }
 
     /// Returns the root inode of the volume.
-    pub(crate) fn root_inode(&self) -> Result<Arc<Inode>> {
-        Inode::load(
-            &self.self_ref.upgrade().expect("the filesystem is gone"),
-            self.super_block.root_ino,
-        )
+    pub(crate) fn root_inode(&self) -> Arc<Inode> {
+        self.root
+            .get()
+            .expect("the root inode is loaded during mount")
+            .clone()
     }
 
-    /// Reads the block at `addr`.
+    /// Reads the block at `addr`. This is used for metadata and must only be
+    /// called with addresses derived from validated filesystem metadata.
     pub(super) fn read_block(&self, addr: u32) -> Result<Block> {
         read_device_block(&self.block_device, addr)
     }
 
-    /// Writes `block` to `addr`.
+    /// Returns whether `addr` lies inside the main (file data and node) area.
+    pub(super) fn is_main_block(&self, addr: u32) -> bool {
+        let start = self.super_block.main_blkaddr;
+        let blocks = self.super_block.segment_count_main as u64 * 512;
+        let end = start as u64 + blocks;
+        (addr as u64) >= start as u64 && (addr as u64) < end
+    }
+
+    /// Reads a block from the main area. File and node data must never point
+    /// into the metadata areas.
+    pub(super) fn read_data_block(&self, addr: u32) -> Result<Block> {
+        if !self.is_main_block(addr) {
+            return_errno_with_message!(Errno::EIO, "F2FS data block is outside the main area");
+        }
+        self.read_block(addr)
+    }
+
+    /// Writes a block in the main area (file data or node block).
+    pub(super) fn write_data_block(&self, addr: u32, block: &Block) -> Result<()> {
+        if !self.is_main_block(addr) {
+            return_errno_with_message!(Errno::EIO, "F2FS data block is outside the main area");
+        }
+        self.write_block(addr, block)
+    }
+
+    /// Writes `block` to `addr`. Metadata callers must pass addresses that were
+    /// validated against the superblock layout.
     pub(super) fn write_block(&self, addr: u32, block: &Block) -> Result<()> {
         let super_block = &self.super_block;
         let max_blocks = super_block.block_count;
@@ -211,7 +247,7 @@ impl F2fs {
     /// Reads the node block whose node id is `nid`.
     pub(super) fn read_node(&self, nid: u32) -> Result<Block> {
         let entry = self.lookup_nat(nid)?;
-        let block = self.read_block(entry.block_addr)?;
+        let block = self.read_data_block(entry.block_addr)?;
 
         // A node block carries its node id in the footer. Verifying it
         // detects stale NAT entries and corrupted address mappings.
@@ -324,14 +360,14 @@ fn select_checkpoint(
 /// checkpoint's node summary blocks.
 fn load_nat_journal(
     block_device: &Arc<dyn BlockDevice>,
-    cp_blkaddr: u32,
+    cp_addr: u32,
     checkpoint: &Checkpoint,
 ) -> Result<BTreeMap<u32, NatEntry>> {
     let mut journal = BTreeMap::new();
     let max_entries = (F2FS_BLKSIZE - 5 - SUMMARY_JOURNAL_OFFSET - 2) / 13;
 
     for index in 1..checkpoint.cp_pack_total_block_count {
-        let Some(addr) = cp_blkaddr.checked_add(index) else {
+        let Some(addr) = cp_addr.checked_add(index) else {
             break;
         };
         let block = read_device_block(block_device, addr)?;

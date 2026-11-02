@@ -4,16 +4,13 @@
 
 use super::super::{
     fs::F2fs,
-    ondisk::{F2FS_BLKSIZE, F2FS_SUPER_MAGIC},
+    ondisk::{F2FS_BLKSIZE, F2FS_SUPER_MAGIC, NAME_MAX},
     prelude::*,
 };
 use crate::fs::vfs::{
     file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
     inode::Inode,
 };
-
-/// The maximum file name length supported by F2FS.
-const F2FS_NAME_LEN: usize = 255;
 
 impl FileSystem for F2fs {
     fn name(&self) -> &'static str {
@@ -25,7 +22,7 @@ impl FileSystem for F2fs {
     }
 
     fn root_inode(&self) -> Arc<dyn Inode> {
-        F2fs::root_inode(self).unwrap()
+        F2fs::root_inode(self)
     }
 
     fn sb(&self) -> SuperBlock {
@@ -40,7 +37,7 @@ impl FileSystem for F2fs {
             files: self.max_inodes(),
             ffree: 0,
             fsid: 0,
-            namelen: F2FS_NAME_LEN,
+            namelen: NAME_MAX,
             frsize: F2FS_BLKSIZE,
             flags: self.fs_flags().bits() as u64,
             container_dev_id: self.container_device_id(),

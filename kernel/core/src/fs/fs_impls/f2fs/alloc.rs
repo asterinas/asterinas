@@ -2,12 +2,11 @@
 
 //! Block and node allocation, and on-disk metadata updates.
 //!
-//! The read-only driver keeps allocations simple: new blocks are taken in
-//! place from segments recorded in the SIT, and every change is written
-//! through to the active NAT/SIT/SSA copies. There is no log-structured
-//! relocation, no garbage collection, and no checkpoint rewrite; the
-//! checkpoint loaded at mount time remains valid because all metadata areas
-//! are updated in place.
+//! Allocation stays simple: new blocks are taken in place from segments
+//! recorded in the SIT, and every change is written through to the active
+//! NAT/SIT/SSA copies. There is no log-structured relocation and no garbage
+//! collection. `sync` updates the counters and checksum of the selected
+//! checkpoint block in place instead of writing a new checkpoint pack.
 //!
 //! # On-disk updates
 //!
@@ -24,7 +23,7 @@ use super::{
     fs::{Block, F2fs},
     ondisk::{
         F2FS_SUPER_MAGIC, NAT_ENTRY_PER_BLOCK, SUMMARY_FOOTER_OFFSET, SuperBlock, crc32_le,
-        read_u16, read_u32, test_bit_be,
+        read_u16, read_u32, read_u64, test_bit_be,
     },
     prelude::*,
 };
@@ -100,6 +99,7 @@ impl SitEntry {
 }
 
 /// Mutable allocation metadata, guarded by a filesystem-wide mutex.
+#[derive(Debug)]
 pub(super) struct WriteState {
     pub sit: Vec<SitEntry>,
     pub sit_bitmap: Vec<u8>,
@@ -131,7 +131,28 @@ impl F2fs {
     ) -> Result<WriteState> {
         let main_segments = super_block.segment_count_main as usize;
         let blocks_per_seg = super_block.blocks_per_seg();
-        let sit_blocks = super_block.segment_count_sit * blocks_per_seg / 2;
+        let sit_blocks = (super_block.segment_count_sit as u64 * blocks_per_seg as u64 / 2) as u32;
+
+        let nat_blocks = (super_block.segment_count_nat as u64 * blocks_per_seg as u64 / 2) as u32;
+        let required_sit_bytes = (sit_blocks as usize).div_ceil(8);
+        let required_nat_bytes = (nat_blocks as usize).div_ceil(8);
+        if (checkpoint.sit_ver_bitmap_bytesize as usize) < required_sit_bytes
+            || (checkpoint.nat_ver_bitmap_bytesize as usize) < required_nat_bytes
+        {
+            return_errno_with_message!(Errno::EINVAL, "invalid F2FS checkpoint bitmaps");
+        }
+        let main_blocks = (super_block.segment_count_main as u64)
+            .checked_mul(blocks_per_seg as u64)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid F2FS layout"))?;
+        if checkpoint.user_block_count == 0 || checkpoint.user_block_count > main_blocks {
+            return_errno_with_message!(Errno::EINVAL, "invalid F2FS user block count");
+        }
+        let max_nid = (checkpoint.nat_bitmap.len() as u64) * 8 * NAT_ENTRY_PER_BLOCK as u64;
+        let next_free_nid = if checkpoint.next_free_nid as u64 >= max_nid {
+            3
+        } else {
+            checkpoint.next_free_nid
+        };
 
         let mut sit = Vec::with_capacity(main_segments);
         let mut cache: BTreeMap<u32, Block> = BTreeMap::new();
@@ -151,11 +172,7 @@ impl F2fs {
             sit.push(SitEntry {
                 vblocks: read_u16(block.as_slice(), offset),
                 valid_map,
-                mtime: u64::from_le_bytes(
-                    block[offset + SIT_MAP_SIZE + 2..offset + SIT_ENTRY_SIZE]
-                        .try_into()
-                        .unwrap(),
-                ),
+                mtime: read_u64(block.as_slice(), offset + SIT_MAP_SIZE + 2),
             });
         }
 
@@ -188,7 +205,7 @@ impl F2fs {
             sit,
             sit_bitmap: checkpoint.sit_bitmap.clone(),
             sit_blocks,
-            next_free_nid: checkpoint.next_free_nid,
+            next_free_nid,
             valid_inode_count: checkpoint.valid_inode_count,
             excluded,
             next_data_seg: 0,
@@ -382,7 +399,8 @@ impl F2fs {
 
         block[16..24].copy_from_slice(&valid_blocks.to_le_bytes());
         block[32..36].copy_from_slice(&free_segments.to_le_bytes());
-        block[144..148].copy_from_slice(&(node_blocks as u32).to_le_bytes());
+        let node_blocks = node_blocks.min(u32::MAX as u64) as u32;
+        block[144..148].copy_from_slice(&node_blocks.to_le_bytes());
         block[148..152].copy_from_slice(&state.valid_inode_count.to_le_bytes());
         block[152..156].copy_from_slice(&state.next_free_nid.to_le_bytes());
 

@@ -84,7 +84,9 @@ else
 data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE)
 endif
 
-ifeq ($(ENABLE_REGRESSION_TEST),true)
+# The F2FS disk is part of the normal x86_64 boot environment so that
+# `mount -t f2fs /dev/vdX /f2fs` works without enabling regression tests.
+ifeq ($(TARGET_ARCH),x86_64)
 data-disk-images: f2fs-image
 endif
 

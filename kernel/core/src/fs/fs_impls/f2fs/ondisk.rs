@@ -20,6 +20,9 @@ pub(super) const F2FS_SUPER_MAGIC: u32 = 0xf2f5_2010;
 /// The superblock resides at byte offset 1024 of the device.
 pub(super) const F2FS_SUPER_OFFSET: usize = 1024;
 
+/// Maximum file name length enforced by the on-disk directory format.
+pub(super) const NAME_MAX: usize = 255;
+
 /// F2FS only supports a block size equal to the page size.
 pub(super) const F2FS_BLKSIZE: usize = 4096;
 
@@ -287,15 +290,52 @@ impl SuperBlock {
         };
 
         let segment0_blkaddr = read_u32(raw, 72);
-        if super_block.log_blocks_per_seg < 9 || super_block.log_blocks_per_seg > 12 {
-            return_errno_with_message!(Errno::EINVAL, "invalid F2FS segment size");
+        // The allocator and the on-disk SIT layout assume 512-block segments,
+        // which is what `mkfs.f2fs` produces for 4 KiB blocks.
+        if super_block.log_blocks_per_seg != 9 {
+            return_errno_with_message!(Errno::EINVAL, "unsupported F2FS segment size");
         }
-        if super_block.block_count == 0
-            || super_block.segment_count == 0
-            || super_block.segment_count_main == 0
+        if super_block.segs_per_sec == 0 {
+            return_errno_with_message!(Errno::EINVAL, "invalid F2FS section size");
+        }
+
+        let segment_count_ckpt = super_block.segment_count_ckpt as u64;
+        let segment_count_sit = super_block.segment_count_sit as u64;
+        let segment_count_nat = super_block.segment_count_nat as u64;
+        let segment_count_ssa = super_block.segment_count_ssa as u64;
+        let segment_count_main = super_block.segment_count_main as u64;
+        if segment_count_ckpt == 0
+            || segment_count_sit == 0
+            || segment_count_nat == 0
+            || segment_count_ssa == 0
+            || segment_count_main == 0
         {
             return_errno_with_message!(Errno::EINVAL, "invalid F2FS segment counts");
         }
+        let area_sum = segment_count_ckpt
+            .checked_add(segment_count_sit)
+            .and_then(|v| v.checked_add(segment_count_nat))
+            .and_then(|v| v.checked_add(segment_count_ssa))
+            .and_then(|v| v.checked_add(segment_count_main));
+        if area_sum != Some(super_block.segment_count as u64) {
+            return_errno_with_message!(Errno::EINVAL, "inconsistent F2FS segment counts");
+        }
+        if super_block.block_count == 0 || super_block.block_count > u32::MAX as u64 {
+            return_errno_with_message!(Errno::EINVAL, "invalid F2FS block count");
+        }
+
+        // Every area must fit inside the device without wrapping around.
+        let blocks_per_seg = 512u64;
+        let cp_end =
+            (super_block.cp_blkaddr as u64).checked_add(segment_count_ckpt * blocks_per_seg);
+        let sit_end =
+            (super_block.sit_blkaddr as u64).checked_add(segment_count_sit * blocks_per_seg);
+        let nat_end =
+            (super_block.nat_blkaddr as u64).checked_add(segment_count_nat * blocks_per_seg);
+        let ssa_end =
+            (super_block.ssa_blkaddr as u64).checked_add(segment_count_ssa * blocks_per_seg);
+        let main_end =
+            (super_block.main_blkaddr as u64).checked_add(segment_count_main * blocks_per_seg);
         if super_block.cp_blkaddr < segment0_blkaddr
             || super_block.sit_blkaddr <= super_block.cp_blkaddr
             || super_block.nat_blkaddr <= super_block.sit_blkaddr
@@ -303,6 +343,25 @@ impl SuperBlock {
             || super_block.main_blkaddr <= super_block.ssa_blkaddr
         {
             return_errno_with_message!(Errno::EINVAL, "invalid F2FS area layout");
+        }
+        let (Some(cp_end), Some(sit_end), Some(nat_end), Some(ssa_end), Some(main_end)) =
+            (cp_end, sit_end, nat_end, ssa_end, main_end)
+        else {
+            return_errno_with_message!(Errno::EINVAL, "F2FS area overflow");
+        };
+        if cp_end > super_block.sit_blkaddr as u64
+            || sit_end > super_block.nat_blkaddr as u64
+            || nat_end > super_block.ssa_blkaddr as u64
+            || ssa_end > super_block.main_blkaddr as u64
+            || main_end > super_block.block_count
+        {
+            return_errno_with_message!(Errno::EINVAL, "F2FS areas exceed the device");
+        }
+
+        // The root inode must fit in the NAT area.
+        let nat_entries = (segment_count_nat * blocks_per_seg / 2) * 455;
+        if super_block.root_ino < 3 || super_block.root_ino as u64 >= nat_entries {
+            return_errno_with_message!(Errno::EINVAL, "invalid F2FS root inode number");
         }
 
         Ok(super_block)

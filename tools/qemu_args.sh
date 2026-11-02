@@ -19,7 +19,9 @@
 #  - VIRTIOFS_TAG: mount tag for virtio-fs device;
 #  - VIRTIOFS_SCRATCH: "off" or "on", whether to attach a scratch virtio-fs device;
 #  - VIRTIOFS_SCRATCH_TAG: mount tag for the scratch virtio-fs device;
-#  - INITRAMFS: "on" or "off"; when "off", attach `rootfs.img` as an extra block device.
+#  - INITRAMFS: "on" or "off"; when "off", attach the rootfs image as an extra block device.
+#  - ROOTFS_IMAGE: path to the rootfs image used when INITRAMFS is "off"
+#    (defaults to ./test/initramfs/build/rootfs.img).
 #  - CONSOLE: "hvc0" to enable virtio console;
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G";
@@ -87,7 +89,8 @@ else
 fi
 
 if [ "$INITRAMFS" = "off" ]; then
-    ROOTFS_DRIVE_ARGS="-drive if=none,format=raw,id=rootfs,file=./test/initramfs/build/rootfs.img"
+    ROOTFS_IMAGE=${ROOTFS_IMAGE:-./test/initramfs/build/rootfs.img}
+    ROOTFS_DRIVE_ARGS="-drive if=none,format=raw,id=rootfs,file=${ROOTFS_IMAGE}"
 fi
 
 if [ "${XFSTESTS_FS_TYPE:-}" = "virtiofs" ]; then
@@ -272,12 +275,11 @@ if [ "$NETDEV" = "user" ] || [ "$NETDEV" = "tap" ]; then
     Q35_NETWORK_DEVICE_ARGS="-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA"
 fi
 
-# The F2FS regression image is only attached when regression tests run.
-F2FS_DEVICE_ARGS=""
-if [ "${ENABLE_REGRESSION_TEST:-false}" = "true" ]; then
-    F2FS_DEVICE_ARGS="-drive if=none,format=raw,id=f2fs,file=./test/initramfs/build/f2fs.img \
-        -device virtio-blk-pci,bus=pcie.0,addr=0xe,drive=f2fs,serial=vf2fs,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA"
-fi
+# The F2FS test disk is always attached on x86 so that the filesystem can be
+# exercised in any boot, not only in regression-test mode. It is appended
+# after the xfstests disks to keep their /dev/vdd and /dev/vde assignments.
+F2FS_DEVICE_ARGS="-drive if=none,format=raw,id=f2fs,file=./test/initramfs/build/f2fs.img \
+    -device virtio-blk-pci,bus=pcie.0,addr=0xe,drive=f2fs,serial=vf2fs,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA"
 
 if [ "$1" = "microvm" ]; then
     QEMU_ARGS="\
@@ -308,7 +310,6 @@ else
         -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
         -drive if=none,format=raw,id=nvme0n1,file=./test/initramfs/build/nvme0n1.img \
         -device nvme,drive=nvme0n1,serial=nvme0n1 \
-        $F2FS_DEVICE_ARGS \
         $CONSOLE_ARGS \
         $IOMMU_EXTRA_ARGS \
     "
@@ -327,6 +328,12 @@ if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" = "true" ]; then
         -device virtio-blk-pci,bus=pcie.0,addr=0xb,drive=x4,serial=vxfsscratch,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
     "
     fi
+fi
+
+# Attach the F2FS disk after all other virtio-blk devices so that it takes
+# the last device letter and never shifts ext2/exfat/ltp/xfstests devices.
+if [ "$1" != "microvm" ]; then
+    QEMU_ARGS="$QEMU_ARGS $F2FS_DEVICE_ARGS"
 fi
 
 if [ "$VIRTIOFS" = "on" ]; then

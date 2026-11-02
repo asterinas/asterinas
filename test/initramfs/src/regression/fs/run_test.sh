@@ -113,8 +113,9 @@ mount | grep " type f2fs "
 grep " /f2fs f2fs " /proc/mounts
 df -h /f2fs
 echo "Start f2fs persistence test (remount)......"
+F2FS_DEV=$(awk '$2 == "/f2fs" { print $1 }' /proc/mounts)
 umount /f2fs
-mount -t f2fs /dev/vdd /f2fs
+mount -t f2fs "$F2FS_DEV" /f2fs
 ./f2fs/f2fs_persist
 echo "All f2fs fs test passed."
 

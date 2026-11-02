@@ -6,7 +6,8 @@
 //! * `inode` wires [`Inode`](super::Inode) into the [`FileOps`] and
 //!   [`Inode`](crate::fs::vfs::inode::Inode) traits.
 //!
-//! All mutating operations return `EROFS` because the driver is read-only.
+//! Mutating operations are supported; they return `EROFS` only when the
+//! volume was mounted read-only.
 
 mod fs;
 mod inode;
