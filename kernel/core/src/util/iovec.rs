@@ -21,9 +21,9 @@ struct IoVec {
 /// while `IoVec` uses `usize`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-struct UserIoVec {
-    base: Vaddr,
-    len: isize,
+pub(crate) struct UserIoVec {
+    pub base: Vaddr,
+    pub len: isize,
 }
 
 impl TryFrom<UserIoVec> for IoVec {

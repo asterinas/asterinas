@@ -4,7 +4,7 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 #[cfg(target_arch = "x86_64")]
-use crate::arch::ptrace as arch_ptrace;
+use crate::{arch::ptrace as arch_ptrace, util::UserIoVec};
 use crate::{
     prelude::*,
     process::{
@@ -108,6 +108,43 @@ pub(super) fn sys_ptrace(
                 .user_space()
                 .read_val::<arch_ptrace::CUserRegsStruct>(data)?;
             tracee.ptrace_set_regs(regs)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_GETREGSET => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            let user_space = ctx.user_space();
+            let iov: UserIoVec = user_space.read_val(data)?;
+            let regset = arch_ptrace::Regset::try_from(addr as u32)
+                .map_err(|_| Error::with_message(Errno::EINVAL, "unsupported register set"))?;
+            let len = regset.transfer_len(iov.len as usize)?;
+
+            // Linux skips the destination address check for zero-length GETREGSET.
+            // Use zero so `writer()` accepts the empty range even if `iov.base` is invalid.
+            let base = if len == 0 { 0 } else { iov.base };
+            let mut writer = user_space.writer(base, len)?;
+            tracee.ptrace_get_regset(regset, &mut writer)?;
+
+            user_space.write_val(data + core::mem::offset_of!(UserIoVec, len), &len)?;
+        }
+        #[cfg(target_arch = "x86_64")]
+        PtraceRequest::PTRACE_SETREGSET => {
+            let tracee = ctx.posix_thread.get_tracee(tid)?;
+            let tracee = tracee.as_posix_thread().unwrap();
+
+            let user_space = ctx.user_space();
+            let iov: UserIoVec = user_space.read_val(data)?;
+            let regset = arch_ptrace::Regset::try_from(addr as u32)
+                .map_err(|_| Error::with_message(Errno::EINVAL, "unsupported register set"))?;
+            let len = regset.transfer_len(iov.len as usize)?;
+
+            // Linux checks the source address for zero-length SETREGSET.
+            // Keep `iov.base` so `reader()` rejects addresses outside user space.
+            let mut reader = user_space.reader(iov.base, len)?;
+            tracee.ptrace_set_regset(regset, &mut reader)?;
+
+            user_space.write_val(data + core::mem::offset_of!(UserIoVec, len), &len)?;
         }
         PtraceRequest::PTRACE_SYSCALL => {
             let sig_num = parse_ptrace_injected_signal(data)?;
@@ -220,6 +257,12 @@ enum PtraceRequest {
     PTRACE_GETEVENTMSG = 0x4201,
     /// Gets the `siginfo` of the last ptrace-stop.
     PTRACE_GETSIGINFO = 0x4202,
+    /// Gets the register set selected by the ELF note type in `addr`.
+    #[cfg(target_arch = "x86_64")]
+    PTRACE_GETREGSET = 0x4204,
+    /// Sets the register set selected by the ELF note type in `addr`.
+    #[cfg(target_arch = "x86_64")]
+    PTRACE_SETREGSET = 0x4205,
     // TODO: Support other operations.
     // /// Gets all floating-point registers used by the thread.
     // PTRACE_GETFPREGS = 14,
@@ -237,8 +280,4 @@ enum PtraceRequest {
     // PTRACE_SYSEMU = 31,
     // /// Single-steps the thread, and the next syscall will not be executed.
     // PTRACE_SYSEMU_SINGLESTEP = 32,
-    // /// Gets register contents.
-    // PTRACE_GETREGSET = 0x4204,
-    // /// Sets register contents.
-    // PTRACE_SETREGSET = 0x4205,
 }

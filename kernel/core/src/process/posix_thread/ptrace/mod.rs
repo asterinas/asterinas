@@ -166,6 +166,36 @@ impl PosixThread {
         status.set_regs(regs)
     }
 
+    /// Gets a register set prefix of this thread for ptrace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub(crate) fn ptrace_get_regset(
+        &self,
+        regset: arch_ptrace::Regset,
+        writer: &mut VmWriter,
+    ) -> Result<()> {
+        let status = self.get_tracee_status()?;
+        status.get_regset(regset, writer)
+    }
+
+    /// Sets a register set prefix of this thread for ptrace.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ESRCH` if this thread is not ptrace-stopped.
+    #[cfg(target_arch = "x86_64")]
+    pub(crate) fn ptrace_set_regset(
+        &self,
+        regset: arch_ptrace::Regset,
+        reader: &mut VmReader,
+    ) -> Result<()> {
+        let status = self.get_tracee_status()?;
+        status.set_regset(regset, reader)
+    }
+
     /// Reads one word in the tracee's USER area.
     ///
     /// # Errors
@@ -626,6 +656,30 @@ impl TraceeStatus {
         self.check_ptrace_stopped(&state)?;
 
         state.arch_state.as_mut().unwrap().set_user_regs(regs)
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn get_regset(&self, regset: arch_ptrace::Regset, writer: &mut VmWriter) -> Result<()> {
+        let state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+
+        state
+            .arch_state
+            .as_ref()
+            .unwrap()
+            .get_regset(regset, writer)
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn set_regset(&self, regset: arch_ptrace::Regset, reader: &mut VmReader) -> Result<()> {
+        let mut state = self.state.lock();
+        self.check_ptrace_stopped(&state)?;
+
+        state
+            .arch_state
+            .as_mut()
+            .unwrap()
+            .set_regset(regset, reader)
     }
 
     #[cfg(target_arch = "x86_64")]
