@@ -105,6 +105,12 @@ impl VirtioMmioTransport {
 }
 
 impl VirtioTransport for VirtioMmioTransport {
+    fn vendor_id(&self) -> u32 {
+        field_ptr!(&self.layout, VirtioMmioLayout, vendor_id)
+            .read_once()
+            .unwrap()
+    }
+
     fn device_type(&self) -> VirtioDeviceType {
         self.device_type
     }
@@ -270,12 +276,11 @@ impl VirtioTransport for VirtioMmioTransport {
     }
 
     fn read_device_status(&self) -> DeviceStatus {
-        DeviceStatus::from_bits(
+        DeviceStatus::from_bits_retain(
             field_ptr!(&self.layout, VirtioMmioLayout, status)
                 .read_once()
                 .unwrap() as u8,
         )
-        .unwrap()
     }
 
     fn write_device_status(&self, status: DeviceStatus) -> Result<(), VirtioTransportError> {

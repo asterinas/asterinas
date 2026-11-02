@@ -43,7 +43,7 @@ impl FileSystemDevice {
         device_transport: DeviceTransport,
         negotiated_features: u64,
     ) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioFsConfig::new_manager(device_transport.as_ref());
+        let config_manager = VirtioFsConfig::new_manager(device_transport.payload().as_ref());
         let config = config_manager.read_config();
 
         let negotiated_features = FileSystemFeatures::from_bits_truncate(negotiated_features);
@@ -72,7 +72,7 @@ impl FileSystemDevice {
         let device = {
             let hiprio_queue = FsRequestQueue::new(Self::new_queue(
                 HIPRIO_QUEUE_INDEX,
-                device_transport.as_ref(),
+                device_transport.payload().as_ref(),
             )?);
 
             let mut request_queues = Vec::with_capacity(request_queue_count);
@@ -80,7 +80,7 @@ impl FileSystemDevice {
                 let queue_index = request_queue_start_idx + idx as u16;
                 request_queues.push(FsRequestQueue::new(Self::new_queue(
                     queue_index,
-                    device_transport.as_ref(),
+                    device_transport.payload().as_ref(),
                 )?));
             }
 
