@@ -471,6 +471,7 @@ dependencies = [
  "dma-pool",
  "fdt-util",
  "id-alloc",
+ "inherit-methods-macro",
  "int-to-c-enum",
  "io-util",
  "ostd",
