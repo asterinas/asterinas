@@ -65,7 +65,6 @@ impl Driver<PciBus> for VirtioPciDriver {
             .parent(device.clone())
             .build();
         aster_device::add_device(&child)?;
-        super::push_device(child);
         Ok(())
     }
 

@@ -3,10 +3,7 @@
 //! Transport operations and device configuration access shared by VirtIO drivers.
 
 use alloc::{boxed::Box, sync::Arc};
-use core::{
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
+use core::fmt::Debug;
 
 use aster_pci::cfg_space::BarAccess;
 use aster_util::safe_ptr::SafePtr;
@@ -21,7 +18,6 @@ use ostd_pod::Pod;
 use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};
 use crate::{
     VirtioDeviceType,
-    bus::VirtioDevice,
     queue::{AvailRing, Descriptor, UsedRing},
 };
 
@@ -108,6 +104,13 @@ pub trait VirtioTransport: Sync + Send + Debug {
         &self,
         func: Box<IrqCallbackFunction>,
     ) -> Result<(), VirtioTransportError>;
+
+    /// Unregisters all functional driver callbacks and waits for running callbacks to finish.
+    ///
+    /// Call from task context without holding any lock acquired by callbacks
+    /// registered through [`Self::register_queue_callback()`] or [`Self::register_cfg_callback()`].
+    /// Otherwise, this call may wait for a callback that is waiting for your lock.
+    fn clear_callbacks(&self);
 }
 
 /// Manage PCI device/notify configuration space (legacy/modern).
@@ -256,67 +259,7 @@ bitflags::bitflags! {
     }
 }
 
-/// A wrapper around [`Arc<VirtioDevice>`] that sets the device status to FAILED
-/// on drop unless [`Self::finish_init`] has been called.
-///
-/// This ensures that the FAILED status bit is set whenever a device initialization
-/// is aborted before completion, as required by the VirtIO specification.
-///
-/// The `DeviceTransport` is stored in the device struct and held for the device's
-/// lifetime. During initialization it acts as a sentinel: if init fails (the struct
-/// is dropped without [`finish_init`] being called), [`Drop`] sets `FAILED`. Once
-/// `finish_init` is called, the FAILED bit is no longer set on drop.
-#[derive(Debug)]
-pub(crate) struct DeviceTransport {
-    inner: Arc<VirtioDevice>,
-    is_completed: bool,
-}
-
-impl DeviceTransport {
-    /// Creates a new wrapper around `transport`.
-    ///
-    /// The wrapper will set the device status to [`DeviceStatus::FAILED`] on drop
-    /// unless [`Self::finish_init`] is called first.
-    pub(super) fn new(transport: Arc<VirtioDevice>) -> Self {
-        Self {
-            inner: transport,
-            is_completed: false,
-        }
-    }
-
-    /// Marks initialization as complete and sets the device status to `DRIVER_OK`.
-    ///
-    /// After this call, the wrapper will NOT set `FAILED` on drop.
-    pub(crate) fn finish_init(&mut self) {
-        self.is_completed = true;
-        self.inner
-            .add_device_status(DeviceStatus::DRIVER_OK)
-            .unwrap();
-    }
-}
-
-impl Deref for DeviceTransport {
-    type Target = Arc<VirtioDevice>;
-
-    fn deref(&self) -> &Arc<VirtioDevice> {
-        &self.inner
-    }
-}
-
-impl DerefMut for DeviceTransport {
-    fn deref_mut(&mut self) -> &mut Arc<VirtioDevice> {
-        &mut self.inner
-    }
-}
-
-impl Drop for DeviceTransport {
-    fn drop(&mut self) {
-        if !self.is_completed {
-            let _ = self.inner.add_device_status(DeviceStatus::FAILED);
-        }
-    }
-}
-
+/// Registers the PCI and MMIO transport drivers to discover VirtIO devices.
 pub(super) fn init() {
     virtio_pci_init();
     virtio_mmio_init();

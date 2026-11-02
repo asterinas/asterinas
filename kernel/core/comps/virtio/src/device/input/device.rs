@@ -28,7 +28,8 @@ use ostd_pod::IntoBytes;
 
 use super::{InputConfigSelect, QUEUE_EVENT, QUEUE_STATUS, VirtioInputConfig, VirtioInputEvent};
 use crate::{
-    device::VirtioDeviceError, dma_buf::DmaBuf, queue::VirtQueue, transport::DeviceTransport,
+    bus::VirtioDevice, device::VirtioDeviceError, dma_buf::DmaBuf, queue::VirtQueue,
+    transport::DeviceStatus,
 };
 
 bitflags! {
@@ -66,7 +67,7 @@ pub struct InputDevice {
     event_queue: SpinLock<VirtQueue>,
     status_queue: VirtQueue,
     event_table: EventTable,
-    transport: SpinLock<DeviceTransport>,
+    virtio_device: Arc<VirtioDevice>,
     device_name: String,
     device_phys: String,
     device_uniq: String,
@@ -78,16 +79,13 @@ impl InputDevice {
     /// Create a new VirtIO-Input driver.
     /// msix_vector_left should at least have one element or n elements where n is the virtqueue amount
     pub(crate) fn init(
-        device_transport: DeviceTransport,
+        virtio_device: Arc<VirtioDevice>,
         _negotiated_features: u64,
     ) -> Result<(), VirtioDeviceError> {
         let mut event_queue =
-            VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, device_transport.payload().as_ref())?;
-        let status_queue = VirtQueue::new(
-            QUEUE_STATUS,
-            QUEUE_SIZE,
-            device_transport.payload().as_ref(),
-        )?;
+            VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, virtio_device.payload().as_ref())?;
+        let status_queue =
+            VirtQueue::new(QUEUE_STATUS, QUEUE_SIZE, virtio_device.payload().as_ref())?;
 
         let event_table = EventTable::new(QUEUE_SIZE as usize)?;
         for i in 0..event_table.num_events() {
@@ -98,11 +96,11 @@ impl InputDevice {
 
         let device = {
             let mut device = Self {
-                config: VirtioInputConfig::new(device_transport.payload().as_ref()),
+                config: VirtioInputConfig::new(virtio_device.payload().as_ref()),
                 event_queue: SpinLock::new(event_queue),
                 status_queue,
                 event_table,
-                transport: SpinLock::new(device_transport),
+                virtio_device,
                 // Default name, will be updated with actual device name from config.
                 device_name: "virtio_input".to_string(),
                 // Physical path for virtio devices.
@@ -136,25 +134,23 @@ impl InputDevice {
             debug!("input device has no properties or the properties is not defined");
         }
 
-        let transport = device.transport.lock();
+        let transport = device.virtio_device.payload().as_ref();
         fn config_space_change(_: &TrapFrame) {
             debug!("input device config space change");
         }
         transport.register_cfg_callback(Box::new(config_space_change))?;
-        drop(transport);
 
         // Register with the input subsystem.
         let registered_device = aster_input::register_device(device.clone());
 
-        let mut transport = device.transport.lock();
+        let transport = device.virtio_device.payload().as_ref();
         let handle_input = {
             // FIXME: This callback captures a strong `Arc`, creating a reference cycle.
             let device = device.clone();
             move |_: &TrapFrame| device.handle_irq(&registered_device)
         };
         transport.register_queue_callback(QUEUE_EVENT, Box::new(handle_input), false)?;
-        transport.finish_init();
-        drop(transport);
+        transport.add_device_status(DeviceStatus::DRIVER_OK)?;
 
         {
             let mut event_queue = device.event_queue.disable_irq().lock();
@@ -570,7 +566,7 @@ impl Debug for InputDevice {
             .field("event_queue", &self.event_queue)
             .field("status_queue", &self.status_queue)
             .field("event_buf", &self.event_table)
-            .field("transport", &self.transport)
+            .field("virtio_device", &self.virtio_device)
             .finish()
     }
 }

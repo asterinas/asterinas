@@ -110,6 +110,11 @@ impl VirtioTransport for VirtioMmioTransport {
             .unwrap()
     }
 
+    fn clear_callbacks(&self) {
+        let callbacks = self.multiplex.write().take_callbacks();
+        drop(callbacks);
+    }
+
     fn device_type(&self) -> VirtioDeviceType {
         self.device_type
     }
