@@ -39,13 +39,14 @@ impl FileSystemDevice {
     }
 
     /// Initializes one virtio-fs device from its virtio transport.
-    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
+    pub(crate) fn init(
+        device_transport: DeviceTransport,
+        negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
         let config_manager = VirtioFsConfig::new_manager(device_transport.as_ref());
         let config = config_manager.read_config();
 
-        let negotiated_features = FileSystemFeatures::from_bits_truncate(Self::negotiate_features(
-            device_transport.read_device_features(),
-        ));
+        let negotiated_features = FileSystemFeatures::from_bits_truncate(negotiated_features);
         let notify_supported = negotiated_features.contains(FileSystemFeatures::NOTIFICATION);
         // Queue layout:
         // - Queue 0: high-priority queue (always present);
@@ -71,7 +72,7 @@ impl FileSystemDevice {
         let device = {
             let hiprio_queue = FsRequestQueue::new(Self::new_queue(
                 HIPRIO_QUEUE_INDEX,
-                device_transport.as_mut(),
+                device_transport.as_ref(),
             )?);
 
             let mut request_queues = Vec::with_capacity(request_queue_count);
@@ -79,7 +80,7 @@ impl FileSystemDevice {
                 let queue_index = request_queue_start_idx + idx as u16;
                 request_queues.push(FsRequestQueue::new(Self::new_queue(
                     queue_index,
-                    device_transport.as_mut(),
+                    device_transport.as_ref(),
                 )?));
             }
 
@@ -155,7 +156,7 @@ impl FileSystemDevice {
 
     fn new_queue(
         index: u16,
-        transport: &mut dyn VirtioTransport,
+        transport: &dyn VirtioTransport,
     ) -> Result<VirtQueue, VirtioDeviceError> {
         let max_queue_size = transport
             .max_queue_size(index)
