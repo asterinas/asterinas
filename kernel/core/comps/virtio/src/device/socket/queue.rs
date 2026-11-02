@@ -47,7 +47,7 @@ impl TxQueue {
     pub(super) const QUEUE_INDEX: u16 = 1;
     const QUEUE_SIZE: u16 = 64;
 
-    pub(super) fn new(transport: &mut dyn VirtioTransport) -> Result<Self, VirtioDeviceError> {
+    pub(super) fn new(transport: &dyn VirtioTransport) -> Result<Self, VirtioDeviceError> {
         let queue = VirtQueue::new(Self::QUEUE_INDEX, Self::QUEUE_SIZE, transport)?;
 
         let inflight = (0..Self::QUEUE_SIZE).map(|_| None).collect();
@@ -154,7 +154,7 @@ impl RxQueue {
     pub(super) const QUEUE_INDEX: u16 = 0;
     const QUEUE_SIZE: u16 = 64;
 
-    pub(super) fn new(transport: &mut dyn VirtioTransport) -> Result<Self, VirtioDeviceError> {
+    pub(super) fn new(transport: &dyn VirtioTransport) -> Result<Self, VirtioDeviceError> {
         let mut queue = VirtQueue::new(Self::QUEUE_INDEX, Self::QUEUE_SIZE, transport)?;
 
         let mut buffers = SlotVec::new();
@@ -219,7 +219,7 @@ impl EventQueue {
     pub(super) const QUEUE_INDEX: u16 = 2;
     const QUEUE_SIZE: u16 = 1;
 
-    pub(super) fn new(transport: &mut dyn VirtioTransport) -> Result<Self, VirtioDeviceError> {
+    pub(super) fn new(transport: &dyn VirtioTransport) -> Result<Self, VirtioDeviceError> {
         let mut queue = VirtQueue::new(Self::QUEUE_INDEX, Self::QUEUE_SIZE, transport)?;
 
         let buffer = DmaStream::alloc_uninit(1, false).map_err(VirtioDeviceError::ResourceAlloc)?;

@@ -9,22 +9,23 @@ extern crate alloc;
 #[macro_use]
 extern crate ostd_pod;
 
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 use core::hint::spin_loop;
 
 use aster_block::MajorIdOwner;
 use bitflags::bitflags;
 use component::{ComponentInitError, init_component};
 use device::{
-    VirtioDeviceType, block::device::BlockDevice, console::device::ConsoleDevice,
-    entropy::device::EntropyDevice, filesystem::device::FileSystemDevice,
-    input::device::InputDevice, network::device::NetworkDevice, socket::device::SocketDevice,
+    VirtioDeviceError, VirtioDeviceType, block::device::BlockDevice,
+    console::device::ConsoleDevice, entropy::device::EntropyDevice,
+    filesystem::device::FileSystemDevice, input::device::InputDevice,
+    network::device::NetworkDevice, socket::device::SocketDevice,
 };
 use ostd::{error, warn};
 use spin::Once;
-use transport::{DeviceStatus, mmio::VIRTIO_MMIO_DRIVER};
+use transport::{DeviceStatus, DeviceTransport, mmio::VIRTIO_MMIO_DRIVER};
 
-use crate::transport::{DeviceTransport, VirtioTransport};
+use crate::transport::VirtioTransport;
 
 // Set this crate's log prefix for `ostd::log`.
 macro_rules! __log_prefix {
@@ -52,11 +53,9 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
     device::network::init();
     device::socket::init();
 
-    while let Some(mut transport) = pop_device_transport() {
+    while let Some(transport) = pop_device_transport() {
+        let transport: Arc<dyn VirtioTransport> = Arc::from(transport);
         let device_type = transport.device_type();
-
-        // Follow VirtIO 1.3, 3.1.1 "Driver Requirements: Device Initialization".
-        // Reference: <https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html#x1-1230001>
 
         // Reset the device.
         transport
@@ -66,57 +65,40 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
             spin_loop();
         }
 
-        // Set `ACKNOWLEDGE` to report that the guest OS has noticed the device.
-        transport
-            .write_device_status(DeviceStatus::ACKNOWLEDGE)
-            .unwrap();
-
-        // Set `DRIVER` to report that the guest OS knows how to drive the device.
-        transport
-            .write_device_status(DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER)
-            .unwrap();
-
-        // Negotiate the feature subset supported by the driver.
-        negotiate_features(&mut transport);
-
-        if !transport.is_legacy_version() {
-            // Set `FEATURES_OK` to report that feature negotiation is complete.
-            let status =
-                DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER | DeviceStatus::FEATURES_OK;
-            transport.write_device_status(status).unwrap();
-
-            let status = transport.read_device_status();
-            if !status.contains(DeviceStatus::FEATURES_OK) {
-                error!(
-                    "Device rejected negotiated features, device type: {:?}",
-                    device_type
-                );
-                transport
-                    .write_device_status(status | DeviceStatus::FAILED)
-                    .unwrap();
-                continue;
+        // Reference: <https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html#x1-1230001>
+        let result = (|| {
+            let device_transport = DeviceTransport::new(transport.clone());
+            transport.add_device_status(DeviceStatus::ACKNOWLEDGE)?;
+            transport.add_device_status(DeviceStatus::DRIVER)?;
+            let features = negotiate_features(transport.as_ref())?;
+            if !transport.is_legacy_version() {
+                transport.add_device_status(DeviceStatus::FEATURES_OK)?;
+                if !transport
+                    .read_device_status()
+                    .contains(DeviceStatus::FEATURES_OK)
+                {
+                    return Err(VirtioDeviceError::UnsupportedConfig);
+                }
             }
-        }
 
-        let device_transport = DeviceTransport::new(transport);
-
-        let res = match device_type {
-            VirtioDeviceType::Block => BlockDevice::init(device_transport),
-            VirtioDeviceType::Console => ConsoleDevice::init(device_transport),
-            VirtioDeviceType::Entropy => EntropyDevice::init(device_transport),
-            VirtioDeviceType::Input => InputDevice::init(device_transport),
-            VirtioDeviceType::Network => NetworkDevice::init(device_transport),
-            VirtioDeviceType::Socket => SocketDevice::init(device_transport),
-            VirtioDeviceType::FileSystem => FileSystemDevice::init(device_transport),
-            _ => {
-                warn!("Found unimplemented device: {:?}", device_type);
-                Ok(())
+            match device_type {
+                VirtioDeviceType::Block => BlockDevice::init(device_transport, features),
+                VirtioDeviceType::Console => ConsoleDevice::init(device_transport, features),
+                VirtioDeviceType::Entropy => EntropyDevice::init(device_transport, features),
+                VirtioDeviceType::Input => InputDevice::init(device_transport, features),
+                VirtioDeviceType::Network => NetworkDevice::init(device_transport, features),
+                VirtioDeviceType::Socket => SocketDevice::init(device_transport, features),
+                VirtioDeviceType::FileSystem => FileSystemDevice::init(device_transport, features),
+                _ => {
+                    warn!("Found unimplemented device: {:?}", device_type);
+                    Ok(())
+                }
             }
-        };
-        if res.is_err() {
+        })();
+        if let Err(err) = result {
             error!(
                 "Device initialization error: {:?}, device type: {:?}",
-                res, device_type
+                err, device_type
             );
         }
     }
@@ -133,7 +115,7 @@ fn pop_device_transport() -> Option<Box<dyn VirtioTransport>> {
     None
 }
 
-fn negotiate_features(transport: &mut Box<dyn VirtioTransport>) {
+fn negotiate_features(transport: &dyn VirtioTransport) -> Result<u64, VirtioDeviceError> {
     let features = transport.read_device_features();
     let mask = ((1u64 << 24) - 1) | (((1u64 << 24) - 1) << 50);
     let device_specified_features = features & mask;
@@ -150,9 +132,9 @@ fn negotiate_features(transport: &mut Box<dyn VirtioTransport>) {
     };
     let mut support_feature = Feature::from_bits_truncate(features);
     support_feature.remove(Feature::RING_EVENT_IDX);
-    transport
-        .write_driver_features(features & (support_feature.bits() | device_support_features))
-        .unwrap();
+    let negotiated_features = features & (support_feature.bits() | device_support_features);
+    transport.write_driver_features(negotiated_features)?;
+    Ok(negotiated_features)
 }
 
 bitflags! {

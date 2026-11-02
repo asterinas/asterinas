@@ -249,7 +249,7 @@ bitflags::bitflags! {
     }
 }
 
-/// A wrapper around [`Box<dyn VirtioTransport>`] that sets the device status to FAILED
+/// A wrapper around [`Arc<dyn VirtioTransport>`] that sets the device status to FAILED
 /// on drop unless [`Self::finish_init`] has been called.
 ///
 /// This ensures that the FAILED status bit is set whenever a device initialization
@@ -261,7 +261,7 @@ bitflags::bitflags! {
 /// `finish_init` is called, the FAILED bit is no longer set on drop.
 #[derive(Debug)]
 pub(crate) struct DeviceTransport {
-    inner: Box<dyn VirtioTransport>,
+    inner: Arc<dyn VirtioTransport>,
     is_completed: bool,
 }
 
@@ -270,7 +270,7 @@ impl DeviceTransport {
     ///
     /// The wrapper will set the device status to [`DeviceStatus::FAILED`] on drop
     /// unless [`Self::finish_init`] is called first.
-    pub(super) fn new(transport: Box<dyn VirtioTransport>) -> Self {
+    pub(super) fn new(transport: Arc<dyn VirtioTransport>) -> Self {
         Self {
             inner: transport,
             is_completed: false,
@@ -289,15 +289,15 @@ impl DeviceTransport {
 }
 
 impl Deref for DeviceTransport {
-    type Target = Box<dyn VirtioTransport>;
+    type Target = Arc<dyn VirtioTransport>;
 
-    fn deref(&self) -> &Box<dyn VirtioTransport> {
+    fn deref(&self) -> &Arc<dyn VirtioTransport> {
         &self.inner
     }
 }
 
 impl DerefMut for DeviceTransport {
-    fn deref_mut(&mut self) -> &mut Box<dyn VirtioTransport> {
+    fn deref_mut(&mut self) -> &mut Arc<dyn VirtioTransport> {
         &mut self.inner
     }
 }

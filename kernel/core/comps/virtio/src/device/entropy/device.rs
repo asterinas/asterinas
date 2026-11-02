@@ -52,8 +52,11 @@ pub struct EntropyDevice {
 }
 
 impl EntropyDevice {
-    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
-        let queue = VirtQueue::new(0, ENTROPY_QUEUE_SIZE, device_transport.as_mut())?;
+    pub(crate) fn init(
+        device_transport: DeviceTransport,
+        _negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
+        let queue = VirtQueue::new(0, ENTROPY_QUEUE_SIZE, device_transport.as_ref())?;
         let inner = EntropyDeviceInner::new(queue)?;
         let cache = EntropyCache::new()?;
         let device = Arc::new(EntropyDevice {
