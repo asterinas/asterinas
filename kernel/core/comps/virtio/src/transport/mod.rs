@@ -19,6 +19,7 @@ use ostd_pod::Pod;
 use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};
 use crate::{
     VirtioDeviceType,
+    bus::VirtioDevice,
     queue::{AvailRing, Descriptor, UsedRing},
 };
 
@@ -36,6 +37,9 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
 
     /// Get device type.
     fn device_type(&self) -> VirtioDeviceType;
+
+    /// Returns the VirtIO vendor ID.
+    fn vendor_id(&self) -> u32;
 
     /// Get device features.
     fn read_device_features(&self) -> u64;
@@ -246,10 +250,15 @@ bitflags::bitflags! {
         /// Indicates that the device has experienced an error from which it
         /// can’t recover.
         const DEVICE_NEEDS_RESET = 64;
+
+        // Reset completes when the device reports zero. Discarding unrecognized bits
+        // could turn a nonzero status into zero. Keeping all eight bits also lets
+        // sysfs report the exact status byte.
+        const _                  = !0;
     }
 }
 
-/// A wrapper around [`Arc<dyn VirtioTransport>`] that sets the device status to FAILED
+/// A wrapper around [`Arc<VirtioDevice>`] that sets the device status to FAILED
 /// on drop unless [`Self::finish_init`] has been called.
 ///
 /// This ensures that the FAILED status bit is set whenever a device initialization
@@ -261,7 +270,7 @@ bitflags::bitflags! {
 /// `finish_init` is called, the FAILED bit is no longer set on drop.
 #[derive(Debug)]
 pub(crate) struct DeviceTransport {
-    inner: Arc<dyn VirtioTransport>,
+    inner: Arc<VirtioDevice>,
     is_completed: bool,
 }
 
@@ -270,7 +279,7 @@ impl DeviceTransport {
     ///
     /// The wrapper will set the device status to [`DeviceStatus::FAILED`] on drop
     /// unless [`Self::finish_init`] is called first.
-    pub(super) fn new(transport: Arc<dyn VirtioTransport>) -> Self {
+    pub(super) fn new(transport: Arc<VirtioDevice>) -> Self {
         Self {
             inner: transport,
             is_completed: false,
@@ -289,15 +298,15 @@ impl DeviceTransport {
 }
 
 impl Deref for DeviceTransport {
-    type Target = Arc<dyn VirtioTransport>;
+    type Target = Arc<VirtioDevice>;
 
-    fn deref(&self) -> &Arc<dyn VirtioTransport> {
+    fn deref(&self) -> &Arc<VirtioDevice> {
         &self.inner
     }
 }
 
 impl DerefMut for DeviceTransport {
-    fn deref_mut(&mut self) -> &mut Arc<dyn VirtioTransport> {
+    fn deref_mut(&mut self) -> &mut Arc<VirtioDevice> {
         &mut self.inner
     }
 }
