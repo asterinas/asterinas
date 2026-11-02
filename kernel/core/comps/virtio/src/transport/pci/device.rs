@@ -229,7 +229,7 @@ impl VirtioTransport for VirtioPciModernTransport {
             } else {
                 warn!(
                     "{:?}: `single_interrupt` ignored: no more IRQ lines available",
-                    self.device_type()
+                    self.device_type
                 );
                 self.msix_manager.shared_irq_line()
             }
