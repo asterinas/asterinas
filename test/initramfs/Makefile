@@ -35,6 +35,7 @@ LTP_DEV_IMAGE := $(BUILD_DIR)/ltp_dev.img
 SSD_IMAGE := $(BUILD_DIR)/nvme0n1.img
 XFSTESTS_TEST_IMAGE := $(BUILD_DIR)/xfstests_test.img
 XFSTESTS_SCRATCH_IMAGE := $(BUILD_DIR)/xfstests_scratch.img
+F2FS_IMAGE := $(BUILD_DIR)/f2fs.img
 XFSTESTS_FS_TYPE ?= ext2
 XFSTESTS_DISK_SIZE ?= 12G
 include $(CUR_DIR)/src/conformance/xfstests/build_config.mk
@@ -81,6 +82,10 @@ else ifeq ($(XFSTESTS_NEEDS_BLOCK_DEVICES), true)
 data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE) $(XFSTESTS_TEST_IMAGE) $(XFSTESTS_SCRATCH_IMAGE)
 else
 data-disk-images: $(EXT2_IMAGE) $(EXFAT_IMAGE) $(LTP_DEV_IMAGE) $(SSD_IMAGE)
+endif
+
+ifeq ($(ENABLE_REGRESSION_TEST),true)
+data-disk-images: f2fs-image
 endif
 
 .PHONY: $(INITRAMFS_IMAGE)
@@ -218,6 +223,14 @@ $(SSD_IMAGE):
 	@mkdir -p $(BUILD_DIR)
 	@dd if=/dev/zero of=$(SSD_IMAGE) bs=2G count=1
 	@mke2fs -t ext2 -F $(SSD_IMAGE)
+
+# The F2FS image is prebuilt with `src/f2fs/gen_test_image.sh`, because
+# creating and populating an F2FS volume requires privileges. It is restored
+# before every run because the regression tests modify the volume.
+.PHONY: f2fs-image
+f2fs-image:
+	@mkdir -p $(BUILD_DIR)
+	@gzip -dc $(CUR_DIR)/src/f2fs/f2fs_test.img.gz > $(F2FS_IMAGE)
 
 $(XFSTESTS_TEST_IMAGE):
 	@mkdir -p $(BUILD_DIR)

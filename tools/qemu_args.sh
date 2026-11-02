@@ -272,6 +272,13 @@ if [ "$NETDEV" = "user" ] || [ "$NETDEV" = "tap" ]; then
     Q35_NETWORK_DEVICE_ARGS="-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA"
 fi
 
+# The F2FS regression image is only attached when regression tests run.
+F2FS_DEVICE_ARGS=""
+if [ "${ENABLE_REGRESSION_TEST:-false}" = "true" ]; then
+    F2FS_DEVICE_ARGS="-drive if=none,format=raw,id=f2fs,file=./test/initramfs/build/f2fs.img \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xe,drive=f2fs,serial=vf2fs,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA"
+fi
+
 if [ "$1" = "microvm" ]; then
     QEMU_ARGS="\
         $COMMON_QEMU_ARGS \
@@ -301,6 +308,7 @@ else
         -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
         -drive if=none,format=raw,id=nvme0n1,file=./test/initramfs/build/nvme0n1.img \
         -device nvme,drive=nvme0n1,serial=nvme0n1 \
+        $F2FS_DEVICE_ARGS \
         $CONSOLE_ARGS \
         $IOMMU_EXTRA_ARGS \
     "

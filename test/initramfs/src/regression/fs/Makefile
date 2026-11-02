@@ -3,6 +3,7 @@
 SUBDIRS := \
 	empty_write \
 	ext2 \
+	f2fs \
 	fdatasync \
 	getcwd \
 	inotify \

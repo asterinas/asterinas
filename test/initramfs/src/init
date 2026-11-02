@@ -46,6 +46,13 @@ if [ -b /dev/vdb ]; then
     mount -t exfat /dev/vdb /exfat
 fi
 
+# The F2FS regression image is attached as /dev/vdd by the regression-test
+# QEMU configuration. Only mount it when the regression test tree is present.
+if [ -d /test/fs ] && [ -b /dev/vdd ]; then
+    mkdir -p /f2fs
+    mount -t f2fs /dev/vdd /f2fs
+fi
+
 # When the init process starts,
 # it does not have a process group, session, or controlling terminal.
 # The `script` tool is a standard Linux utility

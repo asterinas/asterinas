@@ -10,6 +10,7 @@ pub(crate) mod devpts;
 pub mod devtmpfs;
 pub(crate) mod exfat;
 pub(crate) mod ext2;
+pub(crate) mod f2fs;
 pub(crate) mod overlayfs;
 pub(crate) mod procfs;
 pub(crate) mod pseudofs;
@@ -31,6 +32,7 @@ pub(super) fn init() {
 
     ext2::init();
     exfat::init();
+    f2fs::init();
     overlayfs::init();
     virtiofs::init();
 }

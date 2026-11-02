@@ -106,6 +106,18 @@ test_ext2 "/ext2" "test_file.txt"
 ./ext2/xattr
 echo "All ext2 fs test passed."
 
+echo "Start f2fs fs test......"
+./f2fs/f2fs_test
+echo "F2FS mount information:"
+mount | grep " type f2fs "
+grep " /f2fs f2fs " /proc/mounts
+df -h /f2fs
+echo "Start f2fs persistence test (remount)......"
+umount /f2fs
+mount -t f2fs /dev/vdd /f2fs
+./f2fs/f2fs_persist
+echo "All f2fs fs test passed."
+
 echo "Start fdatasync test......"
 test_fdatasync
 echo "All fdatasync test passed."
