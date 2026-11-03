@@ -8,6 +8,8 @@ mod model;
 mod pty;
 pub mod registry;
 pub(crate) mod tty;
+#[expect(dead_code)]
+mod vhost;
 
 use device_id::DeviceId;
 pub(crate) use mem::{getrandom, geturandom};
