@@ -78,7 +78,7 @@ impl CurrentVmcs<'_> {
         vmx_guard: &VmxGuard,
     ) -> Result<GuestExitInfo> {
         // SAFETY: The borrowed `guest_mem` ensures EPT isolation and frame lifetimes.
-        unsafe { self.sync_controls(guest_mem.eptp(), arch.sregs.efer) }?;
+        unsafe { self.sync_controls(guest_mem.root_paddr(), arch.sregs.efer) }?;
         self.load_guest_context(arch, vmx_guard)?;
         let is_interrupt_armed = self.prepare_events(arch)?;
         self.sync_host()?;

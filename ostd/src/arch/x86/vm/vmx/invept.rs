@@ -74,7 +74,7 @@ pub(super) unsafe fn check_ept_support(_irq_guard: &DisabledLocalIrqGuard) -> Re
 /// The current CPU flushes before returning; remote CPUs flush asynchronously.
 /// Each CPU owns a reference to every frame until its INVEPT completes.
 /// The returned handle can be used to wait for remote invalidations to complete.
-pub(crate) fn invalidate(
+pub(in crate::arch::vm) fn invalidate(
     _vmx_guard: &VmxGuard,
     frames: &[RcuDrop<Frame<dyn AnyFrameMeta>>],
 ) -> PendingIpis {
