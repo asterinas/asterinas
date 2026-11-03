@@ -206,3 +206,123 @@ FN_TEST(proc_sys_kernel_tainted_tracks_written_bits)
 		 _ret == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 END_TEST()
+
+FN_TEST(proc_sys_kernel_overflow_ids_match_default)
+{
+	TEST_RES(proc_field_matches("/proc/sys/kernel/overflowuid", "65534"),
+		 _ret == 0);
+	TEST_RES(proc_field_matches("/proc/sys/kernel/overflowgid", "65534"),
+		 _ret == 0);
+}
+END_TEST()
+
+FN_TEST(proc_sys_kernel_overflow_ids_update_on_write)
+{
+	char original_uid[32];
+	char original_gid[32];
+
+	read_file_checked("/proc/sys/kernel/overflowuid", original_uid,
+			  sizeof(original_uid));
+	read_file_checked("/proc/sys/kernel/overflowgid", original_gid,
+			  sizeof(original_gid));
+
+	TEST_RES(write_file("/proc/sys/kernel/overflowuid", "123\n"),
+		 _ret == (ssize_t)strlen("123\n"));
+	TEST_RES(proc_field_matches("/proc/sys/kernel/overflowuid", "123"),
+		 _ret == 0);
+	TEST_RES(write_file("/proc/sys/kernel/overflowuid", "65535\n"),
+		 _ret == (ssize_t)strlen("65535\n"));
+	TEST_RES(proc_field_matches("/proc/sys/kernel/overflowuid", "65535"),
+		 _ret == 0);
+
+	TEST_RES(write_file("/proc/sys/kernel/overflowgid", "456\n"),
+		 _ret == (ssize_t)strlen("456\n"));
+	TEST_RES(proc_field_matches("/proc/sys/kernel/overflowgid", "456"),
+		 _ret == 0);
+	TEST_RES(write_file("/proc/sys/kernel/overflowgid", "65535\n"),
+		 _ret == (ssize_t)strlen("65535\n"));
+	TEST_RES(proc_field_matches("/proc/sys/kernel/overflowgid", "65535"),
+		 _ret == 0);
+
+	// Restore the initial values, as the overflow UID/GID is global kernel state.
+	TEST_RES(write_file_len("/proc/sys/kernel/overflowuid", original_uid,
+				strlen(original_uid)),
+		 _ret == (ssize_t)strlen(original_uid));
+	TEST_RES(write_file_len("/proc/sys/kernel/overflowgid", original_gid,
+				strlen(original_gid)),
+		 _ret == (ssize_t)strlen(original_gid));
+}
+END_TEST()
+
+FN_TEST(proc_sys_kernel_overflow_ids_reject_invalid_values)
+{
+	char original_uid[32];
+	char original_gid[32];
+	char actual_uid[32];
+	char actual_gid[32];
+
+	read_file_checked("/proc/sys/kernel/overflowuid", original_uid,
+			  sizeof(original_uid));
+	read_file_checked("/proc/sys/kernel/overflowgid", original_gid,
+			  sizeof(original_gid));
+
+	TEST_ERRNO(write_file("/proc/sys/kernel/overflowuid", "65536\n"),
+		   EINVAL);
+	TEST_ERRNO(write_file("/proc/sys/kernel/overflowuid", "abc\n"), EINVAL);
+	TEST_ERRNO(write_file("/proc/sys/kernel/overflowuid", "-1\n"), EINVAL);
+
+	TEST_ERRNO(write_file("/proc/sys/kernel/overflowgid", "65536\n"),
+		   EINVAL);
+	TEST_ERRNO(write_file("/proc/sys/kernel/overflowgid", "abc\n"), EINVAL);
+	TEST_ERRNO(write_file("/proc/sys/kernel/overflowgid", "-1\n"), EINVAL);
+
+	// The rejected writes must not change the current values.
+	read_file_checked("/proc/sys/kernel/overflowuid", actual_uid,
+			  sizeof(actual_uid));
+	read_file_checked("/proc/sys/kernel/overflowgid", actual_gid,
+			  sizeof(actual_gid));
+	TEST_RES(strcmp(actual_uid, original_uid), _ret == 0);
+	TEST_RES(strcmp(actual_gid, original_gid), _ret == 0);
+}
+END_TEST()
+
+FN_TEST(proc_sys_kernel_overflow_ids_require_cap_sys_admin)
+{
+	char original_uid[32];
+	char original_gid[32];
+	char actual_uid[32];
+	char actual_gid[32];
+	pid_t pid;
+	int status;
+
+	read_file_checked("/proc/sys/kernel/overflowuid", original_uid,
+			  sizeof(original_uid));
+	read_file_checked("/proc/sys/kernel/overflowgid", original_gid,
+			  sizeof(original_gid));
+
+	pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		drop_capability(CAP_SYS_ADMIN);
+
+		errno = 0;
+		CHECK_WITH(write_file("/proc/sys/kernel/overflowuid", "123\n"),
+			   _ret == -1 && errno == EPERM);
+		errno = 0;
+		CHECK_WITH(write_file("/proc/sys/kernel/overflowgid", "123\n"),
+			   _ret == -1 && errno == EPERM);
+
+		_exit(0);
+	}
+
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+	// The denied writes must not change the current values.
+	read_file_checked("/proc/sys/kernel/overflowuid", actual_uid,
+			  sizeof(actual_uid));
+	read_file_checked("/proc/sys/kernel/overflowgid", actual_gid,
+			  sizeof(actual_gid));
+	TEST_RES(strcmp(actual_uid, original_uid), _ret == 0);
+	TEST_RES(strcmp(actual_gid, original_gid), _ret == 0);
+}
+END_TEST()
