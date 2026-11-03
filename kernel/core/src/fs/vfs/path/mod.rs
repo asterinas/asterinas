@@ -202,6 +202,8 @@ impl Path {
             && creation_flags.contains(CreationFlags::O_TRUNC)
             && !status_flags.contains(StatusFlags::O_PATH)
         {
+            // Check the requested access mode before truncation modifies the file.
+            inode.check_permission(open_args.access_mode.into())?;
             self.resize(0)?;
         }
 
