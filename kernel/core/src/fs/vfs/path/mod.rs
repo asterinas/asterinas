@@ -199,6 +199,18 @@ impl Path {
             );
         }
 
+        if !status_flags.contains(StatusFlags::O_PATH)
+            && ((open_args.access_mode.is_writable()
+                && !status_flags.contains(StatusFlags::O_APPEND))
+                || creation_flags.contains(CreationFlags::O_TRUNC))
+            && inode.is_append_only()
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "cannot open an append-only inode with these flags"
+            );
+        }
+
         if status_flags.contains(StatusFlags::O_NOATIME)
             && !status_flags.contains(StatusFlags::O_PATH)
             && let Some(task) = Task::current()

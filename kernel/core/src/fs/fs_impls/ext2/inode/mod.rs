@@ -203,6 +203,14 @@ impl Inode {
         self.inner.read().file_size()
     }
 
+    pub(super) fn has_append_only_flag(&self) -> bool {
+        self.inner
+            .read()
+            .desc
+            .flags
+            .contains(FileFlags::APPEND_ONLY)
+    }
+
     /// Returns a reference to the VFS extension slot.
     pub(super) fn extension(&self) -> &Extension {
         &self.extension
