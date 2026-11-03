@@ -68,10 +68,9 @@ impl datagram_common::Bound for BoundNetlinkRoute {
         loop {
             let mut segment = match RtnlSegment::read_from(reader, strict_check) {
                 Ok(ContinueRead::Parsed(seg)) => seg,
-                Ok(ContinueRead::Skipped) => continue,
                 // There is at least a valid segment header, so we can create an error segment to
                 // report any errors found while parsing the segment body or attributes.
-                Ok(ContinueRead::SkippedErr(err_segment)) => {
+                Ok(ContinueRead::SkippedInvalid(err_segment)) => {
                     rtnl_kernel.report_error(err_segment, local_port);
                     continue;
                 }

@@ -8,7 +8,7 @@ use zerocopy::Immutable;
 
 use crate::{
     net::socket::netlink::{
-        message::{Attribute, CAttrHeader, ContinueRead},
+        message::{Attribute, CAttrHeader, ContinueAttrRead},
         route::message::AddrMessageFlags,
     },
     prelude::*,
@@ -95,7 +95,7 @@ impl Attribute for AddrAttr {
         }
     }
 
-    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<ContinueRead<Self>>
+    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<ContinueAttrRead<Self>>
     where
         Self: Sized,
     {
@@ -111,24 +111,24 @@ impl Attribute for AddrAttr {
         let Ok(class) = AddrAttrClass::try_from(header.type_()) else {
             // Unknown attributes should be ignored.
             // Reference: <https://docs.kernel.org/userspace-api/netlink/intro.html#unknown-attributes>.
-            return Ok(ContinueRead::Skipped);
+            return Ok(ContinueAttrRead::SkippedUnsupported);
         };
 
         match (class, payload_len) {
             (AddrAttrClass::TARGET_NETNSID, 4) => {
                 // TODO: Parse the network namespace ID once we support network namespaces.
-                Ok(ContinueRead::Skipped)
+                Ok(ContinueAttrRead::SkippedUnsupported)
             }
             (AddrAttrClass::TARGET_NETNSID, _) => {
                 warn!("address attribute `{:?}` contains invalid payload", class);
-                Ok(ContinueRead::skipped_with_error(
+                Ok(ContinueAttrRead::skipped_invalid(
                     Errno::ERANGE,
                     "the address attribute is invalid",
                 ))
             }
             _ => {
                 warn!("address attribute `{:?}` is not supported", class);
-                Ok(ContinueRead::Skipped)
+                Ok(ContinueAttrRead::SkippedUnsupported)
             }
         }
     }

@@ -50,7 +50,7 @@ pub(crate) trait SegmentBody: Pod + From<Self::CLegacyType> {
             (Self::from(legacy), Self::legacy_padding_len())
         } else {
             reader.skip_some(remaining_len);
-            return Ok(ContinueRead::skipped_with_error(
+            return Ok(ContinueRead::skipped_invalid(
                 Errno::EINVAL,
                 "the message length is too small",
             ));
