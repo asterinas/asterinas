@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! [`FileOps`] and [`Inode`](crate::fs::vfs::inode::Inode) implementations for
+//! [`FileOps`] and [`Inode`] implementations for
 //! the F2FS inode.
 
 use core::time::Duration;
