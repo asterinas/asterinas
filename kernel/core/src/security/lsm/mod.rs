@@ -22,7 +22,7 @@ use crate::prelude::*;
 
 bitflags! {
     /// LSM module flags.
-    pub(crate) struct LsmFlags: u32 {
+    pub struct LsmFlags: u32 {
         /// Marks a module as selectable through the legacy `security=` parameter.
         const LEGACY_MAJOR = 1 << 0;
         /// Marks a module as mutually exclusive with other exclusive modules.
@@ -30,13 +30,23 @@ bitflags! {
     }
 }
 
-/// The common interface for built-in LSM modules.
-trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
+/// The common interface for LSM modules.
+pub trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
     /// Returns the module name.
     fn name(&self) -> &'static str;
 
     /// Returns the module flags.
     fn flags(&self) -> LsmFlags;
+
+    /// Initializes the module after it has been selected.
+    fn init(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// Registers an LSM module before the LSM stack is initialized.
+pub fn register(module: &'static dyn LsmModule) -> Result<()> {
+    modules::register(module)
 }
 
 /// Returns whether the Yama LSM is enabled.
@@ -46,8 +56,11 @@ pub(crate) fn is_yama_enabled() -> bool {
         .any(|module| module.name() == "yama")
 }
 
-pub(super) fn init() {
+pub(super) fn init() -> Result<()> {
     for module in modules::active_modules() {
         info!("[kernel] LSM module enabled: {}", module.name());
+        module.init()?;
     }
+
+    Ok(())
 }
