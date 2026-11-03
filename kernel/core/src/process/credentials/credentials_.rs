@@ -11,6 +11,7 @@ use super::{
 use crate::{
     prelude::*,
     process::credentials::capabilities::{AtomicCapSet, CapSet},
+    security::lsm::CredSecurity,
 };
 
 #[derive(Debug)]
@@ -79,19 +80,31 @@ pub(super) struct Credentials_ {
 
     /// Whether `execve()` is forbidden from granting new privileges.
     no_new_privs: AtomicBool,
+
+    /// Immutable LSM state. The slot itself is never shared by copied credentials.
+    security: RwLock<CredSecurity>,
 }
 
 /// Credentials computed for a pending `execve()`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(in crate::process) struct ExecCred {
     setuid: Option<Uid>,
     setgid: Option<Gid>,
     permitted: CapSet,
     effective: CapSet,
     ambient: CapSet,
+    security: CredSecurity,
 }
 
 impl ExecCred {
+    pub(in crate::process) fn prepare_security(
+        &mut self,
+        current: &CredSecurity,
+        path: Option<&str>,
+    ) -> Result<()> {
+        self.security = current.prepare_exec(path)?;
+        Ok(())
+    }
     pub(in crate::process) const fn will_change_ids(&self) -> bool {
         self.setuid.is_some() || self.setgid.is_some()
     }
@@ -101,11 +114,11 @@ impl Credentials_ {
     /// Creates a new `Credentials_`.
     ///
     /// The real, effective, saved set, and filesystem IDs will be initialized to the same ID.
-    pub(super) fn new(uid: Uid, gid: Gid, capset: CapSet) -> Self {
+    pub(super) fn new(uid: Uid, gid: Gid, capset: CapSet) -> Result<Self> {
         let mut supplementary_gids = BTreeSet::new();
         supplementary_gids.insert(gid);
 
-        Self {
+        Ok(Self {
             ruid: AtomicUid::new(uid),
             euid: AtomicUid::new(uid),
             suid: AtomicUid::new(uid),
@@ -122,7 +135,12 @@ impl Credentials_ {
             ambient_capset: AtomicCapSet::new(CapSet::empty()),
             securebits: AtomicSecureBits::new(SecureBits::new_empty()),
             no_new_privs: AtomicBool::new(false),
-        }
+            security: RwLock::new(CredSecurity::init()?),
+        })
+    }
+
+    pub(super) fn security(&self) -> CredSecurity {
+        self.security.read().clone()
     }
 
     //  ******* UID methods *******
@@ -664,6 +682,7 @@ impl Credentials_ {
             permitted,
             effective,
             ambient,
+            security: self.security(),
         })
     }
 
@@ -684,6 +703,10 @@ impl Credentials_ {
         self.ambient_capset
             .store(exec_cred.ambient, Ordering::Relaxed);
         self.set_keep_capabilities(false)?;
+
+        // All fallible credential work precedes label publication. The caller
+        // holds the process VMAR lock, also used by procfs label snapshots.
+        *self.security.write() = exec_cred.security;
 
         Ok(())
     }
@@ -782,6 +805,7 @@ impl Clone for Credentials_ {
             ambient_capset: self.ambient_capset.clone(),
             securebits: self.securebits.clone(),
             no_new_privs: AtomicBool::new(self.no_new_privs()),
+            security: RwLock::new(self.security()),
         }
     }
 }

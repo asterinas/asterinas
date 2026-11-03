@@ -7,6 +7,42 @@ getpid, getppid, gettid, setuid, setgid, getuid, getgid, prctl and ptrace
 under this category.
 -->
 
+### `execve` and `execveat`
+
+Both calls support the arguments and flags listed in `fully_covered.scml`.
+When AppArmor is selected at boot,
+an unconfined task can acquire a profile through an exact-path attachment during exec.
+The attachment path identifies the opened original executable,
+including the script for an interpreter-based execution,
+relative to the task's mount namespace root.
+Symlinks use their resolved target;
+hardlinks retain their distinct paths.
+Deleted, anonymous, and unreachable executable paths do not acquire an attachment.
+
+AppArmor support currently covers label binding and observation only:
+
+- Loading a profile does not relabel tasks already running.
+- Fork/clone preserve the label through shared immutable state and independent credential slots.
+- A labelled task preserves its label across subsequent exec calls.
+- General pattern attachments, profile transitions, stacking, replacement, and deletion are unsupported.
+- `enforce` and `complain` describe the loaded profile mode;
+  profile permissions are not enforced yet.
+
+The read-only `/proc/<pid>/attr/current` attribute reports the main thread's label.
+`/proc/<pid>/task/<tid>/attr/current` reports the specified thread's label.
+The result is `unconfined\n` or `<profile> (<mode>)\n`.
+Opening checks access using the caller's filesystem credentials and captures an immutable snapshot.
+An open descriptor retains that snapshot across exec, exit, and partial reads.
+A new open observes the then-current label.
+Denied access returns `EACCES`.
+A missing PID or TID during path lookup returns `ENOENT`;
+a target that becomes unavailable before the attribute is opened returns `ESRCH`.
+No selected provider returns `EINVAL`.
+Writes cannot switch labels and are rejected.
+
+For boot selection and defaults,
+see [Kernel Parameters](../../kernel-parameters.md).
+
 ### `sched_getattr` and `sched_setattr`
 
 Supported functionality in SCML:

@@ -212,6 +212,46 @@ Notes:
 - Use `warn` for normal operation, `info`/`debug` when troubleshooting,
   and `error` or lower for a quieter console.
 
+### `lsm`
+
+Select the optional Linux Security Modules (LSMs) in the specified comma-separated order.
+The supported module names are `capability`, `yama`, and `apparmor`.
+
+Example:
+```text
+lsm=apparmor,yama
+```
+
+Notes:
+- `capability` is mandatory and always runs first, even when omitted from the list.
+- Without `lsm=` or `security=`, the default stack is `capability,yama`.
+- An explicit empty `lsm=` enables only the mandatory module.
+- Unknown names produce a warning and are ignored.
+  Duplicate names are ignored after their first selection.
+- The first selected exclusive module is kept; later exclusive modules are ignored.
+  AppArmor is exclusive, while Yama can coexist with it.
+- If both selectors are present, `lsm=` takes precedence over `security=`, including when `lsm=` is empty.
+- If `lsm=` occurs more than once, its last value is used.
+- AppArmor supports single-profile loading and exact-path attachment at exec.
+  Task labels can be queried through procfs; policy modes do not yet enforce permissions.
+
+### `security`
+
+Select one legacy major LSM in addition to the default optional stack.
+Currently, `apparmor` is the supported legacy major module.
+
+Example:
+```text
+security=apparmor
+```
+
+Notes:
+- Without `lsm=`, this example enables `capability,yama,apparmor` in that order.
+- A selected exclusive legacy module replaces another selected exclusive module.
+- Unknown names or modules without legacy-major support produce a warning and are ignored.
+- If `security=` occurs more than once, its last value is used.
+- `security=` is ignored whenever `lsm=` is provided.
+
 ## Asterinas-specific
 
 ### `i8042.exist`

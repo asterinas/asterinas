@@ -61,7 +61,19 @@ pub(crate) fn do_execve(
 
     let executable_path = executable.path().clone();
     let program_to_load = ProgramToLoad::from_executable(executable, &path_resolver, argv, envp)?;
-    let exec_cred = prepare_exec_cred(program_to_load.elf_path(), ctx)?;
+    let mut exec_cred = prepare_exec_cred(program_to_load.elf_path(), ctx)?;
+    let security = ctx.posix_thread.credentials().security();
+    let attachment = if security.needs_exec_path() {
+        ctx.thread_local
+            .borrow_ns_proxy()
+            .unwrap()
+            .mnt_ns()
+            .new_path_resolver()
+            .make_attachment_path(&executable_path)?
+    } else {
+        None
+    };
+    exec_cred.prepare_security(&security, attachment.as_deref())?;
 
     let new_vmar = VmarHandle::new(ProcessVm::new(executable_path.clone()));
     let elf_load_info = program_to_load.load_to_vmar(&new_vmar, &path_resolver)?;
