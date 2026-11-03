@@ -87,7 +87,6 @@ impl ThreadOptions {
     /// The `Arc` keeps the VMAR object alive, but does not prevent its mappings from being cleared
     /// after the last [`VmarHandle`](crate::vm::vmar::VmarHandle) is dropped. A caller that needs
     /// the mappings to outlive their userspace owner must hold a separate owner-memory lease.
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(crate) fn vmar(mut self, vmar: Arc<Vmar>) -> Self {
         self.vmar = Some(vmar);
         self

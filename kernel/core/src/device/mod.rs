@@ -8,6 +8,7 @@ mod model;
 mod pty;
 pub mod registry;
 pub(crate) mod tty;
+pub(crate) mod vhost;
 
 use device_id::DeviceId;
 pub(crate) use mem::{getrandom, geturandom};
