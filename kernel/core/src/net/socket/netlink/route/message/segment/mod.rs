@@ -103,7 +103,7 @@ impl ProtocolSegment for RtnlSegment {
             _ => {
                 let payload_len = header.calc_payload_len_with_padding(reader)?;
                 reader.skip_some(payload_len);
-                ContinueRead::skipped_with_error(
+                ContinueRead::skipped_invalid(
                     Errno::EOPNOTSUPP,
                     "the segment type is not supported",
                 )

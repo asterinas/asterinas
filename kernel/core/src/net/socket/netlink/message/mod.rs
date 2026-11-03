@@ -10,7 +10,7 @@ mod result;
 mod segment;
 
 pub(super) use attr::{Attribute, CAttrHeader, noattr::NoAttr};
-pub(super) use result::ContinueRead;
+pub(super) use result::{ContinueAttrRead, ContinueRead};
 pub(super) use segment::{
     CSegmentType, SegmentBody,
     ack::{DoneSegment, ErrorSegment},
@@ -75,10 +75,10 @@ pub(crate) trait ProtocolSegment: Sized {
     /// ignore the error.
     ///
     /// If the reader contains a valid segment header but an invalid segment (e.g., one with an
-    /// invalid body or attributes), this method will succeed with [`ContinueRead::Skipped`] or
-    /// [`ContinueRead::SkippedErr`]. If there is an error segment in [`ContinueRead::SkippedErr`],
-    /// netlink sockets should respond the user with the error segment. The entire segment is
-    /// skipped so it is possible to read the next segment from the reader.
+    /// invalid body or attributes), this method will succeed with [`ContinueRead::SkippedInvalid`].
+    /// Netlink sockets should respond the user with the error segment in
+    /// [`ContinueRead::SkippedInvalid`]. The entire segment is skipped so it is possible to read
+    /// the next segment from the reader.
     ///
     /// This method will skip the padding bytes, so it can be called multiple times to read
     /// multiple segments.

@@ -28,7 +28,7 @@
 
 use align_ext::AlignExt;
 
-use super::{ContinueRead, NLMSG_ALIGN};
+use super::{ContinueAttrRead, ContinueRead, NLMSG_ALIGN};
 use crate::{
     prelude::*,
     util::{MultiRead, MultiWrite},
@@ -127,10 +127,14 @@ pub(crate) trait Attribute: Debug + Send + Sync {
 
     /// Reads the attribute from the `reader`.
     ///
-    /// This method may return a [`ContinueRead::Skipped`] or a [`ContinueRead::SkippedErr`] if the
-    /// attribute is not recognized or not valid. In that case, however, it must still skip the
-    /// payload length (excluding padding), as if the attribute were parsed properly.
-    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<ContinueRead<Self>>
+    /// This method may return a [`ContinueAttrRead::SkippedUnsupported`] or a
+    /// [`ContinueAttrRead::SkippedInvalid`] if the attribute is not supported or not valid. In that
+    /// case, however, it must still skip the payload length (excluding padding), as if the
+    /// attribute were parsed properly.
+    fn read_from(
+        header: &CAttrHeader,
+        reader: &mut dyn MultiRead,
+    ) -> Result<ContinueAttrRead<Self>>
     where
         Self: Sized;
 
@@ -187,8 +191,8 @@ pub(crate) trait Attribute: Debug + Send + Sync {
 
             // Read the attribute.
             match Self::read_from(&header, reader)? {
-                ContinueRead::Parsed(attr) => res.push(attr),
-                ContinueRead::Skipped => {
+                ContinueAttrRead::Parsed(attr) => res.push(attr),
+                ContinueAttrRead::SkippedUnsupported => {
                     if validation == AttrValidation::Strict {
                         error = Some(Error::with_message(
                             Errno::EINVAL,
@@ -197,7 +201,7 @@ pub(crate) trait Attribute: Debug + Send + Sync {
                         break;
                     }
                 }
-                ContinueRead::SkippedErr(err) => {
+                ContinueAttrRead::SkippedInvalid(err) => {
                     error = Some(err);
                     should_report_error = validation != AttrValidation::LegacyDump;
                     break;
@@ -212,7 +216,7 @@ pub(crate) trait Attribute: Debug + Send + Sync {
 
         reader.skip_some(total_len);
         if should_report_error && let Some(err) = error {
-            return Ok(ContinueRead::SkippedErr(err));
+            return Ok(ContinueRead::SkippedInvalid(err));
         }
 
         Ok(ContinueRead::Parsed(res))

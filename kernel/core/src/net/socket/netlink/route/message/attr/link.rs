@@ -5,7 +5,7 @@
 use aster_bigtcp::{iface::InterfaceName, wire::EthernetAddress};
 
 use crate::{
-    net::socket::netlink::message::{Attribute, CAttrHeader, ContinueRead},
+    net::socket::netlink::message::{Attribute, CAttrHeader, ContinueAttrRead},
     prelude::*,
     util::MultiRead,
 };
@@ -130,7 +130,7 @@ impl Attribute for LinkAttr {
         }
     }
 
-    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<ContinueRead<Self>>
+    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<ContinueAttrRead<Self>>
     where
         Self: Sized,
     {
@@ -141,7 +141,7 @@ impl Attribute for LinkAttr {
             // Unknown attributes should be ignored.
             // Reference: <https://docs.kernel.org/userspace-api/netlink/intro.html#unknown-attributes>.
             reader.skip_some(payload_len);
-            return Ok(ContinueRead::Skipped);
+            return Ok(ContinueAttrRead::SkippedUnsupported);
         };
 
         let res = match (class, payload_len) {
@@ -152,7 +152,7 @@ impl Attribute for LinkAttr {
                 reader.read(&mut writer)?;
 
                 if !name_bytes.contains(&0) {
-                    return Ok(ContinueRead::skipped_with_error(
+                    return Ok(ContinueAttrRead::skipped_invalid(
                         Errno::ERANGE,
                         "the link attribute is invalid",
                     ));
@@ -179,7 +179,7 @@ impl Attribute for LinkAttr {
             ) => {
                 warn!("link attribute `{:?}` contains invalid payload", class);
                 reader.skip_some(payload_len);
-                return Ok(ContinueRead::skipped_with_error(
+                return Ok(ContinueAttrRead::skipped_invalid(
                     if class == LinkAttrClass::IFNAME {
                         Errno::ERANGE
                     } else {
@@ -192,11 +192,11 @@ impl Attribute for LinkAttr {
             (_, _) => {
                 warn!("link attribute `{:?}` is not supported", class);
                 reader.skip_some(payload_len);
-                return Ok(ContinueRead::Skipped);
+                return Ok(ContinueAttrRead::SkippedUnsupported);
             }
         };
 
-        Ok(ContinueRead::Parsed(res))
+        Ok(ContinueAttrRead::Parsed(res))
     }
 }
 

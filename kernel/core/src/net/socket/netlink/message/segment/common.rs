@@ -80,8 +80,7 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
         let (body, remain_len) =
             match <Body as SegmentBody>::read_from(header, reader, strict_check)? {
                 ContinueRead::Parsed(parsed) => parsed,
-                ContinueRead::Skipped => return Ok(ContinueRead::Skipped),
-                ContinueRead::SkippedErr(err) => return Ok(ContinueRead::SkippedErr(err)),
+                ContinueRead::SkippedInvalid(err) => return Ok(ContinueRead::SkippedInvalid(err)),
             };
 
         let attr_validation = if strict_check {
@@ -94,8 +93,7 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
         };
         let attrs = match Attr::read_all_from(reader, remain_len, attr_validation)? {
             ContinueRead::Parsed(attrs) => attrs,
-            ContinueRead::Skipped => Vec::new(),
-            ContinueRead::SkippedErr(err) => return Ok(ContinueRead::SkippedErr(err)),
+            ContinueRead::SkippedInvalid(err) => return Ok(ContinueRead::SkippedInvalid(err)),
         };
 
         Ok(ContinueRead::Parsed(Self {
