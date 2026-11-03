@@ -173,4 +173,8 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 
 ./tmpfile/tmpfile
 
+./open/open_trunc_permission
+./open/open_noatime_permission
+./open/open_append_only
+
 ./utimensat/utimensat

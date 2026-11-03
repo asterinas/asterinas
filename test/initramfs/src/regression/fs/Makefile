@@ -8,6 +8,7 @@ SUBDIRS := \
 	inotify \
 	isolation \
 	mount \
+	open \
 	overlayfs \
 	procfs \
 	pseudofs \
