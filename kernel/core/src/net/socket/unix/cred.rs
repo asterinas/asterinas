@@ -98,11 +98,11 @@ impl CUserCred {
         }
     }
 
-    pub(in crate::net) const fn new_overflow() -> Self {
+    pub(in crate::net) fn new_overflow() -> Self {
         Self {
             pid: 0,
-            uid: Uid::OVERFLOW,
-            gid: Gid::OVERFLOW,
+            uid: Uid::new_overflow(),
+            gid: Gid::new_overflow(),
         }
     }
 }
