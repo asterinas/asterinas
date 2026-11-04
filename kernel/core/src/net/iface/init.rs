@@ -14,6 +14,11 @@ use crate::{net::iface::sched::PollScheduler, prelude::*};
 
 static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
 
+/// `ip=dhcp` on the kernel command line (the Linux `ip=` parameter): configure
+/// the NIC with DHCP instead of the built-in `10.0.2.15/24` for QEMU.
+static IP_PARAM: Once<String> = Once::new();
+aster_cmdline::define_kv_param!("ip", IP_PARAM);
+
 fn virtio_iface() -> Option<&'static Arc<Iface>> {
     IFACES.get().unwrap().get(1)
 }
@@ -131,6 +136,17 @@ fn new_virtio() -> Option<Arc<Iface>> {
         | InterfaceFlags::RUNNING
         | InterfaceFlags::MULTICAST
         | InterfaceFlags::LOWER_UP;
+
+    if IP_PARAM.get().is_some_and(|v| v == "dhcp") {
+        info!("eth0: configuring with DHCP (ip=dhcp)");
+        return Some(EtherIface::new_dhcp(
+            Wrapper(virtio_net),
+            ether_addr,
+            InterfaceName::from_str_truncated("eth0"),
+            PollScheduler::new(),
+            flags,
+        ) as Arc<Iface>);
+    }
 
     Some(EtherIface::new(
         Wrapper(virtio_net),
