@@ -167,6 +167,8 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 
 ./rename/permission
 ./rename/same_inode
+TEST_TMPDIR=/tmp ./rename/replaced_link_count
+TEST_TMPDIR=/ext2 ./rename/replaced_link_count
 
 ./statx/btime
 

@@ -1354,6 +1354,16 @@ impl Inode for RamInode {
                 }
                 Ok(())
             };
+        // Drops the links held by the name of `dst_inode`, which has been replaced.
+        // A replaced directory is empty, so it also loses the link of its `.` entry.
+        let drop_replaced_links = |dst_inode: &Arc<RamInode>, now: Duration| {
+            let mut dst_meta = dst_inode.metadata.lock();
+            dst_meta.dec_nlinks();
+            if dst_inode.typ == InodeType::Dir {
+                dst_meta.dec_nlinks();
+            }
+            dst_meta.set_ctime(now);
+        };
 
         let new_dir_inode = new_dir_dentry.inode().downcast_ref::<RamInode>().unwrap();
 
@@ -1385,7 +1395,7 @@ impl Inode for RamInode {
                 let now = now();
                 DirChange::del(&src_inode).apply(self, now);
                 src_inode.metadata.lock().set_ctime(now);
-                dst_inode.metadata.lock().set_ctime(now);
+                drop_replaced_links(&dst_inode, now);
             } else {
                 self_dir.substitute_entry(
                     src_idx,
@@ -1444,7 +1454,7 @@ impl Inode for RamInode {
                 let now = now();
                 DirChange::del(&src_inode).apply(self, now);
                 DirChange::exchange(&dst_inode, &src_inode).apply(new_dir_inode, now);
-                dst_inode.metadata.lock().set_ctime(now);
+                drop_replaced_links(&dst_inode, now);
                 src_inode.metadata.lock().set_ctime(now);
             } else {
                 self_dir.remove_entry(src_idx);
