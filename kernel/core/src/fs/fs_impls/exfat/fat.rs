@@ -122,11 +122,13 @@ impl ExfatChain {
         self.fs.upgrade().unwrap()
     }
 
-    pub(super) fn physical_cluster_start_offset(&self) -> usize {
-        let cluster_num = (self.current - EXFAT_RESERVED_CLUSTERS) as usize;
-        (cluster_num * self.cluster_size())
+    pub(super) fn physical_cluster_start_offset(&self) -> Result<usize> {
+        let Some(cluster_num) = self.current.checked_sub(EXFAT_RESERVED_CLUSTERS) else {
+            return_errno_with_message!(Errno::EINVAL, "underflow when calculating cluster number.")
+        };
+        Ok((cluster_num as usize * self.cluster_size())
             + self.fs().super_block().data_start_sector as usize
-                * self.fs().super_block().sector_size as usize
+                * self.fs().super_block().sector_size as usize)
     }
 
     // Walk to the cluster at the given offset, return the new relative offset
