@@ -9,19 +9,24 @@
 //! Individual planes, CRTCs, encoders, connectors, and properties are defined in the [`objects`] module.
 
 use aster_core::prelude::*;
+use ostd::sync::Mutex;
 
 use crate::{
     device::DrmDevice,
-    kms::objects::{
-        KmsObjectIndex, KmsObjectStore,
-        connector::{DrmConnector, DrmConnectorProbeState},
-        framebuffer::DrmFramebuffer,
+    kms::{
+        modeset::KmsModesetState,
+        objects::{
+            KmsObjectIndex, KmsObjectStore,
+            connector::{DrmConnector, DrmConnectorProbeState},
+            framebuffer::DrmFramebuffer,
+        },
     },
     utils::{DrmRect, DrmSize},
 };
 
 pub mod display_info;
 pub mod display_mode;
+pub mod modeset;
 pub mod objects;
 pub mod pixel_format;
 
@@ -46,6 +51,8 @@ pub trait DrmKmsOps: DrmDevice {
     ///
     /// The DRM core validates the mode and connector-encoder assignments before calling this
     /// method. It updates the corresponding core state only if this method returns successfully.
+    // TODO: Replaces this legacy callback with atomic check and commit callbacks,
+    // and translates SETCRTC requests into atomic updates through a shared helper.
     fn set_crtc(
         &self,
         crtc_index: KmsObjectIndex,
@@ -54,6 +61,8 @@ pub trait DrmKmsOps: DrmDevice {
     ) -> Result<()>;
 
     /// Refreshes the regions of a framebuffer currently scanned out by planes.
+    // TODO: Replaces this legacy callback with atomic damage updates
+    // and reuses the driver's atomic commit path for framebuffer refreshes.
     fn refresh_dirty_fb(
         &self,
         framebuffer: &DrmFramebuffer,
@@ -61,18 +70,22 @@ pub trait DrmKmsOps: DrmDevice {
     ) -> Result<()>;
 }
 
-/// A DRM device's mode configuration and KMS objects.
+/// A DRM device's mode configuration, KMS objects, and current modeset state.
 #[derive(Debug)]
 pub struct DrmKms {
     mode_config: KmsModeConfig,
     object_store: KmsObjectStore,
+    modeset_state: Mutex<KmsModesetState>,
 }
 
 impl DrmKms {
     pub fn new(mode_config: KmsModeConfig, object_store: KmsObjectStore) -> Self {
+        let modeset_state = KmsModesetState::from_objects(object_store.static_objects());
+
         Self {
             mode_config,
             object_store,
+            modeset_state: Mutex::new(modeset_state),
         }
     }
 
@@ -82,6 +95,10 @@ impl DrmKms {
 
     pub(crate) fn object_store(&self) -> &KmsObjectStore {
         &self.object_store
+    }
+
+    pub(crate) fn modeset_state(&self) -> &Mutex<KmsModesetState> {
+        &self.modeset_state
     }
 }
 
