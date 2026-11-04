@@ -6,7 +6,6 @@ use aster_virtio::device::socket::{
     header::{VirtioVsockHdr, VirtioVsockOp, VirtioVsockShutdownFlags, VirtioVsockType},
     packet::{RxPacket, TxPacket},
 };
-use ostd::sync::PreemptDisabled;
 use spin::Once;
 
 use crate::{
@@ -26,7 +25,7 @@ use crate::{
 // TODO: Add support for multiple vsock devices and the loopback vsock device.
 pub(super) struct VsockSpace {
     device: Arc<SocketDevice>,
-    ports: SpinLock<PortTable>,
+    ports: SpinLock<PortTable, BottomHalfDisabled>,
     sockets: SpinLock<SocketTable, BottomHalfDisabled>,
 }
 
@@ -55,7 +54,7 @@ impl VsockSpace {
         self.device.guest_cid()
     }
 
-    pub(super) fn lock_ports(&self) -> SpinLockGuard<'_, PortTable, PreemptDisabled> {
+    pub(super) fn lock_ports(&self) -> SpinLockGuard<'_, PortTable, BottomHalfDisabled> {
         self.ports.lock()
     }
 }
