@@ -883,6 +883,13 @@ impl RamInode {
             return Ok(false);
         }
         self_dir.remove_entry(idx);
+
+        // Drop the link count while `target_dir` is still locked, so that
+        // `check_dir_not_removed` sees it under the same lock.
+        let mut target_meta = target.metadata.lock();
+        target_meta.dec_nlinks();
+        target_meta.dec_nlinks();
+        drop(target_meta);
         drop(self_dir);
         drop(target_dir);
 
@@ -892,10 +899,6 @@ impl RamInode {
         self_meta.dec_nlinks();
         self_meta.set_mtime(now);
         self_meta.set_ctime(now);
-        drop(self_meta);
-        let mut target_meta = target.metadata.lock();
-        target_meta.dec_nlinks();
-        target_meta.dec_nlinks();
 
         Ok(true)
     }
@@ -916,6 +919,7 @@ impl RamInode {
         }
 
         let self_dir = self.inner.as_direntry().unwrap().upread();
+        self.check_dir_not_removed()?;
         if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
@@ -968,6 +972,7 @@ impl RamInode {
         }
 
         let self_dir = self.inner.as_direntry().unwrap().upread();
+        self.check_dir_not_removed()?;
         if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
@@ -1001,6 +1006,17 @@ impl RamInode {
 
         self.metadata.lock().inc_size();
         Ok(new_inode)
+    }
+
+    /// Returns `ENOENT` if this directory has been removed.
+    ///
+    /// `rmdir` drops the link count of the directory to zero while holding the
+    /// lock on the directory's entries, so the caller must hold that lock too.
+    fn check_dir_not_removed(&self) -> Result<()> {
+        if self.metadata.lock().nlinks == 0 {
+            return_errno_with_message!(Errno::ENOENT, "the directory has been removed");
+        }
+        Ok(())
     }
 
     fn resize_impl(&self, new_size: usize) -> Result<()> {
@@ -1281,6 +1297,7 @@ impl Inode for RamInode {
         }
 
         let mut self_dir = self.inner.as_direntry().unwrap().write();
+        self.check_dir_not_removed()?;
         if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exist");
         }
@@ -1424,6 +1441,7 @@ impl Inode for RamInode {
                     new_dir_inode.inner.as_direntry().unwrap(),
                 ),
             );
+            new_dir_inode.check_dir_not_removed()?;
             let self_inode_arc = self.this.upgrade().unwrap();
             // The source is guaranteed to exist (checked by VFS layer).
             let (src_idx, src_inode) = self_dir.get_entry(&old_name).unwrap();
