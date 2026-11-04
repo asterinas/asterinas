@@ -77,13 +77,16 @@ impl FsEventPublisher {
     pub(crate) fn remove_subscriber(&self, subscriber: &Arc<dyn FsEventSubscriber>) -> bool {
         let mut subscribers = self.subscribers.write();
 
-        let orig_len = subscribers.len();
-        self.retain_and_recalc_events(&mut subscribers, |m| !Arc::ptr_eq(m, subscriber));
+        let removed_subscribers =
+            self.retain_and_recalc_events(&mut subscribers, |m| !Arc::ptr_eq(m, subscriber));
 
-        let removed = subscribers.len() != orig_len;
+        let removed = !removed_subscribers.is_empty();
         if removed {
             subscriber.deliver_event(FsEvents::IN_IGNORED, None);
         }
+
+        drop(subscribers);
+        drop(removed_subscribers);
 
         removed
     }
@@ -96,11 +99,15 @@ impl FsEventPublisher {
             subscriber.deliver_event(FsEvents::IN_IGNORED, None);
         }
 
-        let num_subscribers = subscribers.len();
-        subscribers.clear();
+        let removed_subscribers = core::mem::take(&mut *subscribers);
 
         self.all_interesting_events
             .store(FsEvents::empty(), Ordering::Relaxed);
+
+        let num_subscribers = removed_subscribers.len();
+
+        drop(subscribers);
+        drop(removed_subscribers);
 
         num_subscribers
     }
@@ -133,7 +140,10 @@ impl FsEventPublisher {
             let mut subscribers = self.subscribers.write();
             // The `deliver_event()` method should already deliver the `FsEvents::IN_IGNORED`
             // events for one-shot subscribers. Here, we simply remove them.
-            self.retain_and_recalc_events(&mut subscribers, |m| !m.is_oneshot_and_dead());
+            let dead_subscribers =
+                self.retain_and_recalc_events(&mut subscribers, |m| !m.is_oneshot_and_dead());
+            drop(subscribers);
+            drop(dead_subscribers);
         }
     }
 
@@ -141,30 +151,41 @@ impl FsEventPublisher {
     pub(crate) fn update_subscriber_events(&self) {
         // Take a write lock to avoid race conditions that may change `all_interesting_events` to
         // an outdated value.
-        let mut subscribers = self.subscribers.write();
-        self.retain_and_recalc_events(&mut subscribers, |_| true);
+        let removed_subscribers = {
+            let mut subscribers = self.subscribers.write();
+            self.retain_and_recalc_events(&mut subscribers, |_| true)
+        };
+        debug_assert!(removed_subscribers.is_empty());
     }
 
     /// Retains only the subscribers specified by the predicate and recalculates the aggregated
     /// interesting events.
+    ///
+    /// The removed subscribers are returned to the caller, who must drop them only after
+    /// releasing the `subscribers` lock: dropping a subscriber may release the last reference to
+    /// an `InotifyFile` and, in turn, to the inodes that it watches, which can sleep.
     fn retain_and_recalc_events<F>(
         &self,
         subscribers: &mut Vec<Arc<dyn FsEventSubscriber>>,
         mut pred: F,
-    ) where
+    ) -> Vec<Arc<dyn FsEventSubscriber>>
+    where
         F: FnMut(&Arc<dyn FsEventSubscriber>) -> bool,
     {
         let mut new_events = FsEvents::empty();
-        subscribers.retain(|subscriber| {
-            if pred(subscriber) {
-                new_events |= subscriber.interesting_events();
-                true
-            } else {
-                false
-            }
-        });
+        let removed_subscribers = subscribers
+            .extract_if(.., |subscriber| {
+                if pred(subscriber) {
+                    new_events |= subscriber.interesting_events();
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
         self.all_interesting_events
             .store(new_events, Ordering::Relaxed);
+        removed_subscribers
     }
 
     /// Finds a subscriber and applies an action if found.
