@@ -19,17 +19,22 @@ pub(crate) const IRQ_NUM_MAX: u8 = 255;
 /// An IRQ line with additional information that helps acknowledge the interrupt
 /// on hardware.
 ///
-/// On loongarch64, it's the hardware (i.e., the extended I/O interrupt
-/// controller) that routes the interrupt to the IRQ line. Therefore, the
-/// software does not need to maintain additional information about the original
-/// hardware interrupt.
+/// On LoongArch, timer interrupts are acknowledged through `TICLR`, while
+/// external interrupts are acknowledged through the extended I/O interrupt
+/// controller.
 pub(crate) struct HwIrqLine {
     irq_num: u8,
+    source: InterruptSource,
+}
+
+pub(super) enum InterruptSource {
+    Timer,
+    External,
 }
 
 impl HwIrqLine {
-    pub(super) fn new(irq_num: u8) -> Self {
-        Self { irq_num }
+    pub(super) fn new(irq_num: u8, source: InterruptSource) -> Self {
+        Self { irq_num, source }
     }
 
     pub(crate) fn irq_num(&self) -> u8 {
@@ -37,6 +42,9 @@ impl HwIrqLine {
     }
 
     pub(crate) fn ack(&self) {
-        chip::complete(self.irq_num);
+        match self.source {
+            InterruptSource::Timer => loongArch64::register::ticlr::clear_timer_interrupt(),
+            InterruptSource::External => chip::complete(self.irq_num),
+        }
     }
 }

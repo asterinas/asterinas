@@ -10,7 +10,12 @@ pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
 use crate::{
-    arch::{cpu::context::CpuExceptionInfo, irq::HwIrqLine, mm::tlb_flush_addr},
+    arch::{
+        cpu::context::CpuExceptionInfo,
+        irq::{HwIrqLine, InterruptSource},
+        mm::tlb_flush_addr,
+        timer,
+    },
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
 };
@@ -93,13 +98,13 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
                         // Call the IRQ callback functions for the claimed interrupt
                         call_irq_callback_functions(
                             f,
-                            &HwIrqLine::new(irq_num),
+                            &HwIrqLine::new(irq_num, InterruptSource::External),
                             PrivilegeLevel::Kernel,
                         );
                     }
                 }
                 Interrupt::PMI => todo!(),
-                Interrupt::Timer => todo!(),
+                Interrupt::Timer => timer::handle_irq(f, PrivilegeLevel::Kernel),
                 Interrupt::IPI => todo!(),
             }
         }
