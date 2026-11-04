@@ -6,6 +6,7 @@ console = { name = "aster-console" }
 core = { name = "aster-core" }
 device = { name = "aster-device" }
 drm = { name = "aster-drm" }
+ena = { name = "aster-ena" }
 framebuffer = { name = "aster-framebuffer" }
 i8042 = { name = "aster-i8042" }
 input = { name = "aster-input" }

@@ -100,6 +100,27 @@ impl<E: Ext> dyn Iface<E> {
         self.common().ipv4_cidr()?.broadcast()
     }
 
+    /// Sets the IPv4 address and prefix of the iface at runtime (`SIOCSIFADDR`,
+    /// `SIOCSIFNETMASK`). Replaces any existing IPv4 address.
+    pub fn set_ipv4_cidr(&self, cidr: Ipv4Cidr) {
+        self.common().set_ipv4_cidr(cidr);
+    }
+
+    /// Sets or clears the default IPv4 gateway of the iface at runtime (`SIOCADDRT`).
+    pub fn set_ipv4_gateway(&self, gateway: Option<Ipv4Address>) {
+        self.common().set_ipv4_gateway(gateway);
+    }
+
+    /// DNS servers from the DHCP lease, if the iface is configured by DHCP.
+    pub fn dns_servers(&self) -> Vec<Ipv4Address> {
+        self.common().dns_servers()
+    }
+
+    /// Whether the iface is configured by DHCP and still waiting for a lease.
+    pub fn is_dhcp_pending(&self) -> bool {
+        self.common().is_dhcp_pending()
+    }
+
     /// Returns routes currently installed in the interface.
     pub fn routes(&self) -> Vec<Route> {
         self.common().routes()

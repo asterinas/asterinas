@@ -86,6 +86,7 @@ dependencies = [
  "dma-pool",
  "int-to-c-enum",
  "jhash",
+ "log",
  "ostd",
  "ostd-pod",
  "smoltcp",
@@ -141,6 +142,7 @@ dependencies = [
  "aster-cmdline",
  "aster-console",
  "aster-device",
+ "aster-ena",
  "aster-framebuffer",
  "aster-fuse",
  "aster-input",
@@ -226,6 +228,22 @@ dependencies = [
  "ostd",
  "ostd-pod",
  "sparse-id-alloc",
+ "spin",
+ "zerocopy",
+]
+
+[[package]]
+name = "aster-ena"
+version = "0.1.0"
+dependencies = [
+ "aster-bigtcp",
+ "aster-cmdline",
+ "aster-network",
+ "aster-pci",
+ "component",
+ "dma-pool",
+ "ostd",
+ "ostd-pod",
  "spin",
  "zerocopy",
 ]

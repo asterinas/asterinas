@@ -14,6 +14,7 @@ int-to-c-enum.workspace = true
 jhash.workspace = true
 ostd.workspace = true
 ostd-pod.workspace = true
+log.workspace = true
 smoltcp.workspace = true
 spin.workspace = true
 takeable.workspace = true
