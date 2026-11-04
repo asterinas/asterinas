@@ -1,0 +1,17 @@
+[package]
+name = "aster-tpm"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+aes = { version = "0.7.5", default-features = false, features = ["force-soft"] }
+cfb-mode = { version = "0.7.1", default-features = false }
+component.workspace = true
+hmac = { version = "0.12.1", default-features = false }
+ostd.workspace = true
+sha2 = { version = "0.10.9", default-features = false, features = ["force-soft"] }
+spin.workspace = true
+tpm-core.workspace = true
+
+[lints]
+workspace = true
