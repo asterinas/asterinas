@@ -177,7 +177,11 @@ impl Inode {
         let lock_targets = [self, old];
         let mut guards = MultiInodeInnerGuards::lock(&lock_targets);
 
-        if guards.inner(old.ino()).link_count() >= MAX_LINK_COUNT {
+        let old_link_count = guards.inner(old.ino()).link_count();
+        if old_link_count == 0 {
+            return_errno_with_message!(Errno::ENOENT, "the inode has no links");
+        }
+        if old_link_count >= MAX_LINK_COUNT {
             return_errno!(Errno::EOVERFLOW);
         }
 
