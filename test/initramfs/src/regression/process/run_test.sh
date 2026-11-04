@@ -53,6 +53,7 @@ if [ "$(uname -m)" = "x86_64" ]; then
     ./ptrace/read_write_regs
 fi
 
+./sched/ioprio_permission
 ./sched/sched_attr_getset
 ./sched/sched_param_getset
 ./sched/sched_param_idle
