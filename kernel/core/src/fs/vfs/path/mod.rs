@@ -185,12 +185,6 @@ impl Path {
             );
         }
 
-        if inode_type == InodeType::SymLink
-            && creation_flags.contains(CreationFlags::O_NOFOLLOW)
-            && !status_flags.contains(StatusFlags::O_PATH)
-        {
-            return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
-        }
         if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
             return_errno_with_message!(
                 Errno::ENOTDIR,
@@ -198,11 +192,21 @@ impl Path {
             );
         }
 
-        if inode_type.is_regular_file()
-            && creation_flags.contains(CreationFlags::O_TRUNC)
-            && !status_flags.contains(StatusFlags::O_PATH)
-        {
-            self.resize(0)?;
+        if status_flags.contains(StatusFlags::O_PATH) {
+            return InodeHandle::new(self.clone(), open_args.access_mode, *status_flags);
+        }
+
+        if inode_type == InodeType::SymLink && creation_flags.contains(CreationFlags::O_NOFOLLOW) {
+            return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
+        }
+
+        if inode_type.is_regular_file() {
+            if open_args.access_mode.is_writable() {
+                self.check_mount_writable()?;
+            }
+            if creation_flags.contains(CreationFlags::O_TRUNC) {
+                self.resize(0)?;
+            }
         }
 
         InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
@@ -1000,8 +1004,10 @@ impl Path {
         self.resize_unchecked_access(size)
     }
 
-    /// Resizes the file without permission checks.
+    /// Resizes the file without inode access checks, but requires a writable mount.
     pub(in crate::fs) fn resize_unchecked_access(&self, size: usize) -> Result<()> {
+        self.check_mount_writable()?;
+
         let inode = self.inode();
         xattr::clear_file_priv(&self.dentry)?;
         inode.resize(&self.dentry, size)
