@@ -6,7 +6,7 @@ use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file::file_table::RawFileDesc,
+    fs::file::file_table::{RawFileDesc, get_file_fast},
     prelude::*,
     time::{
         itimerspec_t,
@@ -24,10 +24,9 @@ pub(super) fn sys_timerfd_settime(
 ) -> Result<SyscallReturn> {
     let flags = TFDSetTimeFlags::from_bits(flags as u32)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags for timerfd_settime"))?;
-    let file_table = ctx.thread_local.borrow_file_table();
-    let file_table_locked = file_table.unwrap().read();
-    let timerfd_file = file_table_locked.get_file(raw_fd.try_into()?)?;
-    let timerfd_file = timerfd_file
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
+    let timerfd_file = file
         .downcast_ref::<TimerfdFile>()
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "the fd is not a timerfd"))?;
 
