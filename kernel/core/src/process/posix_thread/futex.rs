@@ -504,6 +504,7 @@ impl FutexBucket {
         max_count: usize,
     ) -> usize {
         let mut count = 0;
+
         for item in self
             .items
             .iter_mut()
@@ -525,6 +526,7 @@ impl FutexBucket {
         max_nrequeues: usize,
     ) -> usize {
         let mut count = 0;
+
         self.items
             .extract_if(.., |item| {
                 if item.key.match_up(key) && count < max_nrequeues {

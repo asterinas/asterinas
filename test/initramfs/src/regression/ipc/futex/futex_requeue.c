@@ -41,18 +41,17 @@ static long requeue_one_waiter(uint32_t *from, uint32_t *to)
 	return ret;
 }
 
-// Regression test for https:://github.com/asterinas/asterinas/issues/3964.
-//
 // When told to wake no waiters (`val` is 0), `FUTEX_REQUEUE` must move the
-// waiter to the target futex without waking it. musl's condition variables rely
-// on this to hand a waiter over to the mutex.
+// waiter to the target futex without waking it.
+//
+// musl's condition variables rely on this to hand a waiter over to the mutex.
+// For more details, see <https://github.com/asterinas/asterinas/issues/3964>.
 FN_TEST(requeue_without_waking)
 {
 	pthread_t thread;
 
 	// Arrange: create a thread that will block on `futex_a`.
-	CHECK_WITH(pthread_create(&thread, NULL, wait_on_futex_a, NULL),
-		   _ret == 0);
+	TEST_SUCC(pthread_create(&thread, NULL, wait_on_futex_a, NULL));
 
 	// Act: requeue the waiter to `futex_b`.
 	TEST_RES(requeue_one_waiter(&futex_a, &futex_b), _ret == 1);
@@ -62,7 +61,7 @@ FN_TEST(requeue_without_waking)
 	TEST_RES(futex(&futex_a, FUTEX_WAKE_PRIVATE, 1, 0, NULL, 0), _ret == 0);
 	TEST_RES(futex(&futex_b, FUTEX_WAKE_PRIVATE, 1, 0, NULL, 0), _ret == 1);
 
-	// Teardown
-	CHECK_WITH(pthread_join(thread, NULL), _ret == 0);
+	// Teardown.
+	TEST_SUCC(pthread_join(thread, NULL));
 }
 END_TEST()

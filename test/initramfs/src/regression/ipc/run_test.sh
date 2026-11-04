@@ -4,7 +4,7 @@
 
 set -e
 
-./futex/futex
+./futex/futex_requeue
 
 ./pipe/pipe_err
 ./pipe/process_pipe_available
