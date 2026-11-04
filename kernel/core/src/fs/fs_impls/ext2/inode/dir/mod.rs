@@ -140,6 +140,7 @@ impl Inode {
         // The VFS dentry layer has already validated that `name` is absent.
         let fs = self.fs()?;
         let mut parent_inner = self.inner.write();
+        parent_inner.check_dir_not_removed()?;
         let slot = match parent_inner.find_dir_slot(name.len())? {
             Some(slot) => slot,
             None => parent_inner.grow_dir_block(&fs)?,
@@ -179,6 +180,7 @@ impl Inode {
         let lock_targets = [self, old];
         let mut guards = MultiInodeInnerGuards::lock(&lock_targets);
 
+        guards.inner(self.ino()).check_dir_not_removed()?;
         let old_link_count = guards.inner(old.ino()).link_count();
         if old_link_count == 0 {
             return Err(errno!(ENOENT, "the inode has no links"));
@@ -259,7 +261,7 @@ impl Inode {
         let mut guards = MultiInodeInnerGuards::lock(&lock_targets);
 
         // Step 3: validate invariants under lock.
-        self.validate_rename_invariants(&guards, old_inode, replaced_inode)?;
+        self.validate_rename_invariants(&guards, new_dir_inode, old_inode, replaced_inode)?;
 
         // Step 4: apply directory mutations and metadata updates.
         self.apply_dir_mutations(
@@ -277,6 +279,7 @@ impl Inode {
     fn validate_rename_invariants(
         &self,
         guards: &MultiInodeInnerGuards,
+        new_dir_inode: &Inode,
         old_inode: &Inode,
         replaced_inode: Option<&Inode>,
     ) -> Result<()> {
@@ -308,6 +311,9 @@ impl Inode {
                 }
             }
         }
+
+        // Step 3.3: reject a target directory that has been removed.
+        guards.inner(new_dir_inode.ino()).check_dir_not_removed()?;
 
         Ok(())
     }
@@ -399,6 +405,18 @@ impl Inode {
 }
 
 impl InodeInner {
+    /// Returns `ENOENT` if this directory has been removed.
+    ///
+    /// `rmdir`, and `rename` when it replaces a directory, drop the link count
+    /// of the directory to zero while holding its lock, so the caller must hold
+    /// the lock too.
+    fn check_dir_not_removed(&self) -> Result<()> {
+        if self.link_count() == 0 {
+            return Err(errno!(ENOENT, "the directory has been removed"));
+        }
+        Ok(())
+    }
+
     /// Initializes an empty directory with `.` and `..` entries.
     fn make_empty(&mut self, fs: &Ext2, ino: Ext2Ino, parent_ino: Ext2Ino) -> Result<()> {
         // Allocate one block for the directory.

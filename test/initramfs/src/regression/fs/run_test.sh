@@ -183,6 +183,9 @@ TEST_TMPDIR=/ext2 ./name_max/name_max
 TEST_TMPDIR=/tmp ./rename/replaced_link_count
 TEST_TMPDIR=/ext2 ./rename/replaced_link_count
 
+TEST_TMPDIR=/tmp ./rmdir/create_in_removed_dir
+TEST_TMPDIR=/ext2 ./rmdir/create_in_removed_dir
+
 ./statx/btime
 
 ./symlink/symlink
