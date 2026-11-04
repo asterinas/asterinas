@@ -56,6 +56,7 @@ fi
 ./sched/sched_attr_getset
 ./sched/sched_param_getset
 ./sched/sched_param_idle
+./sched/setpriority_permission
 
 ./signal/kill
 ./signal/parent_death_signal
