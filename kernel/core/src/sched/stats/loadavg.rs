@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use aster_util::fixed_point::FixedU32;
 use ostd::{
-    sync::RwLock,
+    sync::{LocalIrqDisabled, RwLock},
     timer::{self, TIMER_FREQ},
 };
 
@@ -30,7 +30,7 @@ const EXP_15: LoadAvgFixed = LoadAvgFixed::from_raw(2037);
 ///
 /// The load average is calculated as an exponential moving average of the load
 /// over the last 1, 5, and 15 minutes.
-static LOAD_AVG: RwLock<[LoadAvgFixed; 3]> = RwLock::new([LoadAvgFixed::ZERO; 3]);
+static LOAD_AVG: RwLock<[LoadAvgFixed; 3], LocalIrqDisabled> = RwLock::new([LoadAvgFixed::ZERO; 3]);
 
 /// Next time the load average will be updated (in jiffies).
 static LOAD_AVG_NEXT_UPDATE: AtomicU64 = AtomicU64::new(0);
