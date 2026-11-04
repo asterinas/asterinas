@@ -177,3 +177,6 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 ./tmpfile/tmpfile
 
 ./utimensat/utimensat
+
+TEST_TMPDIR=/tmp ./vfs/nametoolong
+TEST_TMPDIR=/ext2 ./vfs/nametoolong

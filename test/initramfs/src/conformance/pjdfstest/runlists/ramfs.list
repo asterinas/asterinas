@@ -186,7 +186,7 @@ rename/22.t
 rename/24.t
 rmdir/00.t
 rmdir/01.t
-# rmdir/02.t
+rmdir/02.t
 rmdir/03.t
 rmdir/04.t
 rmdir/05.t
@@ -230,7 +230,7 @@ truncate/13.t
 truncate/14.t
 unlink/00.t
 unlink/01.t
-# unlink/02.t
+unlink/02.t
 unlink/03.t
 unlink/04.t
 unlink/05.t
