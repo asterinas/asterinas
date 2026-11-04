@@ -5,6 +5,7 @@
 #include <linux/futex.h>
 #include <stdint.h>
 #include <sys/syscall.h>
+#include <time.h>
 #include <unistd.h>
 
 static long futex(uint32_t *uaddr, int op, uint32_t val, unsigned long val2,
@@ -19,7 +20,10 @@ static uint32_t futex_b;
 static void *wait_on_futex_a(void *arg)
 {
 	(void)arg;
-	futex(&futex_a, FUTEX_WAIT_PRIVATE, 0, 0, NULL, 0);
+	// Specify a sufficiently long timeout; a join can be performed in the
+	// end even if this thread is not woken up.
+	struct timespec ts = { .tv_sec = 5, .tv_nsec = 0 };
+	futex(&futex_a, FUTEX_WAIT_PRIVATE, 0, (unsigned long)&ts, NULL, 0);
 	return NULL;
 }
 
