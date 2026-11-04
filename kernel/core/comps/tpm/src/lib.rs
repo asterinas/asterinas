@@ -14,31 +14,27 @@ macro_rules! __log_prefix {
     };
 }
 
-pub mod device;
-pub mod extcrypto;
-pub mod mmio;
-pub mod space_io;
+mod device;
+mod extcrypto;
+mod mmio;
+mod random;
+mod space_io;
 
-pub use device::{TPM_TIS_BASE, TPM_TIS_SIZE, TpmDevice, TpmInitErr, probe};
-pub use extcrypto::{ExtAesCfb, ExtHmacSha256, ExtRng, ExtSha256, HASH_CTX_CAP, check_abi};
-pub use mmio::TisMmio;
-pub use space_io::{CcAttrs, CcTable, SPACE_BUF, XmitErr, space_transmit};
-pub use tpm_core::{
-    ChipLink,
-    module::{IoErr, Space, load_space, save_space},
-    rewrite::read_be32,
-};
+pub use device::TpmDevice;
+pub use space_io::{SPACE_BUF, XmitErr};
+pub use tpm_core::module::{IoErr, Space};
 
 static DEVICE: Once<TpmDevice> = Once::new();
 
-#[init_component]
+#[init_component(kthread)]
 fn init() -> Result<(), ComponentInitError> {
-    #[cfg(target_arch = "x86_64")]
-    match probe() {
-        Ok(device) => {
-            DEVICE.call_once(|| device);
+    if cfg!(target_arch = "x86_64") {
+        match device::probe() {
+            Ok(device) => {
+                DEVICE.call_once(|| device);
+            }
+            Err(_error) => ostd::warn!("TPM initialization failed"),
         }
-        Err(_error) => ostd::warn!("TPM initialization failed"),
     }
     Ok(())
 }

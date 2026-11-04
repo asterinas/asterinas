@@ -9,9 +9,11 @@ cfb-mode = { version = "0.7.1", default-features = false }
 component.workspace = true
 hmac = { version = "0.12.1", default-features = false }
 ostd.workspace = true
+p256 = { version = "0.13.2", default-features = false, features = ["ecdh"] }
 sha2 = { version = "0.10.9", default-features = false, features = ["force-soft"] }
 spin.workspace = true
 tpm-core.workspace = true
+zeroize = { version = "1.9.0", default-features = false, features = ["alloc"] }
 
 [lints]
 workspace = true

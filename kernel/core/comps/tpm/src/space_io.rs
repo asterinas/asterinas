@@ -2,12 +2,11 @@
 
 //! TPM resource-space isolation for character-device commands.
 
-#![allow(dead_code)]
-
 use alloc::vec::Vec;
 
 use tpm_core::{
     chip::{ChipTransport, CtxIo},
+    cmd,
     module::{ContextIo, IoErr, Space},
     rewrite::{
         HEADER_SIZE, HeaderOutcome, SpaceErr, map_capability_handles, map_command_handles,
@@ -15,29 +14,27 @@ use tpm_core::{
     },
 };
 
-const CC_GET_CAPABILITY: u32 = 0x0000_017A;
-
 #[derive(Clone, Copy)]
-pub struct CcAttrs {
-    pub nr_chandles: usize,
-    pub has_rhandle: bool,
+struct CcAttrs {
+    nr_chandles: usize,
+    has_rhandle: bool,
 }
 
-pub(super) const TPMA_CC_COMMAND_INDEX_MASK: u32 = 0x0000_ffff;
-pub(super) const TPMA_CC_VENDOR: u32 = 1 << 29;
+const TPMA_CC_COMMAND_INDEX_MASK: u32 = 0x0000_ffff;
+const TPMA_CC_VENDOR: u32 = 1 << 29;
 pub(super) const TPMA_CC_CHANDLES_SHIFT: u32 = 25;
 pub(super) const TPMA_CC_CHANDLES_MASK: u32 = 0x7;
-pub(super) const TPMA_CC_RHANDLE: u32 = 1 << 28;
+const TPMA_CC_RHANDLE: u32 = 1 << 28;
 
 pub(super) fn command_code(attr: u32) -> u32 {
     (attr & TPMA_CC_COMMAND_INDEX_MASK) | (attr & TPMA_CC_VENDOR)
 }
 
 /// Per-open resource-space backing capacity for object and session contexts.
-pub const SPACE_BUF: usize = 16384;
+pub use tpm_core::types::TPM2_SPACE_BUFFER_SIZE as SPACE_BUF;
 
 // Discover attributes at boot to support the chip's command set without a fixed table.
-pub struct CcTable {
+pub(super) struct CcTable {
     attrs: Vec<u32>,
 }
 
@@ -54,7 +51,7 @@ impl CcTable {
         self.attrs.push(attr);
     }
 
-    pub fn lookup(&self, cc: u32) -> Option<CcAttrs> {
+    fn lookup(&self, cc: u32) -> Option<CcAttrs> {
         self.attrs
             .iter()
             .copied()
@@ -65,12 +62,8 @@ impl CcTable {
             })
     }
 
-    pub fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.attrs.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.attrs.is_empty()
     }
 }
 
@@ -100,7 +93,7 @@ impl From<IoErr> for XmitErr {
 
 /// Uses persistent context backups and per-request command and response buffers.
 #[expect(clippy::too_many_arguments)]
-pub fn space_transmit<T: ChipTransport>(
+pub(super) fn space_transmit<T: ChipTransport>(
     space: &mut Space,
     io: &mut CtxIo<T>,
     cc_table: &CcTable,
@@ -172,7 +165,7 @@ pub fn space_transmit<T: ChipTransport>(
         return Err(XmitErr::NoSlots);
     }
 
-    let is_cap_query = cc == CC_GET_CAPABILITY;
+    let is_cap_query = cc == cmd::CC_GET_CAPABILITY;
     let n = if response_code == 0 && is_cap_query {
         match map_capability_handles(&*txn.table(), true, rsp, n) {
             Ok(n) => n,

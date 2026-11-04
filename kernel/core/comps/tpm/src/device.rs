@@ -1,40 +1,43 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{vec, vec::Vec};
+use alloc::{boxed::Box, vec, vec::Vec};
 use core::ops::Range;
 
 use ostd::{mm::Paddr, sync::Mutex};
 use tpm_core::{
-    BootErr, ChipLink, Limits, Tis, Xfer, bring_up,
+    ChipLink, Limits, Tis, TpmTag, Xfer, bring_up,
     chip::{ChipTransport, CtxIo},
-    cmd::SU_CLEAR,
+    cmd::{self, SU_CLEAR},
     module::{IoErr, Space},
     rewrite::read_be32,
-    tis::TisErr,
+    types::TPM_BUFSIZE,
 };
 
 use crate::{
-    extcrypto::check_abi,
+    extcrypto::ExtRng,
     mmio::TisMmio,
+    random::TpmRandom,
     space_io::{
         CcTable, SPACE_BUF, TPMA_CC_CHANDLES_MASK, TPMA_CC_CHANDLES_SHIFT, XmitErr, command_code,
         space_transmit,
     },
 };
 
-pub const TPM_TIS_BASE: Paddr = 0xFED4_0000;
-pub const TPM_TIS_SIZE: usize = 0x5000;
+const TPM_TIS_BASE: Paddr = 0xFED4_0000;
+const TPM_TIS_SIZE: usize = 0x5000;
 
-pub enum TpmInitErr {
-    Mmio(TisErr),
-    Boot(BootErr),
-    Commands(IoErr),
+pub(super) enum TpmInitErr {
+    Mmio,
+    Boot,
+    Commands,
 }
 
 struct TpmChipState {
-    io: CtxIo<ChipLink<TisMmio>>,
+    // Heap-allocated to keep the 8 KiB CtxIo buffers off the 32 KiB Kthread stack.
+    io: Box<CtxIo<ChipLink<TisMmio>>>,
     work_ctx: Vec<u8>,
     work_ses: Vec<u8>,
+    random: TpmRandom,
 }
 
 pub struct TpmDevice {
@@ -44,6 +47,16 @@ pub struct TpmDevice {
 }
 
 impl TpmDevice {
+    pub fn get_random(
+        &self,
+        out: &mut [u8],
+        fill_nonce: impl FnMut(&mut [u8]),
+    ) -> Result<usize, IoErr> {
+        let mut chip = self.inner.lock();
+        let TpmChipState { io, random, .. } = &mut *chip;
+        random.read(io.as_mut(), out, &mut ExtRng::new(fill_nonce))
+    }
+
     pub fn exec(&self, cmd: &[u8], rsp: &mut [u8]) -> Result<usize, IoErr> {
         let mut chip = self.inner.lock();
         chip.io.exec_raw(cmd, rsp)
@@ -51,10 +64,6 @@ impl TpmDevice {
 
     pub fn limits(&self) -> &Limits {
         &self.limits
-    }
-
-    pub fn cc_table(&self) -> &CcTable {
-        &self.cc_table
     }
 
     pub fn transmit_space(
@@ -71,10 +80,11 @@ impl TpmDevice {
             io,
             work_ctx,
             work_ses,
+            ..
         } = &mut *chip;
         space_transmit(
             space,
-            io,
+            io.as_mut(),
             &self.cc_table,
             ctx_buf,
             ses_buf,
@@ -89,11 +99,10 @@ impl TpmDevice {
     pub fn close_space(&self, space: &mut Space) {
         let mut chip = self.inner.lock();
         let transaction = space.begin();
-        transaction.abort(&mut chip.io);
+        transaction.abort(chip.io.as_mut());
     }
 }
 
-const TPM_CAP_COMMANDS: u32 = 0x0000_0002;
 const TPM_CAP_TPM_PROPERTIES: u32 = 0x0000_0006;
 const TPM_PT_TOTAL_COMMANDS: u32 = 0x0000_0129;
 const TPM_CC_FIRST: u32 = 0x0000_011f;
@@ -109,9 +118,9 @@ fn get_total_commands<T: ChipTransport>(chip: &mut T) -> Result<usize, IoErr> {
     let mut command = [0u8; GET_CAPABILITY_COMMAND_SIZE];
     let mut response = [0u8; 64];
 
-    command[0..2].copy_from_slice(&0x8001u16.to_be_bytes());
+    command[0..2].copy_from_slice(&TpmTag::Tpm2NoSessions.code().to_be_bytes());
     command[2..6].copy_from_slice(&(GET_CAPABILITY_COMMAND_SIZE as u32).to_be_bytes());
-    command[6..10].copy_from_slice(&0x0000_017au32.to_be_bytes());
+    command[6..10].copy_from_slice(&cmd::CC_GET_CAPABILITY.to_be_bytes());
     command[10..14].copy_from_slice(&TPM_CAP_TPM_PROPERTIES.to_be_bytes());
     command[14..18].copy_from_slice(&TPM_PT_TOTAL_COMMANDS.to_be_bytes());
     command[18..22].copy_from_slice(&1u32.to_be_bytes());
@@ -140,7 +149,7 @@ fn build_cc_table<T: ChipTransport>(chip: &mut T) -> Result<CcTable, IoErr> {
     let mut table = CcTable::with_capacity(nr_commands)?;
     let mut property = TPM_CC_FIRST;
     let mut command = [0u8; GET_CAPABILITY_COMMAND_SIZE];
-    let mut response = [0u8; 4096];
+    let mut response = [0u8; TPM_BUFSIZE];
 
     loop {
         let remaining = nr_commands
@@ -150,10 +159,10 @@ fn build_cc_table<T: ChipTransport>(chip: &mut T) -> Result<CcTable, IoErr> {
         let request_count = core::cmp::min(remaining, CC_PAGE_COMMANDS);
 
         command.fill(0);
-        command[0..2].copy_from_slice(&0x8001u16.to_be_bytes());
+        command[0..2].copy_from_slice(&TpmTag::Tpm2NoSessions.code().to_be_bytes());
         command[2..6].copy_from_slice(&(GET_CAPABILITY_COMMAND_SIZE as u32).to_be_bytes());
-        command[6..10].copy_from_slice(&0x0000_017au32.to_be_bytes());
-        command[10..14].copy_from_slice(&TPM_CAP_COMMANDS.to_be_bytes());
+        command[6..10].copy_from_slice(&cmd::CC_GET_CAPABILITY.to_be_bytes());
+        command[10..14].copy_from_slice(&cmd::CAP_COMMANDS.to_be_bytes());
         command[14..18].copy_from_slice(&property.to_be_bytes());
         command[18..22].copy_from_slice(&(request_count as u32).to_be_bytes());
 
@@ -171,7 +180,7 @@ fn build_cc_table<T: ChipTransport>(chip: &mut T) -> Result<CcTable, IoErr> {
             .ok_or(IoErr::Protocol)?;
         if response[10] > 1
             || response_code != 0
-            || capability != TPM_CAP_COMMANDS
+            || capability != cmd::CAP_COMMANDS
             || declared_len != response_len
             || attrs_len != response_len
             || count > request_count
@@ -231,28 +240,24 @@ fn build_cc_table<T: ChipTransport>(chip: &mut T) -> Result<CcTable, IoErr> {
     Ok(table)
 }
 
-pub fn probe() -> Result<TpmDevice, TpmInitErr> {
-    let abi_ok = check_abi();
-    if !abi_ok {
-        ostd::warn!("tpm: host crypto ABI mismatch, boot will abort");
-    }
-
+pub(super) fn probe() -> Result<TpmDevice, TpmInitErr> {
     let phys: Range<Paddr> = TPM_TIS_BASE..TPM_TIS_BASE + TPM_TIS_SIZE;
-    let mmio = TisMmio::acquire(phys).map_err(TpmInitErr::Mmio)?;
+    let mmio = TisMmio::acquire(phys).map_err(|_| TpmInitErr::Mmio)?;
 
     let tis = Tis::new(mmio, 0);
     let x = Xfer::new(tis);
-    let (x, limits) = bring_up(x, SU_CLEAR, abi_ok).map_err(TpmInitErr::Boot)?;
+    let (x, limits) = bring_up(x, SU_CLEAR, true).map_err(|_| TpmInitErr::Boot)?;
 
     let mut chip = ChipLink::new(x);
-    let cc_table = build_cc_table(&mut chip).map_err(TpmInitErr::Commands)?;
+    let cc_table = build_cc_table(&mut chip).map_err(|_| TpmInitErr::Commands)?;
 
-    ostd::info!("tpm: ready");
+    ostd::info!("ready");
     Ok(TpmDevice {
         inner: Mutex::new(TpmChipState {
-            io: CtxIo::new(chip),
+            io: Box::new(CtxIo::new(chip)),
             work_ctx: vec![0u8; SPACE_BUF],
             work_ses: vec![0u8; SPACE_BUF],
+            random: TpmRandom::new(),
         }),
         limits,
         cc_table,

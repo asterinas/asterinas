@@ -10,13 +10,13 @@ use ostd::{
 };
 use tpm_core::{phy::TisPhy, tis::TisErr};
 
-pub struct TisMmio {
+pub(super) struct TisMmio {
     // Register offsets supplied by tpm-core already include the locality window.
     mmio: IoMem,
 }
 impl TisMmio {
     /// Requires a register window covering all five localities (0x5000 bytes).
-    pub fn acquire(phys: Range<Paddr>) -> Result<Self, TisErr> {
+    pub(super) fn acquire(phys: Range<Paddr>) -> Result<Self, TisErr> {
         match IoMem::acquire(phys) {
             Ok(mmio) => Ok(TisMmio { mmio }),
             Err(_) => Err(TisErr::Phy),
