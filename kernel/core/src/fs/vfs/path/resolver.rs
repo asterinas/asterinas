@@ -596,8 +596,8 @@ impl PathResolver {
                 visible.push(mount.clone());
             }
 
-            let children = mount.children.read();
-            for child_mount in children.values() {
+            let children: Vec<Arc<Mount>> = mount.children.read().values().cloned().collect();
+            for child_mount in children {
                 if is_root_mount && !is_root_mount_root {
                     let Some(mountpoint) = child_mount.mountpoint() else {
                         continue;
@@ -606,7 +606,7 @@ impl PathResolver {
                         continue;
                     }
                 }
-                stack.push(child_mount.clone());
+                stack.push(child_mount);
             }
         }
 
