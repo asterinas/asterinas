@@ -1,25 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
-
-use ostd::sync::Mutex;
-
-use crate::kms::objects::{
-    KmsObjectId, KmsObjectIndex, KmsObjectMask, OwnedKmsObjectId, crtc::DrmCrtc,
-};
+use crate::kms::objects::{KmsObjectId, KmsObjectIndex, KmsObjectMask, OwnedKmsObjectId};
 
 /// A hardware or virtual block that converts a CRTC's pixel stream for output.
 ///
 /// An encoder records which CRTCs can feed it and which peer encoders may clone the same output.
-///
-/// Its current CRTC is mutable routing state,
-/// while the compatibility masks use per-type object indices to describe the device's fixed connection capabilities.
 #[derive(Debug)]
 pub struct DrmEncoder {
     id: OwnedKmsObjectId,
     index: KmsObjectIndex,
     config: DrmEncoderConfig,
-    current_crtc: Mutex<Weak<DrmCrtc>>,
 }
 
 impl DrmEncoder {
@@ -28,12 +18,7 @@ impl DrmEncoder {
         index: KmsObjectIndex,
         config: DrmEncoderConfig,
     ) -> Self {
-        Self {
-            id,
-            index,
-            config,
-            current_crtc: Mutex::new(Weak::new()),
-        }
+        Self { id, index, config }
     }
 
     pub(crate) fn id(&self) -> KmsObjectId {
@@ -46,14 +31,6 @@ impl DrmEncoder {
 
     pub(crate) fn type_(&self) -> DrmEncoderType {
         self.config.type_
-    }
-
-    pub(crate) fn current_crtc(&self) -> Weak<DrmCrtc> {
-        self.current_crtc.lock().clone()
-    }
-
-    pub(crate) fn set_current_crtc(&self, crtc: Weak<DrmCrtc>) {
-        *self.current_crtc.lock() = crtc;
     }
 
     pub(crate) fn possible_crtcs(&self) -> &KmsObjectMask {

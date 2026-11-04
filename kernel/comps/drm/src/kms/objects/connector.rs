@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{sync::Weak, vec::Vec};
+use alloc::vec::Vec;
 
 use ostd::sync::Mutex;
 
@@ -8,7 +8,7 @@ use crate::kms::{
     display_info::DrmDisplayInfo,
     display_mode::DrmDisplayMode,
     objects::{
-        KmsObjectId, KmsObjectIndex, KmsObjectMask, OwnedKmsObjectId, encoder::DrmEncoder,
+        KmsObjectId, KmsObjectIndex, KmsObjectMask, OwnedKmsObjectId,
         property::DrmPropertyAttachments,
     },
 };
@@ -16,16 +16,11 @@ use crate::kms::{
 /// A display output endpoint of a DRM device.
 ///
 /// A connector represents a physical or virtual sink such as HDMI, DisplayPort, or a writeback connector.
-///
-/// It records the encoders that can drive the sink, the currently selected encoder in `DrmConnectorState`, and display data discovered during probing in [`DrmConnectorProbeState`].
-///
-/// Each bit in `possible_encoders` corresponds to an index in the encoder registration order.
 #[derive(Debug)]
 pub struct DrmConnector {
     id: OwnedKmsObjectId,
     index: KmsObjectIndex,
     config: DrmConnectorConfig,
-    state: Mutex<DrmConnectorState>,
     probe_state: Mutex<DrmConnectorProbeState>,
     properties: DrmPropertyAttachments,
 }
@@ -41,7 +36,6 @@ impl DrmConnector {
             id,
             index,
             config,
-            state: Mutex::new(DrmConnectorState::default()),
             probe_state: Mutex::new(DrmConnectorProbeState::default()),
             properties,
         }
@@ -61,14 +55,6 @@ impl DrmConnector {
 
     pub(crate) fn type_index(&self) -> u32 {
         self.config.type_index
-    }
-
-    pub(crate) fn state(&self) -> &Mutex<DrmConnectorState> {
-        &self.state
-    }
-
-    pub(crate) fn update_state(&self, state: DrmConnectorState) {
-        *self.state.lock() = state;
     }
 
     pub(crate) fn probe_state(&self) -> &Mutex<DrmConnectorProbeState> {
@@ -97,25 +83,10 @@ pub(super) struct DrmConnectorConfig {
     pub possible_encoders: KmsObjectMask,
 }
 
-#[derive(Clone, Debug, Default)]
-pub(crate) struct DrmConnectorState {
-    encoder: Weak<DrmEncoder>,
-}
-
-impl DrmConnectorState {
-    pub(crate) fn new(encoder: Weak<DrmEncoder>) -> Self {
-        Self { encoder }
-    }
-
-    pub(crate) fn encoder(&self) -> &Weak<DrmEncoder> {
-        &self.encoder
-    }
-}
-
 /// Probe-derived state of a connector.
 ///
 /// This state records the connector's detected status, available display modes, and physical display information.
-/// It is refreshed by connector probing and kept separate from the userspace-configurable `DrmConnectorState`.
+/// It is refreshed by connector probing.
 #[derive(Clone, Debug)]
 pub struct DrmConnectorProbeState {
     status: DrmConnectorStatus,
