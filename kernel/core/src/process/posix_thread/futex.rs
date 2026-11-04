@@ -497,6 +497,8 @@ impl FutexBucket {
         count
     }
 
+    /// Updates matching items' futex identity while preserving each item's bitset;
+    /// the bitset in `new_key` is ignored.
     pub(self) fn update_item_keys(
         &mut self,
         key: &FutexKey,
@@ -511,13 +513,18 @@ impl FutexBucket {
             .filter(|item| item.key.match_up(key))
             .take(max_count)
         {
-            item.key = new_key.clone();
+            item.key = FutexKey {
+                bitset: item.key.bitset,
+                ..new_key.clone()
+            };
             count += 1;
         }
 
         count
     }
 
+    /// Moves matching items to another bucket while preserving each item's bitset;
+    /// the bitset in `new_key` is ignored.
     pub(self) fn requeue_items_to_another_bucket(
         &mut self,
         key: &FutexKey,
@@ -537,7 +544,10 @@ impl FutexBucket {
                 }
             })
             .for_each(|mut extracted| {
-                extracted.key = new_key.clone();
+                extracted.key = FutexKey {
+                    bitset: extracted.key.bitset,
+                    ..new_key.clone()
+                };
                 another.add_item(extracted);
             });
 
