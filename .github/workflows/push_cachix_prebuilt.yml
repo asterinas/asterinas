@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/push_cachix_prebuilt.yml
       - distro/nixpkgs.nix
+      - flake.lock
       - flake.nix
       - test/initramfs/**
       - tools/dev_env/docker/prebuilt-nix-packages/Dockerfile
@@ -15,6 +16,7 @@ on:
     paths:
       - .github/workflows/push_cachix_prebuilt.yml
       - distro/nixpkgs.nix
+      - flake.lock
       - flake.nix
       - test/initramfs/**
       - tools/dev_env/docker/prebuilt-nix-packages/Dockerfile
