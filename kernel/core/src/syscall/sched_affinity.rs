@@ -9,7 +9,12 @@ use ostd::{
 };
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::pid_table, thread::Tid};
+use crate::{
+    prelude::*,
+    process::{credentials::capabilities::CapSet, pid_table, posix_thread::AsPosixThread},
+    security::lsm::hooks as lsm_hooks,
+    thread::Tid,
+};
 
 pub(super) fn sys_sched_getaffinity(
     tid: Tid,
@@ -47,14 +52,27 @@ pub(super) fn sys_sched_setaffinity(
             .thread
             .atomic_cpu_affinity()
             .store(&user_cpu_set, Ordering::Relaxed),
-        _ => match pid_table::pid_table_mut().get_thread(tid) {
-            Some(thread) => {
-                thread
-                    .atomic_cpu_affinity()
-                    .store(&user_cpu_set, Ordering::Relaxed);
+        _ => {
+            let thread = pid_table::pid_table_mut().get_thread(tid).ok_or_else(|| {
+                Error::with_message(Errno::ESRCH, "the target thread does not exist")
+            })?;
+            let target = thread.as_posix_thread().ok_or_else(|| {
+                Error::with_message(Errno::ESRCH, "the target thread is not a POSIX thread")
+            })?;
+            let caller_uid = ctx.posix_thread.credentials().euid();
+            let target_credentials = target.credentials();
+            if caller_uid != target_credentials.ruid() && caller_uid != target_credentials.euid() {
+                let target_process = target.process();
+                lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                    target_process.user_ns().lock().as_ref(),
+                    ctx.posix_thread,
+                    CapSet::SYS_NICE,
+                ))?;
             }
-            None => return_errno_with_message!(Errno::ESRCH, "the target thread does not exist"),
-        },
+            thread
+                .atomic_cpu_affinity()
+                .store(&user_cpu_set, Ordering::Relaxed);
+        }
     }
 
     Ok(SyscallReturn::Return(0))
