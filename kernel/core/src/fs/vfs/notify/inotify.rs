@@ -198,9 +198,9 @@ impl InotifyFile {
 
     /// Removes a watch by watch descriptor.
     pub(crate) fn remove_watch(&self, wd: u32) -> Result<()> {
-        let mut watch_map = self.watch_map.lock();
+        let entry = self.watch_map.lock().remove(&wd);
 
-        let Some(entry) = watch_map.remove(&wd) else {
+        let Some(entry) = entry else {
             return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist");
         };
 
