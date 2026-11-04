@@ -28,17 +28,26 @@ comma separated configuration list:
 Besides, to collect coverage data, we can use option `--coverage`. This option
 enables the coverage feature and collect coverage data to `coverage.profraw` when exit.
 
+To run Asterinas in screen-reader accessible terminal mode,
+we can use the `--terminal` option (or its alias `--nographic`).
+This redirects QEMU console and serial output directly to standard I/O via the multiplexer chardev,
+enabling screen readers (such as NVDA, JAWS, or Orca) to read boot messages,
+kernel panic logs, and interactive shells directly in the host terminal.
+
 See [Debug Command](debug.md) to interact with the GDB server in terminal.
 
 ## Examples
+
+Launch Asterinas in accessible terminal mode:
+
+```bash
+cargo osdk run --terminal
+```
 
 Launch a debug server via QEMU with an unix socket stub, e.g. `.debug`:
 
 ```bash
 cargo osdk run --gdb-server addr=.debug
-
-```bash
-cargo osdk run --gdb-server --gdb-server-addr .debug
 ```
 
 Launch a debug server via QEMU with a TCP stub, e.g., `localhost:1234`:
@@ -51,10 +60,4 @@ Launch a debug server via QEMU and use VSCode to interact with:
 
 ```bash
 cargo osdk run --gdb-server wait-client,vscode,addr=:1234
-```
-
-Launch a debug server via QEMU and use VSCode to interact with:
-
-```bash
-cargo osdk run --gdb-server --gdb-vsc --gdb-server-addr :1234
 ```

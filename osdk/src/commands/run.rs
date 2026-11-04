@@ -16,13 +16,27 @@ use crate::{
     warn_msg,
 };
 
-pub fn execute_run_command(config: &Config, gdb_server_args: Option<&str>) {
+pub fn execute_run_command(config: &Config, gdb_server_args: Option<&str>, terminal: bool) {
     let cargo_target_directory = get_target_directory();
     let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
 
     let target_info = get_kernel_crate();
 
     let mut config = config.clone();
+
+    if terminal {
+        let terminal_qemu_args = vec![
+            "-display none".to_string(),
+            "-serial chardev:mux".to_string(),
+        ];
+        config.run.qemu.apply_qemu_args(&terminal_qemu_args);
+        config
+            .run
+            .boot
+            .kcmdline
+            .retain(|arg| !arg.starts_with("console="));
+        config.run.boot.kcmdline.push("console=ttyS0".to_string());
+    }
 
     let _vsc_launch_file = if let Some(gdb_server_str) = gdb_server_args {
         adapt_for_gdb_server(&mut config, gdb_server_str)

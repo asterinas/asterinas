@@ -42,6 +42,7 @@ pub fn main() {
             execute_run_command(
                 &load_config(&run_args.common_args),
                 run_args.gdb_server.as_deref(),
+                run_args.terminal,
             );
         }
         OsdkSubcommand::Debug(debug_args) => {
@@ -189,6 +190,12 @@ pub struct BuildArgs {
 
 #[derive(Debug, Parser)]
 pub struct RunArgs {
+    #[arg(
+        long = "terminal",
+        visible_alias = "nographic",
+        help = "Run in screen-reader accessible terminal mode with stdio console and no graphic display"
+    )]
+    pub terminal: bool,
     #[arg(
         long = "gdb-server",
         help = "Enable the QEMU GDB server for debugging\n\
