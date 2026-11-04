@@ -33,6 +33,7 @@
 //!
 #![no_std]
 #![deny(unsafe_code)]
+#![feature(allocator_api)]
 
 extern crate alloc;
 #[macro_use]
@@ -45,6 +46,7 @@ macro_rules! __log_prefix {
     };
 }
 
+pub mod evbug;
 pub mod event_type_codes;
 mod input_core;
 pub mod input_dev;
