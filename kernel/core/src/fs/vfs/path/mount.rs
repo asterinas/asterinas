@@ -676,23 +676,31 @@ impl Mount {
 
     /// Sets the mountpoint.
     fn set_mountpoint(&self, dentry: Arc<Dentry>) {
-        let mut mountpoint = self.mountpoint.write();
-        if let Some(mountpoint) = mountpoint.as_deref() {
-            mountpoint.dec_mount_count();
-        }
+        // The old dentry may hold the last reference to its inode, and reclaiming the inode may
+        // sleep, so it is dropped at the end of this function, after the `mountpoint` lock.
+        let _old = {
+            let mut mountpoint = self.mountpoint.write();
+            if let Some(old) = mountpoint.as_deref() {
+                old.dec_mount_count();
+            }
 
-        dentry.inc_mount_count();
-        *mountpoint = Some(dentry);
+            dentry.inc_mount_count();
+            mountpoint.replace(dentry)
+        };
     }
 
     /// Clears the mountpoint.
     fn clear_mountpoint(&self) {
-        let mut mountpoint = self.mountpoint.write();
-        if let Some(mountpoint) = mountpoint.as_deref() {
-            mountpoint.dec_mount_count();
-        }
+        // The old dentry may hold the last reference to its inode, and reclaiming the inode may
+        // sleep, so it is dropped at the end of this function, after the `mountpoint` lock.
+        let _old = {
+            let mut mountpoint = self.mountpoint.write();
+            if let Some(old) = mountpoint.as_deref() {
+                old.dec_mount_count();
+            }
 
-        *mountpoint = None;
+            mountpoint.take()
+        };
     }
 
     /// Flushes all pending filesystem metadata and cached file data to the device.
