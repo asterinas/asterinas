@@ -20,7 +20,7 @@ use ostd::mm::VmIo;
 use crate::{
     prelude::*,
     thread::Thread,
-    vm::page_cache::{BlockAsPageCacheBackend, PageCacheBackend, PageRun},
+    vm::page_cache::{BlockAsPageCacheBackend, ErrorRecord, PageCacheBackend, PageRun},
 };
 
 /// Maximum number of cooperative yields before a test wait times out.
@@ -70,6 +70,7 @@ struct MockBackendState {
     write_counts: Vec<usize>,
     write_wait_counts: Vec<usize>,
     contiguous_writes: bool,
+    max_nr_segments_per_bio: usize,
     read_submit_failures: BTreeSet<usize>,
     write_submit_failures: BTreeSet<usize>,
     read_completion: IoCompletion,
@@ -86,6 +87,7 @@ impl MockBackendState {
             write_counts: vec![0; num_pages],
             write_wait_counts: vec![0; num_pages],
             contiguous_writes: false,
+            max_nr_segments_per_bio: 1,
             read_submit_failures: BTreeSet::new(),
             write_submit_failures: BTreeSet::new(),
             read_completion: IoCompletion::Immediate,
@@ -154,6 +156,8 @@ impl MockBackendState {
 pub(super) struct MockPageCacheBackend {
     state: Arc<SpinLock<MockBackendState>>,
     num_pages: usize,
+    local_error_record: Arc<ErrorRecord>,
+    fs_error_record: Arc<ErrorRecord>,
 }
 
 impl MockPageCacheBackend {
@@ -162,6 +166,8 @@ impl MockPageCacheBackend {
         Arc::new(Self {
             state: Arc::new(SpinLock::new(MockBackendState::new(num_pages))),
             num_pages,
+            local_error_record: Arc::new(ErrorRecord::default()),
+            fs_error_record: Arc::new(ErrorRecord::default()),
         })
     }
 
@@ -188,6 +194,11 @@ impl MockPageCacheBackend {
     /// Selects device-limited contiguous BIO submission instead of per-page I/O.
     pub(super) fn set_contiguous_writes(&self, enabled: bool) {
         self.state.lock().contiguous_writes = enabled;
+    }
+
+    /// Sets the device limit for tests that exercise multi-page BIOs.
+    pub(super) fn set_max_nr_segments_per_bio(&self, count: usize) {
+        self.state.lock().max_nr_segments_per_bio = count;
     }
 
     /// Waits until the backend has queued `expected_count` deferred BIOs.
@@ -277,19 +288,21 @@ impl MockPageCacheBackend {
         let status = {
             let mut state = self.state.lock();
             if success {
-                let segment = &bio.segments()[0];
-                match kind {
-                    IoKind::Read => segment
-                        .dma_slice()
-                        .write_bytes(0, &state.persisted_pages[page_idx])
-                        .unwrap(),
-                    IoKind::Write => {
-                        let mut persisted_page = vec![0; PAGE_SIZE];
-                        segment
+                for (offset, segment) in bio.segments().iter().enumerate() {
+                    let page_idx = page_idx + offset;
+                    match kind {
+                        IoKind::Read => segment
                             .dma_slice()
-                            .read_bytes(0, &mut persisted_page)
-                            .unwrap();
-                        state.persisted_pages[page_idx] = persisted_page;
+                            .write_bytes(0, &state.persisted_pages[page_idx])
+                            .unwrap(),
+                        IoKind::Write => {
+                            let mut persisted_page = vec![0; PAGE_SIZE];
+                            segment
+                                .dma_slice()
+                                .read_bytes(0, &mut persisted_page)
+                                .unwrap();
+                            state.persisted_pages[page_idx] = persisted_page;
+                        }
                     }
                 }
                 BioStatus::Complete
@@ -371,7 +384,7 @@ impl BlockDevice for MockPageCacheBackend {
 
     fn metadata(&self) -> BlockDeviceMeta {
         BlockDeviceMeta {
-            max_nr_segments_per_bio: 1,
+            max_nr_segments_per_bio: self.state.lock().max_nr_segments_per_bio,
             nr_sectors: self.num_pages * (PAGE_SIZE / SECTOR_SIZE),
         }
     }
@@ -386,6 +399,14 @@ impl BlockDevice for MockPageCacheBackend {
 }
 
 impl BlockAsPageCacheBackend for MockPageCacheBackend {
+    fn local_error_record(&self) -> Option<&Arc<ErrorRecord>> {
+        Some(&self.local_error_record)
+    }
+
+    fn fs_error_record(&self) -> &Arc<ErrorRecord> {
+        &self.fs_error_record
+    }
+
     fn submit_read_bio(
         &self,
         page_idx: usize,
@@ -416,7 +437,7 @@ impl BlockAsPageCacheBackend for MockPageCacheBackend {
         if self.state.lock().contiguous_writes {
             let start_bid = aster_block::id::Bid::new(pages.start_idx() as u64);
             let len = pages.len();
-            return pages.submit_contiguous_write_pages(self, start_bid, len, io_batch);
+            return pages.submit_contiguous_write_pages(self, start_bid, len, self, io_batch);
         }
 
         for (idx, locked_page) in pages.into_indexed() {

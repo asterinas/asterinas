@@ -32,7 +32,9 @@ use xarray::{Cursor, LockedXArray, XArray};
 use crate::{
     prelude::*,
     vm::{
-        page_cache::{CachePage, CachePageExt, PageCacheBackend, PageRun, cache_page::PageState},
+        page_cache::{
+            CachePage, CachePageExt, ErrorRecord, PageCacheBackend, PageRun, cache_page::PageState,
+        },
         vmar::Rmap,
     },
 };
@@ -149,6 +151,19 @@ impl Debug for Vmo {
             .field("size", &self.size)
             .field("writable_mapping_status", &self.writable_mapping_status)
             .finish_non_exhaustive()
+    }
+}
+
+impl Vmo {
+    /// Returns the backend's local writeback error record, if present.
+    ///
+    /// See [`PageCacheBackend::local_error_record`] for its semantics.
+    /// Returns `None` if no live backend or local record exists.
+    /// Layered filesystems may delegate this cache to another filesystem,
+    /// so the record need not belong to the filesystem owning the mount.
+    pub(crate) fn local_error_record(&self) -> Option<Arc<ErrorRecord>> {
+        let backend = self.backend.as_ref()?.upgrade()?;
+        backend.local_error_record().cloned()
     }
 }
 
@@ -942,6 +957,8 @@ impl<'a> BackedVmo<'a> {
             locked_page.wait_until_finish_writing_back();
         }
 
+        // TODO: Retain submission errors once backend rejection semantics are unified.
+        // Currently, rejected pages stay dirty and only BIO completion errors are retained.
         submission_result.and(completion_result)
     }
 
