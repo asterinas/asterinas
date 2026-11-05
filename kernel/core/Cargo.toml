@@ -16,6 +16,7 @@ aster-framebuffer.workspace = true
 aster-fuse.workspace = true
 aster-input.workspace = true
 aster-logger.workspace = true
+aster-ne2k.workspace = true
 aster-network.workspace = true
 aster-nvme.workspace = true
 aster-rights.workspace = true

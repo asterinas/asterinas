@@ -11,6 +11,7 @@ i8042 = { name = "aster-i8042" }
 input = { name = "aster-input" }
 logger = { name = "aster-logger" }
 mlsdisk = { name = "aster-mlsdisk" }
+ne2k = { name = "aster-ne2k" }
 network = { name = "aster-network" }
 nvme = { name = "aster-nvme" }
 pci = { name = "aster-pci" }
