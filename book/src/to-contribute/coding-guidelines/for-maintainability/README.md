@@ -41,6 +41,7 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 - [`explain-why`](comments.md#explain-why): Comments explain intent (why), not what the code does; if you must explain "what", rewrite the code.
 - [`design-decisions`](comments.md#design-decisions): Document non-obvious choices, with rationale and alternatives considered.
 - [`cite-sources`](comments.md#cite-sources): Cite the source (POSIX, Linux man page, hardware manual, paper) for spec/algorithm behavior.
+- [`useful-issue-links`](comments.md#useful-issue-links): Do not include issue numbers or links unless they add useful context; explain why readers should open linked issues.
 
 **[Rust-Specific](rust-specific/)**
 - [Naming](rust-specific/naming.md)
@@ -73,4 +74,9 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
     - [`backtick-identifiers`](rust-specific/comments.md#backtick-identifiers): Wrap identifiers in doc comments in backticks; prefer rustdoc links where possible.
     - [`no-impl-in-docs`](rust-specific/comments.md#no-impl-in-docs): Doc comments describe what an API does and how to use it, not its internal implementation.
 
-No **path-specific** guidelines yet.
+**[Path-Specific](path-specific/)**
+- [`test/initramfs/src/regression/`](path-specific/regression.md)
+    - [`simple-test-flow`](path-specific/regression.md#simple-test-flow): Write a straight sequence of operations and assertions; add recovery or retries only when testing those behaviors.
+    - [`fixed-test-identifiers`](path-specific/regression.md#fixed-test-identifiers): Use readable, fixed names; generate names only when the test needs runtime values.
+    - [`shared-test-fixtures`](path-specific/regression.md#shared-test-fixtures): Prepare shared resources in `FN_SETUP` before the tests; clean them up in `FN_SETUP` afterward.
+    - [`semantic-test-helpers`](path-specific/regression.md#semantic-test-helpers): Use helpers to remove repeated details while keeping each case's actions, inputs, and expected results clear.

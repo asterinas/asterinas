@@ -4,9 +4,8 @@
 
 When a bug is fixed,
 a test that would have caught the bug should accompany the fix.
-Include a reference to the issue number
-in a comment so future readers
-can recover the original context.
+Record the issue reference in the commit message or pull request description.
+[Do not include an issue link in code unless it adds useful context](../for-maintainability/comments.md#useful-issue-links).
 
 See also:
 PR [#2962](https://github.com/asterinas/asterinas/pull/2962).
@@ -32,26 +31,9 @@ instead of printing values and manually inspecting output.
 Assertions provide clear failure messages
 and make tests self-checking.
 
+For C regression tests, see
+[which assertion macros to use in tests, setup, and child processes](path-specific/regression.md#test-assertion-context).
+
 See also:
 PR [#2877](https://github.com/asterinas/asterinas/pull/2877)
 and [#2926](https://github.com/asterinas/asterinas/pull/2926).
-
-### Clean up resources after every test (`test-cleanup`) {#test-cleanup}
-
-Always clean up resources after a test:
-close file descriptors, unlink temporary files,
-and call `waitpid` on child processes.
-Leftover resources can cause flaky failures
-in subsequent tests.
-
-```c
-// Good — cleanup after use
-int fd = open("/tmp/test_file", O_CREAT | O_RDWR, 0644);
-// ... test logic ...
-close(fd);
-unlink("/tmp/test_file");
-```
-
-See also:
-PR [#2926](https://github.com/asterinas/asterinas/pull/2926)
-and [#2969](https://github.com/asterinas/asterinas/pull/2969).
