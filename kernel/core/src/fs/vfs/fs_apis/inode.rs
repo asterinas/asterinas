@@ -398,6 +398,11 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
     /// Returns the inode type.
     fn type_(&self) -> InodeType;
 
+    /// Returns whether the inode is append-only.
+    fn is_append_only(&self) -> bool {
+        false
+    }
+
     /// Returns the inode's permission mode.
     fn mode(&self) -> Result<InodeMode>;
 

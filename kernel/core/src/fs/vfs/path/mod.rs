@@ -13,6 +13,7 @@ pub(crate) use mount_namespace::MountNamespace;
 pub(crate) use mount_propagation::MountPropType;
 pub(in crate::fs) use mount_propagation::MountTopology;
 use mount_propagation::PendingPropagationChanges;
+use ostd::task::Task;
 pub(crate) use resolver::{
     AT_FDCWD, AbsPathResult, EmptyPathStr, FsPath, LookupResult, PathResolver, SplitPath,
     SplitPathError,
@@ -198,10 +199,39 @@ impl Path {
             );
         }
 
+        if !status_flags.contains(StatusFlags::O_PATH)
+            && ((open_args.access_mode.is_writable()
+                && !status_flags.contains(StatusFlags::O_APPEND))
+                || creation_flags.contains(CreationFlags::O_TRUNC))
+            && inode.is_append_only()
+        {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "cannot open an append-only inode with these flags"
+            );
+        }
+
+        if status_flags.contains(StatusFlags::O_NOATIME)
+            && !status_flags.contains(StatusFlags::O_PATH)
+            && let Some(task) = Task::current()
+            && let Some(thread) = task.as_posix_thread()
+            && thread.credentials().fsuid() != inode.metadata()?.uid
+        {
+            let thread_local = task.as_thread_local().unwrap();
+            let user_ns = thread_local.borrow_user_ns();
+            lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                user_ns.as_ref(),
+                thread,
+                CapSet::FOWNER,
+            ))?;
+        }
+
         if inode_type.is_regular_file()
             && creation_flags.contains(CreationFlags::O_TRUNC)
             && !status_flags.contains(StatusFlags::O_PATH)
         {
+            // Check the requested access mode before truncation modifies the file.
+            inode.check_permission(open_args.access_mode.into())?;
             self.resize(0)?;
         }
 

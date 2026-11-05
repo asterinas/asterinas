@@ -86,6 +86,10 @@ impl Inode for Ext2Inode {
         self.inode_type()
     }
 
+    fn is_append_only(&self) -> bool {
+        self.has_append_only_flag()
+    }
+
     fn mode(&self) -> Result<InodeMode> {
         Ok(self.mode())
     }
