@@ -7,12 +7,14 @@ SUBDIRS := \
 	getcwd \
 	inotify \
 	isolation \
+	link \
 	mount \
 	overlayfs \
 	procfs \
 	pseudofs \
 	ramfs \
 	rename \
+	rmdir \
 	statx \
 	symlink \
 	sync \
