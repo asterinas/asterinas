@@ -62,6 +62,7 @@ FN_TEST(fsconfig_and_fsmount)
 			  0));
 	int mount_fd =
 		TEST_SUCC(syscall(SYS_fsmount, fs_fd, FSMOUNT_CLOEXEC, 0));
+	TEST_RES(fcntl(mount_fd, F_GETFL), _ret == O_PATH);
 	TEST_SUCC(close(mount_fd));
 	TEST_SUCC(close(fs_fd));
 }

@@ -300,8 +300,9 @@ impl DetachedMountFile {
         let root_path = Path::new_root(mount.clone());
         Self {
             mount,
-            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/namespace.c#L4497>.
-            common: FileCommon::new(root_path, AccessMode::O_RDONLY, StatusFlags::empty()),
+            // `DetachedMountFile` is opened with `O_PATH` by default.
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/namespace.c#L4497-L4498>.
+            common: FileCommon::new(root_path, AccessMode::O_RDONLY, StatusFlags::O_PATH),
         }
     }
 
