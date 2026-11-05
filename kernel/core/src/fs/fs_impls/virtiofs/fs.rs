@@ -22,6 +22,7 @@ use crate::{
         },
     },
     prelude::*,
+    vm::page_cache::ErrorRecord,
 };
 
 /// Filesystem magic reported for virtio-fs in `statfs`.
@@ -83,6 +84,8 @@ pub(super) struct VirtioFs {
     tag: String,
     session: Arc<FuseSession>,
     inode_cache: InodeCache,
+    /// Writeback errors shared by all inode page caches on this instance.
+    pub(super) fs_error_record: Arc<ErrorRecord>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
 }
 
@@ -102,6 +105,7 @@ impl VirtioFs {
         let sb = SuperBlock::from((container_dev_id, statfs));
 
         let root_entry = session.do_fuse_op(FUSE_ROOT_ID, LookupOperation::new("."))?;
+        let fs_error_record = Arc::new(ErrorRecord::default());
 
         Ok(Arc::new_cyclic(|weak_fs| {
             let root = VirtioFsInode::new_root(
@@ -109,6 +113,7 @@ impl VirtioFs {
                 weak_fs.clone(),
                 container_dev_id,
                 session.bump_attr_version(),
+                &fs_error_record,
             );
             let inode_cache = InodeCache::new(&root);
 
@@ -118,6 +123,7 @@ impl VirtioFs {
                 tag,
                 session,
                 inode_cache,
+                fs_error_record,
                 fs_event_subscriber_stats: FsEventSubscriberStats::new(),
             }
         }))

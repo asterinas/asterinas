@@ -17,10 +17,20 @@ use super::{super::open_handle::VirtioFsOpenHandle, VirtioFsInode};
 use crate::{
     fs::file::AccessMode,
     prelude::*,
-    vm::page_cache::{CachePage, CachePageExt, LockedCachePage, PageCacheBackend, PageRun},
+    vm::page_cache::{
+        CachePage, CachePageExt, ErrorRecord, LockedCachePage, PageCacheBackend, PageRun,
+    },
 };
 
 impl PageCacheBackend for VirtioFsInode {
+    fn local_error_record(&self) -> Option<&Arc<ErrorRecord>> {
+        self.local_error_record.as_ref()
+    }
+
+    fn fs_error_record(&self) -> &Arc<ErrorRecord> {
+        &self.fs_error_record
+    }
+
     fn read_page_async(
         &self,
         idx: usize,
