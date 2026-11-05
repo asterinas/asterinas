@@ -379,6 +379,10 @@ impl<D: TtyDriver> Device for Tty<D> {
 }
 
 impl<D: TtyDriver> AnyTtyDevice for Tty<D> {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn devnode_name(&self) -> SysStr {
         self.driver
             .devnode_name(self.index)

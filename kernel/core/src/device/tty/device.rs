@@ -6,11 +6,13 @@
 //!
 //! Reference: <https://www.kernel.org/doc/html/latest/admin-guide/devices.html>
 
-use aster_device::common::SysStr;
+use core::fmt::Write;
+
+use aster_device::common::{Attr, Error as DeviceError, Result as DeviceResult, SysStr};
 use device_id::{DeviceId, MajorId, MinorId};
 use spin::Once;
 
-use super::class::{self, AnyTtyDevice};
+use super::class::{self, AnyTtyDevice, TtyClassDevice};
 use crate::{
     device::tty::{hvc::hvc0_device, serial::serial0_device, vt::active_vt},
     fs::file::{InodeMode, PerOpenFileOps, mkmod},
@@ -22,6 +24,10 @@ use crate::{
 pub(crate) struct Tty0Device;
 
 impl AnyTtyDevice for Tty0Device {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn devnode_name(&self) -> SysStr {
         SysStr::from("tty0")
     }
@@ -40,6 +46,10 @@ impl AnyTtyDevice for Tty0Device {
 pub(crate) struct TtyDevice;
 
 impl AnyTtyDevice for TtyDevice {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn devnode_name(&self) -> SysStr {
         SysStr::from("tty")
     }
@@ -69,6 +79,7 @@ impl AnyTtyDevice for TtyDevice {
 /// system messages will be sent.
 pub(super) struct SystemConsole {
     inner: Arc<dyn AnyTtyDevice>,
+    active_name: &'static str,
 }
 
 impl SystemConsole {
@@ -89,22 +100,31 @@ impl SystemConsole {
             "hvc0" => hvc0_device().cloned().map(|device| device as _),
             _ => None,
         };
-        let inner = match device {
-            Some(inner) => inner,
+        let (inner, active_name) = match device {
+            Some(inner) => (inner, console_name),
             None => {
                 warn!(
                     "'{}' console not found, falling back to 'tty0'",
                     console_name
                 );
-                Arc::new(Tty0Device) as _
+                (Arc::new(Tty0Device) as _, "tty0")
             }
         };
 
-        Self { inner }
+        Self { inner, active_name }
+    }
+
+    /// Returns the name of the active TTY as a `str`.
+    fn active_name(&self) -> &'static str {
+        self.active_name
     }
 }
 
 impl AnyTtyDevice for SystemConsole {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn devnode_name(&self) -> SysStr {
         SysStr::from("console")
     }
@@ -113,9 +133,26 @@ impl AnyTtyDevice for SystemConsole {
         Self::DEVICE_ID
     }
 
+    fn attrs(&self) -> &'static [Attr<TtyClassDevice>] {
+        &CONSOLE_DEV_ATTRS
+    }
+
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         self.inner.open()
     }
+}
+
+/// The attributes of `/sys/class/tty/console/`.
+static CONSOLE_DEV_ATTRS: [Attr<TtyClassDevice>; 1] = [Attr::ro("active", show_active)];
+
+fn show_active(dev: &TtyClassDevice, writer: &mut dyn Write) -> DeviceResult<()> {
+    let console = dev
+        .payload()
+        .as_any()
+        .downcast_ref::<SystemConsole>()
+        .ok_or(DeviceError::Attribute)?;
+    writeln!(writer, "{}", console.active_name())?;
+    Ok(())
 }
 
 pub(super) fn init_in_first_process() -> Result<()> {

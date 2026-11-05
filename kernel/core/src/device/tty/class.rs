@@ -81,6 +81,9 @@ impl Class for TtyClass {
 
 /// The interface shared by the devices in the `tty` class.
 pub(super) trait AnyTtyDevice: Send + Sync + 'static {
+    /// Returns the device as `Any` for downcasting.
+    fn as_any(&self) -> &dyn Any;
+
     /// Returns the name of the `/sys/class/tty/<name>` entry and the `/dev` node.
     fn devnode_name(&self) -> SysStr;
 
