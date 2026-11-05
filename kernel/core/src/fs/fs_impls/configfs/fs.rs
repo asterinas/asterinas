@@ -13,6 +13,7 @@ use crate::fs::{
     utils::systree_inode::SysTreeInodeTy,
     vfs::{
         file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+        fs_handle::{FsHandle, FsLifecycle},
         inode::Inode,
         registry::{FsCreationCtx, FsProperties, FsType},
     },
@@ -29,6 +30,7 @@ pub(crate) struct ConfigFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 // Magic number for `ConfigFs` (taken from Linux).
@@ -38,28 +40,33 @@ const NAME_MAX: usize = 255;
 
 impl ConfigFs {
     /// Returns the `CgroupFs` singleton.
-    pub(super) fn singleton() -> &'static Arc<ConfigFs> {
-        static SINGLETON: Once<Arc<ConfigFs>> = Once::new();
+    pub(super) fn singleton() -> &'static FsHandle<ConfigFs> {
+        static SINGLETON: Once<FsHandle<ConfigFs>> = Once::new();
 
         SINGLETON.call_once(|| Self::new(ConfigRootNode::singleton().clone()))
     }
 
-    fn new(root_node: Arc<ConfigRootNode>) -> Arc<Self> {
+    fn new(root_node: Arc<ConfigRootNode>) -> FsHandle<Self> {
         let anon_device_id =
             AnonDeviceId::acquire().expect("no device ID is available for configfs");
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         let root_inode = ConfigInode::new_root(root_node, &sb);
 
-        Arc::new(Self {
+        FsHandle::new(Self {
             _anon_device_id: anon_device_id,
             sb,
             root: root_inode,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
         })
     }
 }
 
 impl FileSystem for ConfigFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "configfs"
     }
@@ -95,8 +102,8 @@ impl FsType for ConfigFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(ConfigFs::singleton().clone())
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
+        Ok(ConfigFs::singleton().clone().into_dyn())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn SysNode>> {

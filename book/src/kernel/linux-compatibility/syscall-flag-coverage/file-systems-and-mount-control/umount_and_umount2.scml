@@ -2,4 +2,5 @@
 umount(target);
 
 // Unmount a mounted file system with enhanced behavior control
-umount2(target, flags = UMOUNT_NOFOLLOW);
+// MNT_DETACH defers final cleanup, but still syncs before detachment.
+umount2(target, flags = UMOUNT_NOFOLLOW | MNT_DETACH);

@@ -33,7 +33,7 @@ use crate::{
         file::{InodeMode, InodeType, StatusFlags, SyncMode, mkmod},
         utils::DirentVisitor,
         vfs::{
-            file_system::FileSystem,
+            fs_handle::FsHandle,
             inode::{Extension, FileOps, Inode, Metadata, MknodType, RenameMode, SymbolicLink},
             path::Dentry,
         },
@@ -1559,8 +1559,8 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn fs(&self) -> Arc<dyn FileSystem> {
-        self.inner.read().fs()
+    fn fs(&self) -> Option<FsHandle> {
+        FsHandle::try_acquire(self.inner.read().fs.upgrade()?).map(FsHandle::into_dyn)
     }
 
     fn page_cache(&self) -> Option<Arc<Vmo>> {

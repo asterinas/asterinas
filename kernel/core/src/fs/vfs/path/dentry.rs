@@ -679,6 +679,7 @@ impl DirDentry<'_> {
             let removed_nr_subscribers = publisher.disable_new_and_remove_subscribers();
             child_inode
                 .fs()
+                .ok_or_else(|| Error::new(Errno::ESTALE))?
                 .fs_event_subscriber_stats()
                 .remove_subscribers(removed_nr_subscribers);
         }
@@ -712,6 +713,7 @@ impl DirDentry<'_> {
             let removed_nr_subscribers = publisher.disable_new_and_remove_subscribers();
             child_inode
                 .fs()
+                .ok_or_else(|| Error::new(Errno::ESTALE))?
                 .fs_event_subscriber_stats()
                 .remove_subscribers(removed_nr_subscribers);
         }
@@ -788,7 +790,11 @@ impl DirDentry<'_> {
 
         let old_dir_inode = self.inode();
 
-        let max_namelen = old_dir_inode.fs().sb().namelen;
+        let max_namelen = old_dir_inode
+            .fs()
+            .ok_or_else(|| Error::new(Errno::ESTALE))?
+            .sb()
+            .namelen;
         if old_name.len() > max_namelen || new_name.len() > max_namelen {
             return_errno_with_message!(Errno::ENAMETOOLONG, "old_name or new_name is too long");
         }

@@ -304,11 +304,10 @@ pub(crate) fn on_delete(
     inode: &Arc<dyn Inode>,
     name: impl FnOnce() -> String,
 ) {
-    if !dir_inode
-        .fs()
-        .fs_event_subscriber_stats()
-        .has_any_subscribers()
-    {
+    let Some(fs) = dir_inode.fs() else {
+        return;
+    };
+    if !fs.fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }
     if inode.type_() == InodeType::Dir {
@@ -320,7 +319,10 @@ pub(crate) fn on_delete(
 
 /// Notifies that an inode's link count changed.
 pub(crate) fn on_link_count(inode: &Arc<dyn Inode>) {
-    if !inode.fs().fs_event_subscriber_stats().has_any_subscribers() {
+    let Some(fs) = inode.fs() else {
+        return;
+    };
+    if !fs.fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }
     notify_inode(inode, FsEvents::ATTRIB);
@@ -328,7 +330,10 @@ pub(crate) fn on_link_count(inode: &Arc<dyn Inode>) {
 
 /// Notifies that an inode was removed (link count reached 0).
 pub(crate) fn on_inode_removed(inode: &Arc<dyn Inode>) {
-    if !inode.fs().fs_event_subscriber_stats().has_any_subscribers() {
+    let Some(fs) = inode.fs() else {
+        return;
+    };
+    if !fs.fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }
     notify_inode(inode, FsEvents::DELETE_SELF);
@@ -340,11 +345,10 @@ pub(crate) fn on_link(
     inode: &Arc<dyn Inode>,
     name: impl FnOnce() -> String,
 ) {
-    if !dir_inode
-        .fs()
-        .fs_event_subscriber_stats()
-        .has_any_subscribers()
-    {
+    let Some(fs) = dir_inode.fs() else {
+        return;
+    };
+    if !fs.fs_event_subscriber_stats().has_any_subscribers() {
         return;
     }
     notify_inode(inode, FsEvents::ATTRIB);

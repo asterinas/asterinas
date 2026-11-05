@@ -9,6 +9,7 @@ use crate::{
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::{FsHandle, FsLifecycle},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -23,6 +24,7 @@ pub(super) struct SysFs {
     sb: SuperBlock,
     root: Arc<dyn Inode>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 const MAGIC_NUMBER: u64 = 0x62656572; // SYSFS_MAGIC
@@ -31,33 +33,39 @@ const NAME_MAX: usize = 255;
 
 impl SysFs {
     /// Returns the `SysFs` singleton.
-    pub(super) fn singleton() -> &'static Arc<SysFs> {
-        static SINGLETON: Once<Arc<SysFs>> = Once::new();
+    pub(super) fn singleton() -> &'static FsHandle<SysFs> {
+        static SINGLETON: Once<FsHandle<SysFs>> = Once::new();
 
         SINGLETON.call_once(Self::new)
     }
 
     #[cfg(ktest)]
-    pub(super) fn new_for_ktest() -> Arc<Self> {
+    pub(super) fn new_for_ktest() -> FsHandle<Self> {
+        crate::thread::work_queue::init_for_ktest();
         Self::new()
     }
 
-    fn new() -> Arc<Self> {
+    fn new() -> FsHandle<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for sysfs");
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
         let systree_ref = sysfs::systree_singleton();
         let root_inode = SysFsInode::new_root(systree_ref.root().clone(), &sb);
 
-        Arc::new(Self {
+        FsHandle::new(Self {
             _anon_device_id: anon_device_id,
             sb,
             root: root_inode,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
         })
     }
 }
 
 impl FileSystem for SysFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "sysfs"
     }
@@ -93,8 +101,8 @@ impl FsType for SysFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(SysFs::singleton().clone())
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
+        Ok(SysFs::singleton().clone().into_dyn())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

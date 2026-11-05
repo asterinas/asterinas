@@ -6,7 +6,10 @@ use aster_fuse::{FuseFileHandle, FuseNodeId, FuseOpenFlags, ops::release::Releas
 
 use super::fs::VirtioFs;
 use crate::{
-    fs::file::{AccessMode, StatusFlags},
+    fs::{
+        file::{AccessMode, StatusFlags},
+        vfs::fs_handle::FsHandle,
+    },
     prelude::*,
     thread::work_queue::{self, WorkPriority},
 };
@@ -20,7 +23,7 @@ pub(super) struct VirtioFsOpenHandle {
     access_mode: AccessMode,
     status_flags: StatusFlags,
     open_flags: FuseOpenFlags,
-    fs: Weak<VirtioFs>,
+    fs: FsHandle<VirtioFs>,
     release_options: ReleaseOptions,
 }
 
@@ -31,7 +34,7 @@ impl VirtioFsOpenHandle {
         access_mode: AccessMode,
         status_flags: StatusFlags,
         open_flags: FuseOpenFlags,
-        fs: Weak<VirtioFs>,
+        fs: FsHandle<VirtioFs>,
         release_options: ReleaseOptions,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -69,6 +72,7 @@ impl VirtioFsOpenHandle {
 impl Drop for VirtioFsOpenHandle {
     fn drop(&mut self) {
         let fs = self.fs.clone();
+        let session = fs.session().clone();
         let nodeid = self.nodeid;
         let fh = self.fh;
         // FIXME: `FUSE_RELEASE` should use the current status flags from the
@@ -79,16 +83,9 @@ impl Drop for VirtioFsOpenHandle {
 
         work_queue::submit_work_func(
             move || {
-                // If the filesystem has been unmounted, the release operation is skipped.
-                // Reference: <https://github.com/libfuse/libfuse/blob/master/include/fuse_lowlevel.h#L664>.
-                let Some(fs) = fs.upgrade() else {
-                    return;
-                };
-
-                if let Err(err) = fs
-                    .session()
-                    .release(nodeid, fh, file_flags, release_options)
-                {
+                // The final release request is still an active filesystem operation.
+                let _fs_guard = &fs;
+                if let Err(err) = session.release(nodeid, fh, file_flags, release_options) {
                     warn!("virtiofs release failed for inode {:?}: {:?}", nodeid, err);
                 }
             },

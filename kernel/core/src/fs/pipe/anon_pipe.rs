@@ -11,7 +11,7 @@ use crate::{
         pseudofs::{PipeFs, PseudoInode, PseudoInodeType},
         utils,
         vfs::{
-            file_system::FileSystem,
+            fs_handle::FsHandle,
             inode::{Extension, FileOps, Inode, Metadata},
             path::Dentry,
         },
@@ -53,7 +53,9 @@ impl AnonPipeInode {
         let (uid, gid) = utils::current_fs_ids();
 
         let pseudo_inode =
-            PipeFs::singleton().alloc_inode(PseudoInodeType::Pipe, mkmod!(u+rw), uid, gid);
+            PipeFs::singleton()
+                .as_arc()
+                .alloc_inode(PseudoInodeType::Pipe, mkmod!(u+rw), uid, gid);
 
         Self { pipe, pseudo_inode }
     }
@@ -95,7 +97,7 @@ impl Inode for AnonPipeInode {
     fn set_mtime(&self, self_dentry: &Dentry, time: Duration);
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
-    fn fs(&self) -> Arc<dyn FileSystem>;
+    fn fs(&self) -> Option<FsHandle>;
 
     fn open(
         &self,

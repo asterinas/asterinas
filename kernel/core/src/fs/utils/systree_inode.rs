@@ -12,7 +12,8 @@ use crate::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, SyncMode, mkmod},
         utils::{self, DirentVisitor},
         vfs::{
-            file_system::{FileSystem, SuperBlock},
+            file_system::SuperBlock,
+            fs_handle::FsHandle,
             inode::{
                 Extension, FallocMode, FileOps, Inode, Metadata, MknodType, RenameMode,
                 RevalidationPolicy, SymbolicLink,
@@ -163,7 +164,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     where
         Self: Sized + 'static,
     {
-        let sb = self.fs().sb();
+        let sb = self.fs().ok_or_else(|| Error::new(Errno::ESTALE))?.sb();
 
         // Try finding a child node (Branch, Leaf, Symlink) first
         if let Some(child_sysnode) = sysnode.child(name) {
@@ -245,7 +246,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             }
         };
 
-        let sb = self.fs().sb();
+        let sb = self.fs().ok_or_else(|| Error::new(Errno::ESTALE))?.sb();
         let inode = Self::new_attr(attr, leaf_node_arc, Arc::downgrade(&self.this()), &sb);
         Ok(inode)
     }
@@ -468,7 +469,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         Err(Error::new(Errno::EPERM))
     }
 
-    default fn fs(&self) -> Arc<dyn FileSystem> {
+    default fn fs(&self) -> Option<FsHandle> {
         unimplemented!("fs() method should be implemented by the concrete inode type");
     }
 
@@ -493,7 +494,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
         let new_child = branch_node.create_child(name)?;
 
-        let sb = self.fs().sb();
+        let sb = self.fs().ok_or_else(|| Error::new(Errno::ESTALE))?.sb();
         let new_inode = if let Some(branch_child) = new_child.cast_to_branch() {
             Self::new_branch_dir(
                 SysTreeNodeKind::Branch(branch_child),

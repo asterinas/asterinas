@@ -14,6 +14,7 @@ use crate::{
         utils::systree_inode::SysTreeInodeTy,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::{FsHandle, FsLifecycle},
             inode::Inode,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -26,6 +27,7 @@ pub(super) struct CgroupFs {
     _anon_device_id: AnonDeviceId,
     sb: SuperBlock,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 // Magic number for cgroupfs v2 (taken from Linux)
@@ -35,26 +37,31 @@ const NAME_MAX: usize = 255;
 
 impl CgroupFs {
     /// Returns the `CgroupFs` singleton.
-    pub(super) fn singleton() -> &'static Arc<CgroupFs> {
-        static SINGLETON: Once<Arc<CgroupFs>> = Once::new();
+    pub(super) fn singleton() -> &'static FsHandle<CgroupFs> {
+        static SINGLETON: Once<FsHandle<CgroupFs>> = Once::new();
 
         SINGLETON.call_once(Self::new)
     }
 
-    fn new() -> Arc<Self> {
+    fn new() -> FsHandle<Self> {
         let anon_device_id =
             AnonDeviceId::acquire().expect("no device ID is available for cgroupfs");
         let sb = SuperBlock::new(MAGIC_NUMBER, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
 
-        Arc::new(Self {
+        FsHandle::new(Self {
             _anon_device_id: anon_device_id,
             sb,
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
         })
     }
 }
 
 impl FileSystem for CgroupFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "cgroup2"
     }
@@ -95,8 +102,8 @@ impl FsType for CgroupFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(CgroupFs::singleton().clone())
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
+        Ok(CgroupFs::singleton().clone().into_dyn())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
