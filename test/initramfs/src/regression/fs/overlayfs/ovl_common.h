@@ -54,6 +54,25 @@ static inline void write_file(const char *path, const char *content)
 	CHECK(close(fd));
 }
 
+/*
+ * Creates `path` as a `size`-byte all-zero regular file: the metadata-only
+ * payload a metacopy fixture carries on disk before its record is set.
+ */
+static inline void write_zero_file(const char *path, size_t size)
+{
+	static const char zeros[64] = { 0 };
+	int fd;
+
+	if (size > sizeof(zeros)) {
+		fprintf(stderr, "fatal error: %s: size %zu exceeds %zu\n",
+			__func__, size, sizeof(zeros));
+		exit(EXIT_FAILURE);
+	}
+	fd = CHECK(open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644));
+	CHECK(write(fd, zeros, size));
+	CHECK(close(fd));
+}
+
 /* Creates the base, upper, work, lower and merged directories of the tree. */
 static inline void create_overlay_dirs(void)
 {
