@@ -133,6 +133,7 @@ NC='\033[0m'
 total_tests=$run_count
 passed_tests=0
 failed_tests=0
+skipped_kvm_tests=0
 
 if ! command -v timeout >/dev/null 2>&1; then
     echo "$0: missing timeout command" >&2
@@ -161,6 +162,11 @@ fi
 
 dirs=$(cut -d: -f1 "$AVAILABLE_TESTS" | sort -u)
 for dir in $dirs ; do
+    if [ "$dir" = "kvm" ] && [ ! -c /dev/kvm ]; then
+        skipped_kvm_tests=$(grep -c '^kvm:' "$AVAILABLE_TESTS")
+        continue
+    fi
+
     TEST_DIR="$TEST_WORKDIR/$dir"
     echo "Running tests in dir: $TEST_DIR"
     if ! cp -rL "$KSELFTEST_DIR/$dir" "$TEST_DIR"; then
@@ -227,11 +233,17 @@ echo ""
 echo "=========== Summary ============"
 printf '%b%s%b of %b%s%b test cases passed.\n' \
     "$GREEN" "$passed_tests" "$NC" "$GREEN" "$total_tests" "$NC"
+if [ "$skipped_kvm_tests" -gt 0 ]; then
+    printf '[ SKIPPED ]: %s KVM test cases (/dev/kvm is unavailable)\n' "$skipped_kvm_tests"
+fi
 if [ "$failed_tests" -gt 0 ]; then
     printf 'The %b%s%b failed test cases are as follows:\n' \
         "$RED" "$failed_tests" "$NC"
     cat "$FAILED_TESTS"
     exit 1
+elif [ "$skipped_kvm_tests" -gt 0 ]; then
+    echo "Kselftest completed with skipped tests."
+    exit 0
 else
     echo ""
     echo "All kselftest tests passed."
