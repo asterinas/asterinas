@@ -14,6 +14,7 @@ use spin::Once;
 use crate::device::entropy::device::EntropyDevice;
 
 pub mod device;
+pub(crate) mod driver;
 
 /// Registers an [`EntropyDevice`] under `name`.
 fn register_device(name: String, device: Arc<EntropyDevice>) {
@@ -30,7 +31,7 @@ pub fn first_device() -> Option<Arc<EntropyDevice>> {
 }
 
 /// Initializes the entropy device registry.
-pub(crate) fn init() {
+fn init() {
     ENTROPY_DEVICE_TABLE.call_once(|| SpinLock::new(BTreeMap::new()));
 }
 

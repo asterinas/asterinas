@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Transport operations and device configuration access shared by VirtIO drivers.
+
 use alloc::{boxed::Box, sync::Arc};
-use core::{
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
+use core::fmt::Debug;
 
 use aster_pci::cfg_space::BarAccess;
 use aster_util::safe_ptr::SafePtr;
@@ -31,23 +30,29 @@ pub(crate) mod pci;
 /// 3. Access device config memory.
 /// 4. Config virtqueue.
 /// 5. Get the interrupt resources allocated to the device.
-pub(crate) trait VirtioTransport: Sync + Send + Debug {
+pub trait VirtioTransport: Sync + Send + Debug {
     // ====================Device related APIs=======================
 
     /// Get device type.
     fn device_type(&self) -> VirtioDeviceType;
 
+    /// Returns the VirtIO vendor ID.
+    fn vendor_id(&self) -> u32;
+
     /// Get device features.
     fn read_device_features(&self) -> u64;
 
     /// Set driver features.
-    fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError>;
+    fn write_driver_features(&self, features: u64) -> Result<(), VirtioTransportError>;
 
     /// Get device status.
     fn read_device_status(&self) -> DeviceStatus;
 
     /// Set device status.
-    fn write_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError>;
+    fn write_device_status(&self, status: DeviceStatus) -> Result<(), VirtioTransportError>;
+
+    /// Adds status bits without losing a concurrent update.
+    fn add_device_status(&self, bits: DeviceStatus) -> Result<(), VirtioTransportError>;
 
     /// Get access to the device config memory.
     fn device_config_mem(&self) -> Option<IoMem>;
@@ -62,7 +67,7 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
 
     /// Set virtqueue information. Some transport may set other necessary information such as MSI-X vector in PCI transport.
     fn set_queue(
-        &mut self,
+        &self,
         idx: u16,
         queue_size: u16,
         descriptor_ptr: &SafePtr<Descriptor, Arc<DmaCoherent>>,
@@ -88,7 +93,7 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
     /// If no available IRQ lines are found for allocation, the
     /// transport may assign the callback to a shared IRQ line.
     fn register_queue_callback(
-        &mut self,
+        &self,
         index: u16,
         func: Box<IrqCallbackFunction>,
         single_interrupt: bool,
@@ -96,20 +101,28 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
 
     /// Register configuration space change interrupt callback.
     fn register_cfg_callback(
-        &mut self,
+        &self,
         func: Box<IrqCallbackFunction>,
     ) -> Result<(), VirtioTransportError>;
+
+    /// Unregisters all functional driver callbacks and waits for running callbacks to finish.
+    ///
+    /// Call from task context without holding any lock acquired by callbacks
+    /// registered through [`Self::register_queue_callback()`] or [`Self::register_cfg_callback()`].
+    /// Otherwise, this call may wait for a callback that is waiting for your lock.
+    fn clear_callbacks(&self);
 }
 
 /// Manage PCI device/notify configuration space (legacy/modern).
 #[derive(Debug)]
-pub(crate) struct ConfigManager<T: Pod> {
+pub struct ConfigManager<T: Pod> {
     modern_space: Option<SafePtr<T, IoMem>>,
     legacy_space: Option<(BarAccess, usize)>,
 }
 
 impl<T: Pod> ConfigManager<T> {
-    pub(super) fn new(
+    /// Creates an accessor for a memory-backed or legacy BAR configuration region.
+    pub fn new(
         modern_space: Option<SafePtr<T, IoMem>>,
         legacy_space: Option<(BarAccess, usize)>,
     ) -> Self {
@@ -120,8 +133,35 @@ impl<T: Pod> ConfigManager<T> {
     }
 
     /// Return if the modern configuration space exists.
-    pub(super) fn is_modern(&self) -> bool {
+    pub fn is_modern(&self) -> bool {
         self.modern_space.is_some()
+    }
+
+    /// Read a specific configuration.
+    pub fn read_once<V: PodOnce + PortRead>(
+        &self,
+        offset: usize,
+    ) -> Result<V, VirtioTransportError> {
+        debug_assert!(offset + size_of::<V>() <= size_of::<T>());
+        if self.is_modern() {
+            self.read_modern(offset)
+        } else {
+            self.read_legacy(offset)
+        }
+    }
+
+    /// Write a specific configuration.
+    pub fn write_once<V: PodOnce + PortWrite>(
+        &self,
+        offset: usize,
+        value: V,
+    ) -> Result<(), VirtioTransportError> {
+        debug_assert!(offset + size_of::<V>() <= size_of::<T>());
+        if self.is_modern() {
+            self.write_modern(offset, value)
+        } else {
+            self.write_legacy(offset, value)
+        }
     }
 
     fn read_modern<V: PodOnce + PortRead>(&self, offset: usize) -> Result<V, VirtioTransportError> {
@@ -147,19 +187,6 @@ impl<T: Pod> ConfigManager<T> {
 
         bar.read_once(base + offset)
             .map_err(|_| VirtioTransportError::DeviceStatusError)
-    }
-
-    /// Read a specific configuration.
-    pub(super) fn read_once<V: PodOnce + PortRead>(
-        &self,
-        offset: usize,
-    ) -> Result<V, VirtioTransportError> {
-        debug_assert!(offset + size_of::<V>() <= size_of::<T>());
-        if self.is_modern() {
-            self.read_modern(offset)
-        } else {
-            self.read_legacy(offset)
-        }
     }
 
     fn write_modern<V: PodOnce + PortWrite>(
@@ -194,20 +221,6 @@ impl<T: Pod> ConfigManager<T> {
         bar.write_once(base + offset, value)
             .map_err(|_| VirtioTransportError::DeviceStatusError)
     }
-
-    /// Write a specific configuration.
-    pub(super) fn write_once<V: PodOnce + PortWrite>(
-        &self,
-        offset: usize,
-        value: V,
-    ) -> Result<(), VirtioTransportError> {
-        debug_assert!(offset + size_of::<V>() <= size_of::<T>());
-        if self.is_modern() {
-            self.write_modern(offset, value)
-        } else {
-            self.write_legacy(offset, value)
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -219,7 +232,7 @@ pub enum VirtioTransportError {
 bitflags::bitflags! {
     /// The device status field.
     #[derive(Clone, Copy, Debug, PartialEq)]
-    pub(crate) struct DeviceStatus: u8 {
+    pub struct DeviceStatus: u8 {
         /// Indicates that the guest OS has found the device and recognized it
         /// as a valid virtio device.
         const ACKNOWLEDGE        = 1;
@@ -246,69 +259,7 @@ bitflags::bitflags! {
     }
 }
 
-/// A wrapper around [`Box<dyn VirtioTransport>`] that sets the device status to FAILED
-/// on drop unless [`Self::finish_init`] has been called.
-///
-/// This ensures that the FAILED status bit is set whenever a device initialization
-/// is aborted before completion, as required by the VirtIO specification.
-///
-/// The `DeviceTransport` is stored in the device struct and held for the device's
-/// lifetime. During initialization it acts as a sentinel: if init fails (the struct
-/// is dropped without [`finish_init`] being called), [`Drop`] sets `FAILED`. Once
-/// `finish_init` is called, the FAILED bit is no longer set on drop.
-#[derive(Debug)]
-pub(crate) struct DeviceTransport {
-    inner: Box<dyn VirtioTransport>,
-    is_completed: bool,
-}
-
-impl DeviceTransport {
-    /// Creates a new wrapper around `transport`.
-    ///
-    /// The wrapper will set the device status to [`DeviceStatus::FAILED`] on drop
-    /// unless [`Self::finish_init`] is called first.
-    pub(super) fn new(transport: Box<dyn VirtioTransport>) -> Self {
-        Self {
-            inner: transport,
-            is_completed: false,
-        }
-    }
-
-    /// Marks initialization as complete and sets the device status to `DRIVER_OK`.
-    ///
-    /// After this call, the wrapper will NOT set `FAILED` on drop.
-    pub(crate) fn finish_init(&mut self) {
-        self.is_completed = true;
-        let status = self.inner.read_device_status() | DeviceStatus::DRIVER_OK;
-        self.inner.write_device_status(status).unwrap();
-    }
-}
-
-impl Deref for DeviceTransport {
-    type Target = Box<dyn VirtioTransport>;
-
-    fn deref(&self) -> &Box<dyn VirtioTransport> {
-        &self.inner
-    }
-}
-
-impl DerefMut for DeviceTransport {
-    fn deref_mut(&mut self) -> &mut Box<dyn VirtioTransport> {
-        &mut self.inner
-    }
-}
-
-impl Drop for DeviceTransport {
-    fn drop(&mut self) {
-        if !self.is_completed {
-            let status = self.inner.read_device_status();
-            let _ = self
-                .inner
-                .write_device_status(status | DeviceStatus::FAILED);
-        }
-    }
-}
-
+/// Registers the PCI and MMIO transport drivers to discover VirtIO devices.
 pub(super) fn init() {
     virtio_pci_init();
     virtio_mmio_init();

@@ -23,6 +23,7 @@ use ostd::{
 use super::{BlockFeatures, VirtioBlockConfig};
 use crate::{
     VIRTIO_BLOCK_MAJOR_ID,
+    bus::VirtioDevice,
     device::{
         VirtioDeviceError,
         block::{ReqType, RespStatus},
@@ -30,7 +31,7 @@ use crate::{
     dma_buf::DmaBuf,
     id_alloc::SyncIdAlloc,
     queue::VirtQueue,
-    transport::{ConfigManager, DeviceTransport},
+    transport::{ConfigManager, DeviceStatus},
 };
 
 /// The number of virtio block devices, used to assign minor device numbers.
@@ -70,8 +71,11 @@ impl BlockDevice {
     }
 
     /// Creates a new VirtIO-Block driver and registers it.
-    pub(crate) fn init(device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
-        let device = DeviceInner::init(device_transport)?;
+    pub(crate) fn init(
+        virtio_device: Arc<VirtioDevice>,
+        negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
+        let device = DeviceInner::init(virtio_device, negotiated_features)?;
 
         let index = NR_BLOCK_DEVICE.fetch_add(1, Ordering::Relaxed);
         let id = DeviceId::new(
@@ -146,7 +150,7 @@ struct DeviceInner {
     config_manager: ConfigManager<VirtioBlockConfig>,
     features: BlockFeatures,
     queue: SpinLock<VirtQueue>,
-    transport: SpinLock<DeviceTransport>,
+    virtio_device: Arc<VirtioDevice>,
     block_requests: Arc<DmaStream>,
     block_responses: Arc<DmaStream>,
     id_allocator: SyncIdAlloc,
@@ -157,14 +161,16 @@ impl DeviceInner {
     const QUEUE_SIZE: u16 = 64;
 
     /// Creates and inits the device.
-    fn init(mut device_transport: DeviceTransport) -> Result<Arc<Self>, VirtioDeviceError> {
-        let config_manager = VirtioBlockConfig::new_manager(device_transport.as_ref());
+    fn init(
+        virtio_device: Arc<VirtioDevice>,
+        negotiated_features: u64,
+    ) -> Result<Arc<Self>, VirtioDeviceError> {
+        let config_manager = VirtioBlockConfig::new_manager(virtio_device.payload().as_ref());
 
         let config = config_manager.read_config();
         debug!("virio_blk_config = {:?}", config);
 
-        let features =
-            BlockFeatures::negotiated_with_device(device_transport.read_device_features());
+        let features = BlockFeatures::from_bits_truncate(negotiated_features);
 
         let block_size = if features.contains(BlockFeatures::BLK_SIZE) {
             config_manager.block_size()
@@ -179,7 +185,7 @@ impl DeviceInner {
             return Err(VirtioDeviceError::UnsupportedConfig);
         }
 
-        let num_queues = device_transport.num_queues();
+        let num_queues = virtio_device.num_queues();
         if num_queues != 1 {
             // TODO: Support Multi-Queue Block IO Queueing Mechanism
             // (`BlkFeatures::MQ`) to accelerate multi-processor requests for
@@ -189,7 +195,7 @@ impl DeviceInner {
             );
         }
 
-        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, device_transport.as_mut())?;
+        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, virtio_device.payload().as_ref())?;
 
         let block_requests =
             Arc::new(DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?);
@@ -204,7 +210,7 @@ impl DeviceInner {
             config_manager,
             features,
             queue: SpinLock::new(queue),
-            transport: SpinLock::new(device_transport),
+            virtio_device,
             block_requests,
             block_responses,
             id_allocator: SyncIdAlloc::with_capacity(Self::QUEUE_SIZE as usize),
@@ -222,10 +228,10 @@ impl DeviceInner {
         };
 
         {
-            let mut transport = device.transport.lock();
+            let transport = device.virtio_device.payload().as_ref();
             transport.register_cfg_callback(Box::new(handle_config_change))?;
             transport.register_queue_callback(0, Box::new(handle_irq), false)?;
-            transport.finish_init();
+            transport.add_device_status(DeviceStatus::DRIVER_OK)?;
         }
 
         Ok(device)

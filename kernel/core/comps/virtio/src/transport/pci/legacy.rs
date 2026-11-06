@@ -3,7 +3,10 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
-use aster_pci::{cfg_space::BarAccess, common_device::PciCommonDevice};
+use aster_pci::{
+    bus::PciDevice,
+    cfg_space::{BarAccess, PciGeneralDeviceCfgOffset},
+};
 use aster_util::safe_ptr::SafePtr;
 use ostd::{
     bus::BusProbeError,
@@ -11,6 +14,7 @@ use ostd::{
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaCoherent},
+    sync::Mutex,
     warn,
 };
 
@@ -63,19 +67,20 @@ const DEVICE_CONFIG_OFFSET_WITH_MSIX: usize = 0x18;
 
 pub(crate) struct VirtioPciLegacyTransport {
     device_type: VirtioDeviceType,
-    common_device: PciCommonDevice,
+    common_device: Arc<PciDevice>,
     config_bar: BarAccess,
     num_queues: u16,
+    config_lock: Mutex<ExclusiveState>,
+}
+
+struct ExclusiveState {
     msix_manager: VirtioMsixManager,
 }
 
 impl VirtioPciLegacyTransport {
     pub(crate) const QUEUE_ALIGN_SIZE: usize = 4096;
 
-    #[expect(clippy::result_large_err)]
-    pub(super) fn new(
-        mut common_device: PciCommonDevice,
-    ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
+    pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, BusProbeError> {
         let device_type = match common_device.device_id().device_id {
             0x1000 => VirtioDeviceType::Network,
             0x1001 => VirtioDeviceType::Block,
@@ -89,14 +94,14 @@ impl VirtioPciLegacyTransport {
                     "Unrecognized virtio-pci device ID: {:x?}",
                     common_device.device_id().device_id
                 );
-                return Err((BusProbeError::ConfigurationSpaceError, common_device));
+                return Err(BusProbeError::ConfigurationSpaceError);
             }
         };
         info!("Found device: {:?}", device_type);
 
         let config_bar = common_device
-            .bar_manager_mut()
-            .bar_mut(0)
+            .bar_manager()
+            .bar(0)
             .unwrap()
             .acquire()
             .unwrap();
@@ -115,7 +120,7 @@ impl VirtioPciLegacyTransport {
 
         // TODO: Support interrupt without MSI-X.
         let Ok(Some(msix)) = common_device.acquire_msix_capability() else {
-            return Err((BusProbeError::ConfigurationSpaceError, common_device));
+            return Err(BusProbeError::ConfigurationSpaceError);
         };
         let msix_manager = VirtioMsixManager::new(msix);
 
@@ -124,7 +129,7 @@ impl VirtioPciLegacyTransport {
             common_device,
             config_bar,
             num_queues,
-            msix_manager,
+            config_lock: Mutex::new(ExclusiveState { msix_manager }),
         })
     }
 
@@ -150,18 +155,31 @@ impl VirtioPciLegacyTransport {
 }
 
 impl VirtioTransport for VirtioPciLegacyTransport {
+    fn vendor_id(&self) -> u32 {
+        self.common_device
+            .location()
+            .read16(PciGeneralDeviceCfgOffset::SubsystemVendorId as u16) as u32
+    }
+
+    fn clear_callbacks(&self) {
+        let irqs = self.config_lock.lock().msix_manager.take_callbacks();
+        // Callback destruction waits for running handlers without holding the config lock.
+        drop(irqs);
+    }
+
     fn device_type(&self) -> VirtioDeviceType {
         self.device_type
     }
 
     fn set_queue(
-        &mut self,
+        &self,
         idx: u16,
         _queue_size: u16,
         descriptor_ptr: &SafePtr<Descriptor, Arc<DmaCoherent>>,
         _avail_ring_ptr: &SafePtr<AvailRing, Arc<DmaCoherent>>,
         _used_ring_ptr: &SafePtr<UsedRing, Arc<DmaCoherent>>,
     ) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         // When using the legacy interface, there was no mechanism to negotiate
         // the queue size! The transitional driver MUST retrieve the `Queue Size`
         // field from the device and MUST allocate the total number of bytes
@@ -200,8 +218,9 @@ impl VirtioTransport for VirtioPciLegacyTransport {
     }
 
     fn device_config_bar(&self) -> Option<(BarAccess, usize)> {
+        let state = self.config_lock.lock();
         let bar = self.config_bar.clone();
-        let base = if self.msix_manager.is_enabled() {
+        let base = if state.msix_manager.is_enabled() {
             DEVICE_CONFIG_OFFSET_WITH_MSIX
         } else {
             DEVICE_CONFIG_OFFSET
@@ -219,7 +238,8 @@ impl VirtioTransport for VirtioPciLegacyTransport {
         features as u64
     }
 
-    fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError> {
+    fn write_driver_features(&self, features: u64) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         // When used through the Legacy Interface, Transitional Devices MUST assume that
         // Feature Bits 32 to 63 are not acknowledged by Driver.
         self.config_bar
@@ -236,7 +256,8 @@ impl VirtioTransport for VirtioPciLegacyTransport {
         DeviceStatus::from_bits_truncate(status)
     }
 
-    fn write_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
+    fn write_device_status(&self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         let status = status.bits();
         self.config_bar
             .write_once(DEVICE_STATUS_OFFSET, status)
@@ -244,7 +265,17 @@ impl VirtioTransport for VirtioPciLegacyTransport {
         Ok(())
     }
 
+    fn add_device_status(&self, bits: DeviceStatus) -> Result<(), VirtioTransportError> {
+        let _lock = self.config_lock.lock();
+        let status = self.read_device_status() | bits;
+        self.config_bar
+            .write_once(DEVICE_STATUS_OFFSET, status.bits())
+            .unwrap();
+        Ok(())
+    }
+
     fn max_queue_size(&self, idx: u16) -> Result<u16, VirtioTransportError> {
+        let _lock = self.config_lock.lock();
         self.config_bar
             .write_once(QUEUE_SELECT_OFFSET, idx)
             .unwrap();
@@ -258,26 +289,27 @@ impl VirtioTransport for VirtioPciLegacyTransport {
     }
 
     fn register_queue_callback(
-        &mut self,
+        &self,
         index: u16,
         func: Box<IrqCallbackFunction>,
         single_interrupt: bool,
     ) -> Result<(), VirtioTransportError> {
+        let mut state = self.config_lock.lock();
         if index >= self.num_queues() {
             return Err(VirtioTransportError::InvalidArgs);
         }
         let (vector, irq) = if single_interrupt {
-            if let Some(unused_irq) = self.msix_manager.pop_unused_irq() {
+            if let Some(unused_irq) = state.msix_manager.pop_unused_irq() {
                 unused_irq
             } else {
                 warn!(
                     "{:?}: `single_interrupt` ignored: no more IRQ lines available",
                     self.device_type
                 );
-                self.msix_manager.shared_irq_line()
+                state.msix_manager.shared_irq_line()
             }
         } else {
-            self.msix_manager.shared_irq_line()
+            state.msix_manager.shared_irq_line()
         };
         irq.on_active(func);
 
@@ -297,10 +329,11 @@ impl VirtioTransport for VirtioPciLegacyTransport {
     }
 
     fn register_cfg_callback(
-        &mut self,
+        &self,
         func: Box<IrqCallbackFunction>,
     ) -> Result<(), VirtioTransportError> {
-        let (vector, irq) = self.msix_manager.config_msix_irq();
+        let mut state = self.config_lock.lock();
+        let (vector, irq) = state.msix_manager.config_msix_irq();
         irq.on_active(func);
 
         self.config_bar
