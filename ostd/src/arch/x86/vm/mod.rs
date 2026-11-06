@@ -6,9 +6,10 @@ mod context;
 pub(crate) mod ept;
 mod exit;
 pub(crate) mod guest_mode;
+pub(crate) mod memory;
 mod types;
 mod vmcs;
-pub(crate) mod vmx;
+mod vmx;
 mod x86;
 
 /// Initializes hardware-virtualization state on the current CPU.
