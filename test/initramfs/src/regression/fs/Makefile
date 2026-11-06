@@ -7,6 +7,7 @@ SUBDIRS := \
 	getcwd \
 	inotify \
 	isolation \
+	link \
 	mount \
 	overlayfs \
 	procfs \
