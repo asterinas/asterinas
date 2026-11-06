@@ -211,15 +211,18 @@ impl FileOps for RootInode {
                 *offset += 1;
             }
 
-            // Read the slaves.
-            let slaves = self.slaves.read();
+            // Read the slaves. Collect the entries before visiting them, since the visitor may
+            // write to user space and take a page fault.
             let start_offset = *offset;
-            for (idx, (name, node)) in slaves
+            let slaves: Vec<(usize, String, u64, InodeType)> = self
+                .slaves
+                .read()
                 .idxes_and_items()
-                .map(|(idx, (name, node))| (idx + 3, (name, node)))
-                .skip_while(|(idx, _)| idx < &start_offset)
-            {
-                visitor.visit(name.as_ref(), node.ino(), node.type_(), idx)?;
+                .skip_while(|(idx, _)| *idx + 3 < start_offset)
+                .map(|(idx, (name, node))| (idx + 3, name.clone(), node.ino(), node.type_()))
+                .collect();
+            for (idx, name, ino, type_) in slaves {
+                visitor.visit(name.as_ref(), ino, type_, idx)?;
                 *offset = idx + 1;
             }
             Ok(())
