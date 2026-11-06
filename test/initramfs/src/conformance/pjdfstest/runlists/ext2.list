@@ -155,7 +155,7 @@ open/20.t
 open/21.t
 open/22.t
 open/23.t
-# open/24.t
+open/24.t
 open/25.t
 open/26.t
 posix_fallocate/00.t
