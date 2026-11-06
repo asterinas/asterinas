@@ -23,7 +23,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::RawIoctl,
-    vm::vmar::FileMmapRequest,
+    vm::{page_cache::ErrorObserver, vmar::FileMmapRequest},
 };
 
 pub(crate) struct InodeHandle {
@@ -32,6 +32,10 @@ pub(crate) struct InodeHandle {
     /// and `ioctl` will be provided by the per-open file object instead of `path`.
     open_file: Option<Box<dyn PerOpenFileOps>>,
     offset: Mutex<usize>,
+    /// Observer of this inode's data-cache writeback errors.
+    inode_wb_error_observer: Option<SpinLock<ErrorObserver>>,
+    /// Observer of the mounted filesystem's aggregated writeback errors.
+    fs_wb_error_observer: Option<SpinLock<ErrorObserver>>,
     /// Path and common states of the handle.
     //
     // This field is placed last so that its `Path` keeps the corresponding filesystem alive
@@ -85,15 +89,55 @@ impl InodeHandle {
                 .transpose()?
         };
 
+        let (inode_wb_error_observer, fs_wb_error_observer) =
+            if !status_flags.contains(StatusFlags::O_PATH) {
+                let inode_observer = inode
+                    .page_cache()
+                    .and_then(|vmo| vmo.local_error_record())
+                    .map(|local_error_record| SpinLock::new(local_error_record.sample()));
+                let fs_observer = path
+                    .mount_node()
+                    .fs()
+                    .error_record()
+                    .map(|fs_error_record| SpinLock::new(fs_error_record.sample()));
+                (inode_observer, fs_observer)
+            } else {
+                (None, None)
+            };
+
         Ok(Self {
             open_file,
             offset: Mutex::new(0),
+            inode_wb_error_observer,
+            fs_wb_error_observer,
             common: FileCommon::new(path, access_mode, status_flags),
         })
     }
 
     pub(crate) fn path(&self) -> &Path {
         self.common.path()
+    }
+
+    /// Syncs this file's filesystem.
+    ///
+    /// Historical errors are consumed even if the current sync fails;
+    /// the current operation's error takes precedence.
+    pub(crate) fn sync_fs(&self) -> Result<()> {
+        if self.status_flags().contains(StatusFlags::O_PATH) {
+            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+        }
+
+        let fs = self.path().mount_node().fs();
+        let result = fs.sync();
+        let history = if let Some(observer) = &self.fs_wb_error_observer {
+            // A filesystem's error record remains available for its entire lifetime.
+            fs.error_record()
+                .unwrap()
+                .check_and_update(&mut observer.lock())
+        } else {
+            Ok(())
+        };
+        result.and(history)
     }
 
     pub(crate) fn access_mode(&self) -> AccessMode {
@@ -522,11 +566,26 @@ impl FileLike for InodeHandle {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
 
-        if let Some(ref open_file) = self.open_file {
-            return open_file.sync(mode);
-        }
-
-        self.path().sync(mode)
+        let result = if let Some(ref open_file) = self.open_file {
+            open_file.sync(mode)
+        } else {
+            self.path().sync(mode)
+        };
+        // Check even after a direct failure, so the same completed writeback
+        // is not reported again by the next fsync on this description.
+        let local_error_record = self
+            .path()
+            .inode()
+            .page_cache()
+            .and_then(|vmo| vmo.local_error_record());
+        let history = if let (Some(local_error_record), Some(observer)) =
+            (local_error_record, &self.inode_wb_error_observer)
+        {
+            local_error_record.check_and_update(&mut observer.lock())
+        } else {
+            Ok(())
+        };
+        result.and(history)
     }
 }
 

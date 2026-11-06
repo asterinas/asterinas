@@ -32,7 +32,9 @@ use xarray::{Cursor, LockedXArray, XArray};
 use crate::{
     prelude::*,
     vm::{
-        page_cache::{CachePage, CachePageExt, PageCacheBackend, PageRun, cache_page::PageState},
+        page_cache::{
+            CachePage, CachePageExt, ErrorRecord, PageCacheBackend, PageRun, cache_page::PageState,
+        },
         vmar::Rmap,
     },
 };
@@ -149,6 +151,19 @@ impl Debug for Vmo {
             .field("size", &self.size)
             .field("writable_mapping_status", &self.writable_mapping_status)
             .finish_non_exhaustive()
+    }
+}
+
+impl Vmo {
+    /// Returns the backend's local writeback error record, if present.
+    ///
+    /// See [`PageCacheBackend::local_error_record`] for its semantics.
+    /// Returns `None` if no live backend or local record exists.
+    /// Layered filesystems may delegate this cache to another filesystem,
+    /// so the record need not belong to the filesystem owning the mount.
+    pub(crate) fn local_error_record(&self) -> Option<Arc<ErrorRecord>> {
+        let backend = self.backend.as_ref()?.upgrade()?;
+        backend.local_error_record().cloned()
     }
 }
 
@@ -887,13 +902,16 @@ impl<'a> BackedVmo<'a> {
         let mut locked_dirty_pages = Vec::new();
         let mut maybe_writing_back_pages = Vec::new();
         for (idx, page) in pages_to_flush {
-            if !page.state().is_dirty() {
-                maybe_writing_back_pages.push(page);
-                continue;
-            }
-            let locked_page = page.lock();
+            // A concurrent submitter may still restore dirty after rejection.
+            // Decide whether to submit only after acquiring its page lock.
+            let mut locked_page = page.lock();
             if locked_page.state().is_dirty() {
-                locked_page.set_up_to_date();
+                // Even an unattempted page may have an older writeback to wait
+                // for if submission of an earlier run fails.
+                if locked_page.is_writing_back() {
+                    maybe_writing_back_pages.push(locked_page.deref().clone());
+                }
+                locked_page.prepare_writeback();
                 locked_dirty_pages.push((idx, locked_page));
             } else if locked_page.is_writing_back() {
                 maybe_writing_back_pages.push(locked_page.unlock());
@@ -907,39 +925,42 @@ impl<'a> BackedVmo<'a> {
         drop(locked_rmap);
 
         let mut io_batch = IoBatch::with_capacity(locked_dirty_pages.len());
-        for locked_page_run in locked_dirty_pages
-            .chunk_by_mut(|(page_idx, _), (next_page_idx, _)| page_idx + 1 == *next_page_idx)
-        {
-            // Single page in one run.
-            if locked_page_run.len() == 1 {
-                let (idx, locked_page) = &mut locked_page_run[0];
-                self.backend
-                    .write_page_async(*idx, locked_page.detach(), &mut io_batch)?;
-                continue;
-            }
-
-            // Multiple pages in one run.
-            let start_idx = locked_page_run[0].0;
-            let mut locked_pages = locked_page_run
-                .iter_mut()
-                .map(|(_, locked_page)| locked_page.detach());
-            let pages = PageRun::new(start_idx, &mut locked_pages);
-            if let Err(err) = self.backend.write_pages_async(pages, &mut io_batch) {
-                for locked_page in locked_pages {
-                    locked_page.set_dirty();
+        let submission_result = (|| {
+            for locked_page_run in locked_dirty_pages
+                .chunk_by_mut(|(page_idx, _), (next_page_idx, _)| page_idx + 1 == *next_page_idx)
+            {
+                // Single page in one run.
+                if locked_page_run.len() == 1 {
+                    let (idx, locked_page) = &mut locked_page_run[0];
+                    self.backend
+                        .write_page_async(*idx, locked_page.detach(), &mut io_batch)?;
+                    continue;
                 }
-                let _ = io_batch.wait_all();
-                return Err(err);
+
+                // Multiple pages in one run.
+                let start_idx = locked_page_run[0].0;
+                let mut locked_pages = locked_page_run
+                    .iter_mut()
+                    .map(|(_, locked_page)| locked_page.detach());
+                let pages = PageRun::new(start_idx, &mut locked_pages);
+                self.backend.write_pages_async(pages, &mut io_batch)?;
             }
-        }
-        io_batch.wait_all()?;
+            Ok(())
+        })();
+
+        // Restore and unlock every unsubmitted page, including later runs,
+        // before waiting. Accepted requests retain their completion callbacks.
+        drop(locked_dirty_pages);
+        let completion_result = io_batch.wait_all().map_err(Error::from);
 
         for page in maybe_writing_back_pages {
             let locked_page = page.lock();
             locked_page.wait_until_finish_writing_back();
         }
 
-        Ok(())
+        // TODO: Retain submission errors once backend rejection semantics are unified.
+        // Currently, rejected pages stay dirty and only BIO completion errors are retained.
+        submission_result.and(completion_result)
     }
 
     /// Removes up-to-date (clean) pages in the specified byte range from the page cache.

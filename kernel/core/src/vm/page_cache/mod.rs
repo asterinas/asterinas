@@ -116,15 +116,18 @@ use aster_block::{
 };
 use io_util::batch::IoBatch;
 use ostd::mm::{Segment, VmIo, VmIoFill};
+use smallvec::SmallVec;
 
 use crate::prelude::*;
 
 mod cache_page;
+mod error_record;
 #[cfg(ktest)]
 mod tests;
 mod vmo;
 
 pub(crate) use cache_page::{CachePage, CachePageExt, CachePageMeta, LockedCachePage};
+pub(crate) use error_record::{ErrorObserver, ErrorRecord};
 pub use vmo::Vmo;
 pub(crate) use vmo::{VmoCommitError, VmoFlags, VmoMapMode, VmoOptions};
 
@@ -299,6 +302,9 @@ impl PageCache {
     ///
     /// If the given range exceeds the current size of the page cache, only the pages within
     /// the valid range will be flushed.
+    ///
+    /// Reports errors from this flush. Callers must check historical errors
+    /// separately after synchronization, even if the cache is empty.
     pub(crate) fn flush_range(&self, range: Range<usize>) -> Result<()> {
         let Some(vmo) = self.0.as_backed_vmo() else {
             return Ok(());
@@ -371,6 +377,31 @@ impl VmIo for PageCache {
 /// block-device BIOs, such as network filesystems. Filesystems backed by block
 /// devices usually implement [`BlockAsPageCacheBackend`] instead.
 pub(crate) trait PageCacheBackend: Sync + Send {
+    /// Returns this data stream's writeback error record, if independently tracked.
+    ///
+    /// File data backends return `Some` for per-open error reporting through
+    /// `fsync` and `fdatasync`. All VMOs for the same stream share this record,
+    /// which must be distinct from [`Self::fs_error_record`].
+    ///
+    /// The default `None` suits shared metadata caches, such as inode tables,
+    /// whose failures are recorded only in [`Self::fs_error_record`].
+    ///
+    /// Its presence and identity must remain stable for the backend's lifetime.
+    fn local_error_record(&self) -> Option<&Arc<ErrorRecord>> {
+        None
+    }
+
+    /// Returns the owning filesystem's aggregate writeback error record.
+    ///
+    /// All data and metadata backends of one filesystem share this record
+    /// for `syncfs` error reporting, even before that reporting is implemented.
+    /// Its identity must remain stable throughout the backend's lifetime.
+    ///
+    /// Failed writeback completions must update this and any local record
+    /// before clearing writeback state and waking waiters.
+    /// Submission errors are returned directly; successful writes do not clear history.
+    fn fs_error_record(&self) -> &Arc<ErrorRecord>;
+
     /// Reads a page from the backend asynchronously.
     ///
     /// The caller may try to pass an index that exceeds the size of the
@@ -537,12 +568,15 @@ impl<'a> PageRun<'a> {
         block_device: &dyn BlockDevice,
         start_bid: Bid,
         len: usize,
+        backend: &dyn BlockAsPageCacheBackend,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.len() < len {
             return_errno_with_message!(Errno::EINVAL, "page run is shorter than len");
         }
 
+        let local_error_record = backend.local_error_record();
+        let fs_error_record = backend.fs_error_record();
         let max_segments = block_device.metadata().max_nr_segments_per_bio.max(1);
         let mut start_bid = start_bid;
         let mut remaining_pages = len;
@@ -552,31 +586,29 @@ impl<'a> PageRun<'a> {
             let mut bio_segments = Vec::with_capacity(nr_pages);
             let mut pages = Vec::with_capacity(nr_pages);
             for locked_page in self.by_ref().take(nr_pages) {
-                let (bio_segment, page) = prepare_write_page_segment(locked_page);
+                let (bio_segment, locked_page) = prepare_write_page_segment(locked_page);
                 bio_segments.push(bio_segment);
-                pages.push(page);
+                pages.push(locked_page);
             }
 
-            let pages = Arc::new(pages);
-            let completion_pages = pages.clone();
+            let local_error_record = local_error_record.cloned();
+            let fs_error_record = fs_error_record.clone();
+            let completion_pages: SmallVec<[CachePage; 1]> =
+                pages.iter().map(|page| page.deref().clone()).collect();
             let complete_fn = Box::new(move |status| {
+                record_writeback_result(local_error_record.as_deref(), &fs_error_record, status);
                 for page in completion_pages.iter() {
-                    complete_write_page(page, status);
+                    page.clear_writing_back();
                 }
             });
-            let result = block_device.write_blocks_async(
+            block_device.write_blocks_async(
                 start_bid,
                 bio_segments,
                 Some(complete_fn),
                 io_batch,
-            );
-            if let Err(err) = result {
-                for page in pages.iter() {
-                    let locked_page = page.lock_guard();
-                    locked_page.set_dirty();
-                    locked_page.clear_writing_back();
-                }
-                return Err(err.into());
+            )?;
+            for page in pages {
+                page.finish_writeback_submission();
             }
             start_bid = start_bid + nr_pages as u64;
             remaining_pages -= nr_pages;
@@ -599,6 +631,20 @@ impl<'a> PageRun<'a> {
 /// so implementations must not allocate, take blocking locks, or hold a lock
 /// that a waiter on the page wait queue may already hold.
 pub(crate) trait BlockAsPageCacheBackend: Sync + Send {
+    /// Returns this data stream's writeback error record, defaulting to `None`.
+    ///
+    /// Follows the contract of [`PageCacheBackend::local_error_record`].
+    fn local_error_record(&self) -> Option<&Arc<ErrorRecord>> {
+        None
+    }
+
+    /// Returns the owning filesystem's aggregate writeback error record.
+    ///
+    /// Follows the contract of [`PageCacheBackend::fs_error_record`].
+    /// Default write methods record failures before waking waiters;
+    /// overrides must preserve this ordering.
+    fn fs_error_record(&self) -> &Arc<ErrorRecord>;
+
     /// Submits read I/O for the page at `idx`.
     ///
     /// `bio_segment` identifies the page memory that must receive the data.
@@ -660,21 +706,27 @@ pub(crate) trait BlockAsPageCacheBackend: Sync + Send {
     /// See also [`PageCacheBackend::write_page_async`].
     fn submit_write_page_run(&self, pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
         for (idx, locked_page) in pages.into_indexed() {
-            let rollback_page = locked_page.clone();
-            let (bio_segment, complete_fn) = prepare_write_page(locked_page);
-            let res = self.submit_write_bio(idx, bio_segment, complete_fn, io_batch);
-            if res.is_err() {
-                let locked_page = rollback_page.lock();
-                locked_page.set_dirty();
-                locked_page.clear_writing_back();
-            }
-            res?;
+            let (bio_segment, locked_page, complete_fn) = prepare_write_page(
+                locked_page,
+                self.local_error_record(),
+                self.fs_error_record(),
+            );
+            self.submit_write_bio(idx, bio_segment, complete_fn, io_batch)?;
+            locked_page.finish_writeback_submission();
         }
         Ok(())
     }
 }
 
 impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
+    fn local_error_record(&self) -> Option<&Arc<ErrorRecord>> {
+        BlockAsPageCacheBackend::local_error_record(self)
+    }
+
+    fn fs_error_record(&self) -> &Arc<ErrorRecord> {
+        BlockAsPageCacheBackend::fs_error_record(self)
+    }
+
     fn read_page_async(
         &self,
         idx: usize,
@@ -695,19 +747,14 @@ impl<T: BlockAsPageCacheBackend> PageCacheBackend for T {
         locked_page: LockedCachePage,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
-        let rollback_page = locked_page.clone();
-
-        let (bio_segment, complete_fn) = prepare_write_page(locked_page);
-        let res = self.submit_write_bio(idx, bio_segment, complete_fn, io_batch);
-        if res.is_err() {
-            // If submission fails, re-dirty the page so the next writeback can
-            // retry the data that never reached the device queue.
-            let locked_page = rollback_page.lock();
-            locked_page.set_dirty();
-            locked_page.clear_writing_back();
-        }
-
-        res
+        let (bio_segment, locked_page, complete_fn) = prepare_write_page(
+            locked_page,
+            PageCacheBackend::local_error_record(self),
+            PageCacheBackend::fs_error_record(self),
+        );
+        self.submit_write_bio(idx, bio_segment, complete_fn, io_batch)?;
+        locked_page.finish_writeback_submission();
+        Ok(())
     }
 
     fn write_pages_async(&self, pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
@@ -733,39 +780,47 @@ fn prepare_read_page(locked_page: LockedCachePage) -> (BioSegment, BioCompleteFn
     (bio_segment, complete_fn)
 }
 
-fn prepare_write_page(locked_page: LockedCachePage) -> (BioSegment, BioCompleteFn) {
-    let (bio_segment, page) = prepare_write_page_segment(locked_page);
-    let complete_fn = Box::new(move |status| complete_write_page(&page, status));
-    (bio_segment, complete_fn)
+fn prepare_write_page(
+    locked_page: LockedCachePage,
+    local_error_record: Option<&Arc<ErrorRecord>>,
+    fs_error_record: &Arc<ErrorRecord>,
+) -> (BioSegment, LockedCachePage, BioCompleteFn) {
+    let (bio_segment, locked_page) = prepare_write_page_segment(locked_page);
+    let page = locked_page.deref().clone();
+    let local_error_record = local_error_record.cloned();
+    let fs_error_record = fs_error_record.clone();
+    let complete_fn = Box::new(move |status| {
+        record_writeback_result(local_error_record.as_deref(), &fs_error_record, status);
+        page.clear_writing_back();
+    });
+    (bio_segment, locked_page, complete_fn)
 }
 
-fn prepare_write_page_segment(locked_page: LockedCachePage) -> (BioSegment, CachePage) {
-    locked_page.wait_until_finish_writing_back();
+fn prepare_write_page_segment(mut locked_page: LockedCachePage) -> (BioSegment, LockedCachePage) {
+    locked_page.start_writeback();
 
     let bio_segment = BioSegment::new_from_segment(
         Segment::from(locked_page.deref().clone()).into(),
         BioDirection::ToDevice,
     );
 
-    locked_page.set_writing_back();
-    locked_page.set_up_to_date();
-
-    let page = locked_page.unlock();
-    (bio_segment, page)
+    (bio_segment, locked_page)
 }
 
-fn complete_write_page(page: &CachePage, status: BioStatus) {
-    page.clear_writing_back();
+fn record_writeback_result(
+    local_error_record: Option<&ErrorRecord>,
+    fs_error_record: &ErrorRecord,
+    status: BioStatus,
+) {
     if status != BioStatus::Complete {
-        // TODO: Record the writeback error (e.g., EIO) in the VMO
-        // (or the corresponding inode) so that a subsequent sync syscall
-        // can detect and report it to userspace.
-        //
-        // Following Linux's design, we intentionally do **not** re-dirty the
-        // page here. Re-dirtying would cause the writeback mechanism to retry
-        // the I/O indefinitely, which could stall the entire system if the
-        // underlying device has a persistent hardware fault. Instead, the page
-        // is left clean and the data is considered lost.
+        // Record failures before waking waiters, including concurrent flushes.
+        // Reference: <https://elixir.bootlin.com/linux/v6.12/source/fs/buffer.c>.
+        if let Some(local_error_record) = local_error_record {
+            local_error_record.record(Errno::EIO);
+        }
+        fs_error_record.record(Errno::EIO);
+
+        // Leave failed pages clean to avoid endless retries on persistent faults.
         ostd::error!("writeback I/O failed with status {status:?}; data may be lost");
     }
 }

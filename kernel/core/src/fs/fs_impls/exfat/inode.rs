@@ -40,7 +40,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::{BlockAsPageCacheBackend, PageCache, Vmo},
+    vm::page_cache::{BlockAsPageCacheBackend, ErrorRecord, PageCache, Vmo},
 };
 
 /// Inode number
@@ -83,6 +83,8 @@ impl FatAttr {
 #[derive(Debug)]
 pub(crate) struct ExfatInode {
     inner: RwMutex<ExfatInodeInner>,
+    local_error_record: Arc<ErrorRecord>,
+    fs_error_record: Arc<ErrorRecord>,
     extension: Extension,
 }
 
@@ -142,6 +144,14 @@ struct ExfatInodeInner {
 }
 
 impl BlockAsPageCacheBackend for ExfatInode {
+    fn local_error_record(&self) -> Option<&Arc<ErrorRecord>> {
+        Some(&self.local_error_record)
+    }
+
+    fn fs_error_record(&self) -> &Arc<ErrorRecord> {
+        &self.fs_error_record
+    }
+
     fn submit_read_bio(
         &self,
         idx: usize,
@@ -869,7 +879,8 @@ impl ExfatInode {
         fs_weak: Weak<ExfatFs>,
         root_chain: ExfatChain,
     ) -> Result<Arc<ExfatInode>> {
-        let sb = fs_weak.upgrade().unwrap().super_block();
+        let fs = fs_weak.upgrade().unwrap();
+        let sb = fs.super_block();
 
         let root_cluster = sb.root_dir;
 
@@ -907,6 +918,8 @@ impl ExfatInode {
                 fs: fs_weak,
                 page_cache: PageCache::new_with_backend(size, weak_self.clone() as _).unwrap(),
             }),
+            local_error_record: Arc::new(ErrorRecord::default()),
+            fs_error_record: fs.fs_error_record.clone(),
             extension: Extension::new(),
         });
 
@@ -1018,6 +1031,8 @@ impl ExfatInode {
                 fs: fs_weak,
                 page_cache: PageCache::new_with_backend(size, weak_self.clone() as _).unwrap(),
             }),
+            local_error_record: Arc::new(ErrorRecord::default()),
+            fs_error_record: fs.fs_error_record.clone(),
             extension: Extension::new(),
         });
 

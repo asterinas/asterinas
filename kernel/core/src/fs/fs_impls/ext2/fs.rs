@@ -38,6 +38,7 @@ use crate::{
     process::{Gid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     security::lsm::hooks as lsm_hooks,
     thread::Thread,
+    vm::page_cache::ErrorRecord,
 };
 
 /// The root inode number defined by the ext2 on-disk format.
@@ -52,6 +53,8 @@ pub(super) const ROOT_INO: u32 = 2;
 pub(crate) struct Ext2 {
     /// Backing block device.
     block_device: Arc<dyn BlockDevice>,
+    /// Historical `PageCache` writeback errors shared by all caches on this instance.
+    pub(super) fs_error_record: Arc<ErrorRecord>,
     /// Superblock with dirty tracking.
     super_block: RwMutex<Dirty<SuperBlock>>,
     /// Block group descriptors and caches.
@@ -160,6 +163,7 @@ impl Ext2 {
             segment
         };
 
+        let fs_error_record = Arc::new(ErrorRecord::default());
         let block_groups = {
             let nr_block_groups = super_block.nr_block_groups() as usize;
             let mut block_groups = Vec::with_capacity(nr_block_groups);
@@ -169,6 +173,7 @@ impl Ext2 {
                     group_idx,
                     &super_block,
                     device.clone(),
+                    fs_error_record.clone(),
                 )?;
                 block_groups.push(group);
             }
@@ -177,6 +182,7 @@ impl Ext2 {
 
         let ext2 = Arc::new_cyclic(|weak_self| Ext2 {
             block_device: device,
+            fs_error_record,
             super_block: RwMutex::new(Dirty::new(super_block)),
             block_groups,
             nr_inodes_per_group,
