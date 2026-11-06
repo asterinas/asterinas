@@ -19,6 +19,7 @@ use crate::{
 /// Options for allocating physical memory frames.
 pub struct FrameAllocOptions {
     zeroed: bool,
+    alignment: usize,
 }
 
 impl Default for FrameAllocOptions {
@@ -30,7 +31,10 @@ impl Default for FrameAllocOptions {
 impl FrameAllocOptions {
     /// Creates new options for allocating the specified number of frames.
     pub fn new() -> Self {
-        Self { zeroed: true }
+        Self {
+            zeroed: true,
+            alignment: PAGE_SIZE,
+        }
     }
 
     /// Sets whether the allocated frames should be initialized with zeros.
@@ -45,6 +49,19 @@ impl FrameAllocOptions {
         self
     }
 
+    /// Sets the physical alignment of the allocation, in bytes.
+    ///
+    /// The default alignment is [`PAGE_SIZE`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `alignment` is not a power of two or is smaller than [`PAGE_SIZE`].
+    pub fn alignment(&mut self, alignment: usize) -> &mut Self {
+        assert!(alignment.is_power_of_two() && alignment >= PAGE_SIZE);
+        self.alignment = alignment;
+        self
+    }
+
     /// Allocates a single untyped frame without metadata.
     pub fn alloc_frame(&self) -> Result<Frame<()>> {
         self.alloc_frame_with(())
@@ -52,7 +69,8 @@ impl FrameAllocOptions {
 
     /// Allocates a single frame with additional metadata.
     pub fn alloc_frame_with<M: AnyFrameMeta>(&self, metadata: M) -> Result<Frame<M>> {
-        let single_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
+        let single_layout =
+            Layout::from_size_align(PAGE_SIZE, self.alignment).map_err(|_| Error::InvalidArgs)?;
         let frame = get_global_frame_allocator()
             .alloc(single_layout)
             .map(|paddr| Frame::from_unused(paddr, metadata).unwrap())
@@ -87,18 +105,20 @@ impl FrameAllocOptions {
         if nframes == 0 {
             return Err(Error::InvalidArgs);
         }
-        let layout = Layout::from_size_align(nframes * PAGE_SIZE, PAGE_SIZE).unwrap();
+        let size = nframes
+            .checked_mul(PAGE_SIZE)
+            .expect("segment size overflows");
+        let layout =
+            Layout::from_size_align(size, self.alignment).map_err(|_| Error::InvalidArgs)?;
         let segment = get_global_frame_allocator()
             .alloc(layout)
-            .map(|start| {
-                Segment::from_unused(start..start + nframes * PAGE_SIZE, metadata_fn).unwrap()
-            })
+            .map(|start| Segment::from_unused(start..start + size, metadata_fn).unwrap())
             .ok_or(Error::NoMemory)?;
 
         if self.zeroed {
             let addr = paddr_to_vaddr(segment.paddr()) as *mut u8;
             // SAFETY: The newly allocated segment is guaranteed to be valid.
-            unsafe { core::ptr::write_bytes(addr, 0, nframes * PAGE_SIZE) }
+            unsafe { core::ptr::write_bytes(addr, 0, size) }
         }
 
         Ok(segment)

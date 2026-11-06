@@ -20,7 +20,7 @@ use ostd_pod::Pod;
 
 use super::{
     HasPaddr, Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, kspace::KernelPtConfig,
-    nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::UserPtConfig,
+    nr_levels, nr_ptes, page_prop::PageProperty, page_size, vm_space::UserPtConfig,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -32,6 +32,7 @@ mod cursor;
 mod node;
 
 pub(crate) use cursor::{Cursor, CursorMut, PageTableFrag};
+pub(crate) use node::PageTableNode;
 use node::*; // FIXME: Remove glob imports.
 
 #[cfg(ktest)]
@@ -73,7 +74,7 @@ pub enum PageTableError {
 pub(crate) unsafe trait PageTableConfig:
     Clone + Debug + Send + Sync + 'static
 {
-    /// The index range at the top level (`C::NR_LEVELS`) page table.
+    /// The index range at the top level (`nr_levels::<C>()`) page table.
     ///
     /// When configured with this value, the [`PageTable`] instance will only
     /// be allowed to manage the virtual address range that is covered by
@@ -170,7 +171,7 @@ pub(crate) unsafe trait PageTableConfig:
 // like `page_size::<C>` without typing `C::C` everywhere.
 impl<C: PageTableConfig> PagingConstsTrait for C {
     const BASE_PAGE_SIZE: usize = C::C::BASE_PAGE_SIZE;
-    const NR_LEVELS: PagingLevel = C::C::NR_LEVELS;
+    const VPN_BITS: &'static [usize] = C::C::VPN_BITS;
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = C::C::HIGHEST_TRANSLATION_LEVEL;
     const PTE_SIZE: usize = C::C::PTE_SIZE;
     const ADDRESS_WIDTH: usize = C::C::ADDRESS_WIDTH;
@@ -249,24 +250,24 @@ pub(crate) fn largest_pages<C: PageTableConfig>(
 /// [`Vaddr::MAX`], overflows [`Range<Vaddr>`].
 pub(super) const fn vaddr_range<C: PageTableConfig>() -> RangeInclusive<Vaddr> {
     const fn top_level_index_width<C: PageTableConfig>() -> usize {
-        C::ADDRESS_WIDTH - pte_index_bit_offset::<C>(C::NR_LEVELS)
+        C::ADDRESS_WIDTH - pte_index_bit_offset::<C>(nr_levels::<C>())
     }
 
     const {
         assert!(C::TOP_LEVEL_INDEX_RANGE.start < C::TOP_LEVEL_INDEX_RANGE.end);
-        assert!(top_level_index_width::<C>() <= nr_pte_index_bits::<C>(),);
+        assert!(top_level_index_width::<C>() <= C::VPN_BITS[nr_levels::<C>() as usize - 1],);
         assert!(C::TOP_LEVEL_INDEX_RANGE.start < 1 << top_level_index_width::<C>());
         assert!(C::TOP_LEVEL_INDEX_RANGE.end <= 1 << top_level_index_width::<C>());
     };
 
     const fn pt_va_range_start<C: PageTableConfig>() -> Vaddr {
-        C::TOP_LEVEL_INDEX_RANGE.start << pte_index_bit_offset::<C>(C::NR_LEVELS)
+        C::TOP_LEVEL_INDEX_RANGE.start << pte_index_bit_offset::<C>(nr_levels::<C>())
     }
 
     const fn pt_va_range_end<C: PageTableConfig>() -> Vaddr {
         C::TOP_LEVEL_INDEX_RANGE
             .end
-            .unbounded_shl(pte_index_bit_offset::<C>(C::NR_LEVELS) as u32)
+            .unbounded_shl(pte_index_bit_offset::<C>(nr_levels::<C>()) as u32)
             .wrapping_sub(1) // Inclusive end.
     }
 
@@ -302,14 +303,9 @@ const fn is_valid_range<C: PageTableConfig>(r: &Range<Vaddr>) -> bool {
 
 // Here are some const values that are determined by the paging constants.
 
-/// The number of virtual address bits used to index a PTE in a page.
-const fn nr_pte_index_bits<C: PagingConstsTrait>() -> usize {
-    nr_subpage_per_huge::<C>().ilog2() as usize
-}
-
 /// The index of a VA's PTE in a page table node at the given level.
 const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize {
-    (va >> pte_index_bit_offset::<C>(level)) & (nr_subpage_per_huge::<C>() - 1)
+    (va >> pte_index_bit_offset::<C>(level)) & (nr_ptes::<C>(level) - 1)
 }
 
 /// The bit offset of the entry offset part in a virtual address.
@@ -318,7 +314,7 @@ const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize
 /// x86-64 as an example, the `pte_index_bit_offset(2)` should return 21, which
 /// is 12 (the 4KiB in-page offset) plus 9 (index width in the level-1 table).
 const fn pte_index_bit_offset<C: PagingConstsTrait>(level: PagingLevel) -> usize {
-    C::BASE_PAGE_SIZE.ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1)
+    page_size::<C>(level).ilog2() as usize
 }
 
 /// A handle to a page table.
@@ -347,11 +343,19 @@ impl PageTable<KernelPtConfig> {
         // Make shared the page tables mapped by the root table in the kernel space.
         {
             let preempt_guard = disable_preempt();
-            let mut root_node = kpt.root.borrow().lock(&preempt_guard);
+            let mut root_node = kpt.root.borrow().lock(
+                &preempt_guard,
+                0..nr_ptes::<PagingConsts>(nr_levels::<PagingConsts>()),
+            );
 
             for i in KernelPtConfig::TOP_LEVEL_INDEX_RANGE {
                 let mut root_entry = root_node.entry(i);
-                let _ = root_entry.alloc_if_none(&preempt_guard).unwrap();
+                let _ = root_entry
+                    .alloc_if_none(
+                        &preempt_guard,
+                        0..nr_ptes::<PagingConsts>(nr_levels::<PagingConsts>() - 1),
+                    )
+                    .unwrap();
             }
         }
 
@@ -363,11 +367,17 @@ impl PageTable<KernelPtConfig> {
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub(in crate::mm) fn create_user_page_table(&'static self) -> PageTable<UserPtConfig> {
-        let new_root = PageTableNode::alloc(PagingConsts::NR_LEVELS);
+        let new_root = PageTableNode::alloc(nr_levels::<PagingConsts>());
 
         let preempt_guard = disable_preempt();
-        let mut root_node = self.root.borrow().lock(&preempt_guard);
-        let mut new_node = new_root.borrow().lock(&preempt_guard);
+        let mut root_node = self.root.borrow().lock(
+            &preempt_guard,
+            0..nr_ptes::<PagingConsts>(nr_levels::<PagingConsts>()),
+        );
+        let mut new_node = new_root.borrow().lock(
+            &preempt_guard,
+            0..nr_ptes::<PagingConsts>(nr_levels::<PagingConsts>()),
+        );
 
         const {
             assert!(!KernelPtConfig::TOP_LEVEL_CAN_UNMAP);
@@ -391,7 +401,7 @@ impl PageTable<KernelPtConfig> {
             let pt_addr = pt.paddr();
             let pte = PageTableEntry::from_repr(
                 &PteScalar::PageTable(pt_addr, PageTableFlags::empty()),
-                UserPtConfig::NR_LEVELS,
+                nr_levels::<UserPtConfig>(),
             );
             // SAFETY: The index is within the bounds and the PTE is at the
             // correct paging level. However, neither it's a `UserPtConfig`
@@ -412,7 +422,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Useful for the IOMMU page tables only.
     pub(crate) fn empty() -> Self {
         PageTable {
-            root: PageTableNode::<C>::alloc(C::NR_LEVELS),
+            root: PageTableNode::<C>::alloc(nr_levels::<C>()),
         }
     }
 
@@ -460,7 +470,7 @@ impl<C: PageTableConfig> PageTable<C> {
     ///
     /// # Panics
     ///
-    /// Panics if `min_level` is outside `1..=C::NR_LEVELS`.
+    /// Panics if `min_level` is outside `1..=nr_levels::<C>()`.
     pub(crate) fn cursor_mut_with_min_level<'rcu, G: AsAtomicModeGuard>(
         &'rcu self,
         guard: &'rcu G,
@@ -528,7 +538,7 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
     let _rcu_guard = disable_preempt();
 
     let mut pt_addr = paddr_to_vaddr(root_paddr);
-    for cur_level in (1..=C::NR_LEVELS).rev() {
+    for cur_level in (1..=nr_levels::<C>()).rev() {
         let offset = pte_index::<C>(vaddr, cur_level);
         // SAFETY:
         //  - The page table node is alive because (1) the root node is alive and

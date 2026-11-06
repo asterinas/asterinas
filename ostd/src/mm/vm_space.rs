@@ -524,10 +524,10 @@ impl<'a> CursorMut<'a> {
                 } => {
                     num_unmapped += num_frames;
 
-                    self.flusher.issue_tlb_flush_with(
-                        TlbFlushOp::for_range(va..va + len),
-                        Frame::rcu_from_unsized(pt),
-                    );
+                    for frame in pt {
+                        self.flusher
+                            .issue_tlb_flush_with(TlbFlushOp::for_range(va..va + len), frame);
+                    }
                 }
             }
         }
