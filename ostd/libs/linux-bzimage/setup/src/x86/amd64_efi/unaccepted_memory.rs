@@ -89,7 +89,7 @@ pub(super) unsafe fn finish_unaccepted_memory<M: MemoryMap>(
 
     for range in iter_unaccepted_memory(memory_map) {
         // SAFETY: The caller guarantees that `range` describes a region of unaccepted memory.
-        unsafe { builder.register_range(range.start, range.end) }
+        unsafe { builder.register_range(range) }
             .expect("failed to register unaccepted memory range");
     }
 
