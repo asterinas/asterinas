@@ -300,8 +300,9 @@ impl DetachedMountFile {
         let root_path = Path::new_root(mount.clone());
         Self {
             mount,
-            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/namespace.c#L4497>.
-            common: FileCommon::new(root_path, AccessMode::O_RDONLY, StatusFlags::empty()),
+            // `DetachedMountFile` is opened with `O_PATH` by default.
+            // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/namespace.c#L4497-L4498>.
+            common: FileCommon::new(root_path, AccessMode::O_RDONLY, StatusFlags::O_PATH),
         }
     }
 
@@ -324,28 +325,27 @@ impl FileLike for DetachedMountFile {
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
         struct FdInfo {
-            access_mode: AccessMode,
-            status_flags: StatusFlags,
+            inner: Arc<DetachedMountFile>,
             fd_flags: FdFlags,
         }
 
         impl Display for FdInfo {
             fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                let mut flags = self.status_flags.bits() | self.access_mode as u32;
+                let common = &self.inner.common;
+                let mut flags = common.status_flags().bits() | common.access_mode() as u32;
                 if self.fd_flags.contains(FdFlags::CLOEXEC) {
                     flags |= CreationFlags::O_CLOEXEC.bits();
                 }
 
                 writeln!(f, "pos:\t{}", 0)?;
                 writeln!(f, "flags:\t0{:o}", flags)?;
-                writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
-                writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())
+                writeln!(f, "mnt_id:\t{}", common.path().mount_node().id())?;
+                writeln!(f, "ino:\t{}", common.path().inode().ino())
             }
         }
 
         Box::new(FdInfo {
-            access_mode: self.common.access_mode(),
-            status_flags: self.common.status_flags(),
+            inner: self,
             fd_flags,
         })
     }
