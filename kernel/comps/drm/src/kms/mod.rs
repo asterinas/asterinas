@@ -13,10 +13,13 @@ use ostd::sync::Mutex;
 
 use crate::{
     device::DrmDevice,
-    kms::objects::{
-        DrmKmsObjectStore, KmsObjectIndex,
-        connector::{DrmConnector, DrmConnectorProbeState},
-        framebuffer::DrmFramebuffer,
+    kms::{
+        objects::{
+            DrmKmsObjectStore, KmsObjectIndex,
+            connector::{DrmConnector, DrmConnectorProbeState},
+            framebuffer::DrmFramebuffer,
+        },
+        vblank::software::DrmSoftwareVblank,
     },
     utils::{DrmRect, DrmSize},
 };
@@ -25,6 +28,7 @@ pub mod display_info;
 pub mod display_mode;
 pub mod objects;
 pub mod pixel_format;
+pub mod vblank;
 
 /// Driver-specific operations for a KMS-capable DRM device.
 ///
@@ -34,6 +38,8 @@ pub mod pixel_format;
 /// such as connector probing.
 pub trait DrmKmsOps: DrmDevice {
     fn mode_config(&self) -> &DrmModeConfig;
+
+    fn software_vblank(&self, crtc_index: KmsObjectIndex) -> Option<&DrmSoftwareVblank>;
 
     /// Probes a connector and returns its refreshed probe-derived state.
     ///

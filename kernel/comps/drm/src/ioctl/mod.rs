@@ -64,6 +64,10 @@ impl DrmFile {
                 self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_set_client_cap(cmd)
             }
+            cmd @ WaitVblank => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_wait_vblank(cmd)
+            }
             cmd @ ModeGetResources => {
                 self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_mode_get_resources(cmd)
@@ -200,7 +204,7 @@ mod ioctl_defs {
         kms::{
             DrmModeCrtc, DrmModeFbCmd, DrmModeFbDirtyCmd, DrmModeGetBlob, DrmModeGetConnector,
             DrmModeGetEncoder, DrmModeGetPlane, DrmModeGetPlaneRes, DrmModeGetProperty,
-            DrmModeGetResources, DrmModeObjectGetProps, DrmSetClientCap,
+            DrmModeGetResources, DrmModeObjectGetProps, DrmSetClientCap, DrmWaitVblank,
         },
     };
 
@@ -214,6 +218,7 @@ mod ioctl_defs {
     pub(super) type AuthMagic               = ioc!(DRM_IOCTL_AUTH_MAGIC,                b'd', 0x11, InData<DrmAuth>);
     pub(super) type SetMaster               = ioc!(DRM_IOCTL_SET_MASTER,                b'd', 0x1e, NoData);
     pub(super) type DropMaster              = ioc!(DRM_IOCTL_DROP_MASTER,               b'd', 0x1f, NoData);
+    pub(super) type WaitVblank              = ioc!(DRM_IOCTL_WAIT_VBLANK,               b'd', 0x3a, InOutData<DrmWaitVblank>);
     pub(super) type ModeCreateDumb          = ioc!(DRM_IOCTL_MODE_CREATE_DUMB,          b'd', 0xb2, InOutData<DrmModeCreateDumb>);
     pub(super) type ModeMapDumb             = ioc!(DRM_IOCTL_MODE_MAP_DUMB,             b'd', 0xb3, InOutData<DrmModeMapDumb>);
     pub(super) type ModeDestroyDumb         = ioc!(DRM_IOCTL_MODE_DESTROY_DUMB,         b'd', 0xb4, InOutData<DrmModeDestroyDumb>);

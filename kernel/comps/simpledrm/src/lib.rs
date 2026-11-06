@@ -18,7 +18,7 @@ macro_rules! __log_prefix {
 }
 
 use alloc::{sync::Arc, vec};
-use core::fmt::Debug;
+use core::{fmt::Debug, num::NonZeroU32};
 
 use aster_core::prelude::*;
 use aster_drm::{
@@ -39,6 +39,7 @@ use aster_drm::{
             plane::DrmPlaneType,
         },
         pixel_format::DrmPixelFormat,
+        vblank::software::DrmSoftwareVblank,
     },
     utils::{DrmRect, DrmSize},
 };
@@ -50,6 +51,7 @@ use component::{ComponentInitError, init_component};
 
 const SIMPLEDRM_NAME: &str = "simpledrm";
 const SIMPLEDRM_DESC: &str = "DRM driver for simple-framebuffer platform devices";
+const SIMPLEDRM_VREFRESH_HZ: u32 = 60;
 
 #[init_component(process)]
 fn init() -> Result<(), ComponentInitError> {
@@ -79,6 +81,7 @@ struct SimpleDrmDevice {
     features: DrmFeatures,
     pixel_format: DrmPixelFormat,
     mode_config: DrmModeConfig,
+    software_vblank: DrmSoftwareVblank,
 }
 
 impl SimpleDrmDevice {
@@ -100,16 +103,25 @@ impl SimpleDrmDevice {
                 DrmPixelFormat::XRGB8888
             }
         };
-        let primary = builder.add_plane(DrmPlaneType::Primary, vec![pixel_format])?;
-        let crtc = builder.add_crtc(0, primary, None)?;
-        let encoder = builder.add_encoder(DrmEncoderType::Virtual)?;
-        let connector = builder.add_connector(DrmConnectorType::Virtual)?;
+        let primary_index = builder.add_plane(DrmPlaneType::Primary, vec![pixel_format])?;
+        let crtc_index = builder.add_crtc(0, primary_index, None)?;
+        let encoder_index = builder.add_encoder(DrmEncoderType::Virtual)?;
+        let connector_index = builder.add_connector(DrmConnectorType::Virtual)?;
 
-        builder.attach_plane_to_crtc(primary, crtc)?;
-        builder.attach_encoder_to_crtc(encoder, crtc)?;
-        builder.attach_connector_to_encoder(connector, encoder)?;
+        builder.attach_plane_to_crtc(primary_index, crtc_index)?;
+        builder.attach_encoder_to_crtc(encoder_index, crtc_index)?;
+        builder.attach_connector_to_encoder(connector_index, encoder_index)?;
 
         let object_store = builder.build()?;
+
+        let crtc = object_store
+            .lookup_crtc_by_index(crtc_index)
+            .expect("the simpledrm CRTC has been built");
+
+        let software_vblank = DrmSoftwareVblank::new(
+            Arc::downgrade(crtc),
+            NonZeroU32::new(SIMPLEDRM_VREFRESH_HZ).unwrap(),
+        );
 
         let width = u32::try_from(boot_framebuffer.width())?;
         let height = u32::try_from(boot_framebuffer.height())?;
@@ -126,6 +138,7 @@ impl SimpleDrmDevice {
             features: DrmFeatures::empty(),
             pixel_format,
             mode_config,
+            software_vblank,
         })
     }
 
@@ -228,8 +241,11 @@ impl DrmKmsOps for SimpleDrmDevice {
         &self.mode_config
     }
 
+    fn software_vblank(&self, _crtc_index: KmsObjectIndex) -> Option<&DrmSoftwareVblank> {
+        Some(&self.software_vblank)
+    }
+
     fn probe_connector(&self, _connector: &DrmConnector) -> Result<DrmConnectorProbeState> {
-        const SIMPLEDRM_VREFRESH_HZ: u32 = 60;
         const SIMPLEDRM_ASSUMED_DPI: u32 = 96;
 
         let width = u32::try_from(self.boot_framebuffer.width())?;

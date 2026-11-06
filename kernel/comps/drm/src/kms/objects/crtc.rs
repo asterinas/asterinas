@@ -7,6 +7,7 @@ use ostd::sync::Mutex;
 use crate::kms::{
     display_mode::DrmDisplayMode,
     objects::{KmsObjectId, KmsObjectIndex, plane::DrmPlane, property::DrmPropertyAttachments},
+    vblank::DrmVblank,
 };
 
 /// A display pipeline that scans out planes using a display mode.
@@ -16,12 +17,13 @@ use crate::kms::{
 /// while its cursor plane is optional;
 /// both links are non-owning because the KMS object store owns the topology objects.
 #[derive(Debug)]
-pub(crate) struct DrmCrtc {
+pub struct DrmCrtc {
     id: KmsObjectId,
     index: KmsObjectIndex,
     config: DrmCrtcConfig,
     state: Mutex<DrmCrtcState>,
     properties: DrmPropertyAttachments,
+    vblank: DrmVblank,
 }
 
 impl DrmCrtc {
@@ -31,12 +33,14 @@ impl DrmCrtc {
         config: DrmCrtcConfig,
         properties: DrmPropertyAttachments,
     ) -> Self {
+        let vblank = DrmVblank::new();
         Self {
             id,
             index,
             config,
             state: Mutex::new(DrmCrtcState::default()),
             properties,
+            vblank,
         }
     }
 
@@ -67,6 +71,10 @@ impl DrmCrtc {
     pub(crate) fn properties(&self) -> &DrmPropertyAttachments {
         &self.properties
     }
+
+    pub(crate) fn vblank(&self) -> &DrmVblank {
+        &self.vblank
+    }
 }
 
 /// Immutable configuration of a DRM CRTC.
@@ -78,28 +86,51 @@ pub(super) struct DrmCrtcConfig {
     pub cursor_plane: Weak<DrmPlane>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct DrmCrtcState {
-    display_mode: Option<DrmDisplayMode>,
-    is_enabled: bool,
-    #[expect(dead_code)]
-    is_active: bool,
+    enable_state: CrtcEnableState,
+    // TODO: Add CRTC properties, such as color-management state.
+}
+
+impl Default for DrmCrtcState {
+    fn default() -> Self {
+        Self {
+            enable_state: CrtcEnableState::Disabled,
+        }
+    }
 }
 
 impl DrmCrtcState {
     pub(crate) fn new(display_mode: DrmDisplayMode) -> Self {
         Self {
-            display_mode: Some(display_mode),
-            is_enabled: true,
-            is_active: true,
+            enable_state: CrtcEnableState::Enabled {
+                display_mode,
+                is_active: true,
+            },
         }
     }
 
     pub(crate) fn display_mode(&self) -> Option<DrmDisplayMode> {
-        self.display_mode
+        match self.enable_state {
+            CrtcEnableState::Disabled => None,
+            CrtcEnableState::Enabled { display_mode, .. } => Some(display_mode),
+        }
     }
 
-    pub(crate) fn is_enabled(&self) -> bool {
-        self.is_enabled
+    pub(crate) fn is_active(&self) -> bool {
+        match self.enable_state {
+            CrtcEnableState::Disabled => false,
+            CrtcEnableState::Enabled { is_active, .. } => is_active,
+        }
     }
+}
+
+/// The CRTC's enable state, requiring a mode when enabled and preventing activity when disabled.
+#[derive(Clone, Debug)]
+enum CrtcEnableState {
+    Disabled,
+    Enabled {
+        display_mode: DrmDisplayMode,
+        is_active: bool,
+    },
 }
