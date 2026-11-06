@@ -36,9 +36,29 @@ are the most valuable kind of comment.
 // which is unacceptable on the page fault path.
 ```
 
+When code handles a platform difference, explain the behavior on each platform
+and why it requires different code or test assertions.
+If the difference requires a temporary workaround,
+also state what must change before the workaround can be removed:
+
+```c
+// Good — explains both outcomes and the assertion they affect
+/*
+ * FIXME: Linux makes /proc/self/fd root-owned when dumpable is cleared.
+ * Asterinas does not support dumpable and uses the effective UID instead.
+ * Check root ownership only on Linux until Asterinas supports dumpable.
+ */
+
+// Bad — leaves the reader to reconstruct the difference
+// FIXME: Procfs ownership differs between Linux and Asterinas.
+```
+
 See also:
+Linux man-pages [`proc_pid(5)`](https://man7.org/linux/man-pages/man5/proc_pid.5.html);
 PR [#2265](https://github.com/asterinas/asterinas/pull/2265#discussion_r2266220943)
-and [#2050](https://github.com/asterinas/asterinas/pull/2050#discussion_r2224106025).
+and [#2050](https://github.com/asterinas/asterinas/pull/2050#discussion_r2224106025);
+the platform-difference comment in
+[`proc_fd_open_fifo_after_setid.c`](https://github.com/asterinas/asterinas/blob/5f41ff02d681e047f9420bb18c162cfe76116606/test/initramfs/src/regression/fs/procfs/proc_fd_open_fifo_after_setid.c).
 
 ### Cite specifications and algorithm sources (`cite-sources`) {#cite-sources}
 

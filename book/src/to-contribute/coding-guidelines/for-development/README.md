@@ -37,6 +37,11 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 - [`add-regression-tests`](testing.md#add-regression-tests): Every bug fix ships a test that would have caught it, referencing the issue.
 - [`test-visible-behavior`](testing.md#test-visible-behavior): Test observable behavior through public APIs; name tests after behavior, not internals.
 - [`use-assertions`](testing.md#use-assertions): Use assertion macros (clear failure messages), not print-and-eyeball.
-- [`test-cleanup`](testing.md#test-cleanup): Clean up after every test (fds, temp files, child processes) to avoid flakiness.
 
-No **path-specific** guidelines yet.
+**[Path-Specific](path-specific/)**
+- [`test/`](path-specific/test.md)
+    - [`test-assertion-context`](path-specific/test.md#test-assertion-context): Prefer `TEST_*` in the main test thread; use `CHECK*` in setup, cleanup, child processes, and worker threads.
+    - [`complete-test-results`](path-specific/test.md#complete-test-results): Check all results needed to verify the behavior; keep each call and its checks in one assertion when possible.
+    - [`verify-linux-behavior`](path-specific/test.md#verify-linux-behavior): Confirm Linux behavior before writing compatibility assertions; explain any platform differences.
+    - [`avoid-test-skips`](path-specific/test.md#avoid-test-skips): Skip only when a required feature or resource is unavailable and no supported alternative can exercise the behavior.
+    - [`test-cleanup`](path-specific/test.md#test-cleanup): Release each test's resources after use; clean up shared fixtures after their last test.

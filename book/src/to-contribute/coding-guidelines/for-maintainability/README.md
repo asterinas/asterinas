@@ -76,4 +76,9 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
     - [`backtick-identifiers`](rust-specific/comments.md#backtick-identifiers): Wrap identifiers in doc comments in backticks; prefer rustdoc links where possible.
     - [`no-impl-in-docs`](rust-specific/comments.md#no-impl-in-docs): Doc comments describe what an API does and how to use it, not its internal implementation.
 
-No **path-specific** guidelines yet.
+**[Path-Specific](path-specific/)**
+- [`test/`](path-specific/test.md)
+    - [`simple-test-flow`](path-specific/test.md#simple-test-flow): Write a straight sequence of operations and assertions; add recovery or retries only when testing those behaviors.
+    - [`fixed-test-identifiers`](path-specific/test.md#fixed-test-identifiers): Use readable, fixed names; generate names only when the test needs runtime values.
+    - [`shared-test-fixtures`](path-specific/test.md#shared-test-fixtures): Prepare shared resources in `FN_SETUP` before the tests; clean them up in `FN_SETUP` afterward.
+    - [`semantic-test-helpers`](path-specific/test.md#semantic-test-helpers): Use helpers to remove repeated details while keeping each case's actions, inputs, and expected results clear.

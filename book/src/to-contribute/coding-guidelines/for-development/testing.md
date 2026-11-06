@@ -32,26 +32,9 @@ instead of printing values and manually inspecting output.
 Assertions provide clear failure messages
 and make tests self-checking.
 
+For C regression tests, see
+[which assertion macros to use in tests, setup, and child processes](path-specific/test.md#test-assertion-context).
+
 See also:
 PR [#2877](https://github.com/asterinas/asterinas/pull/2877)
 and [#2926](https://github.com/asterinas/asterinas/pull/2926).
-
-### Clean up resources after every test (`test-cleanup`) {#test-cleanup}
-
-Always clean up resources after a test:
-close file descriptors, unlink temporary files,
-and call `waitpid` on child processes.
-Leftover resources can cause flaky failures
-in subsequent tests.
-
-```c
-// Good — cleanup after use
-int fd = open("/tmp/test_file", O_CREAT | O_RDWR, 0644);
-// ... test logic ...
-close(fd);
-unlink("/tmp/test_file");
-```
-
-See also:
-PR [#2926](https://github.com/asterinas/asterinas/pull/2926)
-and [#2969](https://github.com/asterinas/asterinas/pull/2969).
