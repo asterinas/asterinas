@@ -1,0 +1,2 @@
+profile observe flags=(complain) {
+}
