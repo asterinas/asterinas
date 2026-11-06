@@ -2,6 +2,7 @@
 
 use alloc::format;
 
+use aster_device::common::SysStr;
 use aster_framebuffer::{
     font::BitmapFont,
     mode::{ConsoleMode, KeyboardMode},
@@ -24,7 +25,7 @@ use crate::{
         },
     },
     dispatch_ioctl,
-    fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
+    fs::file::PerOpenFileOps,
     prelude::*,
     process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     security::lsm::hooks as lsm_hooks,
@@ -95,8 +96,8 @@ impl TtyDriver for VtDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
     const DEVICE_MAJOR_ID: u32 = 4;
 
-    fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsNodeMeta> {
-        Some(DevtmpfsNodeMeta::new(format!("tty{}", index)).unwrap())
+    fn devnode_name(&self, index: u32) -> Option<SysStr> {
+        Some(SysStr::from(format!("tty{}", index)))
     }
 
     fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn PerOpenFileOps>> {
