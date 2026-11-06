@@ -5,8 +5,8 @@
 //! This module validates the mount option string into a
 //! [`MountOptions`] construction input. The recognized keys are the path
 //! keys `lowerdir`, `lowerdir+`, `upperdir`, and `workdir`, the mode keys
-//! `uuid` and `xino`, the raw-intent keys `redirect_dir`, `index`,
-//! `nfs_export`, `metacopy`, `verity`, and `fsync`, and the valueless keys
+//! `uuid`, `xino`, `redirect_dir`, and `metacopy`, the raw-intent keys
+//! `index`, `nfs_export`, `verity`, and `fsync`, and the valueless keys
 //! `default_permissions`, `userxattr`, `volatile`, and `nooverride_creds`.
 //!
 //! Unknown keys fail with `EINVAL` before any layer state is created. A
@@ -72,11 +72,16 @@ pub(in overlayfs) enum XinoMode {
     On,
 }
 
+/// The `redirect_dir` option: whether the mount follows and creates redirect records.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RedirectDirMode {
+pub(super) enum RedirectDirMode {
+    /// The parsed `redirect_dir=off` request, which never becomes the effective mode.
     Off,
+    /// Follows records on lookup but creates none; a move that needs one fails with `EXDEV`.
     Follow,
+    /// Neither follows nor creates records; the effective form of an absent or `off` request.
     NoFollow,
+    /// Follows and creates records; without this form a lower-backed move fails with `EXDEV`.
     On,
 }
 
@@ -142,6 +147,22 @@ impl MountOptions {
         }
         options.verify()?;
         Ok(options)
+    }
+
+    /// Returns the redirect mode this mount applies; an absent or `off` request selects `nofollow`.
+    ///
+    /// `metacopy=on` selects `on` when the key is absent, because its data lookup needs redirects.
+    pub(super) fn effective_redirect_dir(&self) -> RedirectDirMode {
+        match self.redirect_dir {
+            None if self.metacopy == Some(true) => RedirectDirMode::On,
+            Some(RedirectDirMode::Off) | None => RedirectDirMode::NoFollow,
+            Some(mode) => mode,
+        }
+    }
+
+    /// Returns whether the caller requested metadata-only copy-up.
+    pub(super) fn is_metacopy_enabled(&self) -> bool {
+        self.metacopy == Some(true)
     }
 
     fn set_entry(&mut self, key: &str, value: Option<&str>) -> Result<()> {
@@ -387,23 +408,11 @@ impl MountOptions {
             );
         }
 
-        if let Some(mode) = self
-            .redirect_dir
-            .filter(|mode| *mode != RedirectDirMode::NoFollow)
-        {
-            warn!(
-                "`redirect_dir={}`: degrading to redirect_dir=nofollow",
-                mode.option_value()
-            );
-        }
         if self.index == Some(true) {
             warn!("`index=on`: degrading to index=off");
         }
         if self.nfs_export == Some(true) {
             warn!("`nfs_export=on`: degrading to nfs_export=off");
-        }
-        if self.metacopy == Some(true) {
-            warn!("`metacopy=on`: degrading to metacopy=off");
         }
         if let Some(mode) = self.verity.filter(|mode| *mode != VerityMode::Off) {
             warn!("`verity={}`: degrading to verity=off", mode.option_value());
@@ -423,18 +432,6 @@ impl MountOptions {
             warn!("`default_permissions`: inert; the mount already behaves as requested");
         }
         Ok(())
-    }
-}
-
-impl RedirectDirMode {
-    /// Returns the `redirect_dir=` value this mode is spelled with.
-    fn option_value(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Follow => "follow",
-            Self::NoFollow => "nofollow",
-            Self::On => "on",
-        }
     }
 }
 

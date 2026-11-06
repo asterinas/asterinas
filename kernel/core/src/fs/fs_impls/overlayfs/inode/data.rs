@@ -2,15 +2,15 @@
 
 //! Data-path delegation for overlay inodes.
 //!
-//! Reads go through the read-only take point ([`OverlayInode::real_object`]) and
-//! the real inode it hands out; a lower-backed read carries `O_NOATIME` so a
-//! read never updates the lower atime. Writes are upper-backed by construction:
-//! the write-capable open path runs the writable take point
-//! ([`OverlayInode::writable_real_object`]) before the handle is used, so the
-//! data path never bypasses it. `resize` runs the writable take point itself,
-//! while `write_at` and `fallocate` take the receiver's own upper, which the
-//! writable open has already promoted. `O_APPEND` is serialized under the
-//! per-inode transaction lock.
+//! Reads go through the data take point ([`OverlayInode::data_object`]), which is
+//! the upper once it holds the data and the topmost lower otherwise; a
+//! lower-backed read carries `O_NOATIME` so a read never updates the lower atime.
+//! Writes are upper-backed by construction: the data-intent take point
+//! ([`OverlayInode::writable_data_object`]) completes a metadata-only copy-up
+//! before the handle is used, so the data path never bypasses it. `resize` runs
+//! that take point itself, while `write_at` and `fallocate` take the receiver's
+//! own upper, which the writable open has already promoted. `O_APPEND` is
+//! serialized under the per-inode transaction lock.
 
 use super::OverlayInode;
 use crate::{
@@ -32,9 +32,9 @@ impl OverlayInode {
         writer: &mut VmWriter,
         status_flags: StatusFlags,
     ) -> Result<usize> {
-        let real = self.real_object();
-        real.real_inode()
-            .read_at(offset, writer, real.status_flags_for_read(status_flags))
+        let data = self.data_object();
+        data.real_inode()
+            .read_at(offset, writer, data.status_flags_for_read(status_flags))
     }
 
     pub(super) fn write_at_impl(
@@ -64,7 +64,7 @@ impl OverlayInode {
 
     // `truncate()` does no VFS `MAY_WRITE` check, so the take point runs before any side effect.
     pub(super) fn resize_impl(&self, self_dentry: &Dentry, new_size: usize) -> Result<()> {
-        let upper = self.writable_real_object(self_dentry)?;
+        let upper = self.writable_data_object(self_dentry)?;
         upper.real_inode().resize(upper.dentry(), new_size)
     }
 
@@ -84,6 +84,6 @@ impl OverlayInode {
     }
 
     pub(super) fn page_cache_impl(&self) -> Option<Arc<Vmo>> {
-        self.real_object().real_inode().page_cache()
+        self.data_object().real_inode().page_cache()
     }
 }

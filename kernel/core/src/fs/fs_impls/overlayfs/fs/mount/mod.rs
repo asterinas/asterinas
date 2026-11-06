@@ -60,6 +60,8 @@ impl OverlayFs {
 
         let xino_mode = options.xino_mode.unwrap_or(XinoMode::Auto);
         let xattr_namespace = options.xattr_namespace;
+        let redirect_dir = options.effective_redirect_dir();
+        let metacopy = options.is_metacopy_enabled();
 
         let mut upper_workdir_inuse = None;
         let mut upper_capabilities = None;
@@ -126,6 +128,8 @@ impl OverlayFs {
             xattr_namespace,
             uuid,
             upper_capabilities,
+            redirect_dir,
+            metacopy,
         );
 
         let anon_device_id = AnonDeviceId::acquire().ok_or_else(|| {
@@ -152,6 +156,7 @@ impl OverlayFs {
             upper_workdir_inuse,
             whiteout_cache,
             inodes,
+            rename_lock: Mutex::new(()),
             fs_event_stats: FsEventSubscriberStats::new(),
             self_weak: weak.clone(),
         });

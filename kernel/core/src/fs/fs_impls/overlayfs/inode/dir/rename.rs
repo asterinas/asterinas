@@ -14,8 +14,15 @@
 //! runs on the upper alone. The upper has to hold the state the merged view
 //! expects afterwards: an upper whiteout at the old name wherever a lower layer
 //! would otherwise keep that name alive, a whiteout carried away from the target
-//! name by the exchange that takes a name there, and an opaque record on a moved
-//! directory whose new name meets a lower directory.
+//! name by the exchange that takes a name there, a redirect record that points a
+//! moved object's new name back to the lower entries it left, an opaque record on
+//! a moved pure-upper directory whose new name meets a lower directory, and an
+//! opaque record on a pure-upper exchange target whose new name still meets the
+//! lower entry the source leaves behind.
+//!
+//! A move that crosses parents or composes or rewrites a redirect record holds the
+//! mount's rename lock throughout, so other such moves observe its record writes
+//! and name binding changes as one step.
 
 use crate::{
     fs::{
@@ -63,11 +70,17 @@ enum RenameTarget {
 
 /// Holds one rename's whole input, settled in a single pass before the lock set is taken.
 struct RenameFacts<'x> {
+    /// Reports whether a lower layer holds the old name.
+    lower_layer_holds_old_name: bool,
     /// Reports whether a lower layer holds the new name as a directory.
     lower_layer_holds_new_name_as_directory: bool,
     /// Holds the mode the real rename is issued with: the physical form of the caller's request.
     mode: RenameMode,
     whiteout: WhiteoutAction,
+    /// Holds the redirect the move writes on the source's upper entry; `None` writes none.
+    source_redirect: Option<String>,
+    /// Holds the redirect an exchange writes on the target's upper entry; `None` writes none.
+    target_redirect: Option<String>,
     new_name: &'x str,
     old_parent: Arc<OverlayInode>,
     old_parent_dentry: Arc<Dentry>,
@@ -89,6 +102,18 @@ impl OverlayInode {
         replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()> {
+        let fs = self.fs_arc();
+        let _renames_guard = if RenameFacts::needs_rename_serialization(
+            self,
+            old_child_dentry,
+            new_dir_dentry,
+            replaced_inode,
+            mode,
+        ) {
+            Some(fs.lock_renames())
+        } else {
+            None
+        };
         let facts = RenameFacts::classify(
             self.self_arc(),
             old_child_dentry,
@@ -105,6 +130,7 @@ impl OverlayInode {
         };
 
         facts.sweep_replaced_whiteouts_if_needed(&mut locks)?;
+        facts.set_redirect_marker_if_needed()?;
         facts.set_opaque_marker_if_needed(&mut locks)?;
         facts.set_impure_marker_if_needed()?;
         facts.commit(&mut locks)
@@ -112,6 +138,48 @@ impl OverlayInode {
 }
 
 impl<'x> RenameFacts<'x> {
+    /// Returns whether one move must hold the mount's rename lock: it crosses parents, or it
+    /// composes or rewrites a redirect record other composers must observe as one step.
+    fn needs_rename_serialization(
+        old_parent: &OverlayInode,
+        source_dentry: &Dentry,
+        new_dir_dentry: &Dentry,
+        replaced_inode: Option<&Arc<dyn Inode>>,
+        mode: RenameMode,
+    ) -> bool {
+        let Some(new_parent) = new_dir_dentry.inode().downcast_ref::<OverlayInode>() else {
+            return false;
+        };
+        let fs = old_parent.fs_arc();
+        let policy = fs.policy();
+        let source = source_dentry.inode().downcast_ref::<OverlayInode>();
+        let target = replaced_inode.and_then(|inode| inode.downcast_ref::<OverlayInode>());
+        if !old_parent.same_directory_as(new_parent) {
+            return true;
+        }
+        if policy.can_create_redirects()
+            && (source
+                .is_some_and(|inode| inode.type_().is_directory() && !inode.lowers.is_empty())
+                || (mode == RenameMode::Exchange
+                    && target.is_some_and(|inode| {
+                        inode.type_().is_directory() && !inode.lowers.is_empty()
+                    })))
+        {
+            return true;
+        }
+        policy.can_create_metacopy()
+            && (source.is_some_and(|inode| {
+                inode.type_().is_regular_file()
+                    && !inode.lowers.is_empty()
+                    && (inode.upper.get().is_none() || !inode.has_upper_data())
+            }) || (mode == RenameMode::Exchange
+                && target.is_some_and(|inode| {
+                    inode.type_().is_regular_file()
+                        && !inode.lowers.is_empty()
+                        && (inode.upper.get().is_none() || !inode.has_upper_data())
+                })))
+    }
+
     /// Builds the facts of one rename — the target name classified once and the two answers the
     /// lower layers give — together with the plan they decide.
     fn classify(
@@ -161,8 +229,9 @@ impl<'x> RenameFacts<'x> {
             }
         };
 
+        let source_name = old_child_dentry.name();
         // An unanswerable probe counts as a hit, so the rename never acts on an unknown.
-        let lower_layer_holds_old_name = match old_parent.lower_entry(&old_child_dentry.name()) {
+        let lower_layer_holds_old_name = match old_parent.lower_entry(&source_name) {
             Ok(found) => found.is_some(),
             Err(_) => true,
         };
@@ -170,19 +239,75 @@ impl<'x> RenameFacts<'x> {
             Ok(found) => found.is_some_and(|type_| type_.is_directory()),
             Err(_) => true,
         };
+        let source_is_dir = source.type_().is_directory();
+        let source_is_merged_dir = source_is_dir && !source.lowers.is_empty();
+        let source_is_merged_file = !source_is_dir
+            && fs.policy().can_create_metacopy()
+            && source.type_().is_regular_file()
+            && (source.upper.get().is_none() || !source.has_upper_data());
+        let target_is_dir = matches!(
+            &target,
+            RenameTarget::Visible { inode } if inode.type_().is_directory()
+        );
+        let target_is_merged_dir = target_is_dir
+            && matches!(&target, RenameTarget::Visible { inode } if !inode.lowers.is_empty());
+        let target_is_merged_file = matches!(
+            &target,
+            RenameTarget::Visible { inode }
+                if fs.policy().can_create_metacopy()
+                    && inode.type_().is_regular_file()
+                    && (inode.upper.get().is_none() || !inode.has_upper_data())
+        );
+        let is_redirect_needed = source_is_merged_dir
+            || source_is_merged_file
+            || (request == RenameMode::Exchange && (target_is_merged_dir || target_is_merged_file));
         let (mode, whiteout) = Self::decide_rename_plan(
             request,
             &source,
             &target,
             lower_layer_holds_old_name,
             lower_layer_holds_new_name_as_directory,
+            is_redirect_needed,
             fs.policy(),
         )?;
 
+        let (source_redirect, target_redirect) = if is_redirect_needed
+            && fs.policy().can_create_redirects()
+        {
+            let is_cross_parent = !old_parent.same_directory_as(&new_parent);
+            let source_redirect_form = source.redirect_form(is_cross_parent)?;
+            let source_redirect = if source_is_merged_dir || source_is_merged_file {
+                source.redirect_value_for(
+                    &fs,
+                    &source_name,
+                    &old_parent_dentry,
+                    source_redirect_form,
+                )?
+            } else {
+                None
+            };
+            let target_redirect = match &target {
+                RenameTarget::Visible { inode }
+                    if request == RenameMode::Exchange
+                        && (target_is_merged_dir || target_is_merged_file) =>
+                {
+                    let target_redirect_form = inode.redirect_form(is_cross_parent)?;
+                    inode.redirect_value_for(&fs, new_name, new_dir_dentry, target_redirect_form)?
+                }
+                _ => None,
+            };
+            (source_redirect, target_redirect)
+        } else {
+            (None, None)
+        };
+
         Ok(Self {
+            lower_layer_holds_old_name,
             lower_layer_holds_new_name_as_directory,
             mode,
             whiteout,
+            source_redirect,
+            target_redirect,
             new_name,
             old_parent,
             old_parent_dentry,
@@ -194,32 +319,49 @@ impl<'x> RenameFacts<'x> {
         })
     }
 
-    /// Decides the rename plan the facts allow: the refusals taken before any lock, the mode the
-    /// real rename is issued with, and the old name's whiteout verdict.
+    /// Decides the rename plan the facts allow: the refusals taken before the per-inode lock set is
+    /// acquired, the mode the real rename is issued with, and the old name's whiteout verdict.
     fn decide_rename_plan(
         request: RenameMode,
         source: &OverlayInode,
         target: &RenameTarget,
         lower_layer_holds_old_name: bool,
         lower_layer_holds_new_name_as_directory: bool,
+        is_redirect_needed: bool,
         policy: &MountPolicy,
     ) -> Result<(RenameMode, WhiteoutAction)> {
         let source_is_dir = source.type_().is_directory();
-        let source_is_merged_dir = source_is_dir && !source.lowers.is_empty();
         let target_is_dir = matches!(
             target,
             RenameTarget::Visible { inode } if inode.type_().is_directory()
         );
         let target_is_visible = matches!(target, RenameTarget::Visible { .. });
-        let target_is_merged_dir = target_is_dir
-            && matches!(target, RenameTarget::Visible { inode } if !inode.lowers.is_empty());
-        if source_is_merged_dir
-            || (request == RenameMode::Exchange && target_is_dir && target_is_merged_dir)
-        {
+
+        if is_redirect_needed && !policy.can_create_redirects() {
             return Err(Error::with_message(
                 Errno::EXDEV,
-                "the overlay cross-directory rename of a lower-backed or merged directory \
-                 requires the not-yet-implemented redirect_dir policy",
+                "the overlay rename of a lower-backed or merged directory requires \
+                 redirect_dir=on",
+            ));
+        }
+        if is_redirect_needed && !policy.can_store_private_xattr() {
+            return Err(Error::with_message(
+                Errno::EXDEV,
+                "the upper filesystem cannot store the redirect record required for the rename",
+            ));
+        }
+        let target_is_pure_upper_dir = matches!(
+            target,
+            RenameTarget::Visible { inode }
+                if inode.type_().is_directory() && inode.lowers.is_empty()
+        );
+        let target_opaque_needed = request == RenameMode::Exchange
+            && target_is_pure_upper_dir
+            && lower_layer_holds_old_name;
+        if target_opaque_needed && !policy.can_store_private_xattr() {
+            return Err(Error::with_message(
+                Errno::EXDEV,
+                "the upper filesystem cannot store the opaque marker required for the exchange",
             ));
         }
         if request != RenameMode::Exchange && source_is_dir && target_is_visible && !target_is_dir {
@@ -345,17 +487,74 @@ impl<'x> RenameFacts<'x> {
             .sweep_whiteouts(target_upper_dir.dentry())
     }
 
-    /// Writes the opaque record on the source's upper entry.
-    ///
-    /// The moved directory's new name stops merging a lower directory into it.
-    fn set_opaque_marker_if_needed(&self, _locks: &mut RenameLocks<'_>) -> Result<()> {
-        if !self.needs_opaque() {
-            return Ok(());
-        }
+    /// Writes the redirect records this move publishes before the real rename.
+    fn set_redirect_marker_if_needed(&self) -> Result<()> {
         let fs = self.old_parent.fs_arc();
         let namespace = fs.policy().xattr_namespace();
-        let source_upper = self.source.writable_upper();
-        OverlayXattrType::Opaque.set_value_on(source_upper.dentry(), namespace, None)
+        if let Some(value) = &self.source_redirect {
+            let source_upper = self.source.writable_upper();
+            OverlayXattrType::Redirect
+                .set_value_on(source_upper.dentry(), namespace, Some(value.as_bytes()))
+                .map_err(|_| {
+                    Error::with_message(
+                        Errno::EXDEV,
+                        "the overlay failed to write the redirect record required for the rename",
+                    )
+                })?;
+        }
+        if let Some(value) = &self.target_redirect
+            && let RenameTarget::Visible { inode } = &self.target
+        {
+            let target_upper = inode.writable_upper();
+            OverlayXattrType::Redirect
+                .set_value_on(target_upper.dentry(), namespace, Some(value.as_bytes()))
+                .map_err(|_| {
+                    Error::with_message(
+                        Errno::EXDEV,
+                        "the overlay failed to write the redirect record required for the rename",
+                    )
+                })?;
+        }
+        Ok(())
+    }
+
+    /// Writes the opaque records this move publishes before the real rename.
+    fn set_opaque_marker_if_needed(&self, _locks: &mut RenameLocks<'_>) -> Result<()> {
+        let source_opaque_needed = self.needs_opaque();
+        // The same predicate as decide_rename_plan's opaque gate, over the frozen
+        // lower_layer_holds_old_name; neither site may re-probe the lower.
+        let target_opaque_needed = self.mode == RenameMode::Exchange
+            && matches!(
+                &self.target,
+                RenameTarget::Visible { inode }
+                    if inode.type_().is_directory() && inode.lowers.is_empty()
+            )
+            && self.lower_layer_holds_old_name;
+        if !source_opaque_needed && !target_opaque_needed {
+            return Ok(());
+        }
+
+        let fs = self.old_parent.fs_arc();
+        let namespace = fs.policy().xattr_namespace();
+        if source_opaque_needed {
+            let source_upper = self.source.writable_upper();
+            OverlayXattrType::Opaque.set_value_on(source_upper.dentry(), namespace, None)?;
+        }
+        if target_opaque_needed {
+            let RenameTarget::Visible { inode } = &self.target else {
+                unreachable!("the target opaque predicate accepts a visible exchange target only");
+            };
+            let target_upper = inode.writable_upper();
+            OverlayXattrType::Opaque
+                .set_value_on(target_upper.dentry(), namespace, None)
+                .map_err(|_| {
+                    Error::with_message(
+                        Errno::EXDEV,
+                        "the overlay failed to write the opaque marker required for the exchange",
+                    )
+                })?;
+        }
+        Ok(())
     }
 
     /// Writes the impure record on the new parent from either origin direction — the source's own
@@ -447,7 +646,9 @@ impl<'x> RenameFacts<'x> {
     }
 
     fn needs_opaque(&self) -> bool {
-        self.source_is_dir() && self.lower_layer_holds_new_name_as_directory
+        self.source_is_dir()
+            && self.source.lowers.is_empty()
+            && self.lower_layer_holds_new_name_as_directory
     }
 }
 
