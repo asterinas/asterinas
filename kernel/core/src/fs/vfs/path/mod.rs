@@ -325,6 +325,57 @@ impl Path {
         Ok(())
     }
 
+    /// Updates inode timestamps after checking mount and caller permissions.
+    ///
+    /// A touch request sets both atime and mtime to the current time. Linux
+    /// permits it for the inode owner, a caller with `CAP_FOWNER`, or a caller
+    /// with write permission. Any other timestamp update requires ownership or
+    /// `CAP_FOWNER`.
+    pub(crate) fn update_times(&self, update: TimestampUpdate, ctx: &Context) -> Result<()> {
+        self.check_mount_writable()?;
+
+        // FIXME: Keep this check and the timestamp updates in one inode critical
+        // section. `metadata()` returns a snapshot, so a concurrent `chown()` can
+        // change the owner before the updates run.
+        let metadata = self.metadata()?;
+        let credentials = ctx.posix_thread.credentials();
+        let is_owner = credentials.fsuid() == metadata.uid;
+
+        if !is_owner {
+            let has_fowner = lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                ctx.thread_local.borrow_user_ns().as_ref(),
+                ctx.posix_thread,
+                CapSet::FOWNER,
+            ))
+            .is_ok();
+
+            if !has_fowner {
+                if matches!(update, TimestampUpdate::Touch(_)) {
+                    self.inode().check_permission(Permission::MAY_WRITE)?;
+                } else {
+                    return_errno_with_message!(
+                        Errno::EPERM,
+                        "only the owner may set explicit timestamps"
+                    );
+                }
+            }
+        }
+
+        let (atime, mtime, ctime) = match update {
+            TimestampUpdate::Touch(now) => (Some(now), Some(now), now),
+            TimestampUpdate::Explicit { atime, mtime, now } => (atime, mtime, now),
+        };
+        if let Some(atime) = atime {
+            self.set_atime(atime);
+        }
+        if let Some(mtime) = mtime {
+            self.set_mtime(mtime);
+        }
+        self.set_ctime(ctime);
+        notify::on_attr_change(self);
+        Ok(())
+    }
+
     /// Gets the parent `Path` within the same mount.
     ///
     /// This method returns the parent path within the same filesystem/mount.
@@ -494,6 +545,18 @@ impl Path {
 
         Ok(())
     }
+}
+
+/// A timestamp update and its associated permission policy.
+pub(crate) enum TimestampUpdate {
+    /// Set both timestamps to the current time.
+    Touch(Duration),
+    /// Set supplied timestamps, leaving omitted fields unchanged.
+    Explicit {
+        atime: Option<Duration>,
+        mtime: Option<Duration>,
+        now: Duration,
+    },
 }
 
 fn try_get_mnt_ns_inode(dentry: &Dentry) -> Option<&NsInode<MountNamespace>> {
@@ -980,17 +1043,23 @@ impl Path {
     }
 
     /// Sets the file's access time.
-    pub(crate) fn set_atime(&self, time: Duration) {
+    ///
+    /// Use [`Self::update_times`] instead, which will perform permission checks.
+    fn set_atime(&self, time: Duration) {
         self.inode().set_atime(&self.dentry, time)
     }
 
     /// Sets the file's modification time.
-    pub(crate) fn set_mtime(&self, time: Duration) {
+    ///
+    /// Use [`Self::update_times`] instead, which will perform permission checks.
+    fn set_mtime(&self, time: Duration) {
         self.inode().set_mtime(&self.dentry, time)
     }
 
     /// Sets the file's change time.
-    pub(crate) fn set_ctime(&self, time: Duration) {
+    ///
+    /// Use [`Self::update_times`] instead, which will perform permission checks.
+    fn set_ctime(&self, time: Duration) {
         self.inode().set_ctime(&self.dentry, time)
     }
 
