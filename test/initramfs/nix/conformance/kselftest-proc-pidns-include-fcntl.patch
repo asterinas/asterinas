@@ -1,0 +1,24 @@
+From 879b3353d04d043a9e01525c520d9b81339421b2 Mon Sep 17 00:00:00 2001
+From: Amin Vakil <info@aminvakil.com>
+Date: Thu, 18 Jun 2026 18:44:44 +0330
+Subject: [PATCH] selftests: proc: include fcntl.h in proc-pidns
+
+proc-pidns.c uses open() and O_* flags, but does not include
+<fcntl.h>. Include it to provide the declaration and flag definitions.
+
+Upstream: https://github.com/torvalds/linux/commit/879b3353d04d043a9e01525c520d9b81339421b2
+---
+ tools/testing/selftests/proc/proc-pidns.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/tools/testing/selftests/proc/proc-pidns.c b/tools/testing/selftests/proc/proc-pidns.c
+index 52500597f951..6f7c10fe97b3 100644
+--- a/tools/testing/selftests/proc/proc-pidns.c
++++ b/tools/testing/selftests/proc/proc-pidns.c
+@@ -7,6 +7,7 @@
+ #include <assert.h>
+ #include <errno.h>
++#include <fcntl.h>
+ #include <sched.h>
+ #include <stdbool.h>
+ #include <stdlib.h>
