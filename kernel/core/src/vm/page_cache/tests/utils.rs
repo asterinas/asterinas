@@ -11,10 +11,17 @@ use aster_block::{
     id::Sid,
 };
 use device_id::DeviceId;
-use io_util::batch::IoBatch;
+use io_util::{
+    IoError,
+    batch::{IoBatch, IoCompletion as IoCompletionRecord},
+};
 use ostd::mm::VmIo;
 
-use crate::{prelude::*, thread::Thread, vm::page_cache::BlockAsPageCacheBackend};
+use crate::{
+    prelude::*,
+    thread::Thread,
+    vm::page_cache::{BlockAsPageCacheBackend, PageCacheBackend, PageRun},
+};
 
 /// Maximum number of cooperative yields before a test wait times out.
 const MAX_WAIT_YIELDS: usize = 1_000_000;
@@ -61,6 +68,8 @@ struct MockBackendState {
     persisted_pages: Vec<Vec<u8>>,
     read_counts: Vec<usize>,
     write_counts: Vec<usize>,
+    write_wait_counts: Vec<usize>,
+    contiguous_writes: bool,
     read_submit_failures: BTreeSet<usize>,
     write_submit_failures: BTreeSet<usize>,
     read_completion: IoCompletion,
@@ -75,6 +84,8 @@ impl MockBackendState {
             persisted_pages: vec![vec![0; PAGE_SIZE]; num_pages],
             read_counts: vec![0; num_pages],
             write_counts: vec![0; num_pages],
+            write_wait_counts: vec![0; num_pages],
+            contiguous_writes: false,
             read_submit_failures: BTreeSet::new(),
             write_submit_failures: BTreeSet::new(),
             read_completion: IoCompletion::Immediate,
@@ -141,7 +152,7 @@ impl MockBackendState {
 /// backend completion order without an extra fake-device wrapper or timer-based
 /// sleeps.
 pub(super) struct MockPageCacheBackend {
-    state: SpinLock<MockBackendState>,
+    state: Arc<SpinLock<MockBackendState>>,
     num_pages: usize,
 }
 
@@ -149,7 +160,7 @@ impl MockPageCacheBackend {
     /// Creates a backend with `num_pages` zero-filled persisted pages.
     pub(super) fn new(num_pages: usize) -> Arc<Self> {
         Arc::new(Self {
-            state: SpinLock::new(MockBackendState::new(num_pages)),
+            state: Arc::new(SpinLock::new(MockBackendState::new(num_pages))),
             num_pages,
         })
     }
@@ -157,6 +168,26 @@ impl MockPageCacheBackend {
     /// Sets how future BIOs of `kind` complete.
     pub(super) fn set_completion(&self, kind: IoKind, completion: IoCompletion) {
         self.state.lock().set_completion(kind, completion);
+    }
+
+    /// Enables or disables rejection of writes to `page_idx` before acceptance.
+    pub(super) fn set_write_submit_failure(&self, page_idx: usize, fail: bool) {
+        let mut state = self.state.lock();
+        if fail {
+            state.write_submit_failures.insert(page_idx);
+        } else {
+            state.write_submit_failures.remove(&page_idx);
+        }
+    }
+
+    /// Returns how many times a flush has started waiting for this page's BIO.
+    pub(super) fn write_wait_count(&self, page_idx: usize) -> usize {
+        self.state.lock().write_wait_counts[page_idx]
+    }
+
+    /// Selects device-limited contiguous BIO submission instead of per-page I/O.
+    pub(super) fn set_contiguous_writes(&self, enabled: bool) {
+        self.state.lock().contiguous_writes = enabled;
     }
 
     /// Waits until the backend has queued `expected_count` deferred BIOs.
@@ -175,6 +206,17 @@ impl MockPageCacheBackend {
     /// Completes the next deferred BIO of `kind`.
     pub(super) fn complete_next_deferred_bio(&self, kind: IoKind, success: bool) -> bool {
         let deferred_bio = self.state.lock().deferred_bios_mut(kind).pop_front();
+        let Some(deferred_bio) = deferred_bio else {
+            return false;
+        };
+
+        self.complete_bio(kind, deferred_bio.page_idx, deferred_bio.bio, success);
+        true
+    }
+
+    /// Completes the newest BIO first to control overlapping flush order.
+    pub(super) fn complete_last_deferred_bio(&self, kind: IoKind, success: bool) -> bool {
+        let deferred_bio = self.state.lock().deferred_bios_mut(kind).pop_back();
         let Some(deferred_bio) = deferred_bio else {
             return false;
         };
@@ -204,16 +246,6 @@ impl MockPageCacheBackend {
         self.state.lock().persisted_pages[page_idx].copy_from_slice(data);
     }
 
-    fn maybe_fail_submission(&self, kind: IoKind, page_idx: usize) -> Result<()> {
-        let mut state = self.state.lock();
-        if state.should_fail_submit(kind, page_idx) {
-            state.record_submission(kind, page_idx);
-            return_errno!(Errno::EIO);
-        }
-
-        Ok(())
-    }
-
     fn submit_bio(
         &self,
         kind: IoKind,
@@ -222,17 +254,23 @@ impl MockPageCacheBackend {
         complete_fn: BioCompleteFn,
         io_batch: &mut IoBatch,
     ) -> Result<()> {
-        self.maybe_fail_submission(kind, page_idx)?;
-
         let bio = Bio::new(
             kind.bio_type(),
             Sid::from_offset(page_idx * PAGE_SIZE),
             vec![bio_segment],
             Some(complete_fn),
         );
-        bio.submit(self, io_batch)
+        let mut submitted = IoBatch::new();
+        bio.submit(self, &mut submitted)
             .map_err(ostd::Error::from)
-            .map_err(Error::from)
+            .map_err(Error::from)?;
+        io_batch.push(Arc::new(MockCompletion {
+            completion: submitted[0].clone(),
+            state: self.state.clone(),
+            kind,
+            page_idx,
+        }));
+        Ok(())
     }
 
     fn complete_bio(&self, kind: IoKind, page_idx: usize, bio: SubmittedBio, success: bool) {
@@ -261,6 +299,22 @@ impl MockPageCacheBackend {
         };
 
         bio.complete(status);
+    }
+}
+
+struct MockCompletion {
+    completion: Arc<dyn IoCompletionRecord>,
+    state: Arc<SpinLock<MockBackendState>>,
+    kind: IoKind,
+    page_idx: usize,
+}
+
+impl IoCompletionRecord for MockCompletion {
+    fn wait(&self) -> Result<(), IoError> {
+        if self.kind == IoKind::Write {
+            self.state.lock().write_wait_counts[self.page_idx] += 1;
+        }
+        self.completion.wait()
     }
 }
 
@@ -297,6 +351,9 @@ impl BlockDevice for MockPageCacheBackend {
         let completion = {
             let mut state = self.state.lock();
             state.record_submission(kind, page_idx);
+            if state.should_fail_submit(kind, page_idx) {
+                return Err(BioEnqueueError::Refused);
+            }
             let completion = state.completion_mode(kind);
             if matches!(completion, IoCompletion::Deferred) {
                 state
@@ -353,5 +410,18 @@ impl BlockAsPageCacheBackend for MockPageCacheBackend {
             return_errno!(Errno::EINVAL);
         }
         self.submit_bio(IoKind::Write, page_idx, bio_segment, complete_fn, io_batch)
+    }
+
+    fn submit_write_page_run(&self, mut pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
+        if self.state.lock().contiguous_writes {
+            let start_bid = aster_block::id::Bid::new(pages.start_idx() as u64);
+            let len = pages.len();
+            return pages.submit_contiguous_write_pages(self, start_bid, len, io_batch);
+        }
+
+        for (idx, locked_page) in pages.into_indexed() {
+            self.write_page_async(idx, locked_page, io_batch)?;
+        }
+        Ok(())
     }
 }

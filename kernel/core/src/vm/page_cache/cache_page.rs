@@ -142,7 +142,7 @@ pub(crate) trait CachePageExt: Sized {
     /// Clears writeback state for a page whose writeback has completed or was canceled.
     ///
     /// Callers must invoke this method only to finish a writeback operation
-    /// previously started with [`LockedCachePage::set_writing_back`], either
+    /// previously started with [`LockedCachePage::start_writeback`], either
     /// from its completion callback or while handling submission failure.
     fn clear_writing_back(&self) {
         self.metadata()
@@ -249,6 +249,13 @@ impl CachePageExt for CachePage {
 pub(crate) struct LockedCachePage<PageRef: Borrow<CachePage> = CachePage> {
     page: Option<PageRef>,
     wait_queue: &'static WaitQueue,
+    writeback: Option<WritebackStage>,
+}
+
+#[derive(Clone, Copy)]
+enum WritebackStage {
+    Prepared,
+    Submitting,
 }
 
 /// A borrowed guard for a locked cache page.
@@ -267,6 +274,7 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
         Self {
             page: Some(page),
             wait_queue,
+            writeback: None,
         }
     }
 
@@ -305,12 +313,37 @@ impl<PageRef: Borrow<CachePage>> LockedCachePage<PageRef> {
             .store(PageState::Evicted, Ordering::Release);
     }
 
-    /// Sets the writing back flag of the page, indicating that the page
-    /// is in-flight to storage.
-    pub(crate) fn set_writing_back(&self) {
+    /// Clears dirty while retaining responsibility for unsubmitted data.
+    ///
+    /// Dropping this guard restores dirty unless submission has been accepted
+    /// with [`Self::finish_writeback_submission`].
+    pub(super) fn prepare_writeback(&mut self) {
+        debug_assert!(self.writeback.is_none());
+        self.writeback = Some(WritebackStage::Prepared);
+        self.set_up_to_date();
+    }
+
+    /// Starts a new writeback while retaining the page lock until acceptance.
+    ///
+    /// If submission is rejected, dropping this guard restores dirty and clears
+    /// the new writeback flag. An older writeback is waited on first so that
+    /// rollback cannot clear another operation's flag.
+    pub(crate) fn start_writeback(&mut self) {
+        self.wait_until_finish_writing_back();
+        self.writeback = Some(WritebackStage::Submitting);
         self.metadata()
             .is_writing_back
             .store(true, Ordering::Release);
+    }
+
+    /// Restores the pending writeback responsibility before releasing the lock.
+    fn rollback_writeback(&self) {
+        if let Some(stage) = self.writeback {
+            self.set_dirty();
+            if matches!(stage, WritebackStage::Submitting) {
+                self.clear_writing_back();
+            }
+        }
     }
 
     /// Waits until the page finishes writing back to storage.
@@ -335,12 +368,24 @@ impl LockedCachePage<CachePage> {
         page
     }
 
+    /// Transfers writeback responsibility to an accepted request and unlocks.
+    ///
+    /// The request's completion callback now owns clearing the writeback flag.
+    pub(crate) fn finish_writeback_submission(mut self) {
+        debug_assert!(matches!(self.writeback, Some(WritebackStage::Submitting)));
+        self.writeback = None;
+        // `Drop` releases the page lock after the callback takes responsibility
+        // for clearing the writeback flag.
+    }
+
     /// Transfers ownership of the locked page to a new guard.
     ///
     /// This method leaves this guard inert so it will not unlock the page when dropped.
     pub(super) fn detach(&mut self) -> LockedCachePage {
         let page = self.page.take().expect("page already detached");
-        LockedCachePage::new(page, self.wait_queue)
+        let mut guard = LockedCachePage::new(page, self.wait_queue);
+        guard.writeback = self.writeback.take();
+        guard
     }
 }
 
@@ -348,7 +393,9 @@ impl LockedCachePage<&CachePage> {
     /// Converts a borrowed locked page into an owned locked page.
     pub(super) fn into_owned(mut self) -> LockedCachePage {
         let page = self.page.take().expect("page already taken").clone();
-        LockedCachePage::new(page, self.wait_queue)
+        let mut guard = LockedCachePage::new(page, self.wait_queue);
+        guard.writeback = self.writeback.take();
+        guard
     }
 }
 
@@ -363,6 +410,7 @@ impl<PageRef: Borrow<CachePage>> Deref for LockedCachePage<PageRef> {
 impl<PageRef: Borrow<CachePage>> Drop for LockedCachePage<PageRef> {
     fn drop(&mut self) {
         if let Some(page) = &self.page {
+            self.rollback_writeback();
             unlock_page(page.borrow(), self.wait_queue);
         }
     }
