@@ -20,6 +20,7 @@
 //! | [`metadata`] | the metadata setters |
 //! | [`open`] | the open entry and the per-open directory handle |
 //! | [`readdir`] | the merged-directory merge and its snapshot construction |
+//! | [`redirect`] | the redirect record's codec and the value a move must record |
 //! | [`xattr`] | the private-record and passthrough name paths |
 //!
 //! # Locking
@@ -38,10 +39,13 @@
 //! what orders a name removal against a promotion round, so the latch needs no
 //! ordering of its own.
 //!
-//! Two overlay-internal locks exist: the per-inode transaction lock and the
-//! [`InodeCache`] guard. A per-open snapshot slot sits outside both of them and
-//! is the outer lock of its pair: the directory transaction lock is taken and
-//! released inside its guard.
+//! Three overlay-internal locks exist: the per-inode transaction lock, the
+//! [`InodeCache`] guard, and the mount's rename lock, which serializes the
+//! moves that cross parents or compose or rewrite redirect records and is
+//! taken inside the VFS caller's children guards, outside every per-inode
+//! lock. A per-open snapshot slot sits outside all of them and is the outer
+//! lock of its pair: the directory transaction lock is taken and released
+//! inside its guard.
 
 mod copyup;
 mod data;
@@ -52,6 +56,7 @@ mod lookup;
 mod metadata;
 mod open;
 mod readdir;
+mod redirect;
 mod xattr;
 
 use core::{

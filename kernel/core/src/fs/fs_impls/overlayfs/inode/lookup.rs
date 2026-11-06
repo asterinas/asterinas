@@ -16,6 +16,10 @@
 //! an accumulated directory. An opaque upper parent also stops the scan
 //! before the lowers; it leaves the absent upper name invisible in the
 //! whole overlay.
+//!
+//! A merged directory hit may carry a redirect record: a relative value
+//! renames the name the deeper layers are scanned for, and an absolute
+//! value re-anchors that scan at one lower layer's root.
 
 #![short_vis_path::add(overlayfs)]
 
@@ -28,10 +32,10 @@ use crate::{
         file::InodeType,
         fs_impls::overlayfs::{
             fs::OverlayFs,
-            inode::{OverlayInode, xattr::OverlayXattrType},
+            inode::{OverlayInode, copyup::metacopy, redirect, xattr::OverlayXattrType},
             real::{RealObject, RealObjectStack},
         },
-        vfs::{inode::Extension, path::Dentry},
+        vfs::{inode::Extension, path::Dentry, xattr::XattrNamespace},
     },
     prelude::*,
 };
@@ -46,6 +50,19 @@ pub(super) enum Lookup {
 pub(super) enum NegativeLookup {
     Absent,
     HiddenByWhiteout,
+}
+
+/// The largest number of redirect rewrites one walk may perform before it fails with `ELOOP`.
+const REDIRECT_MAX_RESTARTS: usize = 8;
+
+/// Selects what one redirect-following walk accepts from the layers it consults.
+#[derive(Clone, Copy)]
+enum RedirectAcceptance {
+    /// Accepts each layer's landing directory, topmost layer first, until a barrier stops the walk,
+    /// and keeps every directory an absolute rewrite displaces.
+    LayerDirectories,
+    /// Accepts the first regular file with no metadata-only record, and ends the walk there.
+    LowerDataFile,
 }
 
 impl OverlayFs {
@@ -95,8 +112,10 @@ impl OverlayFs {
 
     fn lookup_in_layers(&self, parent: &OverlayInode, name: &str) -> Result<Lookup> {
         let namespace = self.policy().xattr_namespace();
+        let is_follow_enabled = self.policy().can_follow_redirects();
         let mut upper_hit: Option<RealObject> = None;
         let mut lower_hits: Vec<RealObject> = Vec::new();
+        let mut redirected_name: Option<String> = None;
 
         if let Some(parent_upper) = parent.upper.get() {
             let upper_dir = parent_upper.dentry().as_dir_dentry_or_err()?;
@@ -114,6 +133,23 @@ impl OverlayFs {
                         let inode = self.project_inode(RealObjectStack::upper_only(hit))?;
                         return Ok(Lookup::Positive(inode));
                     }
+                    if is_follow_enabled {
+                        match redirect::read_redirect(hit.dentry(), namespace)? {
+                            Some(value) if value.starts_with('/') => {
+                                let lower_hits = self.walk_redirect_path(
+                                    &value,
+                                    1,
+                                    RedirectAcceptance::LayerDirectories,
+                                    namespace,
+                                )?;
+                                let facts = RealObjectStack::new(Some(hit), lower_hits);
+                                let inode = self.project_inode(facts)?;
+                                return Ok(Lookup::Positive(inode));
+                            }
+                            Some(value) => redirected_name = Some(value),
+                            None => {}
+                        }
+                    }
                     upper_hit = Some(hit);
                 }
                 Err(err) if err.error() == Errno::ENOENT => {
@@ -128,7 +164,8 @@ impl OverlayFs {
         for parent_lower in &parent.lowers {
             let layer_index = parent_lower.layer_index();
             let lower_dir = parent_lower.dentry().as_dir_dentry_or_err()?;
-            match lower_dir.lookup_child(name) {
+            let lookup_name = redirected_name.as_deref().unwrap_or(name);
+            match lower_dir.lookup_child(lookup_name) {
                 Ok(child_dentry) => {
                     let hit = RealObject::new_lower(layer_index, child_dentry);
                     if self.is_whiteout(hit.dentry())? {
@@ -147,9 +184,27 @@ impl OverlayFs {
                     }
                     let is_opaque =
                         OverlayXattrType::Opaque.is_positive_on(hit.dentry(), namespace)?;
+                    let redirect = if is_follow_enabled && !is_opaque {
+                        redirect::read_redirect(hit.dentry(), namespace)?
+                    } else {
+                        None
+                    };
                     lower_hits.push(hit);
                     if is_opaque {
                         break;
+                    }
+                    match redirect {
+                        Some(value) if value.starts_with('/') => {
+                            lower_hits.extend(self.walk_redirect_path(
+                                &value,
+                                layer_index + 1,
+                                RedirectAcceptance::LayerDirectories,
+                                namespace,
+                            )?);
+                            break;
+                        }
+                        Some(value) => redirected_name = Some(value),
+                        None => {}
                     }
                 }
                 Err(err) if err.error() == Errno::ENOENT => continue,
@@ -163,6 +218,153 @@ impl OverlayFs {
         let facts = RealObjectStack::new(upper_hit, lower_hits);
         let inode = self.project_inode(facts)?;
         Ok(Lookup::Positive(inode))
+    }
+
+    /// Resolves one absolute redirect path downward from `start_layer_index` under `acceptance`.
+    ///
+    /// A directory component's redirect is read for every component: a relative value replaces that
+    /// component at the same parent, an absolute value re-anchors the remaining path at the layer
+    /// root. Under `LayerDirectories`, the directory an absolute rewrite displaces is accepted into
+    /// the result before the rewrite, so a carrier keeps contributing its children.
+    /// `REDIRECT_MAX_RESTARTS` bounds the rewrites; exceeding it is `ELOOP`.
+    ///
+    /// `start_layer_index` is a 1-based mount layer index, matching `RealObject::layer_index`; the
+    /// walk visits that layer and every deeper one. A layer's walk ends by landing on a directory,
+    /// by a miss, or by a barrier (a whiteout, an opaque directory, or a non-directory); a miss and
+    /// a metadata-only skip leave the next layer to be consulted, a barrier ends the walk, and an
+    /// absolute rewrite clears the barrier. Both the input and every value the walk follows have
+    /// passed `decode_redirect`, so each rewrite contributes at least one component.
+    fn walk_redirect_path(
+        &self,
+        absolute_path: &str,
+        start_layer_index: usize,
+        acceptance: RedirectAcceptance,
+        namespace: XattrNamespace,
+    ) -> Result<Vec<RealObject>> {
+        let mut path: Vec<String> = absolute_path
+            .split('/')
+            .filter(|component| !component.is_empty())
+            .map(String::from)
+            .collect();
+        // The codec rejects a path without a component, so this only guards the split above.
+        if path.is_empty() {
+            return Ok(Vec::new());
+        }
+        debug_assert!(start_layer_index >= 1);
+
+        let lower_layers = self.lower_layers();
+        let mut accepted: Vec<RealObject> = Vec::new();
+        let mut layer_index = start_layer_index;
+        let mut is_barred = false;
+        let mut restarts = 0;
+        while layer_index <= lower_layers.len() {
+            let mut current = lower_layers[layer_index - 1].root_dentry().clone();
+            let mut position = 0;
+            loop {
+                let is_final = position + 1 == path.len();
+                let current_dir = current.as_dir_dentry_or_err()?;
+                let child = match current_dir.lookup_child(&path[position]) {
+                    Ok(child) => child,
+                    Err(err) if matches!(err.error(), Errno::ENOENT | Errno::ENAMETOOLONG) => {
+                        // A miss leaves this layer without a landing; the next layer may still
+                        // hold the path.
+                        break;
+                    }
+                    Err(err) => return Err(err),
+                };
+                if self.is_whiteout(&child)? {
+                    // A whiteout hides the name here and in every deeper layer.
+                    is_barred = true;
+                    break;
+                }
+                if !child.inode().type_().is_directory() {
+                    if !is_final {
+                        // A non-directory cannot be descended into.
+                        is_barred = true;
+                        break;
+                    }
+                    if !matches!(acceptance, RedirectAcceptance::LowerDataFile) {
+                        // `LayerDirectories` accepts only a directory.
+                        is_barred = true;
+                        break;
+                    }
+                    if !child.inode().type_().is_regular_file() {
+                        // Only a regular file can hold the data; any other type bars the deeper
+                        // layers.
+                        is_barred = true;
+                        break;
+                    }
+                    if metacopy::check_metacopy(&child, namespace)?.is_some() {
+                        // A metadata-only hit carries no data, so the walk continues deeper.
+                        break;
+                    }
+                    return Ok(vec![RealObject::new_lower(layer_index, child)]);
+                }
+                if is_final && matches!(acceptance, RedirectAcceptance::LowerDataFile) {
+                    // A metadata-only copy-up needs a regular file, never a directory.
+                    is_barred = true;
+                    break;
+                }
+                let is_opaque = OverlayXattrType::Opaque.is_positive_on(&child, namespace)?;
+                if is_opaque {
+                    // An opaque segment still resolves here and bars the deeper layers, unless its
+                    // own absolute redirect re-anchors the walk below.
+                    is_barred = true;
+                }
+                if let Some(value) = redirect::read_redirect(&child, namespace)? {
+                    if value.starts_with('/') {
+                        if restarts == REDIRECT_MAX_RESTARTS {
+                            return_errno_with_message!(
+                                Errno::ELOOP,
+                                "the redirect chain exceeds the restart budget"
+                            );
+                        }
+                        restarts += 1;
+                        // The displaced directory keeps feeding the merged view of this name.
+                        if matches!(acceptance, RedirectAcceptance::LayerDirectories) {
+                            accepted.push(RealObject::new_lower(layer_index, child));
+                        }
+                        let mut rewritten: Vec<String> = value
+                            .split('/')
+                            .filter(|component| !component.is_empty())
+                            .map(String::from)
+                            .collect();
+                        rewritten.append(&mut path.split_off(position + 1));
+                        path = rewritten;
+                        current = lower_layers[layer_index - 1].root_dentry().clone();
+                        position = 0;
+                        // An absolute redirect below forces the deeper layers back in.
+                        is_barred = false;
+                        continue;
+                    }
+                    if value != path[position] {
+                        if restarts == REDIRECT_MAX_RESTARTS {
+                            return_errno_with_message!(
+                                Errno::ELOOP,
+                                "the redirect chain exceeds the restart budget"
+                            );
+                        }
+                        restarts += 1;
+                        // The name is replaced in place: same layer, same parent, no carrier.
+                        path[position] = value;
+                        continue;
+                    }
+                    // A relative value naming the component it replaces is not a rewrite.
+                }
+                if is_final {
+                    // Only `LayerDirectories` reaches a final directory.
+                    accepted.push(RealObject::new_lower(layer_index, child));
+                    break;
+                }
+                current = child;
+                position += 1;
+            }
+            if is_barred {
+                break;
+            }
+            layer_index += 1;
+        }
+        Ok(accepted)
     }
 }
 

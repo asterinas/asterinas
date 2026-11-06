@@ -9,6 +9,9 @@
 //! temp published with [`RenameMode::Replace`], since a real-layer `link` would
 //! fail with `EEXIST` there. Temp cleanup on failure is explicit and fallible.
 //!
+//! A metadata-only source, whose data stays in a lower layer, also receives an
+//! absolute redirect record before the link is made.
+//!
 //! Degradation note: without a persistent origin index (a lower-origin
 //! identity map used to deduplicate copy-up targets), two lower aliases of
 //! one lower inode that copy up separately may become two distinct upper
@@ -21,9 +24,14 @@ use crate::{
     fs::{
         fs_impls::overlayfs::{
             fs::OverlayFs,
-            inode::{Lookup, NegativeLookup, OverlayInode, OverlayXattrType},
+            inode::{
+                Lookup, NegativeLookup, OverlayInode, OverlayXattrType, redirect::RedirectForm,
+            },
         },
-        vfs::{inode::RenameMode, path::Dentry},
+        vfs::{
+            inode::{Inode, RenameMode},
+            path::Dentry,
+        },
     },
     prelude::*,
 };
@@ -48,9 +56,13 @@ impl OverlayInode {
         self.writable_real_object(self_dentry)?;
         let source = self.promote_link_source(old_dentry)?;
         let source_upper = source.writable_upper().dentry();
+        let _renames_guard = source
+            .link_needs_rename_serialization()
+            .then(|| fs.lock_renames());
         let mut dir_guard = self.lock();
         let target = self.classify_link_target(&fs, name)?;
         self.set_link_impure_marker(&fs, source_upper)?;
+        source.set_link_redirect_if_metacopy(&fs, old_dentry)?;
         self.link_name(&fs, source_upper, name, target)?;
         // The linked name belongs to the parent's next merge: the snapshot lacking it is stale.
         *dir_guard = None;
@@ -127,5 +139,45 @@ impl OverlayInode {
         let upper_workdir = fs.upper_workdir_inuse();
         let temp = upper_workdir.create_workdir_link_temp(name, source)?;
         temp.publish(upper_parent.dentry(), name, RenameMode::Replace)
+    }
+
+    /// Returns whether linking this object must hold the mount's rename lock: its data stays
+    /// in a lower layer and the link composes an absolute redirect by walking ancestors.
+    fn link_needs_rename_serialization(&self) -> bool {
+        // The link redirect is composed only for a regular file whose data stayed in a lower layer.
+        self.type_().is_regular_file() && !self.has_upper_data()
+    }
+
+    /// Writes the absolute redirect a hard link needs when this object's data stays in a lower layer.
+    fn set_link_redirect_if_metacopy(&self, fs: &OverlayFs, source_dentry: &Dentry) -> Result<()> {
+        if !self.type_().is_regular_file() || self.has_upper_data() {
+            return Ok(());
+        }
+        // No can_create_redirects gate is needed: a metadata-only source exists only on a mount
+        // whose metacopy=on implies redirect_dir is effective on.
+        let Some(parent_dentry) = source_dentry.parent() else {
+            return Ok(());
+        };
+        let source_name = source_dentry.name();
+        // A link is always absolute: the two names of one hard-linked inode share this one record,
+        // so the value must not name either of them.
+        let form = RedirectForm::Absolute;
+        let Some(value) = self.redirect_value_for(fs, &source_name, &parent_dentry, form)? else {
+            return Ok(());
+        };
+        let source_upper = self.writable_upper();
+        OverlayXattrType::Redirect
+            .set_value_on(
+                source_upper.dentry(),
+                fs.policy().xattr_namespace(),
+                Some(value.as_bytes()),
+            )
+            .map_err(|_| {
+                Error::with_message(
+                    Errno::EXDEV,
+                    "the overlay failed to write the redirect record required for the link",
+                )
+            })?;
+        Ok(())
     }
 }

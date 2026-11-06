@@ -10,6 +10,7 @@
 use super::{
     capabilities::{UpperFilesystemCapabilities, WhiteoutCapability},
     inuse::Uuid,
+    options::RedirectDirMode,
 };
 use crate::fs::vfs::xattr::XattrNamespace;
 
@@ -23,6 +24,8 @@ pub(in overlayfs) struct MountPolicy {
     upper_capabilities: Option<UpperFilesystemCapabilities>,
     /// The xattr namespace for the overlay's own records; kept even for read-only mounts.
     xattr_namespace: XattrNamespace,
+    /// The effective redirect mode this mount follows and creates records under.
+    redirect_dir: RedirectDirMode,
 }
 
 impl MountPolicy {
@@ -31,12 +34,14 @@ impl MountPolicy {
         xattr_namespace: XattrNamespace,
         uuid: Option<Uuid>,
         upper_capabilities: Option<UpperFilesystemCapabilities>,
+        redirect_dir: RedirectDirMode,
     ) -> Self {
         Self {
             is_effective_read_only,
             uuid,
             upper_capabilities,
             xattr_namespace,
+            redirect_dir,
         }
     }
 
@@ -46,6 +51,19 @@ impl MountPolicy {
 
     pub(in overlayfs) fn xattr_namespace(&self) -> XattrNamespace {
         self.xattr_namespace
+    }
+
+    /// Returns whether this mount follows redirect records while resolving names.
+    pub(in overlayfs) fn can_follow_redirects(&self) -> bool {
+        matches!(
+            self.redirect_dir,
+            RedirectDirMode::On | RedirectDirMode::Follow
+        )
+    }
+
+    /// Returns whether this mount creates redirect records for a move.
+    pub(in overlayfs) fn can_create_redirects(&self) -> bool {
+        self.redirect_dir == RedirectDirMode::On
     }
 
     pub(in super::super) fn uuid(&self) -> Option<&Uuid> {
