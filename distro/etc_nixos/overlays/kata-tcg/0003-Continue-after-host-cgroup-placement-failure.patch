@@ -1,0 +1,18 @@
+Subject: [PATCH] Continue after host cgroup placement failure
+
+Keep initial controller placement best-effort for the experimental TCG
+profile. Controller construction is unchanged. This permits startup when
+Asterinas rejects migration of the running shim via cgroup.procs, and does
+not guarantee host cgroup resource limits or accounting.
+
+--- a/virtcontainers/api.go
++++ b/virtcontainers/api.go
+@@ -85,7 +85,7 @@
+ 
+ 	// Set the sandbox host cgroups.
+ 	if err := s.setupResourceController(); err != nil {
+-		return nil, err
++		s.Logger().WithError(err).Warn("Continuing without host cgroup placement")
+ 	}
+ 
+ 	// Start the VM
