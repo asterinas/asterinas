@@ -11,7 +11,7 @@ use crate::{
             InodeType, Permission,
             file_table::{FileDesc, RawFileDesc, get_file_fast},
         },
-        utils::{NAME_MAX, PATH_MAX, SYMLINKS_MAX},
+        utils::{PATH_MAX, SYMLINKS_MAX},
         vfs::{inode::SymbolicLink, path::MountNamespace},
     },
     prelude::*,
@@ -623,10 +623,6 @@ impl PathResolver {
         if path.inode().check_permission(Permission::MAY_EXEC).is_err() {
             return_errno_with_message!(Errno::EACCES, "the path cannot be looked up");
         }
-        if name.len() > NAME_MAX {
-            return_errno_with_message!(Errno::ENAMETOOLONG, "the path name is too long");
-        }
-
         let target_path = if super::is_dot(name) {
             return Ok(path.this());
         } else if super::is_dotdot(name) {

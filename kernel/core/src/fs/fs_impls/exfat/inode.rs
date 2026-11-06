@@ -1155,9 +1155,6 @@ impl ExfatInode {
         mode: InodeMode,
         fs_guard: &MutexGuard<()>,
     ) -> Result<Arc<ExfatInode>> {
-        if name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
-        }
         let fs = self.inner.read().fs();
 
         // TODO: remove trailing periods of pathname.
@@ -1581,9 +1578,6 @@ impl Inode for ExfatInode {
             if !inner.inode_type.is_directory() {
                 return_errno!(Errno::ENOTDIR)
             }
-            if name.len() > MAX_NAME_LENGTH {
-                return_errno!(Errno::ENAMETOOLONG)
-            }
 
             if inner.lookup_by_name(name, false, &fs_guard).is_ok() {
                 return_errno!(Errno::EEXIST)
@@ -1678,10 +1672,6 @@ impl Inode for ExfatInode {
         let inner = self.inner.upread();
         if !inner.inode_type.is_directory() {
             return_errno!(Errno::ENOTDIR)
-        }
-
-        if name.len() > MAX_NAME_LENGTH {
-            return_errno!(Errno::ENAMETOOLONG)
         }
 
         let inode = {

@@ -18,5 +18,6 @@ SUBDIRS := \
 	sync \
 	tmpfile \
 	utimensat \
+	vfs \
 
 include ../common/Makefile
