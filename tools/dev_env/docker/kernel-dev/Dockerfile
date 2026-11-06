@@ -20,9 +20,13 @@ RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/8e6e8ad3
 #= Download VDSO files =====================================================
 
 WORKDIR /root
-RUN git clone https://github.com/asterinas/linux_vdso.git && \
-    cd linux_vdso && \
-    git checkout 8af5717
+COPY flake.nix flake.lock /tmp/asterinas/
+COPY tools/dev_env/nix /tmp/asterinas/tools/dev_env/nix
+# Keep this output link so Nix garbage collection retains the vDSO files.
+RUN nix --extra-experimental-features 'nix-command flakes' \
+    build --accept-flake-config --no-update-lock-file \
+    --out-link /root/linux_vdso path:/tmp/asterinas#vdso \
+    && rm -rf /tmp/asterinas
 
 ENV VDSO_LIBRARY_DIR="/root/linux_vdso"
 
