@@ -167,6 +167,17 @@ impl<'x> RenameFacts<'x> {
         {
             return true;
         }
+        policy.can_create_metacopy()
+            && (source.is_some_and(|inode| {
+                inode.type_().is_regular_file()
+                    && !inode.lowers.is_empty()
+                    && (inode.upper.get().is_none() || !inode.has_upper_data())
+            }) || (mode == RenameMode::Exchange
+                && target.is_some_and(|inode| {
+                    inode.type_().is_regular_file()
+                        && !inode.lowers.is_empty()
+                        && (inode.upper.get().is_none() || !inode.has_upper_data())
+                })))
     }
 
     /// Builds the facts of one rename — the target name classified once and the two answers the

@@ -26,6 +26,8 @@ pub(in overlayfs) struct MountPolicy {
     xattr_namespace: XattrNamespace,
     /// The effective redirect mode this mount follows and creates records under.
     redirect_dir: RedirectDirMode,
+    /// Whether this mount follows and creates metadata-only copy-up records.
+    metacopy: bool,
 }
 
 impl MountPolicy {
@@ -35,6 +37,7 @@ impl MountPolicy {
         uuid: Option<Uuid>,
         upper_capabilities: Option<UpperFilesystemCapabilities>,
         redirect_dir: RedirectDirMode,
+        metacopy: bool,
     ) -> Self {
         Self {
             is_effective_read_only,
@@ -42,6 +45,7 @@ impl MountPolicy {
             upper_capabilities,
             xattr_namespace,
             redirect_dir,
+            metacopy,
         }
     }
 
@@ -64,6 +68,16 @@ impl MountPolicy {
     /// Returns whether this mount creates redirect records for a move.
     pub(in overlayfs) fn can_create_redirects(&self) -> bool {
         self.redirect_dir == RedirectDirMode::On
+    }
+
+    /// Returns whether this mount follows metadata-only copy-up records while resolving names.
+    pub(in overlayfs) fn is_metacopy_enabled(&self) -> bool {
+        self.metacopy
+    }
+
+    /// Returns whether this mount can publish a metadata-only upper entry.
+    pub(in overlayfs) fn can_create_metacopy(&self) -> bool {
+        self.metacopy && self.can_store_private_xattr()
     }
 
     pub(in super::super) fn uuid(&self) -> Option<&Uuid> {

@@ -160,6 +160,11 @@ impl MountOptions {
         }
     }
 
+    /// Returns whether the caller requested metadata-only copy-up.
+    pub(super) fn is_metacopy_enabled(&self) -> bool {
+        self.metacopy == Some(true)
+    }
+
     fn set_entry(&mut self, key: &str, value: Option<&str>) -> Result<()> {
         match key {
             "lowerdir" => {
@@ -408,9 +413,6 @@ impl MountOptions {
         }
         if self.nfs_export == Some(true) {
             warn!("`nfs_export=on`: degrading to nfs_export=off");
-        }
-        if self.metacopy == Some(true) {
-            warn!("`metacopy=on`: degrading to metacopy=off");
         }
         if let Some(mode) = self.verity.filter(|mode| *mode != VerityMode::Off) {
             warn!("`verity={}`: degrading to verity=off", mode.option_value());

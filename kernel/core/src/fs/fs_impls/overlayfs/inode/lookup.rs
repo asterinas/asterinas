@@ -10,7 +10,11 @@
 //! # Lookup scan
 //!
 //! The lookup scan is upper-first with overlayfs merge-stop semantics.
-//! The first non-directory hit terminates as a single-object result.
+//! The first non-directory hit terminates the scan. An upper non-directory hit
+//! is first probed for a metadata-only record: a malformed record fails the
+//! lookup, a valid record on a mount that follows it resolves the data object
+//! from the lower layers, and a valid record on a mount that does not fails
+//! with `EPERM`.
 //! Directory hits accumulate into the lower stack until a barrier stops
 //! the scan: a whiteout, an opaque directory, or a non-directory below
 //! an accumulated directory. An opaque upper parent also stops the scan
@@ -88,14 +92,35 @@ impl OverlayFs {
             return Ok(occupant);
         }
 
-        // The stack moves into the instance; the two probe sides are re-read from it below.
-        let (upper, lowers) = (facts.upper, facts.lowers);
+        // The stack moves into the instance; the two probe sides and the data flag are re-read
+        // from it here.
+        let (upper, mut lowers, data_lower, upper_has_data) = (
+            facts.upper,
+            facts.lowers,
+            facts.data_lower,
+            facts.upper_has_data,
+        );
+        // A separated data source is stored last, which is where the instance's data take point
+        // reads it. Every other stack already holds its single lower there.
+        if let Some(data_lower) = data_lower {
+            debug_assert!(
+                !is_directory,
+                "a directory's merge stack carries no separated data source"
+            );
+            lowers.push(data_lower);
+            debug_assert_eq!(
+                lowers.len(),
+                2,
+                "a metadata-only lower record has one data object"
+            );
+        }
         let build = move || {
             let object_id = self.identity().project(real_id, is_directory);
             Arc::new_cyclic(|this| OverlayInode {
                 fs: self.self_weak().clone(),
                 lowers,
                 upper: upper.map_or_else(Once::new, Once::initialized),
+                upper_has_data: AtomicBool::new(upper_has_data),
                 name_taken: AtomicBool::new(false),
                 object_id,
                 lock: Mutex::new(None),
@@ -126,7 +151,27 @@ impl OverlayFs {
                         return Ok(Lookup::Negative(NegativeLookup::HiddenByWhiteout));
                     }
                     if !hit.real_inode().type_().is_directory() {
-                        let inode = self.project_inode(RealObjectStack::upper_only(hit))?;
+                        let metacopy = metacopy::check_metacopy(hit.dentry(), namespace)?;
+                        if metacopy.is_none() {
+                            let inode = self.project_inode(RealObjectStack::upper_only(hit))?;
+                            return Ok(Lookup::Positive(inode));
+                        }
+                        if !self.policy().is_metacopy_enabled() {
+                            return_errno_with_message!(
+                                Errno::EPERM,
+                                "the mount does not follow a metadata-only copy-up record"
+                            );
+                        }
+                        let Some(data) =
+                            self.resolve_metacopy_data(parent, name, &hit, namespace)?
+                        else {
+                            return_errno_with_message!(
+                                Errno::EIO,
+                                "the metadata-only copy-up object has no lower data"
+                            );
+                        };
+                        let facts = RealObjectStack::metacopy_upper(hit, vec![data]);
+                        let inode = self.project_inode(facts)?;
                         return Ok(Lookup::Positive(inode));
                     }
                     if OverlayXattrType::Opaque.is_positive_on(hit.dentry(), namespace)? {
@@ -177,7 +222,9 @@ impl OverlayFs {
                     }
                     if !hit.real_inode().type_().is_directory() {
                         if upper_hit.is_none() && lower_hits.is_empty() {
-                            let inode = self.project_inode(RealObjectStack::lower_only(hit))?;
+                            let facts =
+                                self.lower_hit_stack(parent, lookup_name, hit, namespace)?;
+                            let inode = self.project_inode(facts)?;
                             return Ok(Lookup::Positive(inode));
                         }
                         break;
@@ -366,6 +413,65 @@ impl OverlayFs {
         }
         Ok(accepted)
     }
+
+    /// Resolves the data object one metadata-only record names.
+    ///
+    /// The scan begins at the layer below `record`: a relative value — or none — names the same name
+    /// there, and an absolute value re-anchors the walk at that layer's root. `None` means no layer
+    /// below the record holds the data.
+    fn resolve_metacopy_data(
+        &self,
+        parent: &OverlayInode,
+        lookup_name: &str,
+        record: &RealObject,
+        namespace: XattrNamespace,
+    ) -> Result<Option<RealObject>> {
+        let start_layer_index = record.layer_index().saturating_add(1);
+        let redirect = redirect::read_redirect(record.dentry(), namespace)?;
+        if let Some(absolute_path) = redirect.as_deref().filter(|value| value.starts_with('/')) {
+            // At most one object answers a `LowerDataFile` walk: the first regular file that
+            // carries no record.
+            return Ok(self
+                .walk_redirect_path(
+                    absolute_path,
+                    start_layer_index,
+                    RedirectAcceptance::LowerDataFile,
+                    namespace,
+                )?
+                .into_iter()
+                .next());
+        }
+        let lookup_name = redirect.as_deref().unwrap_or(lookup_name);
+        parent.first_lower_data_object(lookup_name, start_layer_index, namespace)
+    }
+
+    /// Builds the stack one lower non-directory hit publishes: the plain object when it carries no
+    /// record, and the record plus its data object otherwise.
+    fn lower_hit_stack(
+        &self,
+        parent: &OverlayInode,
+        lookup_name: &str,
+        hit: RealObject,
+        namespace: XattrNamespace,
+    ) -> Result<RealObjectStack> {
+        let metacopy = metacopy::check_metacopy(hit.dentry(), namespace)?;
+        if metacopy.is_none() {
+            return Ok(RealObjectStack::lower_only(hit));
+        }
+        if !self.policy().is_metacopy_enabled() {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the mount does not follow a metadata-only copy-up record"
+            );
+        }
+        let Some(data) = self.resolve_metacopy_data(parent, lookup_name, &hit, namespace)? else {
+            return_errno_with_message!(
+                Errno::EIO,
+                "the metadata-only object found in a lower layer has no lower data"
+            );
+        };
+        Ok(RealObjectStack::metacopy_lower(hit, data))
+    }
 }
 
 impl OverlayInode {
@@ -381,13 +487,11 @@ impl OverlayInode {
         self.upper.get().is_none() && caller_has_upper
     }
 
-    /// The type a lower layer physically holds at `name` in the receiver's own lower stack: `None`
-    /// when no lower holds it (a whiteout included), `Some` with the found object's type when one
-    /// does, and an error when a lower could not answer.
+    /// Returns the first lower real object holding `name` in the receiver's own lower stack.
     ///
-    /// Each caller decides what an unanswerable probe means for it, and every caller here answers
-    /// conservatively: a removal or a rename must not act on an unknown.
-    pub(super) fn lower_entry(&self, name: &str) -> Result<Option<InodeType>> {
+    /// A whiteout counts as a hit that holds nothing, so it answers `None`; the first hit decides,
+    /// so the scan never falls through to a deeper lower.
+    fn first_lower_object(&self, name: &str) -> Result<Option<RealObject>> {
         let fs = self.fs_arc();
         for lower in &self.lowers {
             // A lower stack element is a directory by construction.
@@ -395,16 +499,69 @@ impl OverlayInode {
             match lower_dir.lookup_child(name) {
                 Ok(child_dentry) => {
                     let hit = RealObject::new_lower(lower.layer_index(), child_dentry);
-                    return match fs.is_whiteout(hit.dentry())? {
-                        // A whiteout hides the name rather than holding it.
-                        true => Ok(None),
-                        false => Ok(Some(hit.real_inode().type_())),
-                    };
+                    if fs.is_whiteout(hit.dentry())? {
+                        return Ok(None);
+                    }
+                    return Ok(Some(hit));
                 }
                 Err(err) if matches!(err.error(), Errno::ENOENT | Errno::ENAMETOOLONG) => continue,
                 Err(err) => return Err(err),
             }
         }
         Ok(None)
+    }
+
+    /// Returns the first lower regular file under `name` that carries no metadata-only record.
+    ///
+    /// A whiteout counts as a hit that holds nothing, so it answers `None`, as does a first hit
+    /// that is not a regular file; a metadata-only hit carries no data either, so the scan skips it
+    /// and continues downward. Only the layers at or below `start_layer_index` are consulted, so a
+    /// layer at or above the record is never re-probed.
+    fn first_lower_data_object(
+        &self,
+        name: &str,
+        start_layer_index: usize,
+        namespace: XattrNamespace,
+    ) -> Result<Option<RealObject>> {
+        let fs = self.fs_arc();
+        for lower in &self.lowers {
+            if lower.layer_index() < start_layer_index {
+                // A layer at or above the record was already the lookup's to accept.
+                continue;
+            }
+            // A lower stack element is a directory by construction.
+            let lower_dir = lower.dentry().as_dir_dentry_or_err()?;
+            match lower_dir.lookup_child(name) {
+                Ok(child_dentry) => {
+                    let hit = RealObject::new_lower(lower.layer_index(), child_dentry);
+                    if fs.is_whiteout(hit.dentry())? {
+                        return Ok(None);
+                    }
+                    if !hit.real_inode().type_().is_regular_file() {
+                        return Ok(None);
+                    }
+                    if metacopy::check_metacopy(hit.dentry(), namespace)?.is_some() {
+                        // A metadata-only hit carries no data, so the scan continues downward.
+                        continue;
+                    }
+                    return Ok(Some(hit));
+                }
+                Err(err) if matches!(err.error(), Errno::ENOENT | Errno::ENAMETOOLONG) => continue,
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(None)
+    }
+
+    /// Returns the type a lower layer physically holds at `name` in the receiver's own lower stack.
+    ///
+    /// `None` when no lower holds it (a whiteout included), `Some` with the found object's type
+    /// when one does, and an error when a lower could not answer. Each caller decides what an
+    /// unanswerable probe means for it, and every caller here answers conservatively: a removal
+    /// or a rename must not act on an unknown.
+    pub(super) fn lower_entry(&self, name: &str) -> Result<Option<InodeType>> {
+        Ok(self
+            .first_lower_object(name)?
+            .map(|hit| hit.real_inode().type_()))
     }
 }

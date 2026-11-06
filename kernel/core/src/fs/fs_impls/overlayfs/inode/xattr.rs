@@ -48,6 +48,8 @@ pub(in overlayfs) enum OverlayXattrType {
     Uuid,
     /// The redirect record: the lower name or path this upper entry's content lives under.
     Redirect,
+    /// The metacopy record: this upper entry carries metadata only, and its data stays below.
+    Metacopy,
 }
 
 impl OverlayXattrType {
@@ -60,12 +62,14 @@ impl OverlayXattrType {
             (XattrNamespace::Trusted, Self::Impure) => "trusted.overlay.impure",
             (XattrNamespace::Trusted, Self::Uuid) => "trusted.overlay.uuid",
             (XattrNamespace::Trusted, Self::Redirect) => "trusted.overlay.redirect",
+            (XattrNamespace::Trusted, Self::Metacopy) => "trusted.overlay.metacopy",
             (XattrNamespace::User, Self::Origin) => "user.overlay.origin",
             (XattrNamespace::User, Self::Opaque) => "user.overlay.opaque",
             (XattrNamespace::User, Self::Whiteout) => "user.overlay.whiteout",
             (XattrNamespace::User, Self::Impure) => "user.overlay.impure",
             (XattrNamespace::User, Self::Uuid) => "user.overlay.uuid",
             (XattrNamespace::User, Self::Redirect) => "user.overlay.redirect",
+            (XattrNamespace::User, Self::Metacopy) => "user.overlay.metacopy",
             _ => unreachable!("the mount stores only the trusted or user xattr namespace"),
         };
         XattrName::try_from_full_name(full_name)
@@ -74,12 +78,11 @@ impl OverlayXattrType {
 
     /// Returns the value a write stores when the write site supplies none.
     ///
-    /// The whiteout, opaque, and impure markers write `y`; origin and uuid always take the caller's
-    /// value instead.
+    /// The whiteout, opaque, and impure markers write `y`; the other records take the caller's value.
     fn default_value(&self) -> Option<&'static [u8]> {
         match self {
             Self::Opaque | Self::Whiteout | Self::Impure => Some(b"y"),
-            Self::Origin | Self::Uuid => None,
+            Self::Origin | Self::Uuid | Self::Redirect | Self::Metacopy => None,
         }
     }
 
@@ -127,6 +130,7 @@ impl OverlayXattrType {
             Self::Opaque | Self::Impure => value == self.default_value().unwrap_or_default(),
             Self::Whiteout | Self::Origin | Self::Uuid => true,
             Self::Redirect => unreachable!("the redirect record is decoded by read_redirect"),
+            Self::Metacopy => unreachable!("the metacopy record is validated by check_metacopy"),
         }
     }
 
@@ -156,6 +160,7 @@ impl OverlayXattrType {
                 unreachable!("the two owner-decoded records carry no marker value to call positive")
             }
             Self::Redirect => unreachable!("the redirect record is decoded by read_redirect"),
+            Self::Metacopy => unreachable!("the metacopy record is validated by check_metacopy"),
         }
     }
 

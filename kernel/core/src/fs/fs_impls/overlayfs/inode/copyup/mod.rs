@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! The copy-up authority: per-object coordination, winner/waiter trigger,
-//! and object-kind promotion.
+//! and object-kind promotion, and metadata-only publication.
 //!
 //! Key concepts:
 //! - **copy-up chain**: the lower-only objects from the operation's target up
@@ -12,7 +12,8 @@
 //!   element carries the name it publishes under its publication parent.
 //! - **winner/waiter**: the tasks racing on one object's per-inode transaction
 //!   lock — for a non-directory that lock is a plain serialization token,
-//!   because the sole published-state fact is `upper: Once` being set. The
+//!   because the state a round publishes is the `upper` slot and the data
+//!   authority flag stored with it. The
 //!   winner performs the promotion; the waiters re-observe `upper` under that
 //!   lock and skip.
 //! - **promotion round**: one step promoting one object, from the `upper`
@@ -24,6 +25,7 @@
 //!
 //! | Submodule | Responsibility |
 //! |---|---|
+//! | [`metacopy`] | the metacopy record's write value and read-side validation |
 //! | [`workdir`] | the workdir temp create, publish, and cleanup lifecycle |
 //!
 //! # Locking
@@ -46,7 +48,7 @@
 //! instance onto the key its identity now resolves to, and the round's own latch
 //! reads answer whether its coordinate still denotes it.
 
-use self::workdir::WorkdirTemp;
+use self::{metacopy::METACOPY_V0_RECORD, workdir::WorkdirTemp};
 use crate::{
     fs::{
         file::{InodeType, SyncMode},
@@ -63,11 +65,22 @@ use crate::{
     prelude::*,
 };
 
+pub(super) mod metacopy;
+
 pub(super) mod workdir;
+
+/// Selects the kind of mutation one promotion round serves: metadata-only publication or full data.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CopyUpIntent {
+    /// Admits a metadata-only publication.
+    Metadata,
+    /// Requires the promotion to publish the data too.
+    Data,
+}
 
 impl OverlayFs {
     /// Promotes every lower-only ancestor above `dentry`, then the object behind it.
-    pub(super) fn copy_up_at(&self, dentry: &Dentry) -> Result<()> {
+    pub(super) fn copy_up_at(&self, dentry: &Dentry, intent: CopyUpIntent) -> Result<()> {
         let promoted = Arc::downcast::<OverlayInode>(dentry.inode().clone())
             .expect("the copy-up operation dentry is not an overlay inode");
 
@@ -97,7 +110,7 @@ impl OverlayFs {
 
         // Top-down: each round publishes into the object promoted by the round above it.
         for (promoted_object, name) in chain.iter().rev() {
-            self.promote_level(&publication_parent, promoted_object, name)?;
+            self.promote_level(&publication_parent, promoted_object, name, intent)?;
             publication_parent = Arc::clone(promoted_object);
         }
         Ok(())
@@ -114,7 +127,20 @@ impl OverlayFs {
         if self.policy().is_effective_read_only() {
             return_errno_with_message!(Errno::EROFS, "the overlay mount is read-only");
         }
-        self.promote_level(publication_parent, promoted_object, name)
+        self.promote_level(
+            publication_parent,
+            promoted_object,
+            name,
+            CopyUpIntent::Metadata,
+        )
+    }
+
+    /// Returns whether one promotion round may publish metadata only.
+    fn is_metadata_only_copy_up(&self, object: &OverlayInode, intent: CopyUpIntent) -> bool {
+        intent == CopyUpIntent::Metadata
+            && self.policy().is_metacopy_enabled()
+            && self.policy().can_store_private_xattr()
+            && object.type_().is_regular_file()
     }
 
     /// Promotes one level of a copy-up chain under the publication parent's lock, then this object's.
@@ -123,6 +149,7 @@ impl OverlayFs {
         publication_parent: &Arc<OverlayInode>,
         promoted_object: &Arc<OverlayInode>,
         name: &str,
+        intent: CopyUpIntent,
     ) -> Result<()> {
         // The publication parent's lock precedes the object's: never a child-to-parent edge.
         let _parent_guard = publication_parent.lock();
@@ -168,15 +195,18 @@ impl OverlayFs {
         }
 
         let source = promoted_object.real_object();
+        let is_metadata_only = self.is_metadata_only_copy_up(promoted_object, intent);
         let staged = promoted_object.stage_in_workdir(name)?;
         // An early `?` here drops the temp unconsumed, so its guard removes it from the workspace.
-        let origin_record_landed = promoted_object.stage_temp_contents(&staged, source)?;
+        let origin_record_landed =
+            promoted_object.stage_temp_contents(&staged, source, is_metadata_only)?;
         self.commit_copyup_publication(
             promoted_object,
             name,
             upper_parent.dentry(),
             staged,
             origin_record_landed,
+            is_metadata_only,
         )?;
         Ok(())
     }
@@ -189,6 +219,7 @@ impl OverlayFs {
         upper_parent: &Arc<Dentry>,
         staged: WorkdirTemp,
         origin_record_landed: bool,
+        is_metadata_only: bool,
     ) -> Result<()> {
         // The impure marker is best-effort: a failure leaves a missing mirror, not an abort.
         let namespace = self.policy().xattr_namespace();
@@ -200,6 +231,9 @@ impl OverlayFs {
         let published_upper = RealObject::new_upper(published);
         // Without a durable record the identity is the upper's own pair, so the entry keys on it.
         let upper_key = self.identity().real_id_of(&published_upper);
+        // The data flag is published before the upper slot: a reader that observes the upper must
+        // also observe which object holds its data.
+        promoted_object.mark_upper_data(!is_metadata_only);
         promoted_object.upper.call_once(|| published_upper);
         // A record the round did not land leaves the instance's identity on its own upper.
         if !origin_record_landed
@@ -326,32 +360,78 @@ impl OverlayInode {
         Ok(temp)
     }
 
-    /// Fills one staged temp from `source` and reports whether the origin-record step landed; `source`
-    /// is the source-side object, while the temp and its dentry are the destination of the copy.
-    fn stage_temp_contents(&self, temp: &WorkdirTemp, source: &RealObject) -> Result<bool> {
-        source.copy_metadata_to(temp.dentry())?;
+    /// Fills one staged temp and reports whether the origin-record step landed; `metadata_source` is
+    /// the metadata authority — mode/owner/size, the copied xattrs, the origin record and the
+    /// timestamps all come from it — while the data bytes come from the receiver's data take point.
+    /// The temp and its dentry are the destination of the copy.
+    fn stage_temp_contents(
+        &self,
+        temp: &WorkdirTemp,
+        metadata_source: &RealObject,
+        is_metadata_only: bool,
+    ) -> Result<bool> {
+        metadata_source.copy_metadata_to(temp.dentry())?;
 
-        self.copy_eligible_xattrs(source, temp, false)?;
+        self.copy_eligible_xattrs(metadata_source, temp, false)?;
 
-        if temp.inode().type_().is_regular_file() {
-            source.copy_data_to(temp.dentry())?;
+        if !is_metadata_only && temp.inode().type_().is_regular_file() {
+            // The bytes come from the data source, which is a different lower than the metadata
+            // source whenever this object is a metadata-only record found in a lower layer.
+            self.data_object().copy_data_to(temp.dentry())?;
         }
 
         // A hard-linked name keys two names alike; a denying mount cannot hold one.
-        let origin_record_landed = if source.real_inode().type_().is_directory()
-            || source.real_inode().metadata()?.nr_hard_links <= 1
+        let origin_record_landed = if metadata_source.real_inode().type_().is_directory()
+            || metadata_source.real_inode().metadata()?.nr_hard_links <= 1
         {
-            self.fs_arc().record_origin(temp, source)?
+            self.fs_arc().record_origin(temp, metadata_source)?
         } else {
             false
         };
 
-        source.copy_timestamps_to(temp.dentry())?;
+        metadata_source.copy_timestamps_to(temp.dentry())?;
+
+        // Written before the sync so the record is as durable as the metadata it belongs to.
+        if is_metadata_only {
+            OverlayXattrType::Metacopy.set_value_on(
+                temp.dentry(),
+                self.fs_arc().policy().xattr_namespace(),
+                Some(METACOPY_V0_RECORD.as_slice()),
+            )?;
+        }
 
         if temp.inode().type_().is_regular_file() {
             temp.inode().sync(SyncMode::Full)?;
         }
 
         Ok(origin_record_landed)
+    }
+
+    /// Completes the deferred data copy-up of one metadata-only upper entry.
+    pub(super) fn complete_data_copy_up(&self, upper: &RealObject) -> Result<()> {
+        let _guard = self.lock();
+        if self.has_upper_data() {
+            return Ok(());
+        }
+        let data = self.data_object();
+        // The record — and therefore the upper it became — carries the data's size, so a mismatch
+        // means the lower changed under this mount.
+        if upper.real_inode().size() != data.real_inode().size() {
+            return_errno_with_message!(
+                Errno::EIO,
+                "the metadata-only upper size disagrees with its lower data"
+            );
+        }
+        data.copy_data_to(upper.dentry())?;
+        upper.real_inode().sync(SyncMode::Full)?;
+        let namespace = self.fs_arc().policy().xattr_namespace();
+        // A record already gone is the state this call wants; keep the data and publish it.
+        match OverlayXattrType::Metacopy.remove_from(upper.dentry(), namespace) {
+            Ok(()) => {}
+            Err(err) if err.error() == Errno::ENODATA => {}
+            Err(err) => return Err(err),
+        }
+        self.mark_upper_data(true);
+        Ok(())
     }
 }

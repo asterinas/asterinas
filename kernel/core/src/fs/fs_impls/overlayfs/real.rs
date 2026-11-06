@@ -161,31 +161,66 @@ impl RealObject {
     }
 }
 
-/// The ordered real objects behind one logical overlay object, and which supplies its metadata.
+/// The ordered real objects behind one logical overlay object.
+///
+/// [`Self::lowers`] is the metadata-side stack: a directory's whole merge list, topmost first, or a
+/// non-directory's metadata source. A metadata-only record found in a lower layer separates its data
+/// from its metadata, and that data object is carried by [`Self::data_lower`] instead of by a second
+/// position in `lowers`, so the record stays the first — and the identity-authoritative — element.
 #[derive(Debug)]
 pub(super) struct RealObjectStack {
     pub(super) upper: Option<RealObject>,
     pub(super) lowers: Vec<RealObject>,
+    /// The lower object that holds this object's data when the metadata source does not.
+    pub(super) data_lower: Option<RealObject>,
+    /// Reports whether the upper entry holds this object's data.
+    pub(super) upper_has_data: bool,
 }
 
 impl RealObjectStack {
+    /// Builds a stack whose upper, when present, holds the object's data.
     pub(super) fn new(upper: Option<RealObject>, lowers: Vec<RealObject>) -> Self {
         debug_assert!(upper.is_some() || !lowers.is_empty());
-        Self { upper, lowers }
+        let upper_has_data = upper.is_some();
+        Self {
+            upper,
+            lowers,
+            data_lower: None,
+            upper_has_data,
+        }
+    }
+
+    /// Builds the stack of a metadata-only upper entry: its data stays in the first lower object.
+    pub(super) fn metacopy_upper(upper: RealObject, lowers: Vec<RealObject>) -> Self {
+        debug_assert!(!lowers.is_empty());
+        Self {
+            upper: Some(upper),
+            lowers,
+            data_lower: None,
+            upper_has_data: false,
+        }
+    }
+
+    /// Builds the stack of a metadata-only record found in a lower layer: `metadata` supplies the
+    /// object's metadata and identity, `data` its bytes and blocks.
+    ///
+    /// The data object always lives strictly below the record: both data scans begin at the layer
+    /// after it, so this constructor cannot be handed the record as its own data.
+    pub(super) fn metacopy_lower(metadata: RealObject, data: RealObject) -> Self {
+        Self {
+            upper: None,
+            lowers: vec![metadata],
+            data_lower: Some(data),
+            upper_has_data: false,
+        }
     }
 
     pub(super) fn upper_only(upper: RealObject) -> Self {
-        Self {
-            upper: Some(upper),
-            lowers: Vec::new(),
-        }
+        Self::new(Some(upper), Vec::new())
     }
 
     pub(super) fn lower_only(lower: RealObject) -> Self {
-        Self {
-            upper: None,
-            lowers: vec![lower],
-        }
+        Self::new(None, vec![lower])
     }
 
     pub(super) fn visible_source(&self) -> &RealObject {
