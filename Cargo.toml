@@ -46,6 +46,7 @@ members = [
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
     "kernel/core/comps/time",
+    "kernel/core/comps/tpm",
     "kernel/core/comps/virtio",
     "kernel/libs/aster-bigtcp",
     "kernel/libs/aster-fuse",
@@ -101,6 +102,7 @@ default-members = [
     "kernel/core/comps/softirq",
     "kernel/core/comps/systree",
     "kernel/core/comps/time",
+    "kernel/core/comps/tpm",
     "kernel/core/comps/virtio",
     "kernel/libs/aster-bigtcp",
     "kernel/libs/aster-fuse",
@@ -188,6 +190,7 @@ aster-pci = { path = "kernel/core/comps/pci" }
 aster-softirq = { path = "kernel/core/comps/softirq" }
 aster-systree = { path = "kernel/core/comps/systree" }
 aster-time = { path = "kernel/core/comps/time" }
+aster-tpm = { path = "kernel/core/comps/tpm" }
 aster-virtio = { path = "kernel/core/comps/virtio" }
 
 # Crates under kernel/libs
@@ -208,6 +211,7 @@ logo-ascii-art = { path = "kernel/libs/logo-ascii-art" }
 ring-buffer = { path = "kernel/libs/ring-buffer" }
 short-vis-path = { path = "kernel/libs/short-vis-path" }
 sparse-id-alloc = { path = "kernel/libs/sparse-id-alloc" }
+tpm-core = "0.1.4"
 typeflags = { path = "kernel/libs/typeflags" }
 typeflags-util = { path = "kernel/libs/typeflags-util" }
 xarray = { path = "kernel/libs/xarray" }
