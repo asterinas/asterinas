@@ -7,7 +7,7 @@ use aster_core::prelude::*;
 
 use crate::{
     gem::object::DrmGemObject,
-    kms::{objects::KmsObjectId, pixel_format::DrmPixelFormat},
+    kms::{objects::DrmKmsObjectId, pixel_format::DrmPixelFormat},
     utils::DrmSize,
 };
 
@@ -19,7 +19,7 @@ use crate::{
 // TODO: Support framebuffers backed by multiple planes.
 #[derive(Debug)]
 pub struct DrmFramebuffer {
-    id: KmsObjectId,
+    id: DrmKmsObjectId,
     size: DrmSize,
     pixel_format: DrmPixelFormat,
     #[expect(dead_code)]
@@ -35,7 +35,7 @@ impl DrmFramebuffer {
     /// Creates a single-plane framebuffer over the supplied GEM object.
     #[expect(clippy::too_many_arguments)]
     pub(crate) fn new(
-        id: KmsObjectId,
+        id: DrmKmsObjectId,
         size: DrmSize,
         pixel_format: DrmPixelFormat,
         flags: DrmFramebufferFlags,
@@ -92,8 +92,8 @@ impl DrmFramebuffer {
         })
     }
 
-    pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+    pub(crate) fn id(&self) -> u32 {
+        self.id.value()
     }
 
     pub fn size(&self) -> DrmSize {
