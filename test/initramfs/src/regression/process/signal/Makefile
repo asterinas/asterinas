@@ -11,3 +11,5 @@ C_OBJS_FILTER += \
 endif
 
 include ../../common/Makefile
+
+$(OBJ_OUTPUT_DIR)/signalfd_sender_pid: EXTRA_C_FLAGS += -static
