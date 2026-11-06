@@ -3,7 +3,7 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::fmt::Debug;
 
-use aster_pci::{cfg_space::BarAccess, common_device::PciCommonDevice};
+use aster_pci::{bus::PciDevice, cfg_space::BarAccess};
 use aster_util::safe_ptr::SafePtr;
 use ostd::{
     bus::BusProbeError,
@@ -63,7 +63,7 @@ const DEVICE_CONFIG_OFFSET_WITH_MSIX: usize = 0x18;
 
 pub(crate) struct VirtioPciLegacyTransport {
     device_type: VirtioDeviceType,
-    common_device: PciCommonDevice,
+    common_device: Arc<PciDevice>,
     config_bar: BarAccess,
     num_queues: u16,
     msix_manager: VirtioMsixManager,
@@ -72,10 +72,7 @@ pub(crate) struct VirtioPciLegacyTransport {
 impl VirtioPciLegacyTransport {
     pub(crate) const QUEUE_ALIGN_SIZE: usize = 4096;
 
-    #[expect(clippy::result_large_err)]
-    pub(super) fn new(
-        mut common_device: PciCommonDevice,
-    ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
+    pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, BusProbeError> {
         let device_type = match common_device.device_id().device_id {
             0x1000 => VirtioDeviceType::Network,
             0x1001 => VirtioDeviceType::Block,
@@ -89,14 +86,14 @@ impl VirtioPciLegacyTransport {
                     "Unrecognized virtio-pci device ID: {:x?}",
                     common_device.device_id().device_id
                 );
-                return Err((BusProbeError::ConfigurationSpaceError, common_device));
+                return Err(BusProbeError::ConfigurationSpaceError);
             }
         };
         info!("Found device: {:?}", device_type);
 
         let config_bar = common_device
-            .bar_manager_mut()
-            .bar_mut(0)
+            .bar_manager()
+            .bar(0)
             .unwrap()
             .acquire()
             .unwrap();
@@ -115,7 +112,7 @@ impl VirtioPciLegacyTransport {
 
         // TODO: Support interrupt without MSI-X.
         let Ok(Some(msix)) = common_device.acquire_msix_capability() else {
-            return Err((BusProbeError::ConfigurationSpaceError, common_device));
+            return Err(BusProbeError::ConfigurationSpaceError);
         };
         let msix_manager = VirtioMsixManager::new(msix);
 
