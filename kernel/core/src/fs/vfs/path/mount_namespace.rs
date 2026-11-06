@@ -324,8 +324,15 @@ impl Drop for MountNamespace {
         worklist.push_back(root.clone());
         while let Some(current_mount) = worklist.pop_front() {
             current_mount.clear_propagation(&mut topology_guard);
-            let mut children = current_mount.children.write();
-            for (_, child) in children.drain() {
+            let children: Vec<_> = current_mount
+                .children
+                .write()
+                .drain()
+                .map(|(_, child)| child)
+                .collect();
+            // Clearing a topology link may drop the last reference to a mountpoint
+            // dentry, so do it after releasing the `children` lock.
+            for child in children {
                 child.clear_topology_link(&mut topology_guard);
                 worklist.push_back(child);
             }

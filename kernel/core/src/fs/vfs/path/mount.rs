@@ -398,13 +398,18 @@ impl Mount {
                         clone_mount_fn(&old_child_mount, old_child_mount.root_dentry())?;
 
                     let key = mountpoint.key();
-                    new_parent_mount
+                    let replaced = new_parent_mount
                         .children
                         .write()
                         .insert(key, new_child_mount.clone());
                     new_child_mount.set_parent(Some(&new_parent_mount));
                     new_child_mount.set_mountpoint(mountpoint);
                     cloned_mounts.push((old_child_mount, new_child_mount));
+
+                    // The replaced mount may hold the last reference to a dentry, and the
+                    // reclaim operation may sleep, so do not release it under the `children`
+                    // lock.
+                    drop(replaced);
                 }
                 work_idx += 1;
             }
@@ -543,13 +548,17 @@ impl Mount {
     /// Attaches the mount node to the mountpoint without propagation.
     fn attach_to_path(&self, target_path: Path, _topology: &mut MountTopology) {
         let key = target_path.dentry.key();
-        target_path
+        let replaced = target_path
             .mount_node()
             .children
             .write()
             .insert(key, self.this());
         self.set_parent(Some(target_path.mount_node()));
         self.set_mountpoint(target_path.dentry);
+
+        // The replaced mount may hold the last reference to a dentry, and the reclaim operation
+        // may sleep, so do not release it under the `children` lock.
+        drop(replaced);
     }
 
     /// Grafts the mount node tree to the mountpoint without propagation.
@@ -676,23 +685,31 @@ impl Mount {
 
     /// Sets the mountpoint.
     fn set_mountpoint(&self, dentry: Arc<Dentry>) {
-        let mut mountpoint = self.mountpoint.write();
-        if let Some(mountpoint) = mountpoint.as_deref() {
-            mountpoint.dec_mount_count();
-        }
+        // The old dentry may hold the last reference to its inode, and reclaiming the inode may
+        // sleep, so it is dropped at the end of this function, after the `mountpoint` lock.
+        let _old = {
+            let mut mountpoint = self.mountpoint.write();
+            if let Some(old) = mountpoint.as_deref() {
+                old.dec_mount_count();
+            }
 
-        dentry.inc_mount_count();
-        *mountpoint = Some(dentry);
+            dentry.inc_mount_count();
+            mountpoint.replace(dentry)
+        };
     }
 
     /// Clears the mountpoint.
     fn clear_mountpoint(&self) {
-        let mut mountpoint = self.mountpoint.write();
-        if let Some(mountpoint) = mountpoint.as_deref() {
-            mountpoint.dec_mount_count();
-        }
+        // The old dentry may hold the last reference to its inode, and reclaiming the inode may
+        // sleep, so it is dropped at the end of this function, after the `mountpoint` lock.
+        let _old = {
+            let mut mountpoint = self.mountpoint.write();
+            if let Some(old) = mountpoint.as_deref() {
+                old.dec_mount_count();
+            }
 
-        *mountpoint = None;
+            mountpoint.take()
+        };
     }
 
     /// Flushes all pending filesystem metadata and cached file data to the device.
