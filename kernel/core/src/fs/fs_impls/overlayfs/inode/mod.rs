@@ -355,8 +355,9 @@ impl Inode for OverlayInode {
         self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
+        creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        self.open_impl(self_dentry, access_mode, status_flags)
+        self.open_impl(self_dentry, access_mode, status_flags, creation_flags)
     }
 
     fn seek_end(&self) -> Option<usize> {

@@ -365,7 +365,7 @@ impl<D: TtyDriver> Device for Tty<D> {
         self.driver.devtmpfs_meta(self.index)
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+    fn open(&self, _context: &crate::device::DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>> {
         D::open(self.weak_self.upgrade().unwrap())
     }
 }

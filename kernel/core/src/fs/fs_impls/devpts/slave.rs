@@ -155,7 +155,11 @@ impl Inode for PtySlaveInode {
         _self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
+        creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        Some(self.device.open())
+        Some(self.device.open(&crate::device::DeviceOpenContext::new(
+            access_mode,
+            creation_flags,
+        )))
     }
 }
