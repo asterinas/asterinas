@@ -478,14 +478,14 @@ impl Vmo {
         &self.rmap
     }
 
-    /// Decommits anonymous pages in the specified byte range.
-    pub(super) fn decommit_anon_pages(
+    /// Decommits pages with no live backend in the specified byte range.
+    pub(super) fn decommit_unbacked_pages(
         &self,
         mut locked_rmap: MutexGuard<Rmap>,
         mut locked_pages: LockedXArray<CachePage>,
         range: Range<usize>,
     ) -> Result<()> {
-        debug_assert!(!self.has_backend());
+        debug_assert!(self.as_backed_vmo().is_none());
 
         let page_idx_range = get_page_idx_range(&range);
         let mut cursor = locked_pages.cursor_mut(page_idx_range.start as u64);
