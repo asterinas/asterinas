@@ -113,6 +113,39 @@ impl InodeHandle {
         (inode.as_ref(), is_offset_aware)
     }
 
+    fn write_offset(
+        &self,
+        offset: usize,
+        reader: &VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
+        if !status_flags.contains(StatusFlags::O_APPEND) || self.open_file.is_some() {
+            return Ok(offset);
+        }
+
+        // FIXME: `O_APPEND` should ensure that new content is appended even if another process
+        // is writing to the file concurrently.
+        let eof = self.path().size();
+        if reader.has_remain() && eof >= isize::MAX as usize {
+            return_errno_with_message!(Errno::EFBIG, "the file size exceeds the maximum");
+        }
+        Ok(eof)
+    }
+
+    fn write_data_at(
+        &self,
+        file_ops: &dyn FileOps,
+        offset: usize,
+        reader: &mut VmReader,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        if reader.has_remain() {
+            clear_file_priv(self.path().dentry())?;
+        }
+        file_ops.write_at(offset, reader, status_flags)
+    }
+
     /// Returns the `FileOps` for positional I/O, rejecting files
     /// that do not support `pread`/`pwrite`.
     fn file_ops_for_positional_io(&self) -> Result<&dyn FileOps> {
@@ -304,28 +337,31 @@ impl FileLike for InodeHandle {
         if self.status_flags().contains(StatusFlags::O_PATH) || !self.access_mode().is_writable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
-        if reader.remain() > 0 {
-            clear_file_priv(self.path().dentry())?;
-        }
 
         let (file_ops, is_offset_aware) = self.file_ops_and_is_offset_aware();
         let status_flags = self.status_flags();
 
         if !is_offset_aware {
-            return file_ops.write_at(0, reader, status_flags);
+            return self.write_data_at(file_ops, 0, reader, status_flags);
         }
 
         let mut offset = self.offset.lock();
 
-        // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
-        if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
-            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
-            // is writing to the file concurrently.
-            *offset = self.path().size();
+        if offset
+            .checked_add(reader.remain())
+            .is_none_or(|end| end > isize::MAX as usize)
+        {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the write range exceeds the signed file offset limit"
+            );
         }
 
-        let len = file_ops.write_at(*offset, reader, status_flags)?;
-        *offset += len;
+        let write_offset = self.write_offset(*offset, reader, status_flags)?;
+        let len = self.write_data_at(file_ops, write_offset, reader, status_flags)?;
+        if len > 0 {
+            *offset = write_offset + len;
+        }
 
         Ok(len)
     }
@@ -341,26 +377,15 @@ impl FileLike for InodeHandle {
         file_ops.read_at(offset, writer, status_flags)
     }
 
-    fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let file_ops = self.file_ops_for_positional_io()?;
         if self.status_flags().contains(StatusFlags::O_PATH) || !self.access_mode().is_writable() {
             return_errno_with_message!(Errno::EBADF, "the file is not opened writable");
         }
-        if reader.remain() > 0 {
-            clear_file_priv(self.path().dentry())?;
-        }
 
         let status_flags = self.status_flags();
-
-        // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
-        if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
-            // If the file has the `O_APPEND` flag, the offset is ignored.
-            // FIXME: `O_APPEND` should ensure that new content is appended even if another process
-            // is writing to the file concurrently.
-            offset = self.path().size();
-        }
-
-        file_ops.write_at(offset, reader, status_flags)
+        let write_offset = self.write_offset(offset, reader, status_flags)?;
+        self.write_data_at(file_ops, write_offset, reader, status_flags)
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
