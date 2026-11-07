@@ -43,7 +43,7 @@ pub trait KernelHooks: Send + Sync + 'static {
     fn delete_devnode(&self, request: &DevNodeRequest) -> core::result::Result<(), HookError>;
 
     /// Broadcasts a serialized uevent to user space, taking ownership of its payload.
-    fn broadcast_uevent(&self, _payload: Vec<u8>) {}
+    fn broadcast_uevent(&self, payload: Vec<u8>);
 }
 
 /// A request to create or delete a `/dev` node.
