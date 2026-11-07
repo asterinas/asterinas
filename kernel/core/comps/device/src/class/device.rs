@@ -11,9 +11,10 @@ use core::ops::Deref;
 use crate::{
     class::{Class, ClassHandle},
     common::{
-        AnyDevice, DeclaredParts, DevNode, DeviceBase, DeviceBuilder, DeviceInternals, Subsystem,
-        SysStr, attr::TyErasedAttr, impl_device_node,
+        AnyDevice, DeclaredParts, DevNode, DeviceBase, DeviceBuilder, DeviceInternals, Result,
+        Subsystem, SysStr, attr::TyErasedAttr, impl_device_node,
     },
+    uevent::UeventVars,
 };
 
 /// A device in class `C`: the interface user space sees.
@@ -103,10 +104,6 @@ impl<C: Class> DeviceInternals for ClassDevice<C> {
         &self.base
     }
 
-    fn type_name(&self) -> Option<&'static str> {
-        self.declared.type_name()
-    }
-
     fn attr_groups(&self) -> Vec<TyErasedAttr> {
         self.declared.attr_groups(self.class.class().dev_attrs())
     }
@@ -131,6 +128,14 @@ impl<C: Class> DeviceInternals for ClassDevice<C> {
 
     fn wants_device_link(&self) -> bool {
         self.declared.has_device_link()
+    }
+
+    fn append_uevent_vars(&self, vars: &mut UeventVars) -> Result<()> {
+        if let Some(name) = self.declared.type_name() {
+            vars.add("DEVTYPE", name)?;
+        }
+        self.class.class().append_uevent_vars(self, vars)?;
+        self.declared.append_uevent_vars(self, vars)
     }
 }
 

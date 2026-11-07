@@ -90,6 +90,8 @@ pub enum Error {
     InvalidName,
     /// Resource is unavailable
     ResourceUnavailable,
+    /// The attribute memory budget is exhausted.
+    MemoryBudgetExhausted,
     /// Attribute operation failed
     AttributeError,
     /// Permission denied for operation
@@ -113,6 +115,7 @@ impl core::fmt::Display for Error {
             Error::InvalidOperation => write!(f, "invalid operation occurred"),
             Error::InvalidName => write!(f, "invalid name"),
             Error::ResourceUnavailable => write!(f, "resource is unavailable"),
+            Error::MemoryBudgetExhausted => write!(f, "attribute memory budget is exhausted"),
             Error::AttributeError => write!(f, "attribute error"),
             Error::PermissionDenied => write!(f, "permission denied for operation"),
             Error::InternalError(msg) => write!(f, "internal error: {}", msg),

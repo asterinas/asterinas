@@ -16,6 +16,7 @@
 //! - If you are adding a class or a class device, see [`class`].
 //! - If you are interested in the machinery every device shares, see [`common`].
 //! - If you are tracing how a device becomes a `/dev` node, see [`hooks`].
+//! - If you are implementing or sending device notifications, see [`uevent`].
 //!
 //! Every device is registered to or unregistered from the device model
 //! through [`add_device`] and [`remove_device`].
@@ -38,6 +39,7 @@ pub mod common;
 pub mod hooks;
 #[cfg(ktest)]
 mod test;
+pub mod uevent;
 
 use component::{ComponentInitError, init_component};
 
