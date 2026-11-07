@@ -20,6 +20,8 @@ use crate::common::{DevNum, Error, Result, SysStr};
 /// The hooks must be ready to handle requests when installed.
 /// Node creation requests are queued before installation;
 /// removing a device cancels its queued request.
+/// Uevents are not queued or replayed,
+/// so events sent before installation are lost.
 /// Calling this a second time has no effect.
 pub fn install_hooks(hooks: &'static dyn KernelHooks) {
     HOOKS.install(hooks);
@@ -39,6 +41,11 @@ pub trait KernelHooks: Send + Sync + 'static {
     /// Deletes a `/dev` node created earlier.
     /// The request is the one that created the node.
     fn delete_devnode(&self, request: &DevNodeRequest) -> core::result::Result<(), HookError>;
+
+    /// Broadcasts a serialized uevent to user space, taking ownership of its payload.
+    fn broadcast_uevent(&self, _payload: Vec<u8>) -> core::result::Result<(), HookError> {
+        Ok(())
+    }
 }
 
 /// A request to create or delete a `/dev` node.
@@ -48,8 +55,12 @@ pub struct DevNodeRequest {
     pub devnum: DevNum,
     /// The path of the node relative to `/dev`, e.g. `null` or `input/event0`.
     pub path: SysStr,
-    /// The permission bits of the node.
-    pub mode: u16,
+    /// An optional override for the device node's permissions.
+    ///
+    /// `None` uses the devtmpfs default.
+    /// `Some(mode)` explicitly sets the permissions,
+    /// even when `mode` is zero or matches the default.
+    pub mode: Option<u16>,
 }
 
 /// An error from a kernel hook.
@@ -62,6 +73,13 @@ pub(crate) fn create_devnode(request: DevNodeRequest) -> Result<()> {
 
 pub(crate) fn delete_devnode(request: &DevNodeRequest) -> Result<()> {
     HOOKS.delete_devnode(request)
+}
+
+pub(crate) fn broadcast_uevent(payload: Vec<u8>) -> Result<()> {
+    match HOOKS.hooks.get() {
+        Some(hooks) => hooks.broadcast_uevent(payload).map_err(|_| Error::Hook),
+        None => Ok(()),
+    }
 }
 
 /// The hooks, once installed, and the requests waiting for them.

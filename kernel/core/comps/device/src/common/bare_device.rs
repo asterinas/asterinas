@@ -8,7 +8,7 @@ use alloc::{
 };
 
 use super::{AnyDevice, DevNode, DeviceBase, DeviceInternals, impl_device_node};
-use crate::common::{Subsystem, SysStr, attr::TyErasedAttr};
+use crate::common::{Result, Subsystem, SysStr, attr::TyErasedAttr};
 
 /// A device with neither bus nor class, such as a host bridge or a firmware root.
 ///
@@ -57,16 +57,16 @@ impl DeviceInternals for BareDevice {
         &self.base
     }
 
-    fn type_name(&self) -> Option<&'static str> {
-        None
-    }
-
     fn attr_groups(&self) -> Vec<TyErasedAttr> {
         Vec::new()
     }
 
     fn devnode_override(&self) -> Option<DevNode> {
         None
+    }
+
+    fn append_uevent_vars(&self, _vars: &mut crate::uevent::UeventVars) -> Result<()> {
+        Ok(())
     }
 }
 

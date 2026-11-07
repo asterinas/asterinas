@@ -47,12 +47,15 @@ pub use self::{
     device::{BusDevice, BusDeviceBuilder},
     driver::{Driver, DriverHandle},
 };
-use crate::common::{
-    AnyDevice, DeviceInternals, Error, Result, SysStr,
-    attr::Attr,
-    node::{Dir, DirAttrOps, SysTreeEdit, add_link, remove_link},
-    registry,
-    subsystem::SubsystemOps,
+use crate::{
+    common::{
+        AnyDevice, DeviceInternals, Error, Result, SysStr,
+        attr::Attr,
+        node::{Dir, DirAttrOps, SysTreeEdit, add_link, remove_link},
+        registry,
+        subsystem::SubsystemOps,
+    },
+    uevent::{self, UeventAction, UeventVars},
 };
 
 /// A kind of bus.
@@ -73,6 +76,16 @@ pub trait Bus: Sized + Send + Sync + 'static {
 
     /// Returns the attributes shared by all devices on this bus.
     fn dev_attrs(&self) -> &'static [Attr<BusDevice<Self>>];
+
+    /// Appends bus-specific entries to a device's uevent environment.
+    ///
+    /// Called for automatic and explicit events and for `uevent` reads.
+    /// Do not add `DRIVER`; the model derives it.
+    ///
+    /// Must not bind, unbind, or remove the same device,
+    /// or read or write its driver-provided attributes,
+    /// because automatic bind/unbind events hold the device's binding lock.
+    fn append_uevent_vars(&self, dev: &BusDevice<Self>, vars: &mut UeventVars) -> Result<()>;
 }
 
 /// Registers a bus, creating `/sys/bus/<name>/{devices,drivers}`.
@@ -242,6 +255,13 @@ impl<B: Bus> BusHandle<B> {
         } else {
             state.abort_binding(dev);
         }
+        drop(state);
+        if result.is_ok()
+            && let Err(error) =
+                uevent::emit_unchecked(dev.as_ref(), UeventAction::Bind, UeventVars::new())
+        {
+            ostd::warn!("cannot emit bind for {}: {error}", dev.name());
+        }
         result
     }
 
@@ -294,6 +314,11 @@ impl<B: Bus> BusHandle<B> {
         driver.on_release(dev);
         dev.take_driver();
         driver.state().lock().forget_bound(dev);
+        if let Err(error) =
+            uevent::emit_unchecked(dev.as_ref(), UeventAction::Unbind, UeventVars::new())
+        {
+            ostd::warn!("cannot emit unbind for {}: {error}", dev.name());
+        }
         Ok(())
     }
 
