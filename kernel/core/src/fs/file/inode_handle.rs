@@ -23,7 +23,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     util::ioctl::RawIoctl,
-    vm::vmar::FileMmapRequest,
+    vm::{page_cache::Readahead, vmar::FileMmapRequest},
 };
 
 pub(crate) struct InodeHandle {
@@ -32,6 +32,7 @@ pub(crate) struct InodeHandle {
     /// and `ioctl` will be provided by the per-open file object instead of `path`.
     open_file: Option<Box<dyn PerOpenFileOps>>,
     offset: Mutex<usize>,
+    readahead: Readahead,
     /// Path and common states of the handle.
     //
     // This field is placed last so that its `Path` keeps the corresponding filesystem alive
@@ -90,6 +91,7 @@ impl InodeHandle {
         Ok(Self {
             open_file,
             offset: Mutex::new(0),
+            readahead: Readahead::default(),
             common: FileCommon::new(path, access_mode, status_flags),
         })
     }
@@ -271,6 +273,37 @@ impl InodeHandle {
 
         Ok((open_file.as_ref() as &dyn Any).downcast_ref::<T>())
     }
+
+    /// Returns the readahead state eligible for this buffered read.
+    fn readahead_for_read(
+        &self,
+        writer: &VmWriter,
+        status_flags: StatusFlags,
+    ) -> Option<&Readahead> {
+        if !writer.has_avail() || status_flags.contains(StatusFlags::O_DIRECT) {
+            return None;
+        }
+
+        let readahead = self.readahead()?;
+        let inode = self.path().inode();
+        (inode.type_().is_regular_file() && inode.page_cache().is_some()).then_some(readahead)
+    }
+
+    fn read_at_impl(
+        &self,
+        file_ops: &dyn FileOps,
+        offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+    ) -> Result<usize> {
+        let Some(readahead) = self.readahead_for_read(writer, status_flags) else {
+            return file_ops.read_at(offset, writer, status_flags);
+        };
+
+        let len = file_ops.read_at_ahead(offset, writer, status_flags, readahead)?;
+        readahead.finish_read(offset, len);
+        Ok(len)
+    }
 }
 
 impl Pollable for InodeHandle {
@@ -302,10 +335,8 @@ impl FileLike for InodeHandle {
         }
 
         let mut offset = self.offset.lock();
-
-        let len = file_ops.read_at(*offset, writer, status_flags)?;
+        let len = self.read_at_impl(file_ops, *offset, writer, status_flags)?;
         *offset += len;
-
         Ok(len)
     }
 
@@ -347,7 +378,7 @@ impl FileLike for InodeHandle {
 
         let status_flags = self.status_flags();
 
-        file_ops.read_at(offset, writer, status_flags)
+        self.read_at_impl(file_ops, offset, writer, status_flags)
     }
 
     fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
@@ -401,6 +432,13 @@ impl FileLike for InodeHandle {
         } else {
             return_errno_with_message!(Errno::ENODEV, "the file is not mappable");
         }
+    }
+
+    fn readahead(&self) -> Option<&Readahead> {
+        self.open_file
+            .as_ref()
+            .is_none_or(|open_file| open_file.supports_readahead())
+            .then_some(&self.readahead)
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -615,6 +653,11 @@ pub trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
     /// Implementations that support synchronization must override this method.
     fn sync(&self, _mode: SyncMode) -> Result<()> {
         return_errno_with_message!(Errno::EINVAL, "the file does not support synchronization")
+    }
+
+    /// Returns whether this opened file supports generic page-cache readahead.
+    fn supports_readahead(&self) -> bool {
+        false
     }
 }
 

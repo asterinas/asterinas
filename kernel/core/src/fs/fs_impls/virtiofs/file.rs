@@ -18,7 +18,7 @@ use crate::{
     prelude::*,
     process::signal::{PollHandle, Pollable},
     thread::work_queue::{self, WorkPriority},
-    vm::vmar::FileMmapRequest,
+    vm::{page_cache::Readahead, vmar::FileMmapRequest},
 };
 
 /// A per-open file object backed by a FUSE file handle.
@@ -45,6 +45,25 @@ impl VirtioFsFile {
             inode,
             open_handle,
             cache_policy,
+        }
+    }
+
+    fn read_at_impl(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+        readahead: Option<&Readahead>,
+    ) -> Result<usize> {
+        let fh = self.open_handle.fh();
+        let file_flags = self.open_handle.access_mode() as u32 | status_flags.bits();
+
+        if self.cache_policy == CachePolicy::Cached && !status_flags.contains(StatusFlags::O_DIRECT)
+        {
+            self.inode
+                .cached_read_at(offset, writer, fh, file_flags, readahead)
+        } else {
+            self.inode.direct_read_at(offset, writer, fh, file_flags)
         }
     }
 }
@@ -94,15 +113,17 @@ impl FileOps for VirtioFsFile {
         writer: &mut VmWriter,
         status_flags: StatusFlags,
     ) -> Result<usize> {
-        let fh = self.open_handle.fh();
-        let file_flags = self.open_handle.access_mode() as u32 | status_flags.bits();
+        self.read_at_impl(offset, writer, status_flags, None)
+    }
 
-        if self.cache_policy == CachePolicy::Cached && !status_flags.contains(StatusFlags::O_DIRECT)
-        {
-            self.inode.cached_read_at(offset, writer, fh, file_flags)
-        } else {
-            self.inode.direct_read_at(offset, writer, fh, file_flags)
-        }
+    fn read_at_ahead(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+        readahead: &Readahead,
+    ) -> Result<usize> {
+        self.read_at_impl(offset, writer, status_flags, Some(readahead))
     }
 
     fn write_at(
@@ -203,6 +224,10 @@ impl PerOpenFileOps for VirtioFsFile {
         )?;
 
         Ok(())
+    }
+
+    fn supports_readahead(&self) -> bool {
+        self.cache_policy == CachePolicy::Cached
     }
 }
 

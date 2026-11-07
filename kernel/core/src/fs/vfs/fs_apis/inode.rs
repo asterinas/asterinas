@@ -30,7 +30,7 @@ use crate::{
     },
     security::lsm::hooks as lsm_hooks,
     time::clocks::RealTimeCoarseClock,
-    vm::page_cache::Vmo,
+    vm::page_cache::{Readahead, Vmo},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -346,6 +346,21 @@ pub trait FileOps {
         writer: &mut VmWriter,
         status_flags: StatusFlags,
     ) -> Result<usize>;
+
+    /// Reads data using the open file's readahead state for buffered I/O.
+    ///
+    /// The default implementation ignores `readahead` and delegates to
+    /// [`FileOps::read_at`]. Files that support readahead should override this
+    /// method.
+    fn read_at_ahead(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
+        _readahead: &Readahead,
+    ) -> Result<usize> {
+        self.read_at(offset, writer, status_flags)
+    }
 
     /// Writes data from the given `VmReader` into the file.
     fn write_at(

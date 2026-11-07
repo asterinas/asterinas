@@ -244,7 +244,7 @@ impl FileOps for PseudoInode {
         &self,
         _offset: usize,
         _writer: &mut VmWriter,
-        _status: StatusFlags,
+        _status_flags: StatusFlags,
     ) -> Result<usize> {
         return_errno_with_message!(
             Errno::ESPIPE,
