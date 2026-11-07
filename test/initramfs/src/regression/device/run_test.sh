@@ -29,3 +29,4 @@ set -e
 ./hwrng
 ./nvme
 ./random
+./uevent
