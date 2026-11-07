@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Netlink Route Socket.
+//! Netlink route socket.
 
 pub(super) use message::RtnlMessage;
 
