@@ -47,6 +47,11 @@ impl KernelHooks for Hooks {
             HookError
         })
     }
+
+    fn broadcast_uevent(&self, payload: Vec<u8>) -> core::result::Result<(), HookError> {
+        crate::net::socket::netlink::broadcast_uevent(payload);
+        Ok(())
+    }
 }
 
 fn to_devtmpfs_node(request: &DevNodeRequest) -> Result<DevtmpfsNode> {
