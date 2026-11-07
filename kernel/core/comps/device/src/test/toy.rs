@@ -57,6 +57,14 @@ impl Bus for ToyBus {
     fn dev_attrs(&self) -> &'static [Attr<BusDevice<Self>>] {
         TOY_DEV_ATTRS
     }
+
+    fn append_uevent_vars(
+        &self,
+        _dev: &BusDevice<Self>,
+        _vars: &mut crate::uevent::UeventVars,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 pub(super) static DISK_TYPE: DeviceType<BusDevice<ToyBus>> = DeviceType::named("disk");
@@ -128,6 +136,14 @@ impl Class for ToyBlock {
             path: None,
             mode: Some(0o660),
         })
+    }
+
+    fn append_uevent_vars(
+        &self,
+        _dev: &ClassDevice<Self>,
+        _vars: &mut crate::uevent::UeventVars,
+    ) -> Result<()> {
+        Ok(())
     }
 }
 

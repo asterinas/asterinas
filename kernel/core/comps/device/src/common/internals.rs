@@ -22,6 +22,7 @@ use crate::{
         node::{GlueDirs, SysTreeEdit},
     },
     hooks::DevNodeRequest,
+    uevent::UeventVars,
 };
 
 /// What the registration sequence asks a device for.
@@ -31,14 +32,14 @@ pub trait DeviceInternals {
     /// Returns the shared device state.
     fn base(&self) -> &DeviceBase;
 
-    /// Returns the device type name.
-    fn type_name(&self) -> Option<&'static str>;
-
     /// Returns type-erased attributes contributed by the subsystem, the device type, and the device.
     fn attr_groups(&self) -> Vec<TyErasedAttr>;
 
     /// Returns the `/dev` node overrides from the device type and the subsystem.
     fn devnode_override(&self) -> Option<DevNode>;
+
+    /// Appends device type, bound driver, and subsystem-specific uevent entries.
+    fn append_uevent_vars(&self, vars: &mut UeventVars) -> Result<()>;
 
     /// Returns whether the device gets a `device` symlink to its parent
     /// (class devices only; a device type may opt out).
@@ -142,7 +143,7 @@ impl DeviceBase {
         &self.links
     }
 
-    pub(super) fn devnode(&self) -> &Mutex<Option<DevNodeRequest>> {
+    pub(crate) fn devnode(&self) -> &Mutex<Option<DevNodeRequest>> {
         &self.devnode
     }
 }
