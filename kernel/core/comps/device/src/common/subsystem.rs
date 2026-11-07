@@ -49,7 +49,7 @@ impl Subsystem {
     }
 
     /// Returns the bus or class name, if any.
-    pub fn name(&self) -> Option<&str> {
+    pub fn name(&self) -> Option<&'static str> {
         self.ops.as_ref().map(|ops| ops.name())
     }
 
