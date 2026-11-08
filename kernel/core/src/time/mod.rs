@@ -5,7 +5,6 @@
 pub(crate) use core::{Clock, timer};
 
 use ::core::time::Duration;
-pub(crate) use system_time::{START_TIME, SystemTime};
 pub(crate) use timer::{Timer, TimerManager};
 
 use crate::prelude::*;
@@ -14,7 +13,6 @@ pub(crate) mod clocks;
 mod core;
 pub(crate) mod cpu_time_stats;
 mod softirq;
-mod system_time;
 pub(crate) mod timerfd;
 pub(crate) mod wait;
 
@@ -28,7 +26,6 @@ const USEC_PER_SEC: i64 = 1_000_000;
 pub(crate) const NSEC_PER_SEC: i64 = 1_000_000_000;
 
 pub(super) fn init() {
-    system_time::init();
     clocks::init();
     softirq::init();
     cpu_time_stats::init();
@@ -49,16 +46,7 @@ impl From<Duration> for timespec_t {
     fn from(duration: Duration) -> timespec_t {
         let sec = duration.as_secs() as time_t;
         let nsec = duration.subsec_nanos() as i64;
-        debug_assert!(sec >= 0); // nsec >= 0 always holds
-        timespec_t { sec, nsec }
-    }
-}
-
-impl From<timeval_t> for timespec_t {
-    fn from(timeval: timeval_t) -> timespec_t {
-        let sec = timeval.sec;
-        let nsec = timeval.usec * NSEC_PER_USEC;
-        debug_assert!(sec >= 0); // nsec >= 0 always holds
+        debug_assert!(sec >= 0); // `nsec >= 0` always holds.
         timespec_t { sec, nsec }
     }
 }
@@ -70,7 +58,6 @@ impl TryFrom<timespec_t> for Duration {
         if value.sec < 0 || value.nsec < 0 {
             return_errno_with_message!(Errno::EINVAL, "timesepc_t cannot be negative");
         }
-
         if value.nsec >= NSEC_PER_SEC {
             // The value of nanoseconds must be strictly less than 10^9,
             // otherwise the value for seconds should be set.
@@ -107,7 +94,7 @@ impl From<Duration> for timeval_t {
     fn from(duration: Duration) -> timeval_t {
         let sec = duration.as_secs() as time_t;
         let usec = duration.subsec_micros() as suseconds_t;
-        debug_assert!(sec >= 0); // usec >= 0 always holds
+        debug_assert!(sec >= 0); // `usec >= 0` always holds.
         timeval_t { sec, usec }
     }
 }
@@ -120,9 +107,9 @@ impl TryFrom<timeval_t> for Duration {
             return_errno_with_message!(Errno::EINVAL, "timeval_t cannot be negative");
         }
         if timeval.usec >= USEC_PER_SEC {
-            // The value of microsecond cannot exceed 10^6,
+            // The value of microseconds must be strictly less than 10^6,
             // otherwise the value for seconds should be set.
-            return_errno_with_message!(Errno::EINVAL, "nsec is not normalized");
+            return_errno_with_message!(Errno::EINVAL, "usec is not normalized");
         }
 
         Ok(Duration::new(
@@ -132,7 +119,7 @@ impl TryFrom<timeval_t> for Duration {
     }
 }
 
-/// The various flags for setting POSIX.1b interval timers:
+// The various flags for setting POSIX.1b interval timers:
 pub(crate) const TIMER_ABSTIME: i32 = 0x01;
 
 /// Unix time measures time by the number of seconds that have elapsed since

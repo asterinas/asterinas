@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    fs::file::file_table::{FdFlags, RawFileDesc, get_file_fast},
+    fs::file::file_table::{FdFlags, FileTableInsert, RawFileDesc, get_file_fast},
     prelude::*,
     process::{
         PidFile,
@@ -55,10 +55,9 @@ pub(super) fn sys_pidfd_getfd(
         .clone();
 
     // Duplicate the file descriptor into the caller's file descriptor table.
-    let new_fd = {
-        let mut file_table_locked = file_table.unwrap().write();
-        file_table_locked.insert(target_file, FdFlags::CLOEXEC)
-    };
+    let new_fd = file_table
+        .unwrap()
+        .lock_and_insert(target_file, FdFlags::CLOEXEC)?;
 
     Ok(SyscallReturn::Return(new_fd.into()))
 }

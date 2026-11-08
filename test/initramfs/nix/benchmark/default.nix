@@ -80,15 +80,24 @@ rec {
   benchmarkGroup =
     if benchmarkName == "none" then "none" else builtins.head (lib.splitString "/" benchmarkName);
 
+  installBenchmark = name: g: ''
+    # Pack the benchmark's binaries.
+    ${g.install g.pkg}
+
+    # Pack the benchmark's scripts.
+    cp -r $src/${name} $out/
+  '';
+
   installSelected =
     group:
     if group == "none" then
-      ""
+      # "none" means that the user did not specify a benchmark name. However,
+      # if this file is being evaluated, the user has enabled the benchmark
+      # test. In this case, we will include all of the benchmarks because we do
+      # not know which one the user asked for.
+      lib.concatMapAttrsStringSep "\n" installBenchmark benchmarkGroups
     else if benchmarkGroups ? ${group} then
-      let
-        g = benchmarkGroups.${group};
-      in
-      g.install g.pkg
+      installBenchmark group benchmarkGroups.${group}
     else
       throw ("Unknown benchmark group '${group}' (from '${benchmarkName}').");
 
@@ -109,9 +118,6 @@ rec {
 
       # Install the selected group's package.
       ${installSelected benchmarkGroup}
-
-      # Pack the selected group's scripts.
-      ${lib.optionalString (benchmarkGroup != "none") "cp -r $src/${benchmarkGroup} $out/"}
     '';
   };
 }

@@ -271,6 +271,7 @@ impl Header {
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct Flags: u8 {
         const FIN = 1 << 0;
         const SYN = 1 << 1;

@@ -31,22 +31,23 @@ enum PeMachineType {
 
 // The `flags` field choices in PE header.
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct PeFlags: u16 {
-        const RELOCS_STRIPPED           = 1;
-        const EXECUTABLE_IMAGE          = 1 << 1;
-        const LINE_NUMS_STRIPPED        = 1 << 2;
-        const LOCAL_SYMS_STRIPPED       = 1 << 3;
-        const AGGRESSIVE_WS_TRIM         = 1 << 4;
-        const LARGE_ADDRESS_AWARE       = 1 << 5;
-        const SIXTEEN_BIT_MACHINE       = 1 << 6;
-        const BYTES_REVERSED_LO         = 1 << 7;
-        const THIRTY_TWO_BIT_MACHINE    = 1 << 8;
-        const DEBUG_STRIPPED            = 1 << 9;
-        const REMOVABLE_RUN_FROM_SWAP   = 1 << 10;
-        const NET_RUN_FROM_SWAP         = 1 << 11;
-        const SYSTEM                    = 1 << 12;
-        const DLL                       = 1 << 13;
-        const UP_SYSTEM_ONLY            = 1 << 14;
+        const RELOCS_STRIPPED         = 1 << 0;
+        const EXECUTABLE_IMAGE        = 1 << 1;
+        const LINE_NUMS_STRIPPED      = 1 << 2;
+        const LOCAL_SYMS_STRIPPED     = 1 << 3;
+        const AGGRESSIVE_WS_TRIM      = 1 << 4;
+        const LARGE_ADDRESS_AWARE     = 1 << 5;
+        const SIXTEEN_BIT_MACHINE     = 1 << 6;
+        const BYTES_REVERSED_LO       = 1 << 7;
+        const THIRTY_TWO_BIT_MACHINE  = 1 << 8;
+        const DEBUG_STRIPPED          = 1 << 9;
+        const REMOVABLE_RUN_FROM_SWAP = 1 << 10;
+        const NET_RUN_FROM_SWAP       = 1 << 11;
+        const SYSTEM                  = 1 << 12;
+        const DLL                     = 1 << 13;
+        const UP_SYSTEM_ONLY          = 1 << 14;
     }
 }
 
@@ -146,23 +147,24 @@ impl Pe32PlusOptDataDirs {
 // The `flags` field choices in the PE section header.
 // Excluding the alignment flags, which is not bitflags.
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct PeSectionHdrFlags: u32 {
-        const CNT_CODE                  = 1 << 5;
-        const CNT_INITIALIZED_DATA      = 1 << 6;
-        const CNT_UNINITIALIZED_DATA    = 1 << 7;
-        const LNK_INFO                  = 1 << 9;
-        const LNK_REMOVE                = 1 << 11;
-        const LNK_COMDAT                = 1 << 12;
-        const GPREL	                    = 1 << 15;
-        const MEM_PURGEABLE             = 1 << 16;
-        const LNK_NRELOC_OVFL           = 1 << 24;
-        const MEM_DISCARDABLE           = 1 << 25;
-        const MEM_NOT_CACHED            = 1 << 26;
-        const MEM_NOT_PAGED             = 1 << 27;
-        const MEM_SHARED                = 1 << 28;
-        const MEM_EXECUTE               = 1 << 29;
-        const MEM_READ                  = 1 << 30;
-        const MEM_WRITE                 = 1 << 31;
+        const CNT_CODE               = 1 << 5;
+        const CNT_INITIALIZED_DATA   = 1 << 6;
+        const CNT_UNINITIALIZED_DATA = 1 << 7;
+        const LNK_INFO               = 1 << 9;
+        const LNK_REMOVE             = 1 << 11;
+        const LNK_COMDAT             = 1 << 12;
+        const GPREL                  = 1 << 15;
+        const MEM_PURGEABLE          = 1 << 16;
+        const LNK_NRELOC_OVFL        = 1 << 24;
+        const MEM_DISCARDABLE        = 1 << 25;
+        const MEM_NOT_CACHED         = 1 << 26;
+        const MEM_NOT_PAGED          = 1 << 27;
+        const MEM_SHARED             = 1 << 28;
+        const MEM_EXECUTE            = 1 << 29;
+        const MEM_READ               = 1 << 30;
+        const MEM_WRITE              = 1 << 31;
     }
 }
 
@@ -198,7 +200,7 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8]) -> Vec<u8> {
         symbols: 1, // I don't know why, Linux header.S says it's 1
         opt_hdr_size: (size_of::<Pe32PlusOptHdr>() + size_of::<Pe32PlusOptDataDirs>()) as u16,
         flags: (PeFlags::EXECUTABLE_IMAGE | PeFlags::DEBUG_STRIPPED | PeFlags::LINE_NUMS_STRIPPED)
-            .bits,
+            .bits(),
     };
 
     let sec_hdrs = build_pe_sec_headers_from(&elf);

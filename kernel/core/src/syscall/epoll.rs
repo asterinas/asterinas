@@ -12,7 +12,7 @@ use crate::{
     events::{EpollCtl, EpollEvent, EpollFile, EpollFlags, IoEvents},
     fs::file::{
         CreationFlags,
-        file_table::{FdFlags, RawFileDesc, get_file_fast},
+        file_table::{FdFlags, FileTableInsert, RawFileDesc, get_file_fast},
     },
     prelude::*,
     process::posix_thread::ContextPthreadAdminApi,
@@ -47,7 +47,7 @@ pub(super) fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallRetu
 
     let epoll_file: Arc<EpollFile> = EpollFile::new();
     let file_table = ctx.thread_local.borrow_file_table();
-    let fd = file_table.unwrap().write().insert(epoll_file, fd_flags);
+    let fd = file_table.unwrap().lock_and_insert(epoll_file, fd_flags)?;
     Ok(SyscallReturn::Return(fd.into()))
 }
 

@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file::{
             InodeType, Permission,
-            file_table::{FdFlags, RawFileDesc, get_file_fast},
+            file_table::{FdFlags, FileTableInsert, RawFileDesc, get_file_fast},
         },
         vfs::{
             notify::inotify::{InotifyControls, InotifyEvents, InotifyFile},
@@ -38,7 +38,7 @@ fn do_inotify_init(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
         FdFlags::empty()
     };
     let file_table = ctx.thread_local.borrow_file_table();
-    let fd = file_table.unwrap().write().insert(file, fd_flags);
+    let fd = file_table.unwrap().lock_and_insert(file, fd_flags)?;
     Ok(SyscallReturn::Return(fd.into()))
 }
 
@@ -134,8 +134,9 @@ fn parse_inotify_watch_request(flags: u32) -> Result<(InotifyEvents, InotifyCont
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct InotifyFileFlags: u32 {
         const NONBLOCK = 1 << 11; // Non-blocking
-        const CLOEXEC = 1 << 19; // Close on exec
+        const CLOEXEC  = 1 << 19; // Close on exec
     }
 }

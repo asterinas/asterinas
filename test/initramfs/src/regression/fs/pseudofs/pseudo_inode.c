@@ -50,6 +50,45 @@ FN_TEST(sockets_do_not_share_inode)
 }
 END_TEST()
 
+static const uid_t creator_uid = 65534;
+static const gid_t creator_gid = 65533;
+
+static void check_pseudo_inode_owner_and_mode(int fd)
+{
+	struct stat st;
+
+	CHECK_WITH(fstat(fd, &st), _ret == 0 && st.st_uid == creator_uid &&
+					   st.st_gid == creator_gid);
+	CHECK(fchmod(fd, 02640));
+	CHECK_WITH(fstat(fd, &st), _ret == 0 && (st.st_mode & 07777) == 02640);
+}
+
+// Pipefs and sockfs inodes use the creator's filesystem IDs, as Linux does.
+FN_TEST(pseudo_inodes_use_creator_filesystem_ids)
+{
+	pid_t owner_child = TEST_SUCC(fork());
+	if (owner_child == 0) {
+		int pipe_fds[2], socket_fds[2];
+
+		CHECK(setgid(creator_gid));
+		CHECK(setuid(creator_uid));
+
+		CHECK(pipe(pipe_fds));
+		CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, socket_fds));
+		check_pseudo_inode_owner_and_mode(pipe_fds[0]);
+		check_pseudo_inode_owner_and_mode(pipe_fds[1]);
+		check_pseudo_inode_owner_and_mode(socket_fds[0]);
+		check_pseudo_inode_owner_and_mode(socket_fds[1]);
+		_exit(EXIT_SUCCESS);
+	}
+
+	int status;
+	TEST_RES(waitpid(owner_child, &status, 0),
+		 _ret == owner_child && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == 0);
+}
+END_TEST()
+
 FN_TEST(anon_inodefs_share_inode)
 {
 	struct fd_mode {

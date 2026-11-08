@@ -39,6 +39,8 @@ sleep 0.2
 ./unix_seqpacket_err
 ./unix_stream_err
 
+./netlink_padding
 ./netlink_route
+./netlink_sockoption
 ./rtnl_err
 ./uevent_err

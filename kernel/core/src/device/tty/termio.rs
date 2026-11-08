@@ -14,28 +14,34 @@ type CCtrlChar = u8;
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h#L6>.
 type CSpeed = u32;
 
+/// The input flags; `c_iflags` bits in Linux.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(crate) struct CInputFlags(u32);
+
 bitflags! {
-    /// The input flags; `c_iflags` bits in Linux.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(crate) struct CInputFlags: u32 {
+    impl CInputFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h
-        const IGNBRK  = 0x001;			/* Ignore break condition */
-        const BRKINT  = 0x002;			/* Signal interrupt on break */
-        const IGNPAR  = 0x004;			/* Ignore characters with parity errors */
-        const PARMRK  = 0x008;			/* Mark parity and framing errors */
-        const INPCK   = 0x010;			/* Enable input parity check */
-        const ISTRIP  = 0x020;			/* Strip 8th bit off characters */
-        const INLCR   = 0x040;			/* Map NL to CR on input */
-        const IGNCR   = 0x080;			/* Ignore CR */
-        const ICRNL   = 0x100;			/* Map CR to NL on input */
-        const IXANY   = 0x800;			/* Any character will restart after stop */
+        const IGNBRK  = 0x001; /* Ignore break condition */
+        const BRKINT  = 0x002; /* Signal interrupt on break */
+        const IGNPAR  = 0x004; /* Ignore characters with parity errors */
+        const PARMRK  = 0x008; /* Mark parity and framing errors */
+        const INPCK   = 0x010; /* Enable input parity check */
+        const ISTRIP  = 0x020; /* Strip 8th bit off characters */
+        const INLCR   = 0x040; /* Map NL to CR on input */
+        const IGNCR   = 0x080; /* Ignore CR */
+        const ICRNL   = 0x100; /* Map CR to NL on input */
+        const IXANY   = 0x800; /* Any character will restart after stop */
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h
         const IUCLC   = 0x0200;
         const IXON    = 0x0400;
         const IXOFF   = 0x1000;
         const IMAXBEL = 0x2000;
         const IUTF8   = 0x4000;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _       = !0;
     }
 }
 
@@ -45,13 +51,15 @@ impl Default for CInputFlags {
     }
 }
 
+/// The output flags; `c_oflags` bits in Linux.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(super) struct COutputFlags(u32);
+
 bitflags! {
-    /// The output flags; `c_oflags` bits in Linux.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(super) struct COutputFlags: u32 {
+    impl COutputFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits-common.h#L21
-        const OPOST  = 1 << 0;			/* Perform output processing */
+        const OPOST  = 1 << 0; /* Perform output processing */
         const OLCUC  = 1 << 1;
         const ONLCR  = 1 << 2;
         const OCRNL  = 1 << 3;
@@ -59,6 +67,10 @@ bitflags! {
         const ONLRET = 1 << 5;
         const OFILL  = 1 << 6;
         const OFDEL  = 1 << 7;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _      = !0;
     }
 }
 
@@ -214,11 +226,13 @@ impl CCtrlBaud {
     }
 }
 
+/// The local flags; `c_lflags` bits in Linux.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(crate) struct CLocalFlags(u32);
+
 bitflags! {
-    /// The local flags; `c_lflags` bits in Linux.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(crate) struct CLocalFlags: u32 {
+    impl CLocalFlags: u32 {
         // https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/termbits.h#L127
         const ISIG    = 0x00001;
         const ICANON  = 0x00002;
@@ -236,6 +250,10 @@ bitflags! {
         const PENDIN  = 0x04000;
         const IEXTEN  = 0x08000;
         const EXTPROC = 0x10000;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _       = !0;
     }
 }
 

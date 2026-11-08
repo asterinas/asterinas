@@ -36,7 +36,7 @@ const HVM_START_MAGIC_VALUE: u32 = 0x336e_c578;
 ///
 /// Version 1 extends this with memory-map fields; access them via
 /// [`HvmStartInfoV1`] only after checking `version >= 1`.
-#[repr(C)]
+#[repr(C, packed)]
 struct HvmStartInfoV0 {
     /// Magic value; must equal [`HVM_START_MAGIC_VALUE`].
     magic: u32,
@@ -56,7 +56,7 @@ struct HvmStartInfoV0 {
 }
 
 /// Version 1 extension of [`HvmStartInfoV0`], which adds memory-map fields.
-#[repr(C)]
+#[repr(C, packed)]
 struct HvmStartInfoV1 {
     v0: HvmStartInfoV0,
     // The following fields are only present in version 1 and later.
@@ -69,7 +69,7 @@ struct HvmStartInfoV1 {
 }
 
 /// An entry of the module list pointed to by [`HvmStartInfoV0::modlist_paddr`].
-#[repr(C)]
+#[repr(C, packed)]
 struct HvmModlistEntry {
     /// Physical address of the module.
     paddr: u64,
@@ -82,7 +82,7 @@ struct HvmModlistEntry {
 }
 
 /// An entry of the memory map pointed to by [`HvmStartInfoV1::memmap_paddr`].
-#[repr(C)]
+#[repr(C, packed)]
 struct HvmMemmapTableEntry {
     /// Start address of the region.
     addr: u64,
@@ -280,7 +280,9 @@ unsafe extern "sysv64" fn __pvh_entry(start_info_ptr: *const HvmStartInfoV0) -> 
     // the version number.
     let start_info = unsafe { &*start_info_ptr };
 
-    assert_eq!(start_info.magic, HVM_START_MAGIC_VALUE);
+    // This is to avoid creating an unaligned reference when `assert_eq!` borrows its arguments.
+    let magic = start_info.magic;
+    assert_eq!(magic, HVM_START_MAGIC_VALUE);
 
     EARLY_INFO.call_once(|| start_info.to_early_boot_info());
 

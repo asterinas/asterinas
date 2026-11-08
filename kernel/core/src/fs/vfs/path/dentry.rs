@@ -12,7 +12,7 @@ use super::{RenameMode, is_dot, is_dot_or_dotdot, is_dotdot};
 use crate::{
     fs::{
         self,
-        file::{InodeMode, InodeType},
+        file::{InodeMode, InodeType, Permission},
         vfs::{
             inode::{Inode, MknodType, RevalidationPolicy},
             inode_ext::InodeExt,
@@ -466,6 +466,8 @@ impl DirDentry<'_> {
         Ok(self.inode.metadata()?.mode.has_sticky_bit())
     }
 
+    /// Checks whether the sticky-bit rule permits the current thread to remove
+    /// or rename the entry for `child_inode` in this directory.
     fn check_sticky_bit_permission(&self, child_inode: &Arc<dyn Inode>) -> Result<()> {
         let current_thread = current_thread!();
         let Some(posix_thread) = current_thread.as_posix_thread() else {
@@ -753,6 +755,10 @@ impl DirDentry<'_> {
             ),
         };
 
+        if self.has_sticky_bit()? {
+            self.check_sticky_bit_permission(child_dentry.inode())?;
+        }
+
         remove_child_fn(dir_inode.as_ref(), &child_dentry)?;
         if cached_child.is_some() {
             children.upgrade().delete(name);
@@ -879,6 +885,17 @@ impl DirDentry<'_> {
                 && let Some(replaced_inode) = replaced_inode
             {
                 new_dir.check_sticky_bit_permission(replaced_inode)?;
+            }
+
+            if old_inode.type_() == InodeType::Dir {
+                old_inode.check_permission(Permission::MAY_WRITE)?;
+            }
+
+            if mode == RenameMode::Exchange
+                && let Some(replaced_inode) = &replaced_inode
+                && replaced_inode.type_() == InodeType::Dir
+            {
+                replaced_inode.check_permission(Permission::MAY_WRITE)?;
             }
 
             old_dir_inode.rename(&old_dentry, new_dir, new_name, replaced_inode, mode)?;
@@ -1026,6 +1043,7 @@ impl DentryKey {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct DentryFlags: u32 {
         const MOUNTED = 1 << 0;
     }

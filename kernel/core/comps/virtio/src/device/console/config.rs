@@ -8,12 +8,13 @@ use ostd_pod::FromZeros;
 use crate::transport::{ConfigManager, VirtioTransport};
 
 bitflags::bitflags! {
-    pub(super) struct ConsoleFeatures: u64{
+    #[derive(Clone, Copy, Debug)]
+    pub(super) struct ConsoleFeatures: u64 {
         /// Configuration cols and rows are valid.
-        const VIRTIO_CONSOLE_F_SIZE = 1 << 0;
+        const VIRTIO_CONSOLE_F_SIZE        = 1 << 0;
         /// Device has support for multiple ports;
         /// max_nr_ports is valid and control virtqueues will be used.
-        const VIRTIO_CONSOLE_F_MULTIPORT = 1 << 1;
+        const VIRTIO_CONSOLE_F_MULTIPORT   = 1 << 1;
         /// Device has support for emergency write.
         /// Configuration field emerg_wr is valid.
         const VIRTIO_CONSOLE_F_EMERG_WRITE = 1 << 2;

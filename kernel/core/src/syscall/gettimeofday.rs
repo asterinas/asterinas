@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_time::read_system_time;
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    time::{SystemTime, timeval_t, timezone_t},
+    time::{timeval_t, timezone_t},
 };
 
 pub(super) fn sys_gettimeofday(
@@ -14,11 +15,7 @@ pub(super) fn sys_gettimeofday(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     if timeval_addr != 0 {
-        let time_val = {
-            let now = SystemTime::now();
-            let time_duration = now.duration_since(&SystemTime::UNIX_EPOCH)?;
-            timeval_t::from(time_duration)
-        };
+        let time_val = timeval_t::from(read_system_time().since_epoch());
         ctx.user_space().write_val(timeval_addr, &time_val)?;
     }
 

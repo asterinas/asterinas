@@ -35,8 +35,9 @@ pub(crate) struct TimerfdFile {
 
 bitflags! {
     /// The flags used for timerfd-related operations.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct TFDFlags: u32 {
-        const TFD_CLOEXEC = CreationFlags::O_CLOEXEC.bits();
+        const TFD_CLOEXEC  = CreationFlags::O_CLOEXEC.bits();
         const TFD_NONBLOCK = StatusFlags::O_NONBLOCK.bits();
     }
 }
@@ -59,8 +60,9 @@ impl From<TFDFlags> for u32 {
 
 bitflags! {
     /// The flags used for timerfd settime operations.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct TFDSetTimeFlags: u32 {
-        const TFD_TIMER_ABSTIME = 0x1;
+        const TFD_TIMER_ABSTIME       = 0x1;
         const TFD_TIMER_CANCEL_ON_SET = 0x2;
     }
 }
@@ -150,6 +152,7 @@ impl TimerfdFile {
         // Cancel the timer and clear the ticks counter.
         timer_guard.cancel();
         self.ticks.store(0, Ordering::Relaxed);
+        self.pollee.invalidate();
 
         if expire_time != Duration::ZERO {
             if flags.contains(TFDSetTimeFlags::TFD_TIMER_CANCEL_ON_SET) {
@@ -184,6 +187,7 @@ impl TimerfdFile {
 
     fn try_read(&self, writer: &mut VmWriter) -> Result<()> {
         let ticks = self.ticks.fetch_and(0, Ordering::Relaxed);
+        self.pollee.invalidate();
 
         if ticks == 0 {
             return_errno_with_message!(Errno::EAGAIN, "the counter is zero");
@@ -217,7 +221,7 @@ impl FileLike for TimerfdFile {
         let read_len = size_of::<u64>();
 
         if writer.avail() < read_len {
-            return_errno_with_message!(Errno::EINVAL, "buf len is less len u64 size");
+            return_errno_with_message!(Errno::EINVAL, "the timer buffer is too small");
         }
 
         if self.is_nonblocking() {

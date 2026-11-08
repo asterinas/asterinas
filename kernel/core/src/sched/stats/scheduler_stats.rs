@@ -16,7 +16,7 @@ static SCHEDULER_STATS: Once<&'static dyn SchedulerStats> = Once::new();
 pub(crate) fn set_stats_from_scheduler(scheduler: &'static dyn SchedulerStats) {
     SCHEDULER_STATS.call_once(|| scheduler);
 
-    // Register a callback to update the load average periodically
+    // Register a callback to update the load average periodically.
     timer::register_callback_on_cpu(|| {
         loadavg::update_loadavg(|| nr_queued_and_running().0);
     });

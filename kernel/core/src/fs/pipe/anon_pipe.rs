@@ -9,6 +9,7 @@ use crate::{
         file::{AccessMode, InodeHandle, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         pipe::Pipe,
         pseudofs::{PipeFs, PseudoInode, PseudoInodeType},
+        utils,
         vfs::{
             file_system::FileSystem,
             inode::{Extension, FileOps, Inode, Metadata},
@@ -49,13 +50,10 @@ pub(crate) struct AnonPipeInode {
 impl AnonPipeInode {
     fn new() -> Self {
         let pipe = Pipe::new();
+        let (uid, gid) = utils::current_fs_ids();
 
-        let pseudo_inode = PipeFs::singleton().alloc_inode(
-            PseudoInodeType::Pipe,
-            mkmod!(u+rw),
-            Uid::new_root(),
-            Gid::new_root(),
-        );
+        let pseudo_inode =
+            PipeFs::singleton().alloc_inode(PseudoInodeType::Pipe, mkmod!(u+rw), uid, gid);
 
         Self { pipe, pseudo_inode }
     }

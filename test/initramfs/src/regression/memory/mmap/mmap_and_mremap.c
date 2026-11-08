@@ -53,6 +53,10 @@ FN_TEST(mremap)
 	TEST_ERRNO(mremap(hole, 2 * PAGE_SIZE, PAGE_SIZE,
 			  MREMAP_MAYMOVE | MREMAP_FIXED, addr),
 		   EFAULT);
+	// The new address is checked before the old mapping is looked up.
+	TEST_ERRNO(mremap(hole, PAGE_SIZE, PAGE_SIZE,
+			  MREMAP_MAYMOVE | MREMAP_FIXED, hole + 1),
+		   EINVAL);
 
 	TEST_SUCC(munmap(addr, 5 * PAGE_SIZE));
 }
@@ -203,6 +207,44 @@ FN_TEST(mremap_may_fail_after_unmap)
 		   EFAULT);
 
 	TEST_SUCC(munmap(addr, 5 * PAGE_SIZE));
+}
+END_TEST()
+
+FN_TEST(mremap_fails_before_unmap)
+{
+	char *addr = TEST_SUCC(mmap(NULL, 4 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	for (int i = 0; i < 4; i++)
+		addr[i * PAGE_SIZE] = 'a' + i;
+
+	// Each `mremap()` below would shrink the source mapping to one page, but
+	// it fails because of the new address before it unmaps anything.
+
+	// The new range overlaps the source range, though not its first page.
+	TEST_ERRNO(mremap(addr, 4 * PAGE_SIZE, PAGE_SIZE,
+			  MREMAP_MAYMOVE | MREMAP_FIXED, addr + 2 * PAGE_SIZE),
+		   EINVAL);
+	// The new address is not page-aligned.
+	TEST_ERRNO(mremap(addr, 4 * PAGE_SIZE, PAGE_SIZE,
+			  MREMAP_MAYMOVE | MREMAP_FIXED,
+			  addr + 4 * PAGE_SIZE + 1),
+		   EINVAL);
+	// The new range is not in user space.
+	TEST_ERRNO(mremap(addr, 4 * PAGE_SIZE, PAGE_SIZE,
+			  MREMAP_MAYMOVE | MREMAP_FIXED,
+			  (void *)0xffff800000000000ul),
+		   EINVAL);
+
+	// All four pages still exist and keep their contents.
+	for (int i = 0; i < 4; i++) {
+		char *page = addr + i * PAGE_SIZE;
+
+		if (TEST_RES(mremap(page, PAGE_SIZE, PAGE_SIZE, 0),
+			     _ret == page) == page)
+			TEST_RES(page[0], _ret == 'a' + i);
+	}
+
+	TEST_SUCC(munmap(addr, 4 * PAGE_SIZE));
 }
 END_TEST()
 

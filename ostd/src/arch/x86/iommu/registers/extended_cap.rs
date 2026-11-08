@@ -62,62 +62,63 @@ bitflags! {
     /// Extended Capability flags in IOMMU.
     ///
     /// TODO: Add a detailed description of each flag.
-    pub struct ExtendedCapabilityFlags: u64{
+    #[derive(Clone, Copy, Debug)]
+    pub struct ExtendedCapabilityFlags: u64 {
         /// Page-walk Coherency.
-        const C =           1 << 0;
+        const C      = 1 << 0;
         /// Queued Invalidation Support.
-        const QI =          1 << 1;
+        const QI     = 1 << 1;
         /// Device-TLB Support.
-        const DT =          1 << 2;
+        const DT     = 1 << 2;
         /// Interrupt Remapping Support
-        const IR =          1 << 3;
+        const IR     = 1 << 3;
         /// Extended Interrupt Mode.
-        const EIM =         1 << 4;
+        const EIM    = 1 << 4;
         /// Pass Through Support.
-        const PT =          1 << 6;
+        const PT     = 1 << 6;
         /// Snoop Control.
-        const SC =          1 << 7;
+        const SC     = 1 << 7;
         /// Memory Type Support.
-        const MTS =         1 << 25;
+        const MTS    = 1 << 25;
         /// Nested Translation Support.
-        const NEST =        1 << 26;
+        const NEST   = 1 << 26;
         /// Page Request Support.
-        const PRS =         1 << 29;
+        const PRS    = 1 << 29;
         /// Execute Request Support.
-        const ERS =         1 << 30;
+        const ERS    = 1 << 30;
         /// Supervisor Request Support.
-        const SRS =         1 << 31;
+        const SRS    = 1 << 31;
         /// No Write Flag Support.
-        const NWFS =        1 << 33;
+        const NWFS   = 1 << 33;
         /// Extended Accessed Flag Support.
-        const EAFS =        1 << 34;
+        const EAFS   = 1 << 34;
         /// Process Address Space ID Supported.
-        const PASID =       1 << 40;
+        const PASID  = 1 << 40;
         /// Device-TLB Invalidation Throttle.
-        const DIT =         1 << 41;
+        const DIT    = 1 << 41;
         /// Page-request Drain Support.
-        const PDS =         1 << 42;
+        const PDS    = 1 << 42;
         /// Scalable Mode Translation Support.
-        const SMTS =        1 << 43;
+        const SMTS   = 1 << 43;
         /// Virtual Command Support.
-        const VCS =         1 << 44;
+        const VCS    = 1 << 44;
         /// Second-Stage Accessed/Dirty Support.
-        const SSADS =       1 << 45;
+        const SSADS  = 1 << 45;
         /// Second-stage Translation Support.
-        const SSTS =        1 << 46;
+        const SSTS   = 1 << 46;
         /// First-stage Translation Support.
-        const FSTS =        1 << 47;
+        const FSTS   = 1 << 47;
         /// Scalable-Mode Page-walk Coherency Support.
-        const SMPWCS =      1 << 48;
+        const SMPWCS = 1 << 48;
         /// RID-PASID Support.
-        const RPS =         1 << 49;
+        const RPS    = 1 << 49;
         /// Performance Monitoring Support.
-        const PMS =         1 << 51;
+        const PMS    = 1 << 51;
         /// Abort DMA Mode Support.
-        const ADMS =        1 << 52;
+        const ADMS   = 1 << 52;
         /// RID_PRIV Support.
-        const RPRIVS =      1 << 53;
+        const RPRIVS = 1 << 53;
         /// Stop Marker Support.
-        const SMS =         1 << 58;
+        const SMS    = 1 << 58;
     }
 }

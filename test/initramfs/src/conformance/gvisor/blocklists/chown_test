@@ -4,12 +4,6 @@ ChownTest.FchownPipeFileFails
 ChownTest.ChownRemovesSecurityCapability
 ChownTest.SetGroupIdBitDeniedWithoutCapFsetIdOrRelevantGroup
 
-ChownKinds/ChownParamTest.ChownFilePermissionDenied/0
-ChownKinds/ChownParamTest.ChownFilePermissionDenied/1
-ChownKinds/ChownParamTest.ChownFilePermissionDenied/2
-ChownKinds/ChownParamTest.ChownFilePermissionDenied/3
-ChownKinds/ChownParamTest.ChownFilePermissionDenied/4
-ChownKinds/ChownParamTest.ChownFilePermissionDenied/5
 ChownKinds/ChownParamTest.ChownFileSucceedsAsRoot/0
 ChownKinds/ChownParamTest.ChownFileSucceedsAsRoot/1
 ChownKinds/ChownParamTest.ChownFileSucceedsAsRoot/2

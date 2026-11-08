@@ -635,6 +635,7 @@ bitflags! {
     /// Represents the set of events that a subscriber wants to monitor.
     ///
     /// These events are used to filter notifications sent to the subscriber.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct InotifyEvents: u32 {
         const ACCESS        = 1 << 0;  // File was accessed
         const MODIFY        = 1 << 1;  // File was modified
@@ -661,12 +662,13 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct InotifyControls: u32 {
-        const ONLYDIR       = 1 << 24; // Only watch directories
-        const DONT_FOLLOW   = 1 << 25; // Don't follow symlinks
-        const EXCL_UNLINK   = 1 << 26; // Exclude events on unlinked objects
-        const MASK_CREATE   = 1 << 28; // Only create watches
-        const MASK_ADD      = 1 << 29; // Add to existing watch mask
-        const ONESHOT       = 1 << 31; // Send event once
+        const ONLYDIR     = 1 << 24; // Only watch directories
+        const DONT_FOLLOW = 1 << 25; // Don't follow symlinks
+        const EXCL_UNLINK = 1 << 26; // Exclude events on unlinked objects
+        const MASK_CREATE = 1 << 28; // Only create watches
+        const MASK_ADD    = 1 << 29; // Add to existing watch mask
+        const ONESHOT     = 1 << 31; // Send event once
     }
 }

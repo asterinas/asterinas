@@ -35,11 +35,12 @@ pub enum VirtioVsockOp {
 
 bitflags! {
     /// The half-close bits carried by `VirtioVsockOp::Shutdown` packets.
+    #[derive(Clone, Copy, Debug)]
     pub struct VirtioVsockShutdownFlags: u32 {
         /// Indicates that the sender will no longer receive more data.
         const RECEIVE = 1;
         /// Indicates that the sender will no longer send more data.
-        const SEND = 2;
+        const SEND    = 2;
     }
 }
 

@@ -227,6 +227,7 @@ impl DscpAndEcn {
 struct FlagsAndFragmentOffset([u8; 2]);
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct Flags: u8 {
         const R  = 1 << 2;
         const DF = 1 << 1;

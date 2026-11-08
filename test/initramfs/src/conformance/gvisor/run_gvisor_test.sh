@@ -108,6 +108,13 @@ else
         -exec basename {} \; | sort -u > "$SELECTED_TESTS"
 fi
 
+# Some gVisor tests require a very large soft `RLIMIT_NOFILE` limit.
+# For example, `PipeTest.PipeFdCount` requires file descriptors above 66000.
+# Raise both the soft and hard limits to gVisor's recommended values.
+# Reference: https://github.com/google/gvisor/blob/release-20260622.0/runsc/boot/limits.go#L77
+ulimit -Hn 1048576 || exit 1
+ulimit -Sn 1048576 || exit 1
+
 rm -f "$FAIL_CASES" && touch "$FAIL_CASES"
 rm -rf "$TEST_TMP_DIR"/*
 

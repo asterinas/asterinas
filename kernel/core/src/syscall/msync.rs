@@ -75,6 +75,7 @@ bitflags! {
     /// Flags for `msync`.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.15.1/source/include/uapi/asm-generic/mman-common.h#L42>.
+    #[derive(Clone, Copy, Debug)]
     struct MsyncFlags: i32 {
         /// Performs `msync` asynchronously.
         const MS_ASYNC      = 0x01;

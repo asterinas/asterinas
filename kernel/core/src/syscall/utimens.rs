@@ -6,21 +6,22 @@ use ostd::mm::VmIo;
 
 use super::{SyscallReturn, constants::MAX_FILENAME_LEN};
 use crate::{
-    fs,
     fs::{
         file::{
             StatusFlags,
             file_table::{RawFileDesc, get_file_fast},
         },
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, Path},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, Path, TimestampUpdate},
     },
     prelude::*,
     time::{clocks::RealTimeCoarseClock, timespec_t, timeval_t},
 };
 
-/// The 'sys_utimensat' system call sets the access and modification times of a file.
-/// The times are defined by an array of two timespec structures, where `times[0]` represents the access time,
-/// and `times[1]` represents the modification time.
+/// The `sys_utimensat` system call sets the access and modification times of a file.
+///
+/// The times are defined by an array of two `timespec` structures, where `times[0]` represents the
+/// access time and `times[1]` represents the modification time.
+///
 /// The `flags` argument is a bit mask that can include the following values:
 /// - `AT_SYMLINK_NOFOLLOW`: If set, the file is not dereferenced if it is a symbolic link.
 /// - `AT_EMPTY_PATH`: If set, an empty pathname means operating on `dirfd` directly.
@@ -32,27 +33,27 @@ pub(super) fn sys_utimensat(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
-        "utimensat: dirfd: {}, pathname_ptr: {:#x}, timespecs_ptr: {:#x}, flags: {:#x}",
+        "utimensat: dirfd = {}, pathname_ptr = {:#x}, timespecs_ptr = {:#x}, flags = {:#x}",
         dirfd, pathname_ptr, timespecs_ptr, flags
     );
     let times = if timespecs_ptr != 0 {
         let (autime, mutime) = read_time_from_user::<timespec_t>(timespecs_ptr, ctx)?;
-        if autime.is_utime_omit() && mutime.is_utime_omit() {
+        let atime = TimeSpec::try_from(autime)?;
+        let mtime = TimeSpec::try_from(mutime)?;
+        if matches!(atime, TimeSpec::Omit) && matches!(mtime, TimeSpec::Omit) {
             return Ok(SyscallReturn::Return(0));
         }
-        Some(TimeSpecPair {
-            atime: autime,
-            mtime: mutime,
-        })
+        Some(TimeSpecPair { atime, mtime })
     } else {
         None
     };
     do_utimes(dirfd, pathname_ptr, times, flags, ctx)
 }
 
-/// The 'sys_futimesat' system call sets the access and modification times of a file.
-/// Unlike 'sys_utimensat', it receives time values in the form of timeval structures,
-/// and it does not support the 'flags' argument.
+/// The `sys_futimesat` system call sets the access and modification times of a file.
+///
+/// Unlike `sys_utimensat`, it receives time values in the form of `timeval` structures and it does
+/// not support the `flags` argument.
 pub(super) fn sys_futimesat(
     dirfd: RawFileDesc,
     pathname_ptr: Vaddr,
@@ -60,59 +61,90 @@ pub(super) fn sys_futimesat(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
-        "futimesat: dirfd: {}, pathname_ptr: {:#x}, timeval_ptr: {:#x}",
+        "futimesat: dirfd = {}, pathname_ptr = {:#x}, timeval_ptr = {:#x}",
         dirfd, pathname_ptr, timeval_ptr
     );
     do_futimesat(dirfd, pathname_ptr, timeval_ptr, ctx)
 }
 
-/// The 'sys_utimes' system call sets the access and modification times of a file.
-/// It receives time values in the form of timeval structures like 'sys_futimesat',
-/// but it uses the current working directory as the base directory.
+/// The `sys_utimes` system call sets the access and modification times of a file.
+///
+/// Unlike `sys_utimensat`, it receives time values in the form of `timeval` structures and it uses
+/// the current working directory as the base directory.
 pub(super) fn sys_utimes(
     pathname_ptr: Vaddr,
     timeval_ptr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
-        "utimes: pathname_ptr: {:#x}, timeval_ptr: {:#x}",
+        "utimes: pathname_ptr = {:#x}, timeval_ptr = {:#x}",
         pathname_ptr, timeval_ptr
     );
     do_futimesat(AT_FDCWD, pathname_ptr, timeval_ptr, ctx)
 }
 
-/// The 'sys_utime' system call is similar to 'sys_utimes' but uses the older 'utimbuf' structure to specify times.
+/// Sets the access and modification times for a file, specified by a pathname relative to the
+/// directory file descriptor `dirfd`.
+fn do_futimesat(
+    dirfd: RawFileDesc,
+    pathname_ptr: Vaddr,
+    timeval_ptr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    let times = if timeval_ptr != 0 {
+        let (autime, mutime) = read_time_from_user::<timeval_t>(timeval_ptr, ctx)?;
+        Some(TimeSpecPair {
+            atime: TimeSpec::try_from(autime)?,
+            mtime: TimeSpec::try_from(mutime)?,
+        })
+    } else {
+        None
+    };
+    do_utimes(dirfd, pathname_ptr, times, 0, ctx)
+}
+
+fn read_time_from_user<T: Pod>(time_ptr: Vaddr, ctx: &Context) -> Result<(T, T)> {
+    let user_space = ctx.user_space();
+
+    let mut time_addr = time_ptr;
+    let autime = user_space.read_val::<T>(time_addr)?;
+    time_addr += size_of::<T>();
+    let mutime = user_space.read_val::<T>(time_addr)?;
+
+    Ok((autime, mutime))
+}
+
+/// The `sys_utime` system call sets the access and modification times of a file.
+///
+/// The `sys_utime` system call is similar to the `sys_utimes` system call, but it uses the older
+/// `utimbuf` structure to specify times.
 pub(super) fn sys_utime(
     pathname_ptr: Vaddr,
     utimbuf_ptr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
-        "utime: pathname_ptr: {:#x}, utimbuf_ptr: {:#x}",
+        "utime: pathname_ptr = {:#x}, utimbuf_ptr = {:#x}",
         pathname_ptr, utimbuf_ptr
     );
     let times = if utimbuf_ptr != 0 {
         let utimbuf = ctx.user_space().read_val::<Utimbuf>(utimbuf_ptr)?;
-        let atime = timespec_t {
+        let autime = timespec_t {
             sec: utimbuf.actime,
             nsec: 0,
         };
-        let mtime = timespec_t {
+        let mutime = timespec_t {
             sec: utimbuf.modtime,
             nsec: 0,
         };
-        Some(TimeSpecPair { atime, mtime })
+        Some(TimeSpecPair {
+            atime: TimeSpec::try_from(autime)?,
+            mtime: TimeSpec::try_from(mutime)?,
+        })
     } else {
         None
     };
     do_utimes(AT_FDCWD, pathname_ptr, times, 0, ctx)
-}
-
-// Structure to hold access and modification times
-#[derive(Debug)]
-struct TimeSpecPair {
-    atime: timespec_t,
-    mtime: timespec_t,
 }
 
 /// This struct is corresponding to the `utimbuf` struct in Linux.
@@ -123,44 +155,71 @@ struct Utimbuf {
     modtime: i64,
 }
 
-fn vfs_utimes(path: &Path, times: Option<TimeSpecPair>) -> Result<SyscallReturn> {
-    let (atime, mtime, ctime) = match times {
-        Some(times) => {
-            if !times.atime.is_valid() || !times.mtime.is_valid() {
-                return_errno_with_message!(Errno::EINVAL, "invalid time")
-            }
-            let now = RealTimeCoarseClock::get().read_time();
-            let atime = if times.atime.is_utime_omit() {
-                path.atime()
-            } else if times.atime.is_utime_now() {
-                now
-            } else {
-                Duration::try_from(times.atime)?
-            };
-            let mtime = if times.mtime.is_utime_omit() {
-                path.mtime()
-            } else if times.mtime.is_utime_now() {
-                now
-            } else {
-                Duration::try_from(times.mtime)?
-            };
-            (atime, mtime, now)
-        }
-        None => {
-            let now = RealTimeCoarseClock::get().read_time();
-            (now, now, now)
-        }
-    };
+// ============================== Common logic ==============================
 
-    // Update times
-    path.set_atime(atime);
-    path.set_mtime(mtime);
-    path.set_ctime(ctime);
-    fs::vfs::notify::on_attr_change(path);
-    Ok(SyscallReturn::Return(0))
+/// A structure to hold access and modification times.
+#[derive(Debug)]
+struct TimeSpecPair {
+    atime: TimeSpec,
+    mtime: TimeSpec,
 }
 
-// Common function to handle updating file times, supporting both fd and path based operations
+impl TimeSpecPair {
+    fn is_touch(&self) -> bool {
+        self.atime.is_now() && self.mtime.is_now()
+    }
+}
+
+/// An enum to hold access or modification time.
+#[derive(Debug)]
+enum TimeSpec {
+    Now,
+    Omit,
+    Spec(Duration),
+}
+
+impl TimeSpec {
+    fn is_now(&self) -> bool {
+        matches!(self, Self::Now)
+    }
+
+    /// Converts to a duration, using `now` as [`Self::Now`].
+    fn with_now(self, now: Duration) -> Option<Duration> {
+        match self {
+            Self::Now => Some(now),
+            Self::Omit => None,
+            Self::Spec(duration) => Some(duration),
+        }
+    }
+}
+
+impl TryFrom<timeval_t> for TimeSpec {
+    type Error = Error;
+
+    fn try_from(value: timeval_t) -> Result<Self> {
+        Ok(Self::Spec(Duration::try_from(value)?))
+    }
+}
+
+impl TryFrom<timespec_t> for TimeSpec {
+    type Error = Error;
+
+    fn try_from(value: timespec_t) -> Result<Self> {
+        if value.nsec == UTIME_NOW {
+            Ok(Self::Now)
+        } else if value.nsec == UTIME_OMIT {
+            Ok(Self::Omit)
+        } else {
+            Ok(Self::Spec(Duration::try_from(value)?))
+        }
+    }
+}
+
+const UTIME_NOW: i64 = (1i64 << 30) - 1i64;
+const UTIME_OMIT: i64 = (1i64 << 30) - 2i64;
+
+/// A common function for updating file times, supporting both file descriptor (fd) and path-based
+/// operations.
 fn do_utimes(
     dirfd: RawFileDesc,
     pathname_ptr: Vaddr,
@@ -208,76 +267,29 @@ fn do_utimes(
         file.path().clone()
     };
 
-    vfs_utimes(&path, times)
+    vfs_utimes(&path, times, ctx)
 }
 
-// Sets the access and modification times for a file,
-// specified by a pathname relative to the directory file descriptor `dirfd`.
-fn do_futimesat(
-    dirfd: RawFileDesc,
-    pathname_ptr: Vaddr,
-    timeval_ptr: Vaddr,
-    ctx: &Context,
-) -> Result<SyscallReturn> {
-    let times = if timeval_ptr != 0 {
-        let (autime, mutime) = read_time_from_user::<timeval_t>(timeval_ptr, ctx)?;
-        if autime.usec >= 1000000
-            || autime.usec < 0
-            || autime.sec < 0
-            || mutime.usec >= 1000000
-            || mutime.usec < 0
-            || mutime.sec < 0
-        {
-            return_errno_with_message!(Errno::EINVAL, "invalid time");
-        }
-        let (autime, mutime) = (timespec_t::from(autime), timespec_t::from(mutime));
-        Some(TimeSpecPair {
-            atime: autime,
-            mtime: mutime,
-        })
-    } else {
-        None
+fn vfs_utimes(path: &Path, times: Option<TimeSpecPair>, ctx: &Context) -> Result<SyscallReturn> {
+    let now = RealTimeCoarseClock::get().read_time();
+    let update = match times {
+        None => TimestampUpdate::Touch(now),
+        Some(times) if times.is_touch() => TimestampUpdate::Touch(now),
+        Some(times) => TimestampUpdate::Explicit {
+            atime: times.atime.with_now(now),
+            mtime: times.mtime.with_now(now),
+            now,
+        },
     };
-    do_utimes(dirfd, pathname_ptr, times, 0, ctx)
+
+    path.update_times(update, ctx)?;
+    Ok(SyscallReturn::Return(0))
 }
-
-fn read_time_from_user<T: Pod>(time_ptr: Vaddr, ctx: &Context) -> Result<(T, T)> {
-    let mut time_addr = time_ptr;
-    let user_space = ctx.user_space();
-    let autime = user_space.read_val::<T>(time_addr)?;
-    time_addr += size_of::<T>();
-    let mutime = user_space.read_val::<T>(time_addr)?;
-    Ok((autime, mutime))
-}
-
-trait UtimeExt {
-    fn is_utime_now(&self) -> bool;
-    fn is_utime_omit(&self) -> bool;
-    fn is_valid(&self) -> bool;
-}
-
-impl UtimeExt for timespec_t {
-    fn is_utime_now(&self) -> bool {
-        self.nsec == UTIME_NOW
-    }
-
-    fn is_utime_omit(&self) -> bool {
-        self.nsec == UTIME_OMIT
-    }
-
-    fn is_valid(&self) -> bool {
-        self.nsec == UTIME_OMIT
-            || self.nsec == UTIME_NOW
-            || (self.nsec >= 0 && self.nsec <= 999_999_999)
-    }
-}
-
-const UTIME_NOW: i64 = (1i64 << 30) - 1i64;
-const UTIME_OMIT: i64 = (1i64 << 30) - 2i64;
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct UtimensFlags: u32 {
-        const AT_EMPTY_PATH = 0x1000;
+        const AT_EMPTY_PATH       = 0x1000;
         const AT_SYMLINK_NOFOLLOW = 0x100;
     }
 }

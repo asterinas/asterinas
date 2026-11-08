@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(netlink)]
+
 mod multicast;
 
-pub(crate) use multicast::{GroupIdSet, MAX_GROUPS};
+pub(crate) use multicast::GroupIdSet;
+pub(in netlink) use multicast::MAX_GROUPS;
 
 use crate::{net::socket::util::SocketAddr, prelude::*};
 
@@ -27,7 +30,7 @@ impl NetlinkSocketAddr {
     /// Both the port ID and group numbers are left unspecified.
     ///
     /// Note that an unspecified address can also represent the kernel socket address.
-    pub(crate) const fn new_unspecified() -> Self {
+    pub(in netlink) const fn new_unspecified() -> Self {
         Self {
             port: UNSPECIFIED_PORT,
             groups: GroupIdSet::new_empty(),
@@ -45,7 +48,7 @@ impl NetlinkSocketAddr {
     }
 
     /// Adds some new groups to the address.
-    pub(crate) fn add_groups(&mut self, groups: GroupIdSet) {
+    pub(in netlink) fn add_groups(&mut self, groups: GroupIdSet) {
         self.groups.add_groups(groups);
     }
 }
@@ -70,7 +73,7 @@ impl From<NetlinkSocketAddr> for SocketAddr {
     }
 }
 
-pub(crate) type NetlinkProtocolId = u32;
-pub(crate) type PortNum = u32;
+pub(in netlink) type NetlinkProtocolId = u32;
+pub(in netlink) type PortNum = u32;
 
-pub(crate) const UNSPECIFIED_PORT: PortNum = 0;
+pub(in netlink) const UNSPECIFIED_PORT: PortNum = 0;

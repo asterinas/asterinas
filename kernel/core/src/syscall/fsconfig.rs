@@ -58,7 +58,7 @@ pub(super) fn sys_fsconfig(
         }
         FsConfigOps::Create => {
             ensure_valid_args(key_addr == 0 && value_addr == 0 && aux == 0)?;
-            super::fsopen::check_mount_api_capability(ctx)?;
+            super::mount::check_mount_api_capability(ctx)?;
             fs_config.create_fs(ctx)?;
         }
         FsConfigOps::CreateExcl => {
@@ -67,7 +67,7 @@ pub(super) fn sys_fsconfig(
         }
         FsConfigOps::Reconfigure => {
             ensure_valid_args(key_addr == 0 && value_addr == 0 && aux == 0)?;
-            super::fsopen::check_mount_api_capability(ctx)?;
+            super::mount::check_mount_api_capability(ctx)?;
             fs_config.reconfigure_fs(ctx)?;
         }
     }

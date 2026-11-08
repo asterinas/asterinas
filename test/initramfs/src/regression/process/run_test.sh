@@ -78,4 +78,5 @@ fi
 ./job_control
 ./pidfd
 ./pidfd_getfd
+./set_tid_address
 ./wait4

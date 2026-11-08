@@ -107,11 +107,33 @@ impl IpcNamespace {
     }
 
     /// Removes the semaphore set identified by `semid`.
-    pub(crate) fn remove_sem_set<F>(&self, semid: IpcId, may_remove: F) -> Result<()>
-    where
-        F: FnOnce(&SemaphoreSet) -> Result<()>,
-    {
-        self.sem_ids.remove(semid, may_remove)
+    ///
+    /// The caller (`posix_thread`) should be the creator or the owner of the
+    /// semaphore set, or hold `CAP_SYS_ADMIN` in the owner user namespace.
+    /// Otherwise, this method will fail.
+    pub(crate) fn remove_sem_set(&self, semid: IpcId, posix_thread: &PosixThread) -> Result<()> {
+        let euid = posix_thread.credentials().euid();
+        let can_remove_fn = |sem_set: &SemaphoreSet| -> Result<()> {
+            let permission = sem_set.permission();
+            if euid != permission.uid()
+                && euid != permission.cuid()
+                && lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+                    self.owner.as_ref(),
+                    posix_thread,
+                    CapSet::SYS_ADMIN,
+                ))
+                .is_err()
+            {
+                return_errno_with_message!(
+                    Errno::EPERM,
+                    "the process does not have permission to remove the semaphore set"
+                );
+            }
+
+            Ok(())
+        };
+
+        self.sem_ids.remove(semid, can_remove_fn)
     }
 
     /// Returns the existing semaphore set or creates a new one.

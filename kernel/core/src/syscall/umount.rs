@@ -31,6 +31,8 @@ pub(super) fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<
             .lookup(&fs_path)?
     };
 
+    super::mount::check_mount_api_capability(ctx)?;
+
     // The path resolution of the umount syscall ensures that the final `Path` must correspond
     // to the topmost mount. If there is a mount stacked above the current thread's `cwd`, normal
     // path lookup through "." cannot access the upper mount, but umount through "." can operate
@@ -41,11 +43,12 @@ pub(super) fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct UmountFlags: u32 {
-        const MNT_FORCE       = 0x00000001;	// Attempt to forcibily umount.
-        const MNT_DETACH      = 0x00000002;	// Just detach from the tree.
-        const MNT_EXPIRE      = 0x00000004;	// Mark for expiry.
-        const UMOUNT_NOFOLLOW = 0x00000008;	// Don't follow symlink on umount.
+        const MNT_FORCE       = 0x00000001; // Attempt to forcibily umount.
+        const MNT_DETACH      = 0x00000002; // Just detach from the tree.
+        const MNT_EXPIRE      = 0x00000004; // Mark for expiry.
+        const UMOUNT_NOFOLLOW = 0x00000008; // Don't follow symlink on umount.
     }
 }
 

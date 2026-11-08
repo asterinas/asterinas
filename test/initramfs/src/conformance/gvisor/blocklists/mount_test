@@ -7,7 +7,6 @@ MountTest.LockedMountStopsNonRecBind
 MountTest.MaxMounts
 MountTest.MaxMountsWithSlave
 MountTest.MaxRecursiveBind
-MountTest.MMapWithExecProtFailsOnNoExecFile
 MountTest.MountFailsOnPseudoFilesystemMountpoint
 MountTest.MountFuseFilesystem
 MountTest.MountFuseFilesystemNoDevice
@@ -16,13 +15,11 @@ MountTest.MountMoveSharedParent
 MountTest.MountNamespaceSetns
 MountTest.MountNamespaceSlavesNewUserNamespace
 MountTest.MountNoAtime
-MountTest.MountNoExec
 MountTest.MountOverBusy
 MountTest.MountPermDenied
 MountTest.MountReadonly
 MountTest.MountTmpfs
 MountTest.MountTmpfsMagicValIgnored
-MountTest.MProtectWithNoExecProtFailsOnNoExecFile
 MountTest.OpenFileBusy
 MountTest.OverlayfsDirectoryRenameInUserNamespace
 

@@ -2,12 +2,15 @@
 
 #define _GNU_SOURCE
 
+#include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
+#include <utime.h>
 
 #include "../../common/test.h"
 
@@ -20,6 +23,17 @@ FN_SETUP(prepare)
 	fd = CHECK(open(TEST_FILE, O_CREAT | O_RDWR | O_TRUNC, 0644));
 }
 END_SETUP()
+
+FN_TEST(both_omitted_ignores_path_and_flags)
+{
+	struct timespec times[2] = {
+		{ .tv_sec = 1234567899, .tv_nsec = UTIME_OMIT },
+		{ .tv_sec = 1234567898, .tv_nsec = UTIME_OMIT },
+	};
+	TEST_SUCC(utimensat(AT_FDCWD, TEST_FILE, times, 0xdeadbeef));
+	TEST_SUCC(utimensat(AT_FDCWD, "/tmp/nonexistent_file", times, 0));
+}
+END_TEST()
 
 FN_TEST(at_empty_path_updates_times)
 {
@@ -105,6 +119,124 @@ FN_TEST(at_empty_path_on_o_path_symlink_updates_symlink)
 
 	TEST_SUCC(close(sym_fd));
 	TEST_SUCC(unlink(symlink_path));
+}
+END_TEST()
+
+#define TEST_UID 1000
+
+static void become_user(uid_t uid)
+{
+	CHECK(setresgid(uid, uid, uid));
+	CHECK(setresuid(uid, uid, uid));
+}
+
+static int child_exit_ok(pid_t pid)
+{
+	int status;
+
+	return waitpid(pid, &status, 0) == pid && WIFEXITED(status) &&
+	       WEXITSTATUS(status) == EXIT_SUCCESS;
+}
+
+FN_TEST(non_owner_without_write_cannot_touch)
+{
+	TEST_SUCC(chown(TEST_FILE, 0, 0));
+	TEST_SUCC(chmod(TEST_FILE, 0644));
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		become_user(TEST_UID);
+		CHECK_WITH(utime(TEST_FILE, NULL),
+			   _ret == -1 && errno == EACCES);
+		_exit(EXIT_SUCCESS);
+	}
+	TEST_RES(child_exit_ok(pid), _ret);
+}
+END_TEST()
+
+FN_TEST(non_owner_with_write_can_touch)
+{
+	TEST_SUCC(chown(TEST_FILE, 0, 0));
+	TEST_SUCC(chmod(TEST_FILE, 0666));
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		become_user(TEST_UID);
+		CHECK(utime(TEST_FILE, NULL));
+		_exit(EXIT_SUCCESS);
+	}
+	TEST_RES(child_exit_ok(pid), _ret);
+}
+END_TEST()
+
+FN_TEST(owner_without_write_can_touch)
+{
+	TEST_SUCC(chown(TEST_FILE, TEST_UID, TEST_UID));
+	TEST_SUCC(chmod(TEST_FILE, 0444));
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		become_user(TEST_UID);
+		CHECK(utime(TEST_FILE, NULL));
+		_exit(EXIT_SUCCESS);
+	}
+	TEST_RES(child_exit_ok(pid), _ret);
+}
+END_TEST()
+
+FN_TEST(two_utime_now_values_are_a_touch_request)
+{
+	struct timespec times[2] = {
+		{ .tv_sec = 0, .tv_nsec = UTIME_NOW },
+		{ .tv_sec = 0, .tv_nsec = UTIME_NOW },
+	};
+
+	TEST_SUCC(chown(TEST_FILE, 0, 0));
+	TEST_SUCC(chmod(TEST_FILE, 0644));
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		become_user(TEST_UID);
+		CHECK_WITH(utimensat(AT_FDCWD, TEST_FILE, times, 0),
+			   _ret == -1 && errno == EACCES);
+		_exit(EXIT_SUCCESS);
+	}
+	TEST_RES(child_exit_ok(pid), _ret);
+}
+END_TEST()
+
+FN_TEST(non_owner_cannot_set_explicit_times)
+{
+	struct timespec times[2] = {
+		{ .tv_sec = 100, .tv_nsec = 0 },
+		{ .tv_sec = 200, .tv_nsec = 0 },
+	};
+
+	TEST_SUCC(chown(TEST_FILE, 0, 0));
+	TEST_SUCC(chmod(TEST_FILE, 0666));
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		become_user(TEST_UID);
+		CHECK_WITH(utimensat(AT_FDCWD, TEST_FILE, times, 0),
+			   _ret == -1 && errno == EPERM);
+		_exit(EXIT_SUCCESS);
+	}
+	TEST_RES(child_exit_ok(pid), _ret);
+}
+END_TEST()
+
+FN_TEST(cap_fowner_can_set_explicit_times)
+{
+	struct timespec times[2] = {
+		{ .tv_sec = 100, .tv_nsec = 0 },
+		{ .tv_sec = 200, .tv_nsec = 0 },
+	};
+
+	/* The regression test process is root but not this inode's owner. */
+	TEST_SUCC(chown(TEST_FILE, TEST_UID, TEST_UID));
+	TEST_SUCC(chmod(TEST_FILE, 0000));
+	TEST_SUCC(utimensat(AT_FDCWD, TEST_FILE, times, 0));
 }
 END_TEST()
 

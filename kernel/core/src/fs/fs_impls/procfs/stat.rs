@@ -8,6 +8,7 @@
 use aster_softirq::{
     iter_irq_counts_across_all_cpus, iter_softirq_counts_across_all_cpus, softirq_id::*,
 };
+use aster_time::read_start_time;
 use aster_util::printer::VmPrinter;
 use ostd::util::id_set::Id;
 
@@ -21,7 +22,7 @@ use crate::{
     process::collect_process_creation_count,
     sched::nr_queued_and_running,
     thread::collect_context_switch_count,
-    time::{START_TIME, SystemTime, cpu_time_stats::CpuTimeStatsManager},
+    time::cpu_time_stats::CpuTimeStatsManager,
 };
 
 /// Represents the inode at `/proc/stat`.
@@ -96,15 +97,8 @@ impl StatFileOps {
         writeln!(printer, "ctxt {}", context_switches)?;
 
         // Boot time (seconds since UNIX epoch)
-        if let Some(start_time) = START_TIME.get() {
-            let boot_time = start_time
-                .duration_since(&SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            writeln!(printer, "btime {}", boot_time)?;
-        } else {
-            writeln!(printer, "btime {}", 0)?;
-        }
+        let boot_time = read_start_time().since_epoch().as_secs();
+        writeln!(printer, "btime {}", boot_time)?;
 
         // Process count (number of created processes since boot)
         writeln!(printer, "processes {}", collect_process_creation_count())?;

@@ -36,17 +36,23 @@ impl ReleaseReq {
     }
 }
 
+/// Flags for `FUSE_RELEASE` and `FUSE_RELEASEDIR` requests.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fuse.h#L506-L510>
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct ReleaseFlags(u32);
+
 bitflags! {
-    /// Flags for `FUSE_RELEASE` and `FUSE_RELEASEDIR` requests.
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fuse.h#L506-L510>
-    #[repr(C)]
-    #[derive(Pod)]
-    pub struct ReleaseFlags: u32 {
+    impl ReleaseFlags: u32 {
         /// The contents of the file should be flushed to disk.
-        const RELEASE_FLUSH = 1 << 0;
+        const RELEASE_FLUSH        = 1 << 0;
         /// Unlocks BSD flock locks held by the process on release.
         const RELEASE_FLOCK_UNLOCK = 1 << 1;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _                    = !0;
     }
 }
 

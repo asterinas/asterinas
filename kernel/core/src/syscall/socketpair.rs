@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{
     fs::file::{
         FileLike,
-        file_table::{FdFlags, RawFileDesc},
+        file_table::{FdFlags, FileTableInsert, RawFileDesc},
     },
     net::socket::unix::{UnixDatagramSocket, UnixStreamSocket},
     prelude::*,
@@ -55,14 +55,14 @@ pub(super) fn sys_socketpair(
 
     let socket_fds = {
         let file_table = ctx.thread_local.borrow_file_table();
-        let mut file_table_locked = file_table.unwrap().write();
         let fd_flags = if sock_flags.contains(SockFlags::SOCK_CLOEXEC) {
             FdFlags::CLOEXEC
         } else {
             FdFlags::empty()
         };
-        let fd_a = file_table_locked.insert(socket_a, fd_flags);
-        let fd_b = file_table_locked.insert(socket_b, fd_flags);
+        let [fd_a, fd_b] = file_table
+            .unwrap()
+            .lock_and_insert_multiple([socket_a, socket_b], fd_flags)?;
         SocketFds(fd_a.into(), fd_b.into())
     };
     ctx.user_space().write_val(sv, &socket_fds)?;

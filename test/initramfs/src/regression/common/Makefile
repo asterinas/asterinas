@@ -29,22 +29,22 @@ C_FLAGS += -D__asterinas__
 endif
 
 ifneq ($(C_OBJS_FILTER),)
-    FILTERED_C_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(C_OBJS_FILTER))
-    C_OBJS := $(filter-out $(FILTERED_C_OBJS),$(C_OBJS))
+FILTERED_C_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(C_OBJS_FILTER))
+C_OBJS := $(filter-out $(FILTERED_C_OBJS),$(C_OBJS))
 endif
 
 ifneq ($(ASM_OBJS_FILTER),)
-    FILTERED_ASM_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(ASM_OBJS_FILTER))
-    ASM_OBJS := $(filter-out $(FILTERED_ASM_OBJS),$(ASM_OBJS))
+FILTERED_ASM_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(ASM_OBJS_FILTER))
+ASM_OBJS := $(filter-out $(FILTERED_ASM_OBJS),$(ASM_OBJS))
 endif
 
 ifneq ($(SCRIPTS_FILTER),)
-    FILTERED_SCRIPTS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(SCRIPTS_FILTER))
-    SCRIPTS := $(filter-out $(FILTERED_SCRIPTS),$(SCRIPTS))
+FILTERED_SCRIPTS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(SCRIPTS_FILTER))
+SCRIPTS := $(filter-out $(FILTERED_SCRIPTS),$(SCRIPTS))
 endif
 
 ifneq ($(SUBDIRS_FILTER),)
-    SUBDIRS := $(filter-out $(SUBDIRS_FILTER),$(SUBDIRS))
+SUBDIRS := $(filter-out $(SUBDIRS_FILTER),$(SUBDIRS))
 endif
 
 .PHONY: all

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use fdt_util::AcquireIoMems;
-use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
+use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce, warn};
 
 use crate::{SystemTime, rtc::Driver};
 
@@ -34,23 +34,26 @@ impl Driver for RtcLoongson {
         let sys_toyread1: u32 = self.io_mem.read_once(SYS_TOYREAD1).unwrap();
         let sys_rtcread: u32 = self.io_mem.read_once(SYS_RTCREAD).unwrap();
 
-        let toy_year = sys_toyread1 as u16 + 1900;
-        let toy_month = ((sys_toyread0 >> 26) & 0x3f) as u8;
-        let toy_day = ((sys_toyread0 >> 21) & 0x1f) as u8;
-        let toy_hour = ((sys_toyread0 >> 16) & 0x1f) as u8;
-        let toy_minute = ((sys_toyread0 >> 10) & 0x3f) as u8;
-        let toy_second = ((sys_toyread0 >> 4) & 0x3f) as u8;
-        let nanos = sys_rtcread as u64 % 32768 * 1_000_000_000 / 32768;
+        let toy_year = sys_toyread1.cast_signed().wrapping_add(1900);
+        let toy_month = (sys_toyread0 >> 26) & 0x3f;
+        let toy_day = (sys_toyread0 >> 21) & 0x1f;
+        let toy_hour = (sys_toyread0 >> 16) & 0x1f;
+        let toy_minute = (sys_toyread0 >> 10) & 0x3f;
+        let toy_second = (sys_toyread0 >> 4) & 0x3f;
+        let nanos = (sys_rtcread as u64 % 32768 * 1_000_000_000 / 32768) as u32;
 
-        SystemTime {
-            year: toy_year,
-            month: toy_month,
-            day: toy_day,
-            hour: toy_hour,
-            minute: toy_minute,
-            second: toy_second,
-            nanos,
-        }
+        let Some(date_time) = chrono::NaiveDate::from_ymd_opt(toy_year, toy_month, toy_day)
+            .and_then(|date| date.and_hms_nano_opt(toy_hour, toy_minute, toy_second, nanos))
+        else {
+            warn!("Loongson RTC reports an invalid date time, falling back to the Unix epoch");
+            return SystemTime::UNIX_EPOCH;
+        };
+
+        let duration = date_time
+            .signed_duration_since(chrono::DateTime::UNIX_EPOCH.naive_utc())
+            .to_std()
+            .unwrap_or_default();
+        SystemTime::new(duration)
     }
 }
 

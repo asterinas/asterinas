@@ -22,7 +22,7 @@ use crate::{
         file::{AccessMode, InodeMode, InodeType, PerOpenFileOps, StatusFlags, mkmod},
         pipe::Pipe,
         pseudofs::AnonDeviceId,
-        utils::{CStr256, DirentVisitor},
+        utils::{self, CStr256, DirentVisitor},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::{
@@ -35,8 +35,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::{Gid, Uid, posix_thread::AsPosixThread},
-    thread::Thread,
+    process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
     vm::page_cache::{PageCache, Vmo},
 };
@@ -483,16 +482,17 @@ impl DirEntry {
     }
 
     fn visit_entry(&self, idx: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        // The visitor's offset is where the next directory read should resume.
         let try_visit = |idx: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
             // Read the two special entries("." and "..").
             if *idx == 0 {
                 let this_inode = self.this.upgrade().unwrap();
-                visitor.visit(".", this_inode.ino, this_inode.typ, *idx)?;
+                visitor.visit(".", this_inode.ino, this_inode.typ, *idx + 1)?;
                 *idx += 1;
             }
             if *idx == 1 {
                 let parent_inode = self.parent.upgrade().unwrap();
-                visitor.visit("..", parent_inode.ino, parent_inode.typ, *idx)?;
+                visitor.visit("..", parent_inode.ino, parent_inode.typ, *idx + 1)?;
                 *idx += 1;
             }
             // Read the normal child entries.
@@ -503,7 +503,7 @@ impl DirEntry {
                 .skip_while(|(offset, _)| offset + NUM_SPECIAL_ENTRIES < start_idx)
             {
                 let offset = offset_children + NUM_SPECIAL_ENTRIES;
-                visitor.visit(name.as_str().unwrap(), child.ino, child.typ, offset)?;
+                visitor.visit(name.as_str().unwrap(), child.ino, child.typ, offset + 1)?;
                 *idx = offset + 1;
             }
             Ok(())
@@ -910,7 +910,7 @@ impl RamInode {
         }
 
         let fs = self.fs.upgrade().unwrap();
-        let (uid, gid) = current_fs_ids();
+        let (uid, gid) = utils::current_fs_ids();
         let new_inode = match type_ {
             InodeType::File => RamInode::new_file(&fs, mode, uid, gid, to_be_revalidated),
             InodeType::Socket => RamInode::new_socket(&fs, mode, uid, gid, to_be_revalidated),
@@ -961,7 +961,7 @@ impl RamInode {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
 
-        let (uid, gid) = current_fs_ids();
+        let (uid, gid) = utils::current_fs_ids();
         let new_inode = match type_ {
             MknodType::CharDevice(dev_id) | MknodType::BlockDevice(dev_id) => {
                 let dev_type = type_.device_type().unwrap();
@@ -1248,7 +1248,7 @@ impl Inode for RamInode {
         }
 
         let fs = self.fs.upgrade().unwrap();
-        let (uid, gid) = current_fs_ids();
+        let (uid, gid) = utils::current_fs_ids();
         Ok(RamInode::new_tmpfile(
             &fs,
             mode,
@@ -1665,16 +1665,6 @@ fn write_lock_two_direntries_by_ino<'a>(
 
 fn now() -> Duration {
     RealTimeCoarseClock::get().read_time()
-}
-
-fn current_fs_ids() -> (Uid, Gid) {
-    Thread::current()
-        .and_then(|thread| {
-            let posix_thread = thread.as_posix_thread()?;
-            let credentials = posix_thread.credentials();
-            Some((credentials.fsuid(), credentials.fsgid()))
-        })
-        .unwrap_or((Uid::new_root(), Gid::new_root()))
 }
 
 pub(super) struct RamFsType;

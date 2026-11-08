@@ -255,6 +255,7 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             return_errno_with_message!(Errno::EINVAL, "free inodes count exceeds inodes count");
         }
 
+        // Unknown compatible bits may be ignored but must survive writeback.
         let feature_compat = FeatureCompatSet::from_bits_retain(sb.feature_compat);
 
         let allowed_incompat =
@@ -664,59 +665,54 @@ impl SuperBlockState {
 
 bitflags! {
     /// Compatible feature set.
+    #[derive(Clone, Copy, Debug)]
     struct FeatureCompatSet: u32 {
         /// Preallocate some number of blocks to a directory when creating a new one.
-        const DIR_PREALLOC = 1 << 0;
+        const DIR_PREALLOC  = 1 << 0;
         /// AFS server inodes exist.
         const IMAGIC_INODES = 1 << 1;
         /// File system has a journal.
-        const HAS_JOURNAL = 1 << 2;
+        const HAS_JOURNAL   = 1 << 2;
         /// Inodes have extended attributes.
-        const EXT_ATTR = 1 << 3;
+        const EXT_ATTR      = 1 << 3;
         /// File system can resize itself for larger partitions.
-        const RESIZE_INO = 1 << 4;
+        const RESIZE_INO    = 1 << 4;
         /// Directories use hash index.
-        const DIR_INDEX = 1 << 5;
-    }
-}
-
-impl FeatureCompatSet {
-    // Unknown compatible bits are valid to ignore and preserve; known unsupported
-    // behaviors remain mount-gated through their incompatible feature classes.
-    const fn from_bits_retain(bits: u32) -> Self {
-        Self { bits }
+        const DIR_INDEX     = 1 << 5;
     }
 }
 
 bitflags! {
     /// Incompatible feature set.
+    #[derive(Clone, Copy, Debug)]
     struct FeatureInCompatSet: u32 {
         /// Compression is used.
         const COMPRESSION = 1 << 0;
         /// Directory entries contain a type field.
-        const FILETYPE = 1 << 1;
+        const FILETYPE    = 1 << 1;
         /// File system needs to replay its journal.
-        const RECOVER = 1 << 2;
+        const RECOVER     = 1 << 2;
         /// File system uses a journal device.
         const JOURNAL_DEV = 1 << 3;
         /// Metablock block group.
-        const META_BG = 1 << 4;
+        const META_BG     = 1 << 4;
         /// Inodes may use extent trees instead of indirect block pointers.
-        const EXTENTS = 1 << 6;
+        const EXTENTS     = 1 << 6;
         /// Filesystem block numbers and group descriptors use 64-bit fields.
-        const BIT64 = 1 << 7;
+        const BIT64       = 1 << 7;
     }
 }
 
 bitflags! {
     /// Read-only-compatible feature set.
+    #[derive(Clone, Copy, Debug)]
     struct FeatureRoCompatSet: u32 {
         /// Sparse superblocks and group descriptor tables.
         const SPARSE_SUPER = 1 << 0;
         /// File system uses a 64-bit file size.
-        const LARGE_FILE = 1 << 1;
+        const LARGE_FILE   = 1 << 1;
         /// Directory contents are stored in a binary tree.
-        const BTREE_DIR = 1 << 2;
+        const BTREE_DIR    = 1 << 2;
     }
 }
 
@@ -724,6 +720,7 @@ bitflags! {
     /// File system state.
     ///
     /// Reference: <https://www.nongnu.org/ext2-doc/ext2.html#s-state>
+    #[derive(Clone, Copy, Debug)]
     pub(super) struct FsState: u16 {
         /// Unmounted cleanly.
         const VALID = 1 << 0;

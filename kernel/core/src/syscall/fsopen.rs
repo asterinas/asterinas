@@ -3,7 +3,10 @@
 use super::{SyscallReturn, constants::MAX_FILENAME_LEN};
 use crate::{
     fs::{
-        file::{FileLike, FsConfigFile, file_table::FdFlags},
+        file::{
+            FileLike, FsConfigFile,
+            file_table::{FdFlags, FileTableInsert},
+        },
         vfs::registry::look_up,
     },
     prelude::*,
@@ -11,7 +14,7 @@ use crate::{
 
 pub(super) fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let flags = FsOpenFlags::try_from(flags)?;
-    check_mount_api_capability(ctx)?;
+    super::mount::check_mount_api_capability(ctx)?;
 
     let fs_name = ctx
         .user_space()
@@ -27,26 +30,15 @@ pub(super) fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Resu
     })?;
 
     let file = Arc::new(FsConfigFile::new(fs_type)) as Arc<dyn FileLike>;
-    let fd = ctx
-        .thread_local
-        .borrow_file_table()
+    let file_table = ctx.thread_local.borrow_file_table();
+    let fd = file_table
         .unwrap()
-        .write()
-        .insert(file, FdFlags::from(flags));
+        .lock_and_insert(file, FdFlags::from(flags))?;
     Ok(SyscallReturn::Return(fd.into()))
 }
 
-pub(super) fn check_mount_api_capability(ctx: &Context) -> Result<()> {
-    use crate::{process::credentials::capabilities::CapSet, security::lsm::hooks as lsm_hooks};
-
-    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
-        ctx.thread_local.borrow_user_ns().as_ref(),
-        ctx.posix_thread,
-        CapSet::SYS_ADMIN,
-    ))
-}
-
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct FsOpenFlags: u32 {
         const FSOPEN_CLOEXEC = 1;
     }

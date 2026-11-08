@@ -9,5 +9,6 @@ rename
 rmdir
 short_rw
 sparse
+sticky
 symlink
 unix_socket
