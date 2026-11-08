@@ -11,7 +11,7 @@ pub mod vblank;
 
 /// A display pipeline that scans out planes using a display mode.
 #[derive(Debug)]
-pub(crate) struct DrmCrtc {
+pub struct DrmCrtc {
     id: OwnedKmsObjectId,
     index: KmsObjectIndex,
     config: DrmCrtcConfig,
@@ -55,7 +55,7 @@ impl DrmCrtc {
         &self.properties
     }
 
-    pub(crate) fn vblank(&self) -> &Arc<DrmVblank> {
+    pub fn vblank(&self) -> &Arc<DrmVblank> {
         &self.vblank
     }
 }

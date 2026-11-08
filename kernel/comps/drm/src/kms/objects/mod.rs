@@ -60,7 +60,7 @@ impl KmsObjectStore {
         OwnedKmsObjectId::alloc(&self.id_allocator)
     }
 
-    pub(crate) fn static_objects(&self) -> &KmsStaticObjects {
+    pub fn static_objects(&self) -> &KmsStaticObjects {
         &self.static_objects
     }
 
@@ -79,7 +79,7 @@ impl KmsObjectStore {
 /// Owns the KMS objects created during device initialization.
 /// Keeps these objects available for the lifetime of the device.
 #[derive(Debug, Default)]
-pub(crate) struct KmsStaticObjects {
+pub struct KmsStaticObjects {
     planes: HashMap<KmsObjectId, Arc<DrmPlane>>,
     crtcs: HashMap<KmsObjectId, Arc<DrmCrtc>>,
     encoders: HashMap<KmsObjectId, Arc<DrmEncoder>>,
@@ -163,7 +163,7 @@ impl KmsStaticObjects {
         self.crtcs.get(&id)
     }
 
-    pub(crate) fn lookup_crtc_by_index(&self, index: KmsObjectIndex) -> Option<&Arc<DrmCrtc>> {
+    pub fn lookup_crtc_by_index(&self, index: KmsObjectIndex) -> Option<&Arc<DrmCrtc>> {
         self.crtcs().find(|crtc| crtc.index() == index)
     }
 

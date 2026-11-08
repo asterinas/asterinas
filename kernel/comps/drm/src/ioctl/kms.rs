@@ -526,6 +526,10 @@ impl DrmFile {
                 .is_none()
             {
                 crtc.vblank().enable();
+                if let Err(error) = kms_ops.enable_vblank(crtc.index()) {
+                    crtc.vblank().disable();
+                    return Err(error);
+                }
             }
 
             modeset_state.set_crtc_state(crtc.index(), DrmCrtcState::new(display_mode));
@@ -552,6 +556,7 @@ impl DrmFile {
                 .display_mode()
                 .is_some()
             {
+                kms_ops.disable_vblank(crtc.index());
                 crtc.vblank().disable();
             }
             modeset_state.set_crtc_state(crtc.index(), DrmCrtcState::default());

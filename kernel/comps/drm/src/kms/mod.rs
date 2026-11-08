@@ -29,6 +29,7 @@ pub mod display_mode;
 pub mod modeset;
 pub mod objects;
 pub mod pixel_format;
+pub mod software_vblank;
 
 /// Driver-specific operations for a KMS-capable DRM device.
 ///
@@ -68,6 +69,12 @@ pub trait DrmKmsOps: DrmDevice {
         framebuffer: &DrmFramebuffer,
         source_rects: &[DrmRect],
     ) -> Result<()>;
+
+    /// Enables vblank notifications for the CRTC.
+    fn enable_vblank(&self, crtc_index: KmsObjectIndex) -> Result<()>;
+
+    /// Disables vblank notifications for the CRTC.
+    fn disable_vblank(&self, crtc_index: KmsObjectIndex);
 }
 
 /// A DRM device's mode configuration, KMS objects, and current modeset state.
@@ -93,7 +100,7 @@ impl DrmKms {
         &self.mode_config
     }
 
-    pub(crate) fn object_store(&self) -> &KmsObjectStore {
+    pub fn object_store(&self) -> &KmsObjectStore {
         &self.object_store
     }
 
