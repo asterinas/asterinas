@@ -145,6 +145,7 @@ dependencies = [
  "aster-fuse",
  "aster-input",
  "aster-logger",
+ "aster-ne2k",
  "aster-network",
  "aster-nvme",
  "aster-rights",
@@ -309,6 +310,18 @@ dependencies = [
  "postcard",
  "serde",
  "zerocopy",
+]
+
+[[package]]
+name = "aster-ne2k"
+version = "0.1.0"
+dependencies = [
+ "aster-bigtcp",
+ "aster-network",
+ "aster-pci",
+ "aster-softirq",
+ "component",
+ "ostd",
 ]
 
 [[package]]
