@@ -18,7 +18,7 @@ macro_rules! __log_prefix {
 }
 
 use alloc::{sync::Arc, vec};
-use core::fmt::Debug;
+use core::{fmt::Debug, num::NonZeroU32};
 
 use aster_core::prelude::*;
 use aster_drm::{
@@ -39,7 +39,7 @@ use aster_drm::{
             plane::DrmPlaneType,
         },
         pixel_format::DrmPixelFormat,
-        vblank::DrmVblank,
+        vblank::{DrmVblank, software::DrmSoftwareVblank},
     },
     utils::{DrmRect, DrmSize},
 };
@@ -51,6 +51,7 @@ use component::{ComponentInitError, init_component};
 
 const SIMPLEDRM_NAME: &str = "simpledrm";
 const SIMPLEDRM_DESC: &str = "DRM driver for simple-framebuffer platform devices";
+const SIMPLEDRM_VREFRESH_HZ: u32 = 60;
 
 #[init_component(process)]
 fn init() -> Result<(), ComponentInitError> {
@@ -80,6 +81,7 @@ struct SimpleDrmDevice {
     features: DrmFeatures,
     pixel_format: DrmPixelFormat,
     vblank: Arc<DrmVblank>,
+    software_vblank: DrmSoftwareVblank,
     mode_config: DrmModeConfig,
 }
 
@@ -114,6 +116,9 @@ impl SimpleDrmDevice {
         let object_store = builder.build()?;
 
         let vblank = Arc::new(DrmVblank::new());
+        let software_vblank =
+            DrmSoftwareVblank::new(&vblank, NonZeroU32::new(SIMPLEDRM_VREFRESH_HZ).unwrap());
+
         let width = u32::try_from(boot_framebuffer.width())?;
         let height = u32::try_from(boot_framebuffer.height())?;
 
@@ -129,6 +134,7 @@ impl SimpleDrmDevice {
             features: DrmFeatures::empty(),
             pixel_format,
             vblank,
+            software_vblank,
             mode_config,
         })
     }
@@ -293,6 +299,7 @@ impl DrmKmsOps for SimpleDrmDevice {
         if crtc_index.get() != 0 {
             return_errno_with_message!(Errno::EINVAL, "the DRM CRTC index is invalid");
         }
+        self.software_vblank.enable()?;
         self.vblank.enable();
         Ok(())
     }
@@ -301,6 +308,7 @@ impl DrmKmsOps for SimpleDrmDevice {
         if crtc_index.get() != 0 {
             return;
         }
+        self.software_vblank.disable();
         self.vblank.disable();
     }
 }
