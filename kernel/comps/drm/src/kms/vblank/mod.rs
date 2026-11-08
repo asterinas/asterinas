@@ -8,6 +8,8 @@ use ostd::sync::{Mutex, WaitQueue};
 
 use crate::event::{DrmEventBase, DrmEventReservation, DrmEventResponse, DrmEventType};
 
+pub mod software;
+
 // Preserves legacy 2^23-frame comparison window to distinguish
 // reached targets from future targets across counter wraparound.
 pub(crate) const MAX_PASSED_DISTANCE: u64 = 1 << 23;
