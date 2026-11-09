@@ -52,15 +52,7 @@ fn do_accept(
 
     let is_nonblocking = flags.contains(Flags::SOCK_NONBLOCK);
 
-    let (connected_socket, socket_addr) = {
-        socket
-            .accept(is_nonblocking)
-            .map_err(|err| match err.error() {
-                // FIXME: `accept` should not be restarted if a timeout has been set on the socket using `setsockopt`.
-                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
-                _ => err,
-            })?
-    };
+    let (connected_socket, socket_addr) = socket.accept(is_nonblocking)?;
 
     let fd_flags = if flags.contains(Flags::SOCK_CLOEXEC) {
         FdFlags::CLOEXEC
