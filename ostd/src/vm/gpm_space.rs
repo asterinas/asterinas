@@ -304,7 +304,11 @@ impl<'a> CursorMut<'a> {
                     num_unmapped += 1;
                 }
                 PageTableFrag::StrayPageTable { pt, num_frames, .. } => {
-                    frames.push(Frame::rcu_from_unsized(pt));
+                    // Retain the whole node if reserving space unwinds before
+                    // its frames have been queued for invalidation.
+                    let node_frames = ManuallyDrop::new(pt.into_iter());
+                    frames.reserve(node_frames.len());
+                    frames.extend(ManuallyDrop::into_inner(node_frames));
                     num_unmapped += num_frames;
                 }
             }

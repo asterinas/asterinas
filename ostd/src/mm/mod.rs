@@ -76,12 +76,11 @@ pub(crate) trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     /// This is also the page size at level 1 page tables.
     const BASE_PAGE_SIZE: usize;
 
-    /// The number of levels in the page table.
-    /// The numbering of levels goes from deepest node to the root node. For example,
-    /// the level 1 to 5 on AMD64 corresponds to Page Tables, Page Directory Tables,
-    /// Page Directory Pointer Tables, Page-Map Level-4 Table, and Page-Map Level-5
-    /// Table, respectively.
-    const NR_LEVELS: PagingLevel;
+    /// The VPN index width at each level, starting with level 1.
+    ///
+    /// Each node contains `1 << VPN_BITS[level - 1]` entries. For example,
+    /// Sv39 uses `&[9, 9, 9]`, while Sv39x4 uses `&[9, 9, 11]`.
+    const VPN_BITS: &'static [usize];
 
     /// The highest level that a PTE can be directly used to translate a VA.
     /// This affects the the largest page size supported by the page table.
@@ -90,7 +89,7 @@ pub(crate) trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     /// The size of a PTE.
     const PTE_SIZE: usize;
 
-    /// The address width may be BASE_PAGE_SIZE.ilog2() + NR_LEVELS * IN_FRAME_INDEX_BITS.
+    /// The address width may be `BASE_PAGE_SIZE.ilog2() + VPN_BITS.iter().sum()`.
     /// If it is shorter than that, the higher bits in the highest level are ignored.
     const ADDRESS_WIDTH: usize;
 
@@ -111,14 +110,39 @@ pub(crate) trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
 /// The page size
 pub const PAGE_SIZE: usize = page_size::<PagingConsts>(1);
 
-/// The page size at a given level.
-pub(crate) const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {
-    C::BASE_PAGE_SIZE << (nr_subpage_per_huge::<C>().ilog2() as usize * (level as usize - 1))
+/// Returns the number of page table levels, derived from the VPN index widths.
+///
+/// Levels are numbered from the deepest node (level 1) to the root.
+pub(crate) const fn nr_levels<C: PagingConstsTrait>() -> PagingLevel {
+    let nr_levels = C::VPN_BITS.len();
+    assert!(nr_levels > 0 && nr_levels <= PagingLevel::MAX as usize);
+    nr_levels as PagingLevel
 }
 
-/// The number of sub pages in a huge page.
-pub(crate) const fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize {
-    C::BASE_PAGE_SIZE / C::PTE_SIZE
+/// The page size at a given level.
+pub(crate) const fn page_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+    let mut size = C::BASE_PAGE_SIZE;
+    let mut lower_level = 1;
+    while lower_level < level {
+        size <<= C::VPN_BITS[lower_level as usize - 1];
+        lower_level += 1;
+    }
+    size
+}
+
+/// Returns the number of entries in a page table node at the given level.
+pub(crate) const fn nr_ptes<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+    let bits = C::VPN_BITS[level as usize - 1];
+    assert!(bits < usize::BITS as usize);
+    1 << bits
+}
+
+/// Returns the size and alignment of a page table node at the given level.
+pub(crate) const fn page_table_node_size<C: PagingConstsTrait>(level: PagingLevel) -> usize {
+    let size = nr_ptes::<C>(level)
+        .checked_mul(C::PTE_SIZE)
+        .expect("page table node size overflows");
+    if size < PAGE_SIZE { PAGE_SIZE } else { size }
 }
 
 /// The number of base pages in a huge page at a given level.
