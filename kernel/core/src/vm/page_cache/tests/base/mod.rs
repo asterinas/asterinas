@@ -12,7 +12,9 @@ use crate::{
 
 mod backend;
 
-pub(in crate::vm::page_cache::tests) use backend::{IoCompletion, IoKind, MockPageCacheBackend};
+pub(in crate::vm::page_cache::tests) use backend::{
+    IoCompletion, IoKind, MockPageCacheBackend, WriteSubmission,
+};
 
 /// Maximum number of cooperative yields before a test wait times out.
 const MAX_WAIT_YIELDS: usize = 1_000_000;

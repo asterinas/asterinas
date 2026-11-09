@@ -50,6 +50,33 @@ impl MockPageCacheBackend {
         self.state.lock().set_completion(kind, completion);
     }
 
+    /// Enables or disables rejection of writes to `page_idx` before acceptance.
+    pub(in crate::vm::page_cache::tests) fn set_write_submit_failure(
+        &self,
+        page_idx: usize,
+        fail: bool,
+    ) {
+        let mut state = self.state.lock();
+        if fail {
+            state.write_submit_failures.insert(page_idx);
+        } else {
+            state.write_submit_failures.remove(&page_idx);
+        }
+    }
+
+    /// Returns how many times a flush has started waiting for this page's BIO.
+    pub(in crate::vm::page_cache::tests) fn write_wait_count(&self, page_idx: usize) -> usize {
+        self.state.lock().write_wait_counts[page_idx]
+    }
+
+    /// Selects whether writes are submitted one page at a time or as a contiguous range.
+    pub(in crate::vm::page_cache::tests) fn set_write_submission(
+        &self,
+        submission: WriteSubmission,
+    ) {
+        self.state.lock().contiguous_writes = matches!(submission, WriteSubmission::Contiguous);
+    }
+
     /// Waits until the backend has queued `expected_count` deferred BIOs.
     ///
     /// Tests use this to freeze the backend at the "BIO submitted but not yet
@@ -74,6 +101,21 @@ impl MockPageCacheBackend {
         success: bool,
     ) -> bool {
         let deferred_bio = self.state.lock().deferred_bios_mut(kind).pop_front();
+        let Some(deferred_bio) = deferred_bio else {
+            return false;
+        };
+
+        self.complete_bio(kind, deferred_bio.page_idx, deferred_bio.bio, success);
+        true
+    }
+
+    /// Completes the newest BIO first to control overlapping flush order.
+    pub(in crate::vm::page_cache::tests) fn complete_last_deferred_bio(
+        &self,
+        kind: IoKind,
+        success: bool,
+    ) -> bool {
+        let deferred_bio = self.state.lock().deferred_bios_mut(kind).pop_back();
         let Some(deferred_bio) = deferred_bio else {
             return false;
         };
@@ -123,6 +165,13 @@ pub(in crate::vm::page_cache::tests) enum IoKind {
 pub(in crate::vm::page_cache::tests) enum IoCompletion {
     Immediate,
     Deferred,
+}
+
+/// Controls whether the backend accepts writes one page at a time or as a contiguous range.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::vm::page_cache::tests) enum WriteSubmission {
+    PerPage,
+    Contiguous,
 }
 
 impl BlockAsPageCacheBackend for MockPageCacheBackend {
