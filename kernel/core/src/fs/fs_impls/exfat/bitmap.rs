@@ -38,12 +38,39 @@ impl ExfatBitmap {
         dentry: &ExfatBitmapDentry,
     ) -> Result<Self> {
         let fs = fs_weak.upgrade().unwrap();
-        let num_clusters = (dentry.size as usize).align_up(fs.cluster_size()) / fs.cluster_size();
+
+        let Some(num_bitmap_bits_required) = fs
+            .super_block()
+            .num_clusters
+            .checked_sub(EXFAT_RESERVED_CLUSTERS)
+        else {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "allocation bitmap is too small for the cluster count."
+            )
+        };
+
+        let Some(bitmap_size) = dentry.size.checked_mul(BITS_PER_BYTE as u64) else {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "overflow detected when calculating allocation bitmap size."
+            )
+        };
+
+        if num_bitmap_bits_required as u64 > bitmap_size {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "allocation bitmap is too small for the cluster count."
+            )
+        }
+
+        let num_bitmap_clusters =
+            (dentry.size as usize).align_up(fs.cluster_size()) / fs.cluster_size();
 
         let chain = ExfatChain::new(
             fs_weak.clone(),
             dentry.start_cluster,
-            Some(num_clusters as u32),
+            Some(num_bitmap_clusters as u32),
             FatChainFlags::ALLOC_POSSIBLE,
         )?;
         let mut buf = vec![0; dentry.size as usize];
