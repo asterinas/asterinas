@@ -144,6 +144,8 @@ pub trait SysNode: SysObj {
 
     /// Returns whether an attribute with the given name is absent.
     ///
+    /// Attributes of a node that is no longer available are considered absent.
+    ///
     /// If the node does not have the attribute with the given name,
     /// the return value is unspecified.
     fn is_attr_absent(&self, _name: &str) -> bool;

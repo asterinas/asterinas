@@ -643,6 +643,10 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
 
 inherit_sys_branch_node!(CgroupNode, fields, {
     fn is_attr_absent(&self, name: &str) -> bool {
+        if self.with_inner(|_| ()).is_none() {
+            return true;
+        }
+
         if name.starts_with("cgroup.") {
             false
         } else {

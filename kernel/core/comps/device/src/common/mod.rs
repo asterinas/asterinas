@@ -267,7 +267,7 @@ macro_rules! impl_device_node {
             }
 
             fn is_attr_absent(&self, _name: &str) -> bool {
-                false
+                !self.base().is_added()
             }
 
             fn read_attr(

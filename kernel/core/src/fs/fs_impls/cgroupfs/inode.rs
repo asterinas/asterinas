@@ -4,11 +4,11 @@ use super::fs::CgroupFs;
 use crate::{
     fs::{
         cgroupfs::CgroupNode,
-        file::InodeMode,
+        file::{InodeMode, StatusFlags},
         utils::systree_inode::{SysTreeInodeTy, SysTreeNodeKind},
         vfs::{
             file_system::FileSystem,
-            inode::{Extension, Inode, Metadata, RevalidationPolicy},
+            inode::{Extension, FileOps, Inode, Metadata, RevalidationPolicy},
             path::Dentry,
         },
     },
@@ -80,6 +80,39 @@ impl SysTreeInodeTy for CgroupInode {
         self.this
             .upgrade()
             .expect("invalid weak reference to `self`")
+    }
+}
+
+impl FileOps for CgroupInode {
+    fn write_at(
+        &self,
+        offset: usize,
+        buf: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        let SysTreeNodeKind::Attr(attr, leaf) = self.node_kind() else {
+            return Err(Error::new(Errno::EINVAL));
+        };
+
+        if buf.remain() == 0 {
+            let present = leaf
+                .node_attrs()
+                .get(attr.name())
+                .is_some_and(|current| current.id() == attr.id());
+            if !present || leaf.is_attr_absent(attr.name()) {
+                return Err(Error::new(Errno::ENODEV));
+            }
+
+            return Ok(0);
+        }
+
+        let len = if offset == 0 {
+            leaf.write_attr(attr.name(), buf)?
+        } else {
+            leaf.write_attr_at(attr.name(), offset, buf)?
+        };
+
+        Ok(len)
     }
 }
 
