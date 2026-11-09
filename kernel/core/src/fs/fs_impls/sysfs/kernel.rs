@@ -113,7 +113,13 @@ inherit_sys_branch_node!(KernelSysNodeRoot, fields, {
         }
     }
 
-    fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> Result<usize> {
+    fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize> {
+        if reader.remain() == 0 {
+            if !self.fields.attr_set().contains(name) {
+                return Err(Error::IsDead);
+            }
+            return Ok(0);
+        }
         // TODO: Add support for writing attributes.
         Err(Error::AttributeError)
     }

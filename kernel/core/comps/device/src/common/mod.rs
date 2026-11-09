@@ -267,7 +267,7 @@ macro_rules! impl_device_node {
             }
 
             fn is_attr_absent(&self, _name: &str) -> bool {
-                false
+                !self.base().is_added()
             }
 
             fn read_attr(
@@ -294,6 +294,12 @@ macro_rules! impl_device_node {
             ) -> aster_systree::Result<usize> {
                 if !self.base().is_added() {
                     return Err(aster_systree::Error::IsDead);
+                }
+                if reader.remain() == 0 {
+                    if !self.base().attrs().set().contains(name) {
+                        return Err(aster_systree::Error::IsDead);
+                    }
+                    return Ok(0);
                 }
                 self.base().attrs().store(self, name, reader)
             }
