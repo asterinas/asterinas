@@ -4,10 +4,9 @@ use alloc::{sync::Arc, vec::Vec};
 
 use align_ext::AlignExt;
 use ostd::{
-    Error, Result,
-    boot::boot_info,
+    Error, Result, boot,
     io::IoMem,
-    mm::{CachePolicy, HasSize, PAGE_SIZE, VmIo},
+    mm::{self, CachePolicy, HasSize, VmIo},
     sync::Mutex,
 };
 use spin::Once;
@@ -32,6 +31,7 @@ pub struct FrameBuffer {
     height: usize,
     line_size: usize,
     pixel_format: PixelFormat,
+    physical_size_mm: Option<(u16, u16)>,
     cmap: Mutex<FbCmap>,
 }
 
@@ -61,61 +61,40 @@ struct FbCmap {
 pub static FRAMEBUFFER: Once<Arc<FrameBuffer>> = Once::new();
 
 pub(crate) fn init() {
-    let Some(framebuffer_arg) = boot_info().framebuffer_arg else {
+    let Some(framebuffer_arg) = boot::boot_info().framebuffer_arg else {
         ostd::warn!("Framebuffer not found");
         return;
     };
 
-    if framebuffer_arg.address == 0 {
-        ostd::error!("Framebuffer address is zero");
+    let Some(pixel_format) = PixelFormat::from_boot_layout(
+        framebuffer_arg.bits_per_pixel(),
+        framebuffer_arg.rgb_layout(),
+    ) else {
+        ostd::error!(
+            "unsupported framebuffer pixel layout: {:?}",
+            framebuffer_arg
+        );
         return;
-    }
-
-    if framebuffer_arg.address % PAGE_SIZE != 0 {
-        ostd::error!("Framebuffer address is not page-aligned");
-        return;
-    }
-
-    // FIXME: There are several pixel formats that have the same BPP. We lost the information
-    // during the boot phase, so here we guess the pixel format on a best effort basis.
-    let pixel_format = match framebuffer_arg.bpp {
-        8 => PixelFormat::Grayscale8,
-        16 => PixelFormat::Rgb565,
-        24 => PixelFormat::Rgb888,
-        32 => PixelFormat::BgrReserved,
-        _ => {
-            ostd::error!(
-                "Unsupported framebuffer pixel format: {} bpp",
-                framebuffer_arg.bpp
-            );
-            return;
-        }
     };
 
-    let framebuffer = {
-        // FIXME: There can be more than `width` pixels per framebuffer line due to alignment
-        // purposes. We need to collect this information during the boot phase.
-        let line_size = framebuffer_arg
-            .width
-            .checked_mul(pixel_format.nbytes())
-            .unwrap();
-        let fb_size = framebuffer_arg
-            .height
-            .checked_mul(line_size)
-            .unwrap()
-            // The framebuffer should cover an entire set of pages. These pages can be mapped to
-            // userspace upon request.
-            .align_up(PAGE_SIZE);
+    let physical_range = framebuffer_arg.physical_range();
+    if !physical_range.start.is_multiple_of(mm::PAGE_SIZE) {
+        ostd::error!("framebuffer address is not page-aligned");
+        return;
+    }
 
-        let fb_base = framebuffer_arg.address;
-        // Use write-combining for framebuffer to enable faster write operations.
-        // Write-combining allows the CPU to combine multiple writes into fewer bus transactions,
-        // which is ideal for framebuffer access patterns (sequential writes).
-        let io_mem = IoMem::acquire_with_cache_policy(
-            fb_base..fb_base.checked_add(fb_size).unwrap(),
-            CachePolicy::WriteCombining,
-        )
-        .unwrap();
+    let framebuffer = {
+        // Device mappings exposed to userspace must cover whole pages. The boot
+        // argument constructor checks that rounding the validated end is safe.
+        let mapped_range = physical_range.start..physical_range.end.align_up(mm::PAGE_SIZE);
+        let io_mem =
+            match IoMem::acquire_with_cache_policy(mapped_range, CachePolicy::WriteCombining) {
+                Ok(io_mem) => io_mem,
+                Err(err) => {
+                    ostd::error!("failed to map framebuffer: {:?}", err);
+                    return;
+                }
+            };
 
         let default_cmap = FbCmap {
             entries: Vec::new(),
@@ -123,10 +102,11 @@ pub(crate) fn init() {
 
         FrameBuffer {
             io_mem,
-            width: framebuffer_arg.width,
-            height: framebuffer_arg.height,
-            line_size,
+            width: framebuffer_arg.width(),
+            height: framebuffer_arg.height(),
+            line_size: framebuffer_arg.pitch_bytes(),
             pixel_format,
+            physical_size_mm: framebuffer_arg.physical_size_mm(),
             cmap: Mutex::new(default_cmap),
         }
     };
@@ -144,6 +124,11 @@ impl FrameBuffer {
     /// Returns the height of the framebuffer in pixels.
     pub fn height(&self) -> usize {
         self.height
+    }
+
+    /// Returns the display width and height in millimeters, if known.
+    pub fn physical_size_mm(&self) -> Option<(u16, u16)> {
+        self.physical_size_mm
     }
 
     /// Returns the line size of the framebuffer in bytes.
