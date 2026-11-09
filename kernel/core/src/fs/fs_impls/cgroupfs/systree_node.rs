@@ -589,6 +589,13 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
     }
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize> {
+        if reader.remain() == 0 {
+            if !self.fields.attr_set().contains(name) || self.is_attr_absent(name) {
+                return Err(Error::IsDead);
+            }
+            return Ok(0);
+        }
+
         match name {
             "cgroup.procs" => {
                 let (content, len) = reader
@@ -643,6 +650,10 @@ inherit_sys_branch_node!(CgroupSystem, fields, {
 
 inherit_sys_branch_node!(CgroupNode, fields, {
     fn is_attr_absent(&self, name: &str) -> bool {
+        if self.with_inner(|_| ()).is_none() {
+            return true;
+        }
+
         if name.starts_with("cgroup.") {
             false
         } else {
@@ -718,6 +729,13 @@ inherit_sys_branch_node!(CgroupNode, fields, {
     }
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize> {
+        if reader.remain() == 0 {
+            if !self.fields.attr_set().contains(name) || self.is_attr_absent(name) {
+                return Err(Error::IsDead);
+            }
+            return Ok(0);
+        }
+
         match name {
             "cgroup.procs" => {
                 let (content, len) = reader
