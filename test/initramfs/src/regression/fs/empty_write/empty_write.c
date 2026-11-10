@@ -119,6 +119,35 @@ FN_TEST(empty_writes_preserve_metadata_and_position)
 }
 END_TEST()
 
+FN_TEST(empty_writes_to_sysfs)
+{
+	const char *sysfs_attr = "/sys/kernel/cpu_byteorder";
+	struct stat st;
+
+	/* Temporarily allow opening this stable, read-only sysfs attribute for writing. */
+	TEST_SUCC(stat(sysfs_attr, &st));
+	TEST_SUCC(chmod(sysfs_attr, (st.st_mode & 07777) | S_IWUSR));
+	int sysfs_fd = TEST_SUCC(open(sysfs_attr, O_WRONLY));
+	TEST_SUCC(chmod(sysfs_attr, st.st_mode & 07777));
+
+	TEST_RES(write(sysfs_fd, "", 0), _ret == 0);
+
+	TEST_SUCC(close(sysfs_fd));
+}
+END_TEST()
+
+FN_TEST(empty_writes_to_cgroupfs)
+{
+	int cgroup_fd =
+		TEST_SUCC(open("/sys/fs/cgroup/cgroup.procs", O_WRONLY));
+
+	/* Empty writes must not reach the PID parser. */
+	TEST_RES(write(cgroup_fd, "", 0), _ret == 0);
+
+	TEST_SUCC(close(cgroup_fd));
+}
+END_TEST()
+
 FN_SETUP(cleanup)
 {
 	CHECK(close(io_fd));
