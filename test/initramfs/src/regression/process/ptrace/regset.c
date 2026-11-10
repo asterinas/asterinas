@@ -15,6 +15,11 @@
 #include "../../common/test.h"
 #include "../../common/yama_ptrace_scope.h"
 
+#define X87_DEFAULT_CW 0x037f
+#define X87_ROUND_DOWN (1U << 10)
+#define MXCSR_DEFAULT 0x1f80
+#define MXCSR_ROUND_DOWN (1U << 13)
+
 static pid_t start_tracee(void)
 {
 	pid_t pid = CHECK(fork());
@@ -194,5 +199,167 @@ FN_TEST(regset_prstatus_prefix_with_invalid_rsp)
 	TEST_SUCC(ptrace(PTRACE_CONT, pid, 0, 0));
 	TEST_RES(waitpid(pid, &status, 0),
 		 _ret == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+END_TEST()
+
+static int fpregs_equal(const struct user_fpregs_struct *a,
+			const struct user_fpregs_struct *b)
+{
+	return a->cwd == b->cwd && a->swd == b->swd && a->ftw == b->ftw &&
+	       a->mxcsr == b->mxcsr &&
+	       !memcmp(a->st_space, b->st_space, sizeof(a->st_space)) &&
+	       !memcmp(a->xmm_space, b->xmm_space, sizeof(a->xmm_space));
+}
+
+FN_TEST(regset_prfpreg_rejects_invalid_writes)
+{
+	SKIP_TEST_IF(read_yama_scope() == YAMA_SCOPE_NO_ATTACH);
+
+	pid_t pid = start_tracee();
+	struct user_fpregs_struct original, invalid, actual;
+	struct iovec iov = { &original, sizeof(original) };
+	TEST_RES(ptrace(PTRACE_GETREGSET, pid, NT_PRFPREG, &iov),
+		 _ret == 0 && iov.iov_len == sizeof(original) &&
+			 iov.iov_base == &original);
+
+	// Unlike PRSTATUS, FPREG requires a complete register image.
+	invalid = original;
+	invalid.cwd ^= X87_ROUND_DOWN;
+	iov = (struct iovec){ &invalid, sizeof(unsigned long) };
+	TEST(ptrace(PTRACE_SETREGSET, pid, NT_PRFPREG, &iov), EINVAL,
+	     _ret == -1 && iov.iov_len == sizeof(unsigned long) &&
+		     iov.iov_base == &invalid);
+	struct iovec read_iov = { &actual, sizeof(actual) };
+	TEST_RES(ptrace(PTRACE_GETREGSET, pid, NT_PRFPREG, &read_iov),
+		 _ret == 0 && read_iov.iov_len == sizeof(actual) &&
+			 read_iov.iov_base == &actual &&
+			 memcmp(&actual, &original, sizeof(actual)) == 0);
+
+	// A caller-supplied mask must not allow reserved MXCSR bits.
+	invalid.mxcsr |= 1U << 31;
+	invalid.mxcr_mask = UINT32_MAX;
+	iov = (struct iovec){ &invalid, sizeof(invalid) };
+	TEST(ptrace(PTRACE_SETREGSET, pid, NT_PRFPREG, &iov), EINVAL,
+	     _ret == -1 && iov.iov_len == sizeof(invalid) &&
+		     iov.iov_base == &invalid);
+
+	// Rejected writes must leave the register image unchanged.
+	TEST_RES(ptrace(PTRACE_GETREGSET, pid, NT_PRFPREG, &read_iov),
+		 _ret == 0 && read_iov.iov_len == sizeof(actual) &&
+			 read_iov.iov_base == &actual &&
+			 memcmp(&actual, &original, sizeof(actual)) == 0);
+
+	int status = 0;
+	TEST_SUCC(ptrace(PTRACE_CONT, pid, 0, 0));
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+END_TEST()
+
+FN_TEST(regset_prfpreg_read_write)
+{
+	SKIP_TEST_IF(read_yama_scope() == YAMA_SCOPE_NO_ATTACH);
+
+	// Exercise both initial-state and live x87/SSE components in XSAVE.
+	for (int live = 0; live < 2; live++) {
+		struct user_fpregs_struct initial
+			__attribute__((aligned(16))) = {
+				.cwd = X87_DEFAULT_CW,
+				.mxcsr = MXCSR_DEFAULT,
+			};
+		if (live) {
+			initial.ftw = 1;
+			initial.st_space[1] = 0x80000000;
+			initial.st_space[2] = 0x3fff; // ST0 = 1.0.
+			for (int i = 0; i < 64; i++)
+				initial.xmm_space[i] = 0x12340000 + i;
+		}
+		struct user_fpregs_struct modified = initial;
+		modified.cwd = X87_DEFAULT_CW | X87_ROUND_DOWN;
+		modified.mxcsr = MXCSR_DEFAULT | MXCSR_ROUND_DOWN;
+		modified.ftw = 1;
+		modified.st_space[1] = 0x80000000;
+		modified.st_space[2] = 0x4000; // ST0 = 2.0.
+		for (int i = 0; i < 64; i++)
+			modified.xmm_space[i] = 0x56780000 + i;
+
+		int reset_xstate = !live && __builtin_cpu_supports("xsave");
+		struct {
+			struct user_fpregs_struct regs;
+			uint64_t header[8];
+		} empty_xstate
+			__attribute__((aligned(64))) = { .regs = initial };
+		pid_t pid = TEST_SUCC(fork());
+		if (pid == 0) {
+			CHECK(ptrace(PTRACE_TRACEME, 0, 0, 0));
+			struct user_fpregs_struct read_only
+				__attribute__((aligned(16))) = { 0 };
+			struct user_fpregs_struct written
+				__attribute__((aligned(16))) = { 0 };
+			// Keep libc/compiler-generated SSE instructions out of the
+			// interval between loading, stopping, and saving registers.
+			// XRSTOR with a zero header explicitly marks x87/SSE as
+			// initial; FXSAVE/FXRSTOR alone need not clear XSTATE_BV.
+			asm volatile("test %[reset], %[reset]\n\t"
+				     "jz 1f\n\t"
+				     "mov $3, %%eax\n\t"
+				     "xor %%edx, %%edx\n\t"
+				     "xrstor64 %[empty]\n\t"
+				     "jmp 2f\n\t"
+				     "1: fxrstor64 %[initial]\n\t"
+				     "2:\n\t"
+				     "int3\n\t"
+				     "fxsave64 %0\n\t"
+				     "int3\n\t"
+				     "fxsave64 %1"
+				     : "=m"(read_only), "=m"(written)
+				     : [initial] "m"(initial),
+				       [empty] "m"(empty_xstate),
+				       [reset] "r"(reset_xstate)
+				     : "rax", "rdx", "cc", "memory", "st",
+				       "st(1)", "st(2)", "st(3)", "st(4)",
+				       "st(5)", "st(6)", "st(7)", "xmm0",
+				       "xmm1", "xmm2", "xmm3", "xmm4", "xmm5",
+				       "xmm6", "xmm7", "xmm8", "xmm9", "xmm10",
+				       "xmm11", "xmm12", "xmm13", "xmm14",
+				       "xmm15");
+			CHECK_WITH(fpregs_equal(&read_only, &initial), _ret);
+			CHECK_WITH(fpregs_equal(&written, &modified), _ret);
+			_exit(0);
+		}
+
+		int status = 0;
+		TEST_RES(waitpid(pid, &status, 0),
+			 _ret == pid && WIFSTOPPED(status) &&
+				 WSTOPSIG(status) == SIGTRAP);
+		struct user_fpregs_struct original, actual;
+		struct iovec iov = { &original, sizeof(original) };
+		TEST_RES(ptrace(PTRACE_GETREGSET, pid, NT_PRFPREG, &iov),
+			 _ret == 0 && iov.iov_len == sizeof(original) &&
+				 iov.iov_base == &original &&
+				 fpregs_equal(&original, &initial));
+
+		// Read-only stops must preserve the CPU state on resumption.
+		TEST_SUCC(ptrace(PTRACE_CONT, pid, 0, 0));
+		TEST_RES(waitpid(pid, &status, 0),
+			 _ret == pid && WIFSTOPPED(status) &&
+				 WSTOPSIG(status) == SIGTRAP);
+
+		// Written values must be visible both to the tracer and on resumption.
+		iov = (struct iovec){ &modified, sizeof(modified) };
+		TEST_RES(ptrace(PTRACE_SETREGSET, pid, NT_PRFPREG, &iov),
+			 _ret == 0 && iov.iov_len == sizeof(modified) &&
+				 iov.iov_base == &modified);
+		iov = (struct iovec){ &actual, sizeof(actual) };
+		TEST_RES(ptrace(PTRACE_GETREGSET, pid, NT_PRFPREG, &iov),
+			 _ret == 0 && iov.iov_len == sizeof(actual) &&
+				 iov.iov_base == &actual &&
+				 fpregs_equal(&actual, &modified));
+
+		TEST_SUCC(ptrace(PTRACE_CONT, pid, 0, 0));
+		TEST_RES(waitpid(pid, &status, 0),
+			 _ret == pid && WIFEXITED(status) &&
+				 WEXITSTATUS(status) == 0);
+	}
 }
 END_TEST()
