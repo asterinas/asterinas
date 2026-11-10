@@ -280,7 +280,7 @@ impl OverlayInode {
                             .ok_or_else(|| {
                                 Error::with_message(
                                     Errno::EINVAL,
-                                    "the lower char device has no device id",
+                                    "the lower char device has no device ID",
                                 )
                             })?
                             .as_encoded_u64();
@@ -294,7 +294,7 @@ impl OverlayInode {
                             .ok_or_else(|| {
                                 Error::with_message(
                                     Errno::EINVAL,
-                                    "the lower block device has no device id",
+                                    "the lower block device has no device ID",
                                 )
                             })?
                             .as_encoded_u64();
@@ -319,7 +319,7 @@ impl OverlayInode {
             InodeType::Unknown => {
                 return_errno_with_message!(
                     Errno::EINVAL,
-                    "cannot promote an overlay object of unknown type"
+                    "overlay objects of an unknown type cannot be promoted"
                 );
             }
         };
