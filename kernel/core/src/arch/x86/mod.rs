@@ -7,4 +7,5 @@ pub(crate) mod signal;
 
 pub(crate) fn init() {
     power::init();
+    ptrace::init();
 }
