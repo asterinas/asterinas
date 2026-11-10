@@ -78,10 +78,10 @@ impl OverlayFs {
         let mut parent_dentry = dentry.parent();
         let mut publication_parent = loop {
             let Some(parent) = parent_dentry else {
-                return Err(Error::with_message(
+                return_errno_with_message!(
                     Errno::EIO,
-                    "the copy-up operation dentry has no overlay parent",
-                ));
+                    "the copy-up operation dentry has no overlay parent"
+                );
             };
             let parent_object = Arc::downcast::<OverlayInode>(parent.inode().clone())
                 .expect("the copy-up publication parent is not an overlay inode");
@@ -130,16 +130,16 @@ impl OverlayFs {
 
         // Both latches are read under both locks; a set latch fails the round before it stages.
         if promoted_object.is_name_taken() {
-            return Err(Error::with_message(
+            return_errno_with_message!(
                 Errno::ENOENT,
-                "the copy-up target name was taken away before the promotion round",
-            ));
+                "the copy-up target name was taken away before the promotion round"
+            );
         }
         if publication_parent.is_name_taken() {
-            return Err(Error::with_message(
+            return_errno_with_message!(
                 Errno::ENOENT,
-                "the copy-up publication parent is no longer reachable",
-            ));
+                "the copy-up publication parent is no longer reachable"
+            );
         }
 
         // Resolved before staging so a failed probe can never leave a workdir temp behind.
@@ -159,10 +159,10 @@ impl OverlayFs {
             }
             (None, Some(_)) => return Ok(()),
             (Some(_), _) => {
-                return Err(Error::with_message(
+                return_errno_with_message!(
                     Errno::ESTALE,
-                    "the promotion name is already held in the upper",
-                ));
+                    "the promotion name is already held in the upper"
+                );
             }
             (None, None) => {}
         }
@@ -301,10 +301,10 @@ impl OverlayInode {
                         MknodType::BlockDevice(rdev)
                     }
                     _ => {
-                        return Err(Error::with_message(
+                        return_errno_with_message!(
                             Errno::EOPNOTSUPP,
-                            "socket nodes cannot be copied up",
-                        ));
+                            "socket nodes cannot be copied up"
+                        );
                     }
                 };
                 let mode = source.real_inode().mode()?;
@@ -317,10 +317,10 @@ impl OverlayInode {
                 )?
             }
             InodeType::Unknown => {
-                return Err(Error::with_message(
+                return_errno_with_message!(
                     Errno::EINVAL,
-                    "cannot promote an overlay object of unknown type",
-                ));
+                    "cannot promote an overlay object of unknown type"
+                );
             }
         };
         Ok(temp)

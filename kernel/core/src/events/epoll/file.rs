@@ -211,10 +211,7 @@ impl EpollFile {
             self.pop_multi_ready(max_events, &mut ep_events);
 
             if ep_events.is_empty() {
-                return Err(Error::with_message(
-                    Errno::EAGAIN,
-                    "there are no available events",
-                ));
+                return_errno_with_message!(Errno::EAGAIN, "there are no available events");
             }
 
             Ok(())
