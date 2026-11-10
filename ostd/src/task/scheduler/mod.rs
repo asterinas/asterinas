@@ -151,6 +151,10 @@ pub trait Scheduler<T = Task>: Sync + Send {
     /// In this case, this method returns the ID of that CPU.
     fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) -> Option<CpuId>;
 
+    /// Called after a task has stopped executing and its context is available
+    /// for use on another CPU.
+    fn switched_out(&self, _previous: &Arc<T>) {}
+
     /// Gets an immutable access to the local runqueue of the current CPU.
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>));
 
@@ -407,6 +411,8 @@ pub enum EnqueueFlags {
     Spawn,
     /// Wake a sleeping task.
     Wake,
+    /// Move an already runnable task to another CPU.
+    Migration,
 }
 
 /// Possible triggers of an `update_current` action.
@@ -516,6 +522,15 @@ fn set_need_preempt(cpu_id: CpuId) {
             cpu_local::set_need_preempt();
         });
     }
+}
+
+/// Requests a scheduling decision on the specified CPU.
+pub fn request_preemption(cpu_id: CpuId) {
+    set_need_preempt(cpu_id);
+}
+
+pub(super) fn switched_out(previous: &Arc<Task>) {
+    scheduler_singleton().switched_out(previous);
 }
 
 /// Dequeues the current task from its runqueue.

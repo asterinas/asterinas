@@ -55,6 +55,18 @@ impl SchedClassRq for StopClassRq {
         self.entity.take()
     }
 
+    fn remove(&mut self, task: &Arc<Task>) -> Option<Arc<Task>> {
+        if self
+            .entity
+            .as_ref()
+            .is_some_and(|entity| Arc::ptr_eq(entity, task))
+        {
+            self.entity.take()
+        } else {
+            None
+        }
+    }
+
     fn update_current(&mut self, _: &CurrentRuntime, _: &SchedAttr, _flags: UpdateFlags) -> bool {
         // Stop entities has the lowest priority value. They should never be preempted.
         false

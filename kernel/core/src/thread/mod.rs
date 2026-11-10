@@ -6,8 +6,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
-    cpu::{AtomicCpuSet, CpuId, CpuSet},
+    cpu::{CpuId, CpuSet},
     irq::DisabledLocalIrqGuard,
+    sync::LocalIrqDisabled,
     task::Task,
 };
 
@@ -88,7 +89,7 @@ pub(crate) struct Thread {
     /// Thread status.
     is_exited: AtomicBool,
     /// Thread CPU affinity.
-    cpu_affinity: AtomicCpuSet,
+    cpu_affinity: SpinLock<CpuSet, LocalIrqDisabled>,
     /// Thread scheduling attribute.
     sched_attr: SchedAttr,
 }
@@ -105,7 +106,7 @@ impl Thread {
             task,
             data: Box::new(data),
             is_exited: AtomicBool::new(false),
-            cpu_affinity: AtomicCpuSet::new(cpu_affinity),
+            cpu_affinity: SpinLock::new(cpu_affinity),
             sched_attr: SchedAttr::new(sched_policy),
         }
     }
@@ -124,6 +125,10 @@ impl Thread {
         self.task.upgrade().unwrap()
     }
 
+    pub(crate) fn try_task(&self) -> Option<Arc<Task>> {
+        self.task.upgrade()
+    }
+
     /// Runs this thread at once.
     #[track_caller]
     pub(crate) fn run(&self) {
@@ -139,9 +144,19 @@ impl Thread {
         self.is_exited.store(true, Ordering::Release);
     }
 
-    /// Returns the reference to the atomic CPU affinity.
-    pub(crate) fn atomic_cpu_affinity(&self) -> &AtomicCpuSet {
-        &self.cpu_affinity
+    /// Returns a consistent snapshot of the CPU affinity mask.
+    pub(crate) fn cpu_affinity(&self) -> CpuSet {
+        self.cpu_affinity.lock().clone()
+    }
+
+    /// Checks whether a CPU is allowed without copying the affinity mask.
+    pub(crate) fn can_run_on(&self, cpu: CpuId) -> bool {
+        self.cpu_affinity.lock().contains(cpu)
+    }
+
+    /// Replaces the CPU affinity mask.
+    pub(crate) fn set_cpu_affinity(&self, mask: CpuSet) {
+        *self.cpu_affinity.lock() = mask;
     }
 
     pub(crate) fn sched_attr(&self) -> &SchedAttr {

@@ -142,6 +142,10 @@ pub(super) unsafe fn after_switching_to() {
     // See `switch_to_task`, where we forgot an IRQ guard.
     crate::arch::irq::enable_local();
 
+    if let Some(previous) = prev.as_ref() {
+        super::scheduler::switched_out(previous);
+    }
+
     // It was forgotten using `Arc::into_raw` at `switch_to_task`.
     // We drop it after enabling the IRQ in case dropping user-provided
     // resources would violate the atomic mode.

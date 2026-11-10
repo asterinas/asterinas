@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{cmp, sync::atomic::Ordering};
+use core::cmp;
 
 use ostd::{
     cpu::{CpuId, CpuSet, num_cpus},
@@ -9,7 +9,12 @@ use ostd::{
 };
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::pid_table, thread::Tid};
+use crate::{
+    prelude::*,
+    process::pid_table,
+    sched::affinity_changed,
+    thread::{Thread, Tid},
+};
 
 pub(super) fn sys_sched_getaffinity(
     tid: Tid,
@@ -18,9 +23,9 @@ pub(super) fn sys_sched_getaffinity(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let cpu_set = match tid {
-        0 => ctx.thread.atomic_cpu_affinity().load(Ordering::Relaxed),
+        0 => ctx.thread.cpu_affinity(),
         _ => match pid_table::pid_table_mut().get_thread(tid) {
-            Some(thread) => thread.atomic_cpu_affinity().load(Ordering::Relaxed),
+            Some(thread) => thread.cpu_affinity(),
             None => return_errno_with_message!(Errno::ESRCH, "the target thread does not exist"),
         },
     };
@@ -30,10 +35,6 @@ pub(super) fn sys_sched_getaffinity(
     Ok(SyscallReturn::Return(bytes_written as isize))
 }
 
-// TODO: The manual page of `sched_setaffinity` says that if the thread is not
-// running on the CPU specified in the affinity mask, it would be migrated to
-// one of the CPUs specified in the mask. We currently do not support this
-// feature as the scheduler is not ready for migration yet.
 pub(super) fn sys_sched_setaffinity(
     tid: Tid,
     cpuset_size: usize,
@@ -42,20 +43,15 @@ pub(super) fn sys_sched_setaffinity(
 ) -> Result<SyscallReturn> {
     let user_cpu_set = read_cpu_set_from(ctx.user_space(), cpuset_size, cpu_set_ptr)?;
 
-    match tid {
-        0 => ctx
-            .thread
-            .atomic_cpu_affinity()
-            .store(&user_cpu_set, Ordering::Relaxed),
+    let thread = match tid {
+        0 => Thread::current().unwrap(),
         _ => match pid_table::pid_table_mut().get_thread(tid) {
-            Some(thread) => {
-                thread
-                    .atomic_cpu_affinity()
-                    .store(&user_cpu_set, Ordering::Relaxed);
-            }
+            Some(thread) => thread,
             None => return_errno_with_message!(Errno::ESRCH, "the target thread does not exist"),
         },
-    }
+    };
+    thread.set_cpu_affinity(user_cpu_set);
+    affinity_changed(&thread);
 
     Ok(SyscallReturn::Return(0))
 }

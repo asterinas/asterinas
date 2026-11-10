@@ -317,6 +317,23 @@ impl SchedClassRq for FairClassRq {
         Some(entity)
     }
 
+    fn remove(&mut self, task: &Arc<Task>) -> Option<Arc<Task>> {
+        let mut removed = None;
+        self.entities.retain(|Reverse(item)| {
+            if Arc::ptr_eq(&item.0, task) {
+                removed = Some(item.0.clone());
+                false
+            } else {
+                true
+            }
+        });
+        if let Some(entity) = &removed {
+            let (old_weight, _) = entity.as_thread().unwrap().sched_attr().fair.fetch_weight();
+            self.total_weight -= old_weight;
+        }
+        removed
+    }
+
     fn update_current(
         &mut self,
         rt: &CurrentRuntime,

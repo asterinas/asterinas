@@ -213,6 +213,22 @@ impl SchedClassRq for RealTimeClassRq {
             .inspect(|_| self.nr_running -= 1)
     }
 
+    fn remove(&mut self, task: &Arc<Task>) -> Option<Arc<Task>> {
+        for array in &mut self.array {
+            for (prio, queue) in array.queue.iter_mut().enumerate() {
+                if let Some(index) = queue.iter().position(|entity| Arc::ptr_eq(entity, task)) {
+                    let entity = queue.remove(index);
+                    if queue.is_empty() {
+                        array.map.set(prio, false);
+                    }
+                    self.nr_running -= 1;
+                    return entity;
+                }
+            }
+        }
+        None
+    }
+
     fn update_current(
         &mut self,
         rt: &CurrentRuntime,

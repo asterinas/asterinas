@@ -5,7 +5,11 @@
 #![warn(unused)]
 
 use alloc::{boxed::Box, sync::Arc};
-use core::{fmt, ops::Bound, sync::atomic::Ordering};
+use core::{
+    fmt,
+    ops::Bound,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use ostd::{
     arch::read_tsc as sched_clock,
@@ -16,11 +20,12 @@ use ostd::{
         AtomicCpuId, Task,
         scheduler::{
             EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags, enable_preemption_on_cpu,
-            info::CommonSchedInfo, inject_scheduler,
+            info::CommonSchedInfo, inject_scheduler, request_preemption,
         },
     },
     util::id_set::Id,
 };
+use spin::Once;
 
 use super::{
     nice::Nice,
@@ -43,9 +48,15 @@ pub(crate) use self::{
 };
 
 type SchedEntity = (Arc<Task>, Arc<Thread>);
+static CLASS_SCHEDULER: Once<&'static ClassScheduler> = Once::new();
+
+pub(crate) fn affinity_changed(thread: &Arc<Thread>) {
+    CLASS_SCHEDULER.get().unwrap().affinity_changed(thread);
+}
 
 pub(crate) fn init() {
-    let scheduler = Box::leak(Box::new(ClassScheduler::new()));
+    let scheduler: &'static ClassScheduler = Box::leak(Box::new(ClassScheduler::new()));
+    CLASS_SCHEDULER.call_once(|| scheduler);
 
     // Inject the scheduler into the ostd for actual scheduling work.
     inject_scheduler(scheduler);
@@ -77,6 +88,7 @@ pub(crate) struct ClassScheduler {
 /// scheduling classes in its corresponding CPU core. The current task of this CPU
 /// core is also stored in this structure.
 struct PerCpuClassRqSet {
+    cpu: CpuId,
     stop: stop::StopClassRq,
     real_time: real_time::RealTimeClassRq,
     fair: fair::FairClassRq,
@@ -130,6 +142,9 @@ trait SchedClassRq: Send + fmt::Debug {
     /// Picks the next task for running.
     fn pick_next(&mut self) -> Option<Arc<Task>>;
 
+    /// Removes a particular queued task, without changing the current task.
+    fn remove(&mut self, task: &Arc<Task>) -> Option<Arc<Task>>;
+
     /// Update the information of the current task.
     ///
     /// The return value of this method indicates whether there is another task
@@ -146,6 +161,7 @@ trait SchedClassRq: Send + fmt::Debug {
 pub(crate) struct SchedAttr {
     policy: SchedPolicyState,
     last_cpu: AtomicCpuId,
+    migrate_after_switch: AtomicBool,
     real_time: real_time::RealTimeAttr,
     fair: fair::FairAttr,
 }
@@ -156,6 +172,7 @@ impl SchedAttr {
         Self {
             policy: SchedPolicyState::new(policy),
             last_cpu: AtomicCpuId::default(),
+            migrate_after_switch: AtomicBool::new(false),
             real_time: {
                 let (prio, policy) = match policy {
                     SchedPolicy::RealTime { rt_prio, rt_policy } => (rt_prio.get(), rt_policy),
@@ -219,37 +236,60 @@ impl SchedAttr {
 impl Scheduler for ClassScheduler {
     fn enqueue(&self, task: Arc<Task>, flags: EnqueueFlags) -> Option<CpuId> {
         let thread = task.as_thread()?.clone();
-
-        let (still_in_rq, cpu) = {
+        loop {
             let selected_cpu_id = self.select_cpu(&thread, flags);
+            let (still_in_rq, cpu) =
+                if let Err(task_cpu_id) = task.cpu().set_if_is_none(selected_cpu_id) {
+                    debug_assert!(flags != EnqueueFlags::Spawn);
+                    (true, task_cpu_id)
+                } else {
+                    (false, selected_cpu_id)
+                };
 
-            if let Err(task_cpu_id) = task.cpu().set_if_is_none(selected_cpu_id) {
-                debug_assert!(flags != EnqueueFlags::Spawn);
-                (true, task_cpu_id)
-            } else {
-                (false, selected_cpu_id)
+            let mut rq = self.rqs[cpu.as_usize()].lock();
+
+            // The task can have been dequeued while we waited for this lock.
+            if still_in_rq && task.cpu().set_if_is_none(cpu).is_err() {
+                return None;
             }
-        };
 
-        let mut rq = self.rqs[cpu.as_usize()].lock();
+            // An affinity update can race with CPU selection, including before
+            // the task becomes visible in its destination runqueue.
+            if !thread.can_run_on(cpu) {
+                task.cpu().set_to_none();
+                drop(rq);
+                continue;
+            }
 
-        // Note: call set_if_is_none again to prevent a race condition.
-        if still_in_rq && task.cpu().set_if_is_none(cpu).is_err() {
-            return None;
+            let should_preempt = rq
+                .current
+                .as_ref()
+                .is_none_or(|((_, rq_current_thread), _)| {
+                    thread.sched_attr().policy() < rq_current_thread.sched_attr().policy()
+                });
+
+            thread.sched_attr().set_last_cpu(cpu);
+            rq.enqueue_entity((task, thread), Some(flags));
+
+            return should_preempt.then_some(cpu);
         }
+    }
 
-        // Preempt if the new task has a higher priority.
-        let should_preempt = rq
-            .current
-            .as_ref()
-            .is_none_or(|((_, rq_current_thread), _)| {
-                thread.sched_attr().policy() < rq_current_thread.sched_attr().policy()
-            });
-
-        thread.sched_attr().set_last_cpu(cpu);
-        rq.enqueue_entity((task, thread), Some(flags));
-
-        should_preempt.then_some(cpu)
+    fn switched_out(&self, previous: &Arc<Task>) {
+        let Some(thread) = previous.as_thread() else {
+            return;
+        };
+        if !thread
+            .sched_attr()
+            .migrate_after_switch
+            .swap(false, Ordering::AcqRel)
+        {
+            return;
+        }
+        previous.cpu().set_to_none();
+        if let Some(cpu) = self.enqueue(previous.clone(), EnqueueFlags::Migration) {
+            request_preemption(cpu);
+        }
     }
 
     fn mut_local_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue)) {
@@ -268,6 +308,7 @@ impl ClassScheduler {
     pub(crate) fn new() -> Self {
         let class_rq = |cpu| {
             SpinLock::new(PerCpuClassRqSet {
+                cpu,
                 stop: stop::StopClassRq::new(),
                 real_time: real_time::RealTimeClassRq::new(cpu),
                 fair: fair::FairClassRq::new(cpu),
@@ -281,12 +322,61 @@ impl ClassScheduler {
         }
     }
 
+    fn affinity_changed(&self, thread: &Arc<Thread>) {
+        let Some(task) = thread.try_task() else {
+            return;
+        };
+        loop {
+            let Some(cpu) = task.cpu().get() else { return };
+            let mut rq = self.rqs[cpu.as_usize()].lock();
+            if task.cpu().get() != Some(cpu) {
+                continue;
+            }
+            if thread.can_run_on(cpu) {
+                return;
+            }
+            if rq
+                .current
+                .as_ref()
+                .is_some_and(|((current, _), _)| Arc::ptr_eq(current, &task))
+            {
+                drop(rq);
+                request_preemption(cpu);
+                // A running task must leave the excluded CPU before this
+                // syscall returns. Yield without holding a runqueue lock.
+                while !thread.is_exited() {
+                    match task.cpu().get() {
+                        None => return,
+                        Some(cpu) if thread.can_run_on(cpu) => return,
+                        _ => Task::yield_now(),
+                    }
+                }
+                return;
+            }
+            if let Some(entity) = rq.remove_entity(&task) {
+                entity.cpu().set_to_none();
+                drop(rq);
+                if let Some(cpu) = self.enqueue(entity, EnqueueFlags::Migration) {
+                    request_preemption(cpu);
+                }
+            }
+            // If the task was not yet visible in this runqueue, enqueue will
+            // recheck the affinity after acquiring the queue lock.
+            return;
+        }
+    }
+
     // TODO: Implement a better algorithm and replace the current naive implementation.
     fn select_cpu(&self, thread: &Thread, flags: EnqueueFlags) -> CpuId {
-        if let Some(last_cpu) = thread.sched_attr().last_cpu() {
+        let affinity = thread.cpu_affinity();
+        if let Some(last_cpu) = thread
+            .sched_attr()
+            .last_cpu()
+            .filter(|cpu| affinity.contains(*cpu))
+        {
             return last_cpu;
         }
-        debug_assert!(flags == EnqueueFlags::Spawn);
+        let _ = flags;
 
         let guard = disable_local();
 
@@ -304,7 +394,6 @@ impl ClassScheduler {
             }
         };
 
-        let affinity = thread.atomic_cpu_affinity().load(Ordering::Relaxed);
         match self.last_chosen_cpu.get() {
             Some(cpu) => {
                 // Perform a round-robin selection starting after the last chosen CPU.
@@ -335,6 +424,14 @@ impl ClassScheduler {
 }
 
 impl PerCpuClassRqSet {
+    fn remove_entity(&mut self, task: &Arc<Task>) -> Option<Arc<Task>> {
+        self.stop
+            .remove(task)
+            .or_else(|| self.real_time.remove(task))
+            .or_else(|| self.fair.remove(task))
+            .or_else(|| self.idle.remove(task))
+    }
+
     fn pick_next_entity(&mut self) -> Option<SchedEntity> {
         (self.stop.pick_next())
             .or_else(|| self.real_time.pick_next())
@@ -375,13 +472,26 @@ impl LocalRunQueue for PerCpuClassRqSet {
             // We guarantee that a task can appear at once in a `PerCpuClassRqSet`. So, the `next` cannot be the same
             // as the current task here.
             if let Some((old, _)) = self.current.replace((next, CurrentRuntime::new())) {
-                self.enqueue_entity(old, None);
+                if old.1.can_run_on(self.cpu) {
+                    self.enqueue_entity(old, None);
+                } else {
+                    // The previous task is still executing until the context
+                    // switch finishes; its new queue must not see it yet.
+                    old.1
+                        .sched_attr()
+                        .migrate_after_switch
+                        .store(true, Ordering::Release);
+                }
             }
             self.current.as_ref().map(|((task, _), _)| task)
         })
     }
 
     fn update_current(&mut self, flags: UpdateFlags) -> bool {
+        let must_migrate = self
+            .current
+            .as_ref()
+            .is_some_and(|((_, thread), _)| !thread.can_run_on(self.cpu));
         let (should_preempt, mut lookahead) = if let Some(((_, cur), rt)) = &mut self.current {
             rt.update();
             let attr = &cur.sched_attr();
@@ -400,7 +510,12 @@ impl LocalRunQueue for PerCpuClassRqSet {
             lookahead = 4;
         }
 
-        should_preempt
+        (must_migrate
+            && (!self.stop.is_empty()
+                || !self.real_time.is_empty()
+                || !self.fair.is_empty()
+                || !self.idle.is_empty()))
+            || should_preempt
             || (lookahead >= 1 && !self.stop.is_empty())
             || (lookahead >= 2 && !self.real_time.is_empty())
             || (lookahead >= 3 && !self.fair.is_empty())
