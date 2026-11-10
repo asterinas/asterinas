@@ -636,6 +636,36 @@ impl FpuContext {
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         &mut self.xsave_area.as_mut_bytes()[..self.area_size]
     }
+
+    /// Returns the legacy x87/SSE state area.
+    pub fn fxsave_area(&self) -> &FxSaveArea {
+        &self.xsave_area.fxsave_area
+    }
+
+    /// Returns a mutable reference to the legacy x87/SSE state area.
+    pub fn fxsave_area_mut(&mut self) -> &mut FxSaveArea {
+        &mut self.xsave_area.fxsave_area
+    }
+
+    /// Returns the XSAVE state-component flags.
+    ///
+    /// Returns `None` for a legacy FXSAVE context.
+    pub fn features(&self) -> Option<XStateFeatures> {
+        if self.area_size == size_of::<FxSaveArea>() {
+            return None;
+        }
+        Some(self.xsave_area.features)
+    }
+
+    /// Returns a mutable reference to the XSAVE state-component flags.
+    ///
+    /// Returns `None` for a legacy FXSAVE context.
+    pub fn features_mut(&mut self) -> Option<&mut XStateFeatures> {
+        if self.area_size == size_of::<FxSaveArea>() {
+            return None;
+        }
+        Some(&mut self.xsave_area.features)
+    }
 }
 
 impl Default for FpuContext {
@@ -669,7 +699,7 @@ impl Clone for FpuContext {
 #[derive(Clone, Copy, Debug, Pod)]
 struct XSaveArea {
     fxsave_area: FxSaveArea,
-    features: u64,
+    features: XStateFeatures,
     compaction: u64,
     reserved: [u64; 6],
     extended_state_area: [u8; MAX_XSAVE_AREA_SIZE - size_of::<FxSaveArea>() - 64],
@@ -684,9 +714,7 @@ impl XSaveArea {
         };
 
         let mut xsave_area = Self::new_zeroed();
-        // Set the initial values for the FPU context. Refer to Intel SDM, Table 10-1:
-        // "IA-32 and Intel® 64 Processor States Following Power-up, Reset, or INIT (Contd.)".
-        xsave_area.fxsave_area.control = 0x037F;
+        xsave_area.fxsave_area.control = X87_INITIAL_CONTROL_WORD;
         // Refer to Intel SDM, Volume 1, Section "x87 State". In the FXSAVE/XSAVE image the
         // `tag` field contains an abridged x87 Tag Word (FTW) - a compact (8-bit) encoding
         // used in saved/restore images. In this format, a bit value of 0 indicates the
@@ -695,7 +723,7 @@ impl XSaveArea {
         // abridged tag must be initialized to 0 to represent an empty register set.
         xsave_area.fxsave_area.tag = 0;
         xsave_area.fxsave_area.mxcsr = 0x1F80;
-        xsave_area.features = features;
+        xsave_area.features = XStateFeatures::from_bits_retain(features);
 
         xsave_area
     }
@@ -705,7 +733,7 @@ impl XSaveArea {
 #[repr(C)]
 #[repr(align(16))]
 #[derive(Clone, Copy, Debug, Pod)]
-struct FxSaveArea {
+pub struct FxSaveArea {
     control: u16,         // x87 FPU Control Word
     status: u16,          // x87 FPU Status Word
     tag: u8,              // x87 FPU Tag Byte (abridged format)
@@ -722,6 +750,31 @@ struct FxSaveArea {
     reserved2: [u32; 12], // Reserved
     reserved3: [u32; 12], // Software reserved
 }
+
+/// XSAVE state-component flags (`XSTATE_BV`).
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/fpu/types.h#L133-L134>.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct XStateFeatures(u64);
+
+bitflags! {
+    impl XStateFeatures: u64 {
+        /// x87 floating-point state.
+        const X87 = 1 << 0;
+        /// SSE state.
+        const SSE = 1 << 1;
+
+        // Preserve extended state-component bits when updating the legacy state.
+        const _   = !0;
+    }
+}
+
+/// The initial x87 FPU control word.
+///
+/// Refer to Intel SDM, Table 10-1:
+/// "IA-32 and Intel® 64 Processor States Following Power-up, Reset, or INIT (Contd.)".
+pub const X87_INITIAL_CONTROL_WORD: u16 = 0x037f;
 
 /// The XSTATE features (user & supervisor) supported by the processor.
 static XSTATE_MAX_FEATURES: Once<u64> = Once::new();

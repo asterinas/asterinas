@@ -6,14 +6,39 @@ use core::ops::Range;
 
 use ostd::{
     arch::{
-        cpu::context::{FsBase, GeneralRegs, GsBase, UserContext},
+        cpu::context::{
+            FpuContext, FsBase, GeneralRegs, GsBase, UserContext, X87_INITIAL_CONTROL_WORD,
+            XStateFeatures,
+        },
         trap::{USER_CS_VALUE, USER_SS_VALUE},
     },
     mm::MAX_USERSPACE_VADDR,
 };
+use spin::Once;
 use x86_64::registers::rflags::RFlags;
 
 use crate::{prelude::*, process::posix_thread::SuppUserContext};
+
+/// The system-wide mask of valid MXCSR bits, detected on the boot CPU.
+///
+/// Assumes that every CPU supports all bits in this mask.
+static MXCSR_MASK: Once<u32> = Once::new();
+
+pub(super) fn init() {
+    MXCSR_MASK.call_once(|| {
+        let mut context = FpuContext::new();
+        context.save();
+        let regs = CUserFpregsStruct::from_bytes(context.fxsave_area().as_bytes());
+
+        // Intel SDM Vol. 1, Section 11.6.6: a zero MXCSR_MASK denotes the
+        // architectural fallback mask (which excludes DAZ).
+        if regs.mxcsr_mask == 0 {
+            0x0000_ffbf
+        } else {
+            regs.mxcsr_mask
+        }
+    });
+}
 
 // =====================================================================
 // Public ABI mirror.
@@ -144,21 +169,92 @@ impl CUserRegsStruct {
     }
 }
 
+/// `struct user_i387_struct` in Linux.
+//
+// Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/user_64.h#L48-L64>
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Pod)]
+struct CUserFpregsStruct {
+    cwd: u16,
+    swd: u16,
+    ftw: u16,
+    fop: u16,
+    rip: u64,
+    rdp: u64,
+    mxcsr: u32,
+    mxcsr_mask: u32,
+    st_space: [u32; 32],
+    xmm_space: [u32; 64],
+    padding: [u32; 24],
+}
+
+impl CUserFpregsStruct {
+    /// Builds the ABI snapshot from saved FPU state.
+    fn from_context(context: &FpuContext) -> Self {
+        let mut out = Self::from_bytes(context.fxsave_area().as_bytes());
+
+        // Legacy FXSAVE contexts have no header or initial-state bits.
+        let Some(features) = context.features() else {
+            return out;
+        };
+
+        // XRSTOR initializes components whose state bits are clear.
+        if !features.contains(XStateFeatures::X87) {
+            out.cwd = X87_INITIAL_CONTROL_WORD;
+            out.swd = 0;
+            // The high byte is reserved and is preserved on reads.
+            out.ftw &= 0xff00;
+            out.fop = 0;
+            out.rip = 0;
+            out.rdp = 0;
+            out.st_space.fill(0);
+        }
+        if !features.contains(XStateFeatures::SSE) {
+            out.xmm_space.fill(0);
+        }
+        out.padding.fill(0);
+
+        out
+    }
+
+    /// Validates and applies the x87/SSE state, preserving extended components.
+    fn apply_to(&self, context: &mut FpuContext) -> Result<()> {
+        if self.mxcsr & !*MXCSR_MASK.get().unwrap() != 0 {
+            return Err(errno!(EINVAL, "invalid MXCSR value"));
+        }
+
+        context
+            .fxsave_area_mut()
+            .as_mut_bytes()
+            .copy_from_slice(self.as_bytes());
+
+        // FXRSTOR restores the legacy area without consulting a header.
+        if let Some(features) = context.features_mut() {
+            // XRSTOR otherwise ignores writes to initial-state components.
+            features.insert(XStateFeatures::X87 | XStateFeatures::SSE);
+        }
+        Ok(())
+    }
+}
+
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, TryFromInt)]
 pub(crate) enum Regset {
     /// General-purpose registers (`NT_PRSTATUS`).
     General = 1,
+    /// x87 and SSE registers (`NT_PRFPREG`).
+    Fp = 2,
 }
 
 impl Regset {
     /// Validates the requested byte length and truncates it to the register set size.
     pub(crate) fn validate_and_truncate_len(self, len: usize) -> Result<usize> {
-        let (size, element_size) = match self {
-            Self::General => (size_of::<CUserRegsStruct>(), size_of::<usize>()),
+        let size = match self {
+            Self::General => size_of::<CUserRegsStruct>(),
+            Self::Fp => size_of::<CUserFpregsStruct>(),
         };
 
-        if !len.is_multiple_of(element_size) {
+        if !len.is_multiple_of(size_of::<usize>()) {
             return Err(errno!(EINVAL, "invalid register set length"));
         }
         Ok(len.min(size))
@@ -171,6 +267,8 @@ pub(crate) struct PtraceState {
     fs_base: FsBase,
     gs_base: GsBase,
     orig_syscall_ret: usize,
+    fpu_context: FpuContext,
+    is_fpu_dirty: bool,
 }
 
 impl PtraceState {
@@ -187,6 +285,8 @@ impl PtraceState {
             fs_base: supp_context.fs_base().get(),
             gs_base: supp_context.gs_base().get(),
             orig_syscall_ret: orig_syscall_ret.unwrap_or(Self::NOT_A_SYSCALL),
+            fpu_context: supp_context.fpu().get(),
+            is_fpu_dirty: false,
         }
     }
 
@@ -195,6 +295,9 @@ impl PtraceState {
         *user_context = self.user_context;
         supp_context.fs_base().set(self.fs_base);
         supp_context.gs_base().set(self.gs_base);
+        if self.is_fpu_dirty {
+            supp_context.fpu().set(self.fpu_context);
+        }
     }
 
     /// Returns the saved syscall-return register value, including any tracer modifications.
@@ -236,20 +339,36 @@ impl PtraceState {
                 let regs = self.get_user_regs();
                 writer.write_fallible(&mut VmReader::from(regs.as_bytes()))?;
             }
+            Regset::Fp => {
+                let regs = CUserFpregsStruct::from_context(&self.fpu_context);
+                writer.write_fallible(&mut VmReader::from(regs.as_bytes()))?;
+            }
         }
         Ok(())
     }
 
-    /// Applies a prefix of the register set from the reader.
+    /// Applies a register set from the reader.
+    ///
+    /// General-purpose registers permit prefix writes; FPU registers require
+    /// the complete FXSAVE area.
     pub(crate) fn set_regset(&mut self, regset: Regset, reader: &mut VmReader) -> Result<()> {
-        if !reader.has_remain() {
-            return Ok(());
-        }
         match regset {
             Regset::General => {
+                if !reader.has_remain() {
+                    return Ok(());
+                }
                 let mut regs = CUserRegsStruct::default();
                 let len = reader.read_fallible(&mut VmWriter::from(regs.as_mut_bytes()))?;
                 self.set_user_regs_prefix(regs, len)
+            }
+            Regset::Fp => {
+                if reader.remain() != size_of::<CUserFpregsStruct>() {
+                    return Err(errno!(EINVAL, "invalid FPU register set length"));
+                }
+                let regs = reader.read_val::<CUserFpregsStruct>()?;
+                regs.apply_to(&mut self.fpu_context)?;
+                self.is_fpu_dirty = true;
+                Ok(())
             }
         }
     }
