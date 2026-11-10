@@ -26,7 +26,7 @@
 //!   layers belong to one filesystem, only `fsid = 0` is assigned.
 //! - `Xino` — overlayfs provides the identity guarantees itself, in particular when the layers live
 //!   on several filesystem instances (a single-instance mount can force it too).
-//!   - Overlayfs takes an anonymous device id of its own, distinct from every existing
+//!   - Overlayfs takes an anonymous device ID of its own, distinct from every existing
 //!     filesystem, so that device numbers cannot collide.
 //!   - Each overlayfs inode is given an inode number assembled from the `fsid` of the real filesystem
 //!     the inode lives on and the inode number it has there, `real_ino`:
@@ -52,7 +52,7 @@
 //!     whole life, which is what xino needs. When neither holds, the whole mount falls back.
 //!
 //! In `Fallback` mode, every directory allocates a unique inode number from the mount, and uses the
-//! mount's anonymous device id as its device id. The allocation is done by a monotonic `u64`
+//! mount's anonymous device ID as its device ID. The allocation is done by a monotonic `u64`
 //! allocator. A non-directory keeps its real identity (both device and inode number) as it is.
 //!
 //! A directory's number is allocated by this mount alone, so a directory's identity does not survive
@@ -65,9 +65,9 @@
 //! # Public types
 //!
 //! - [`IdentityPolicy`]: the mount's resolved way of projecting identities.
-//! - [`ObjectRealId`]: `(fsid, real_ino)`, which can be used to build a visible id.
+//! - [`ObjectRealId`]: `(fsid, real_ino)`, which can be used to build a visible ID.
 //! - [`ObjectVisibleId`]: `(st_dev, st_ino)`. Because fallback allocates from a monotonic allocator, a
-//!   visible id cannot in general be decoded back into a real id. Once set for an inode, it will not
+//!   visible ID cannot in general be decoded back into a real ID. Once set for an inode, it will not
 //!   change during the mount lifecycle.
 //! - [`ObjectOriginRecord`]: `(magic, container_dev_id, root_ino, real_ino)`, which durably records
 //!   the original lower inode of an upper inode that a copy-up produced, so that the identity
@@ -124,7 +124,7 @@ enum IdentityMode {
     Xino { xino_shift: u32 },
 }
 
-/// The real id of one real object inside this mount.
+/// The real ID of one real object inside this mount.
 ///
 /// It stays the same as long as that layer numbers its inodes stably, and it is the key the
 /// identity-reuse cache files an object under.
@@ -135,7 +135,7 @@ pub(super) struct ObjectRealId {
 }
 
 impl ObjectRealId {
-    /// Encodes this id into one published inode number, or `None` when its real inode number does
+    /// Encodes this ID into one published inode number, or `None` when its real inode number does
     /// not fit the payload.
     ///
     /// The layer's `fsid` sits above the lowest bit, which the mount keeps clear.
@@ -158,7 +158,7 @@ pub(super) struct ObjectVisibleId {
     pub(super) ino: u64,
 }
 
-/// The numbers the id system keeps for one layer — what a durable layer name resolves to.
+/// The numbers the ID system keeps for one layer — what a durable layer name resolves to.
 #[derive(Clone, Copy, Debug)]
 struct LayerNumbers {
     fsid: u64,
@@ -166,7 +166,7 @@ struct LayerNumbers {
     root_ino: u64,
 }
 
-/// The durable form of a real id.
+/// The durable form of a real ID.
 ///
 /// It names its layer the way any mount can resolve it.
 #[repr(C)]
@@ -282,7 +282,7 @@ impl IdentityPolicy {
         }
     }
 
-    /// Returns the real id of one real object inside this mount.
+    /// Returns the real ID of one real object inside this mount.
     pub(super) fn real_id_of(&self, real: &RealObject) -> ObjectRealId {
         ObjectRealId {
             fsid: self.layer(real.layer_index()).fsid,
@@ -428,7 +428,7 @@ impl OverlayFs {
         )
     }
 
-    /// Returns the real id recorded in the upper's durable origin record, resolved onto a lower of this
+    /// Returns the real ID recorded in the upper's durable origin record, resolved onto a lower of this
     /// mount.
     ///
     /// `None` covers an absent, undecodable, or unreadable record — the unreadable one warns once — and
@@ -467,7 +467,7 @@ impl OverlayFs {
         })
     }
 
-    /// Returns the real id one projected stack resolves to: the id of its visible source.
+    /// Returns the real ID one projected stack resolves to: the ID of its visible source.
     ///
     /// Two kinds of object answer differently: a directory takes its topmost retained lower's number
     /// — the one its identity must survive a copy-up as — and a non-directory upper takes the durable
@@ -492,7 +492,7 @@ impl OverlayFs {
         }
     }
 
-    /// Writes `source`'s real id onto the staged temp as the object's durable record: `Ok(true)` when
+    /// Writes `source`'s real ID onto the staged temp as the object's durable record: `Ok(true)` when
     /// it landed, `Ok(false)` when the mount cannot hold private records or the filesystem refused one.
     pub(super) fn record_origin(&self, temp: &WorkdirTemp, source: &RealObject) -> Result<bool> {
         if !self.policy().can_store_private_xattr() {
@@ -536,7 +536,8 @@ mod test {
         lower_numbers: Vec<LayerNumbers>,
     ) -> IdentityPolicy {
         IdentityPolicy::assemble(
-            AnonDeviceId::acquire().expect("the unit test takes an anonymous device id"),
+            AnonDeviceId::acquire()
+                .expect("an anonymous device ID should be available for the unit test"),
             xino_mode,
             fs_count,
             is_effective_read_only,
