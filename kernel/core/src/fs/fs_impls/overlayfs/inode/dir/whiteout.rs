@@ -247,10 +247,10 @@ impl OverlayFs {
             Err(err) => return Err(err),
         };
         if !holds_whiteout {
-            return Err(Error::with_message(
+            return_errno_with_message!(
                 Errno::EIO,
-                "the cleared name no longer holds the whiteout the exchange displaced",
-            ));
+                "the cleared name no longer holds the whiteout the exchange displaced"
+            );
         }
         upper_dir.unlink(name)?;
         Ok(())
@@ -280,10 +280,10 @@ impl OverlayFs {
         for name in names {
             let child = dir.lookup_child(name)?;
             if !self.is_whiteout(&child)? {
-                return Err(Error::with_message(
+                return_errno_with_message!(
                     Errno::ENOTEMPTY,
-                    "a hidden non-whiteout entry prevents the overlay directory removal",
-                ));
+                    "a hidden non-whiteout entry prevents the overlay directory removal"
+                );
             }
         }
         Ok(())

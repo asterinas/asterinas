@@ -309,7 +309,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
         _status_flags: StatusFlags,
     ) -> Result<usize> {
         let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
-            return Err(Error::new(Errno::EINVAL));
+            return_errno!(Errno::EINVAL);
         };
 
         let len = leaf.read_attr_at(attr.name(), offset, buf)?;
@@ -324,7 +324,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
         _status_flags: StatusFlags,
     ) -> Result<usize> {
         let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
-            return Err(Error::new(Errno::EINVAL));
+            return_errno!(Errno::EINVAL);
         };
 
         let len = if offset == 0 {
