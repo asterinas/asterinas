@@ -20,6 +20,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 mount -t sysfs none /sys
+mount -t securityfs none /sys/kernel/security
 mount -t proc none /proc
 mount -t cgroup2 none /sys/fs/cgroup
 mount -t configfs none /sys/kernel/config
