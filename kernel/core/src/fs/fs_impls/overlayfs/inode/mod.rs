@@ -30,7 +30,9 @@
 //! snapshot — a [`readdir::ReaddirCache`], the merged entry table one merge
 //! produced; a non-directory uses the lock as a plain serialization token. The
 //! lock also serializes an object's promotion against the removal or
-//! displacement of its name.
+//! displacement of its name. The lock is also held across the in-place
+//! completion of a metadata-only copy-up, which copies the lower data into the
+//! upper before the record is removed.
 //! [`OverlayInode::append_write`] holds this lock across the underlying `size()` +
 //! `write_at` so concurrent appends serialize on the post-write size.
 //!
@@ -66,14 +68,15 @@ use core::{
 
 use spin::Once;
 
-pub(super) use self::{
-    dir::whiteout::WhiteoutCache, identity::IdentityPolicy, inode_cache::InodeCache,
-    xattr::OverlayXattrType,
-};
 use self::{
+    copyup::CopyUpIntent,
     identity::ObjectVisibleId,
     lookup::{Lookup, NegativeLookup},
     readdir::{OverlayInodeLockGuard, OverlayInodeLockPayload},
+};
+pub(super) use self::{
+    dir::whiteout::WhiteoutCache, identity::IdentityPolicy, inode_cache::InodeCache,
+    xattr::OverlayXattrType,
 };
 use crate::{
     fs::{
@@ -96,9 +99,12 @@ use crate::{
 
 pub(super) struct OverlayInode {
     fs: Weak<OverlayFs>,
-    /// A directory keeps its whole merge stack; a non-directory only its visible topmost lower.
+    /// A directory keeps its whole merge stack, topmost first. A non-directory keeps its metadata
+    /// source, followed by its data source when the two are different lower objects.
     lowers: Vec<RealObject>,
     upper: Once<RealObject>,
+    /// Reports whether the upper entry holds this object's data.
+    upper_has_data: AtomicBool,
     /// One-way name-taken latch, set under this object's lock: its name binding was taken away.
     name_taken: AtomicBool,
     object_id: ObjectVisibleId,
@@ -117,9 +123,9 @@ impl OverlayInode {
 
     /// Returns the read-only take point: the real object this logical object currently shows.
     ///
-    /// It is the upper when there is one, else the topmost lower, and reads go through the returned
-    /// object's real inode. The object may be a lower: handing it to a write method breaks the write
-    /// paths' discipline, which the type does not prevent.
+    /// It is the upper when there is one, else the topmost lower, and it carries the object's
+    /// metadata authority. The object may be a lower: handing it to a write method breaks the
+    /// write paths' discipline, which the type does not prevent.
     fn real_object(&self) -> &RealObject {
         match self.upper.get() {
             Some(upper) => upper,
@@ -131,20 +137,65 @@ impl OverlayInode {
         }
     }
 
-    /// Returns the real object a write may land on.
+    /// Returns the real object that holds this object's data.
     ///
-    /// Refuses an effectively read-only mount, returns the receiver's own upper when it has one, and
-    /// otherwise promotes the receiver into `copyup_dentry` first — so the answer is always an upper.
-    fn writable_real_object(&self, copyup_dentry: &Dentry) -> Result<&RealObject> {
+    /// The upper answers once it holds the data. Otherwise the data source is the last lower: for an
+    /// ordinary object that is its only lower, and for a metadata-only record found in a lower layer
+    /// it is the data object the projection stored after the record. Only a non-directory reaches
+    /// this take point.
+    fn data_object(&self) -> &RealObject {
+        if let Some(upper) = self.upper.get()
+            && self.has_upper_data()
+        {
+            return upper;
+        }
+        debug_assert!(
+            !self.real_object().real_inode().type_().is_directory(),
+            "a directory's merged stack has no separate data take point"
+        );
+        self.lowers
+            .last()
+            .expect("a non-directory stack keeps its data source in its lowers")
+    }
+
+    /// Returns whether the upper entry holds this object's data.
+    fn has_upper_data(&self) -> bool {
+        self.upper_has_data.load(Ordering::Acquire)
+    }
+
+    /// Publishes whether the upper entry now holds this object's data.
+    fn mark_upper_data(&self, has_data: bool) {
+        self.upper_has_data.store(has_data, Ordering::Release);
+    }
+
+    /// Runs the metadata-intent writable take point.
+    fn writable_meta_object(&self, copyup_dentry: &Dentry) -> Result<&RealObject> {
+        self.writable_object_with_intent(copyup_dentry, CopyUpIntent::Metadata)
+    }
+
+    /// Runs the data-intent writable take point, completing a metadata-only copy-up first.
+    fn writable_data_object(&self, copyup_dentry: &Dentry) -> Result<&RealObject> {
+        self.writable_object_with_intent(copyup_dentry, CopyUpIntent::Data)
+    }
+
+    /// Runs one writable take point with an explicit copy-up intent.
+    fn writable_object_with_intent(
+        &self,
+        copyup_dentry: &Dentry,
+        intent: CopyUpIntent,
+    ) -> Result<&RealObject> {
         let fs = self.fs_arc();
         if fs.policy().is_effective_read_only() {
             return_errno_with_message!(Errno::EROFS, "the overlay mount is read-only");
         }
-        if let Some(upper) = self.upper.get() {
-            return Ok(upper);
+        if self.upper.get().is_none() {
+            fs.copy_up_at(copyup_dentry, intent)?;
         }
-        fs.copy_up_at(copyup_dentry)?;
-        Ok(self.writable_upper())
+        let upper = self.writable_upper();
+        if intent == CopyUpIntent::Data && !self.has_upper_data() {
+            self.complete_data_copy_up(upper)?;
+        }
+        Ok(upper)
     }
 
     /// Sets the name-taken latch; the caller must hold this object's transaction lock.

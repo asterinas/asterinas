@@ -61,6 +61,7 @@ impl OverlayFs {
         let xino_mode = options.xino_mode.unwrap_or(XinoMode::Auto);
         let xattr_namespace = options.xattr_namespace;
         let redirect_dir_mode = options.effective_redirect_dir_mode();
+        let metacopy = options.is_metacopy_enabled();
 
         let mut upper_workdir_inuse = None;
         let mut upper_capabilities = None;
@@ -128,6 +129,7 @@ impl OverlayFs {
             uuid,
             upper_capabilities,
             redirect_dir_mode,
+            metacopy,
         );
 
         let anon_device_id = AnonDeviceId::acquire().ok_or_else(|| {
