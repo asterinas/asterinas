@@ -51,20 +51,16 @@ pub(super) fn sys_timer_create(
                 // Do nothing when the timer is expired.
                 SigNotify::SIGEV_NONE => Box::new(|| {}),
                 // Send a signal to the current process when the timer is expired.
-                SigNotify::SIGEV_SIGNAL => {
+                //
+                // `SIGEV_THREAD` means to spawn a POSIX thread to run `sigev_function` (i.e.,
+                // `sig_event.sigev_un.sigev_thread`). However, this is handled by the user space
+                // library (e.g., glibc). The kernel treats it the same as `SIGEV_SIGNAL`.
+                SigNotify::SIGEV_SIGNAL | SigNotify::SIGEV_THREAD => {
                     let process = ctx.process.clone();
                     let signal = KernelSignal::new(SigNum::try_from(signo as u8)?);
                     Box::new(move || {
                         process.enqueue_signal(Box::new(signal));
                     })
-                }
-                // Spawn a POSIX thread to run the `sigev_function`, which is stored in
-                // `sig_event.sigev_un._sigev_thread`.
-                //
-                // TODO: enable this instructions. Currently the system does not provide an API to spawn
-                // a POSIX thread to run a specified function.
-                SigNotify::SIGEV_THREAD => {
-                    unimplemented!()
                 }
                 // Send a signal to the specified thread when the timer is expired.
                 SigNotify::SIGEV_THREAD_ID => {
@@ -73,7 +69,7 @@ pub(super) fn sys_timer_create(
                         Error::with_message(Errno::EINVAL, "the target thread does not exist")
                     })?;
                     let posix_thread = thread.as_posix_thread().unwrap();
-                    if posix_thread.process().pid() != ctx.process.pid() {
+                    if posix_thread.weak_process().as_ptr() != ctx.process.as_ref() {
                         return_errno_with_message!(
                             Errno::EINVAL,
                             "the target thread does not belong to the current process"
