@@ -139,11 +139,19 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 ./mount/mount_propagation
 ./mount/mount_readonly
 
+./overlayfs/chain_edge
 ./overlayfs/lchown_lower_symlink
 ./overlayfs/link_lower_file
+./overlayfs/lower_metacopy
+./overlayfs/metacopy
+./overlayfs/metacopy_chain
+./overlayfs/metacopy_time
 ./overlayfs/mknod_whiteout_rejected
 ./overlayfs/ovl_test
 ./overlayfs/readdir_small_buffer
+./overlayfs/redirect_chain
+./overlayfs/redirect_follow
+./overlayfs/redirect_rename
 ./overlayfs/rmdir_lower_only_nonempty
 ./overlayfs/sparse_copyup_consistency
 ./overlayfs/xino_dino_identity
