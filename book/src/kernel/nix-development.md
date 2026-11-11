@@ -71,10 +71,6 @@ The shell builds them on demand instead.
 The first time you run a test target, the initramfs build fetches the selected tests
 and their runtime dependencies with Nix, which adds time to that first run.
 
-The gVisor syscall tests are built with Bazel inside the Docker image,
-together with a set of shared libraries that the shell does not provide.
-Use the Docker environment to run them.
-
 Projects created by `cargo osdk new` and the TDX scheme of the OSDK test suite
 contain firmware paths specific to the Docker image.
 They do not work in the shell unless you edit those paths yourself.
