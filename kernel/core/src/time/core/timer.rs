@@ -56,6 +56,11 @@ impl<F: TimerFn> Timer<F> {
             registered_callback,
         })
     }
+
+    /// Returns a reference to the function that will be called when the timer expires.
+    pub(crate) fn func(&self) -> &F {
+        &self.registered_callback
+    }
 }
 
 impl<F: ?Sized + TimerFn> Timer<F> {
