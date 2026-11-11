@@ -230,6 +230,13 @@ impl FdOps for FileSymOps {
 }
 
 impl ProcSymOps for FileSymOps {
+    fn size(&self) -> usize {
+        // Linux reports a fixed size, not the length of the link target.
+        // Reference: <https://github.com/torvalds/linux/blob/v6.16/fs/proc/fd.c#L217>.
+        const PROC_FD_SYMLINK_SIZE: usize = 64;
+        PROC_FD_SYMLINK_SIZE
+    }
+
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.tid_dir_ops.thread()
     }
