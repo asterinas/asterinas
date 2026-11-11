@@ -32,6 +32,10 @@ on:
       - tools/dev_env/docker/prebuilt-nix-packages/Dockerfile
       - .github/workflows/test_nix_flake.yml
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   evaluate:
     runs-on: ubuntu-latest
