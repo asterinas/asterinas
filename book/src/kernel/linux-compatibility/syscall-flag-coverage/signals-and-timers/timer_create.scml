@@ -1,4 +1,4 @@
-opt_notify_methods = SIGEV_NONE | SIGEV_SIGNAL | SIGEV_THREAD_ID;
+opt_notify_methods = SIGEV_NONE | SIGEV_SIGNAL | SIGEV_THREAD | SIGEV_THREAD_ID;
 
 // Create a timer with predefined clock source
 timer_create(
