@@ -11,7 +11,7 @@ use ostd::{
 };
 
 use self::utils::{IoCompletion, IoKind, MockPageCacheBackend, wait_until};
-use super::{PageCache, PageCacheBackend, Vmo, VmoCommitError, VmoMapMode};
+use super::{CachePageExt, PageCache, PageCacheBackend, Vmo, VmoCommitError, VmoMapMode};
 use crate::{prelude::*, thread::kernel_thread::ThreadOptions};
 
 mod utils;
@@ -549,4 +549,397 @@ fn delayed_io_completion() {
     assert!(first_flush_result.lock().take().unwrap().is_ok());
     assert!(second_flush_result.lock().take().unwrap().is_ok());
     assert_eq!(backend.persisted_page_bytes(0), latest_dirty_pattern);
+}
+
+/// If the first write is rejected, later dirty pages must survive eviction
+/// and be written on retry.
+#[ktest]
+fn flush_rejection_preserves_later_dirty_runs() {
+    for contiguous_writes in [false, true] {
+        for dirty_pages in [&[0, 2][..], &[0, 1, 3, 4][..]] {
+            let backend = MockPageCacheBackend::new(5);
+            backend.set_contiguous_writes(contiguous_writes);
+            let page_cache = new_backend_page_cache(&backend, 5);
+            let pattern = vec![0x71; PAGE_SIZE];
+            for &idx in dirty_pages {
+                page_cache.write_bytes(idx * PAGE_SIZE, &pattern).unwrap();
+            }
+            backend.set_write_submit_failure(0, true);
+
+            assert_eq!(
+                page_cache
+                    .flush_range(0..5 * PAGE_SIZE)
+                    .unwrap_err()
+                    .error(),
+                Errno::EBUSY
+            );
+            for &idx in &dirty_pages[1..] {
+                assert_eq!(backend.write_count(idx), 0);
+            }
+
+            // Eviction must keep pages that have not been written yet.
+            page_cache.evict_range(0..5 * PAGE_SIZE).unwrap();
+            backend.set_write_submit_failure(0, false);
+            page_cache.flush_range(0..5 * PAGE_SIZE).unwrap();
+            for &idx in dirty_pages {
+                assert_eq!(backend.persisted_page_bytes(idx), pattern);
+                assert_eq!(backend.write_count(idx), if idx == 0 { 2 } else { 1 });
+            }
+        }
+    }
+}
+
+/// After a partial submission, retry only the rejected and untouched pages.
+#[ktest]
+fn flush_partial_submission_preserves_unsubmitted_pages() {
+    for contiguous_writes in [false, true] {
+        let backend = MockPageCacheBackend::new(6);
+        backend.set_contiguous_writes(contiguous_writes);
+        let page_cache = new_backend_page_cache(&backend, 6);
+        let pattern = vec![0x83; PAGE_SIZE];
+        for idx in [0, 1, 2, 4, 5] {
+            page_cache.write_bytes(idx * PAGE_SIZE, &pattern).unwrap();
+        }
+        backend.set_write_submit_failure(1, true);
+
+        assert_eq!(
+            page_cache
+                .flush_range(0..6 * PAGE_SIZE)
+                .unwrap_err()
+                .error(),
+            Errno::EBUSY
+        );
+        assert_eq!(backend.persisted_page_bytes(0), pattern);
+        for idx in [2, 4, 5] {
+            assert_eq!(backend.write_count(idx), 0);
+        }
+
+        page_cache.evict_range(0..6 * PAGE_SIZE).unwrap();
+        backend.set_write_submit_failure(1, false);
+        page_cache.flush_range(0..6 * PAGE_SIZE).unwrap();
+        for idx in [0, 1, 2, 4, 5] {
+            assert_eq!(backend.persisted_page_bytes(idx), pattern);
+            assert_eq!(backend.write_count(idx), if idx == 1 { 2 } else { 1 });
+        }
+    }
+}
+
+/// If a later write is rejected, flush must wait for earlier writes even if
+/// they also fail.
+#[ktest]
+fn flush_rejection_waits_for_accepted_io() {
+    for dirty_pages in [&[0, 2, 4][..], &[0, 1, 2, 4][..]] {
+        let rejected_idx = dirty_pages[1];
+        let backend = MockPageCacheBackend::new(5);
+        backend.set_completion(IoKind::Write, IoCompletion::Deferred);
+        backend.set_write_submit_failure(rejected_idx, true);
+        let page_cache = Arc::new(new_backend_page_cache(&backend, 5));
+        for &idx in dirty_pages {
+            page_cache
+                .write_bytes(idx * PAGE_SIZE, &vec![0x95; PAGE_SIZE])
+                .unwrap();
+        }
+        let result = Arc::new(Mutex::new(None::<Result<()>>));
+        let flush_thread = {
+            let page_cache = page_cache.clone();
+            let result = result.clone();
+            ThreadOptions::new(move || {
+                *result.lock() = Some(page_cache.flush_range(0..5 * PAGE_SIZE));
+            })
+            .spawn()
+        };
+
+        // Check that flush is still running after it starts waiting for page 0.
+        wait_until(|| backend.write_wait_count(0) > 0 || result.lock().is_some());
+        assert!(result.lock().is_none());
+        assert_eq!(backend.write_count(rejected_idx), 1);
+        assert!(backend.complete_next_deferred_bio(IoKind::Write, false));
+        flush_thread.join();
+        assert_eq!(
+            result.lock().take().unwrap().unwrap_err().error(),
+            Errno::EBUSY
+        );
+        assert!(!backend.complete_next_deferred_bio(IoKind::Write, true));
+    }
+}
+
+/// A failing flush must still wait for an older write, even if that page was
+/// dirtied again.
+#[ktest]
+fn flush_errors_wait_for_older_writeback() {
+    for old_page_dirty in [false, true] {
+        for reject_submission in [false, true] {
+            let backend = MockPageCacheBackend::new(3);
+            backend.set_completion(IoKind::Write, IoCompletion::Deferred);
+            let page_cache = Arc::new(new_backend_page_cache(&backend, 3));
+            let pattern = vec![0xa7; PAGE_SIZE];
+            page_cache.write_bytes(2 * PAGE_SIZE, &pattern).unwrap();
+            let (old_page, _) = page_cache
+                .as_vmo()
+                .try_commit_page(2 * PAGE_SIZE, VmoMapMode::SharedRead)
+                .unwrap();
+            let first_result = Arc::new(Mutex::new(None::<Result<()>>));
+            let first_flush = {
+                let page_cache = page_cache.clone();
+                let first_result = first_result.clone();
+                ThreadOptions::new(move || {
+                    *first_result.lock() =
+                        Some(page_cache.flush_range(2 * PAGE_SIZE..3 * PAGE_SIZE));
+                })
+                .spawn()
+            };
+            backend.wait_for_deferred_bios(IoKind::Write, 1);
+            // The first flush releases the page lock before waiting for I/O.
+            wait_until(|| backend.write_wait_count(2) > 0);
+            if old_page_dirty {
+                page_cache.write_bytes(2 * PAGE_SIZE, &pattern).unwrap();
+            }
+            page_cache.write_bytes(0, &pattern).unwrap();
+            backend.set_write_submit_failure(0, reject_submission);
+            let second_result = Arc::new(Mutex::new(None::<Result<()>>));
+            let second_flush = {
+                let page_cache = page_cache.clone();
+                let second_result = second_result.clone();
+                ThreadOptions::new(move || {
+                    *second_result.lock() = Some(page_cache.flush_range(0..3 * PAGE_SIZE));
+                })
+                .spawn()
+            };
+
+            if !reject_submission {
+                // Fail the newer write first, leaving the older one pending.
+                backend.wait_for_deferred_bios(IoKind::Write, 2);
+                assert!(backend.complete_last_deferred_bio(IoKind::Write, false));
+            }
+            wait_until(|| {
+                second_result.lock().is_some()
+                    || (backend.write_count(0) > 0
+                        && (!old_page_dirty || !reject_submission || old_page.state().is_dirty())
+                        && old_page.try_lock_guard().is_none())
+            });
+            assert!(second_result.lock().is_none());
+            assert!(backend.complete_next_deferred_bio(IoKind::Write, true));
+            if old_page_dirty && !reject_submission {
+                // The second flush must also write the page dirtied again.
+                backend.wait_for_deferred_bios(IoKind::Write, 1);
+                assert!(backend.complete_next_deferred_bio(IoKind::Write, true));
+            }
+            first_flush.join();
+            second_flush.join();
+            assert!(first_result.lock().take().unwrap().is_ok());
+            assert_eq!(
+                second_result.lock().take().unwrap().unwrap_err().error(),
+                if reject_submission {
+                    Errno::EBUSY
+                } else {
+                    Errno::EIO
+                }
+            );
+        }
+    }
+}
+
+/// If another submitter restores a page to dirty, a waiting flush must write it.
+#[ktest]
+fn concurrent_flush_retries_restored_dirty_page() {
+    let backend = MockPageCacheBackend::new(1);
+    let page_cache = Arc::new(new_backend_page_cache(&backend, 1));
+    let pattern = vec![0xb9; PAGE_SIZE];
+    page_cache.write_bytes(0, &pattern).unwrap();
+    let (page, _) = page_cache
+        .as_vmo()
+        .try_commit_page(0, VmoMapMode::SharedRead)
+        .unwrap();
+
+    // Simulate a submitter holding a page it has just marked clean.
+    let mut prepared_page = page.clone().lock();
+    prepared_page.prepare_writeback();
+    let result = Arc::new(Mutex::new(None::<Result<()>>));
+    let flush_thread = {
+        let page_cache = page_cache.clone();
+        let result = result.clone();
+        ThreadOptions::new(move || {
+            *result.lock() = Some(page_cache.flush_range(0..PAGE_SIZE));
+        })
+        .spawn()
+    };
+
+    // Wake the flush while the page is still locked. It must keep waiting
+    // until the submitter drops the page and restores dirty.
+    wait_until(|| page.wait_queue().wake_all() > 0);
+    assert!(result.lock().is_none());
+    drop(prepared_page);
+
+    flush_thread.join();
+    assert!(result.lock().take().unwrap().is_ok());
+    assert_eq!(backend.write_count(0), 1);
+    assert_eq!(backend.persisted_page_bytes(0), pattern);
+}
+
+/// Completed write errors belong to the mapping, not to the cached frames or
+/// to the flush that happened to submit the BIO.
+#[ktest]
+fn writeback_errors_survive_success_and_truncate() {
+    for (num_pages, contiguous) in [(1, false), (4, false), (4, true)] {
+        let backend = MockPageCacheBackend::new(num_pages);
+        backend.set_contiguous_writes(contiguous);
+        backend.set_max_nr_segments_per_bio(2);
+        backend.set_completion(IoKind::Write, IoCompletion::Deferred);
+        let page_cache = Arc::new(new_backend_page_cache(&backend, num_pages));
+        let mut first = page_cache.as_vmo().local_error_record().unwrap().sample();
+        let mut second = page_cache.as_vmo().local_error_record().unwrap().sample();
+        let fs_error_record = PageCacheBackend::fs_error_record(backend.as_ref());
+        let mut filesystem_observer = fs_error_record.sample();
+        page_cache
+            .write_bytes(0, &vec![0x83; num_pages * PAGE_SIZE])
+            .unwrap();
+        let result = Arc::new(Mutex::new(None));
+        let flush = {
+            let page_cache = page_cache.clone();
+            let result = result.clone();
+            ThreadOptions::new(move || {
+                *result.lock() = Some(page_cache.flush_range(0..num_pages * PAGE_SIZE));
+            })
+            .spawn()
+        };
+        let bio_count = if contiguous {
+            num_pages.div_ceil(2)
+        } else {
+            num_pages
+        };
+        backend.wait_for_deferred_bios(IoKind::Write, bio_count);
+        for _ in 0..bio_count {
+            assert!(backend.complete_next_deferred_bio(IoKind::Write, false));
+        }
+        flush.join();
+        assert_eq!(
+            result.lock().take().unwrap().unwrap_err().error(),
+            Errno::EIO
+        );
+
+        // No observer has consumed this error yet, so a new opener also sees it.
+        let mut opened_after_failure = page_cache.as_vmo().local_error_record().unwrap().sample();
+        // Failed accepted writes stay clean; there is no implicit retry.
+        page_cache.flush_range(0..num_pages * PAGE_SIZE).unwrap();
+        for idx in 0..num_pages {
+            let (page, _) = page_cache
+                .as_vmo()
+                .try_commit_page(idx * PAGE_SIZE, VmoMapMode::SharedRead)
+                .unwrap();
+            assert!(page.state().is_up_to_date());
+        }
+
+        let mut page_cache = Arc::try_unwrap(page_cache).unwrap();
+        page_cache.resize(0, num_pages * PAGE_SIZE).unwrap();
+        for observer in [&mut first, &mut second, &mut opened_after_failure] {
+            let local_error_record = page_cache.as_vmo().local_error_record().unwrap();
+            assert_eq!(
+                local_error_record
+                    .check_and_update(observer)
+                    .unwrap_err()
+                    .error(),
+                Errno::EIO
+            );
+            local_error_record.check_and_update(observer).unwrap();
+        }
+        let local_error_record = page_cache.as_vmo().local_error_record().unwrap();
+        let mut opened_after_observation = local_error_record.sample();
+        local_error_record
+            .check_and_update(&mut opened_after_observation)
+            .unwrap();
+        // Consuming file errors must not consume the filesystem's history.
+        assert_eq!(
+            fs_error_record
+                .check_and_update(&mut filesystem_observer)
+                .unwrap_err()
+                .error(),
+            Errno::EIO
+        );
+        fs_error_record
+            .check_and_update(&mut filesystem_observer)
+            .unwrap();
+    }
+}
+
+/// A flush with no BIO of its own still observes an old failed writeback
+/// before returning to its caller's error check.
+#[ktest]
+fn overlapping_flush_observes_writeback_error_before_wakeup() {
+    let backend = MockPageCacheBackend::new(1);
+    backend.set_completion(IoKind::Write, IoCompletion::Deferred);
+    let page_cache = Arc::new(new_backend_page_cache(&backend, 1));
+    page_cache.write_bytes(0, &vec![0xc4; PAGE_SIZE]).unwrap();
+    let (page, _) = page_cache
+        .as_vmo()
+        .try_commit_page(0, VmoMapMode::SharedRead)
+        .unwrap();
+    let first = {
+        let page_cache = page_cache.clone();
+        ThreadOptions::new(move || {
+            assert_eq!(
+                page_cache.flush_range(0..PAGE_SIZE).unwrap_err().error(),
+                Errno::EIO
+            );
+        })
+        .spawn()
+    };
+    backend.wait_for_deferred_bios(IoKind::Write, 1);
+    wait_until(|| backend.write_wait_count(0) > 0);
+    let second = {
+        let page_cache = page_cache.clone();
+        let mut observer = page_cache.as_vmo().local_error_record().unwrap().sample();
+        ThreadOptions::new(move || {
+            page_cache.flush_range(0..PAGE_SIZE).unwrap();
+            assert_eq!(
+                page_cache
+                    .as_vmo()
+                    .local_error_record()
+                    .unwrap()
+                    .check_and_update(&mut observer)
+                    .unwrap_err()
+                    .error(),
+                Errno::EIO
+            );
+        })
+        .spawn()
+    };
+    wait_until(|| page.try_lock_guard().is_none());
+    assert!(backend.complete_next_deferred_bio(IoKind::Write, false));
+    first.join();
+    second.join();
+    assert_eq!(backend.write_count(0), 1);
+}
+
+/// Rejection before BIO acceptance retains dirty contents and reports only
+/// the immediate submission error.
+#[ktest]
+fn rejected_writeback_does_not_record_completed_io_error() {
+    let backend = MockPageCacheBackend::new(1);
+    let page_cache = new_backend_page_cache(&backend, 1);
+    page_cache.write_bytes(0, &vec![0xd5; PAGE_SIZE]).unwrap();
+    let mut observer = page_cache.as_vmo().local_error_record().unwrap().sample();
+    backend.set_write_submit_failure(0, true);
+    assert_eq!(
+        page_cache.flush_range(0..PAGE_SIZE).unwrap_err().error(),
+        Errno::EBUSY
+    );
+    page_cache
+        .as_vmo()
+        .local_error_record()
+        .unwrap()
+        .check_and_update(&mut observer)
+        .unwrap();
+    let (page, _) = page_cache
+        .as_vmo()
+        .try_commit_page(0, VmoMapMode::SharedRead)
+        .unwrap();
+    assert!(page.state().is_dirty());
+    backend.set_write_submit_failure(0, false);
+    page_cache.flush_range(0..PAGE_SIZE).unwrap();
+    page_cache
+        .as_vmo()
+        .local_error_record()
+        .unwrap()
+        .check_and_update(&mut observer)
+        .unwrap();
 }
