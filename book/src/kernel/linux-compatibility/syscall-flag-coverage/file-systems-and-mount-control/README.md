@@ -13,6 +13,9 @@ under this category.
 
 ### `mount`
 
+For EXT file systems, `filesystemtype` accepts `ext2` or `ext4`.
+See [file-system support](../../#file-systems) for the current Ext4 limitations.
+
 Supported functionality in SCML:
 
 ```c

@@ -4,52 +4,11 @@
 
 set -e
 
-check_file_size() {
-    local file_name="$1"
-    local expected_size="$2"
-
-    if [ ! -f "$file_name" ]; then
-        echo "Error: File does not exist."
-        return 1
-    fi
-
-    actual_size=$(du -b "$file_name" | cut -f1)
-
-    if [ "$actual_size" -eq "$expected_size" ]; then
-        return 0
-    else
-        echo "Error: File size is incorrect: expected ${expected_size}, but got ${actual_size}."
-        return 1
-    fi
-}
-
-test_ext2() {
-    local ext2_dir="$1"
-    local test_file="$2"
-
-    cd ${ext2_dir}
-
-    # Test case for the big file feature
-    for i in $(seq 1 10); do
-        truncate -s 500M ${test_file}
-        check_file_size ${test_file} $((500 * 1024 * 1024))
-        truncate -s 2K ${test_file}
-        check_file_size ${test_file} $((2 * 1024))
-    done
-
-    # Clean up
-    rm -f ${test_file}
-    sync
-    cd -
-}
-
-test_fdatasync() {
+test_fdatasync_other_filesystems() {
     ./fdatasync/fdatasync /
-    rm -f /test_fdatasync.txt
-    ./fdatasync/fdatasync /ext2
-    rm -f /ext2/test_fdatasync.txt
+    rm -f /test_fdatasync.txt /test_fsync.txt
     ./fdatasync/fdatasync /exfat
-    rm -f /exfat/test_fdatasync.txt
+    rm -f /exfat/test_fdatasync.txt /exfat/test_fsync.txt
 }
 
 test_mount_bind_file() {
@@ -85,29 +44,10 @@ test_mount_bind_file() {
     rm -f "$file_a" "$file_b"
 }
 
-echo "Start ext2 fs test......"
-test_ext2 "/ext2" "test_file.txt"
-./ext2/fallocate
-./ext2/file_io
-./ext2/mknod
-./ext2/namei
-./ext2/open_dir
-./ext2/open_unlink
-./ext2/permissions
-./ext2/readdir
-./ext2/rename
-./ext2/rmdir
-./ext2/shared_block_device
-./ext2/short_rw
-./ext2/sparse
-./ext2/sticky
-./ext2/symlink
-./ext2/unix_socket
-./ext2/xattr
-echo "All ext2 fs test passed."
+./ext/run_test.sh
 
 echo "Start fdatasync test......"
-test_fdatasync
+test_fdatasync_other_filesystems
 echo "All fdatasync test passed."
 
 echo "Start mount bind file test......"

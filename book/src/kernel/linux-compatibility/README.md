@@ -372,11 +372,16 @@ for the ARM, RISC-V, and LoongArch architectures.
 ## File systems
 
 Here is the list of supported file systems:
+
 * Devfs
 * Devpts
 * Ext2
+* Ext4
 * Procfs
 * Ramfs
+
+Ext4 support currently covers extent-enabled file systems with 4 KiB blocks and no journal.
+Features such as 64-bit block addressing, metadata checksums, and indexed directories are not supported.
 
 ## Sockets
 
