@@ -1,0 +1,130 @@
+From ed10d23b9960027fe0e034f2e45eecb9c5bf5435 Mon Sep 17 00:00:00 2001
+From: Qingsong Chen <changxian.cqs@antgroup.com>
+Date: Mon, 21 Sep 2026 09:07:25 +0000
+Subject: [PATCH 3/3] crosstool: use Nix paths required by sandbox builds
+
+The vendored Coral crosstool assumes Debian compiler and include paths under
+/usr. Those paths do not exist in the Nix build sandbox. Add explicit x86_64
+and AArch64 tool maps and replace the FHS include directories with
+placeholders that the Nix derivation substitutes with store paths. Both maps
+include the Nix target prefix so they also work when the build platform differs
+from the target platform.
+
+Cross GCC reports libc headers through its target-specific sys-include link.
+Declare that path as builtin as well, otherwise Bazel rejects ordinary system
+headers as undeclared absolute-path inclusions during a cross build.
+
+The AArch64 toolchain is required even for an x86_64 syscall-test build,
+because //vdso:vdso also produces an AArch64 vDSO. Without these paths the
+build tries to execute /usr/bin/aarch64-linux-gnu-gcc and fails.
+
+---
+ .../cc_toolchain_config.bzl.tpl               | 73 +++++++++++++++-----
+ 1 file changed, 52 insertions(+), 21 deletions(-)
+
+diff --git a/+coral_crosstool_extension+coral_crosstool/cc_toolchain_config.bzl.tpl b/+coral_crosstool_extension+coral_crosstool/cc_toolchain_config.bzl.tpl
+index e2c5ddf..7cc02b0 100644
+--- a/+coral_crosstool_extension+coral_crosstool/cc_toolchain_config.bzl.tpl
++++ b/+coral_crosstool_extension+coral_crosstool/cc_toolchain_config.bzl.tpl
+@@ -43,6 +43,40 @@ ALL_LINK_ACTIONS = [
+ ]
+ 
+-def make_tool_paths(prefix):
++NIX_K8_TOOL_PATHS = {
++    "ar": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@ar",
++    "as": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@as",
++    "compat-ld": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@ld",
++    "cpp": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@cpp",
++    "dwp": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@dwp",
++    "gcc": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@gcc",
++    "gcov": "@NIX_GCC@/bin/@NIX_TARGET_PREFIX@gcov",
++    "ld": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@ld",
++    "nm": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@nm",
++    "objcopy": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@objcopy",
++    "objdump": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@objdump",
++    "strip": "@NIX_CC_WRAPPER@/bin/@NIX_TARGET_PREFIX@strip",
++}
++
++NIX_AARCH64_TOOL_PATHS = {
++    "ar": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@ar",
++    "as": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@as",
++    "compat-ld": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@ld",
++    "cpp": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@cpp",
++    "dwp": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@dwp",
++    "gcc": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@gcc",
++    "gcov": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@gcov",
++    "ld": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@ld",
++    "nm": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@nm",
++    "objcopy": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@objcopy",
++    "objdump": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@objdump",
++    "strip": "@NIX_AARCH64_CC_WRAPPER@/bin/@NIX_AARCH64_TARGET_PREFIX@strip",
++}
++
++def make_tool_paths(prefix, cpu):
++    if cpu == "k8":
++        return [tool_path(name = name, path = path) for name, path in NIX_K8_TOOL_PATHS.items()]
++    if cpu == "aarch64":
++        return [tool_path(name = name, path = path) for name, path in NIX_AARCH64_TOOL_PATHS.items()]
+     return [
+         tool_path(name = "ar",        path = prefix + "ar"),
+         tool_path(name = "as",        path = prefix + "as"),
+@@ -68,16 +102,14 @@ GCC_VERSION = %{gcc_version}%
+ # gcc -E -xc++ - -v
+ CXX_BUILTIN_INCLUDE_DIRECTORIES = {
+     "k8": [
+-        "/usr/include/c++/%d" % GCC_VERSION,
+-        "/usr/include/x86_64-linux-gnu/c++/%d" % GCC_VERSION,
+-        "/usr/include/c++/%d/backward" % GCC_VERSION,
+-        "/usr/lib/gcc/x86_64-linux-gnu/%d/include" % GCC_VERSION,
+-        "/usr/local/include",
+-        "/usr/lib/gcc/x86_64-linux-gnu/%d/include-fixed" % GCC_VERSION,
+-        "/usr/include/x86_64-linux-gnu",
+-        "/usr/include",
+-        "/usr/x86_64-linux-gnu/include/",
+-        "/usr/lib/gcc-cross/x86_64-linux-gnu/%d/include/" % GCC_VERSION,
++        "@NIX_GCC@/include/c++/@NIX_GCC_VERSION@",
++        "@NIX_GCC@/include/c++/@NIX_GCC_VERSION@/@NIX_TARGET_CONFIG@",
++        "@NIX_GCC@/include/c++/@NIX_GCC_VERSION@/backward",
++        "@NIX_GCC@/lib/gcc/@NIX_TARGET_CONFIG@/@NIX_GCC_VERSION@/include",
++        "@NIX_GCC@/include",
++        "@NIX_GCC@/lib/gcc/@NIX_TARGET_CONFIG@/@NIX_GCC_VERSION@/include-fixed",
++        "@NIX_GCC@/@NIX_TARGET_CONFIG@/sys-include",
++        "@NIX_LIBC_DEV@/include",
+     ],
+     "armv7a": [
+         "/usr/arm-linux-gnueabihf/include/c++/%d" % GCC_VERSION,
+@@ -99,15 +131,14 @@ CXX_BUILTIN_INCLUDE_DIRECTORIES = {
+         "%{bcm2708_toolchain_root}%/arm-linux-gnueabihf/arm-linux-gnueabihf/sysroot/usr/include",
+     ],
+     "aarch64": [
+-        "/usr/aarch64-linux-gnu/include/c++/%d" % GCC_VERSION,
+-        "/usr/aarch64-linux-gnu/include/c++/%d/aarch64-linux-gnu" % GCC_VERSION,
+-        "/usr/aarch64-linux-gnu/include/c++/%d/backward" % GCC_VERSION,
+-        "/usr/lib/gcc/aarch64-linux-gnu/%d/include" % GCC_VERSION,
+-        "/usr/lib/gcc-cross/aarch64-linux-gnu/%d/include" % GCC_VERSION,
+-        "/usr/lib/gcc-cross/aarch64-linux-gnu/%d/include-fixed" % GCC_VERSION,
+-        "/usr/aarch64-linux-gnu/include",
+-        "/usr/include/aarch64-linux-gnu",
+-        "/usr/include",
++        "@NIX_AARCH64_GCC@/include/c++/@NIX_AARCH64_GCC_VERSION@",
++        "@NIX_AARCH64_GCC@/include/c++/@NIX_AARCH64_GCC_VERSION@/@NIX_AARCH64_TARGET_CONFIG@",
++        "@NIX_AARCH64_GCC@/include/c++/@NIX_AARCH64_GCC_VERSION@/backward",
++        "@NIX_AARCH64_GCC@/lib/gcc/@NIX_AARCH64_TARGET_CONFIG@/@NIX_AARCH64_GCC_VERSION@/include",
++        "@NIX_AARCH64_GCC@/include",
++        "@NIX_AARCH64_GCC@/lib/gcc/@NIX_AARCH64_TARGET_CONFIG@/@NIX_AARCH64_GCC_VERSION@/include-fixed",
++        "@NIX_AARCH64_GCC@/@NIX_AARCH64_TARGET_CONFIG@/sys-include",
++        "@NIX_AARCH64_LIBC_DEV@/include",
+     ],
+     "riscv64": [
+         "/usr/riscv64-linux-gnu/include/c++/%d" % GCC_VERSION,
+@@ -375,7 +406,7 @@ def _impl(ctx):
+             compiler = "gcc",
+             abi_version = "local",
+             abi_libc_version = "local",
+-            tool_paths = make_tool_paths(TOOL_PATH_PREFIX[ctx.attr.cpu]),
++            tool_paths = make_tool_paths(TOOL_PATH_PREFIX[ctx.attr.cpu], ctx.attr.cpu),
+             make_variables = [],
+         )
+ 
+-- 
+2.43.0

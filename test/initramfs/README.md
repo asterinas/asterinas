@@ -30,10 +30,6 @@ Most tests in this directory are compiled and packaged using [Nix](https://nixos
 
 > **Note**: If you are adding a new test to the `regression` directory, ensure that it supports multiple architectures. Some of the existing tests lack proper architecture-specific handling.
 
-### Conformance Test Suite - gVisor Exception
-
-While most tests rely on `Nix` for compilation, the `gvisor` conformance test suite currently cannot be built with `Nix`. Instead, the `gvisor` tests are compiled in the Docker image. For details, refer to `tools/dev_env/docker/kernel-dev/Dockerfile`.
-
 ### Linux Kernel Selftest (kselftest)
 
 The `kselftest` suite builds a subset of Linux's in-tree selftests

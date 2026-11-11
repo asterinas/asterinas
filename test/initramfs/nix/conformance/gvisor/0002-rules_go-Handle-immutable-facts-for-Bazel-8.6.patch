@@ -1,0 +1,160 @@
+From 0916e6d9e00b7d0bca5e74c101d7b5eaccb25fb2 Mon Sep 17 00:00:00 2001
+From: Qingsong Chen <changxian.cqs@antgroup.com>
+Date: Mon, 21 Sep 2026 09:07:25 +0000
+Subject: [PATCH 2/3] rules_go: backport best-effort SDK metadata lookup
+
+Adapt rules_go #4493 to the pinned v0.57.0 sources. Keep immutable
+module extension facts separate from the mutable SDK metadata cache.
+
+Allow metadata lookup to fail for SDKs that are not selected by toolchain
+resolution. This keeps offline builds working with gVisor's explicit Go
+1.26.3 metadata without seeding the four unused SDK versions. If a missing
+SDK is actually selected, its repository rule still reports the error.
+
+Upstream: https://github.com/bazel-contrib/rules_go/pull/4493
+
+---
+ go/private/extensions.bzl |   64 +++++++++++++++++++++++++--------------------
+ go/private/sdk.bzl        |   16 +++++++++--
+ 2 files changed, 49 insertions(+), 31 deletions(-)
+
+diff --git a/go/private/extensions.bzl b/go/private/extensions.bzl
+--- a/go/private/extensions.bzl
++++ b/go/private/extensions.bzl
+@@ -198,8 +198,36 @@
+     host_detected_goos, host_detected_goarch = detect_host_platform(ctx)
+     toolchains = []
+
+-    sdks_by_version = getattr(ctx, "facts", None) or {}
+-    used_versions = {}
++    all_sdks_by_version = {}
++    used_sdks_by_version = {}
++    facts = getattr(ctx, "facts", {})
++
++    def get_sdks_by_version_cached(version):
++        # Avoid a download without a known digest in the SDK repo rule by fetching the SDKs filename
++        # and digest here. When using a version of Bazel that supports module extension facts, this
++        # info will be persisted in the lockfile, allowing for truly airgapped builds with an
++        # up-to-date lockfile and download (formerly repository) cache.
++        sdks = facts.get(version)
++        if sdks == None:
++            # Lazily fetch the information about all SDKs so that we avoid the download if the facts
++            # already contain all the versions we care about. We take care to only do this once and
++            # also accept failures to support airgapped builds: the user may have set sdk hashes on
++            # all SDK repos they actually intend to use, but others (e.g., the default SDK added by
++            # rules_go) trigger this path even if they would never be selected by toolchain
++            # resolution. We must not break those builds.
++            if not all_sdks_by_version:
++                all_sdks_by_version.clear()
++                all_sdks_by_version.update(fetch_sdks_by_version(ctx, allow_fail = True) or {
++                    "fetch_failed_but_should_not_fetch_again_sentinel": [],
++                })
++            sdks = all_sdks_by_version.get(version)
++        if sdks == None:
++            # This is either caused by an invalid version or because we are in an airgapped build
++            # and the version wasn't present in facts. Since we don't want to fail in the latter
++            # case, we leave it to the repository rule to report a useful error message.
++            return None
++        used_sdks_by_version[version] = sdks
++        return sdks
+
+     for module in ctx.modules:
+         # Apply wrapped toolchains first to override specific platforms from the
+@@ -266,9 +294,7 @@
+             )
+
+             _download_sdk(
+-                module_ctx = ctx,
+-                sdks_by_version = sdks_by_version,
+-                used_versions = used_versions,
++                get_sdks_by_version = get_sdks_by_version_cached,
+                 name = name,
+                 goos = download_tag.goos,
+                 goarch = download_tag.goarch,
+@@ -307,9 +333,7 @@
+                     )
+
+                     _download_sdk(
+-                        module_ctx = ctx,
+-                        sdks_by_version = sdks_by_version,
+-                        used_versions = used_versions,
++                        get_sdks_by_version = get_sdks_by_version_cached,
+                         name = default_name,
+                         goos = goos,
+                         goarch = goarch,
+@@ -379,13 +403,9 @@
+             "reproducible": True,
+         }
+
+-        # See _download_sdk below for details on these facts.
++        # See get_sdks_by_version_cached above for details on these facts.
+         if hasattr(ctx, "facts"):
+-            kwargs["facts"] = {
+-                version: sdk_info
+-                for version, sdk_info in sdks_by_version.items()
+-                if version in used_versions
+-            }
++            kwargs["facts"] = used_sdks_by_version
+         return ctx.extension_metadata(**kwargs)
+     else:
+         return None
+@@ -416,23 +436,11 @@
+         fail("index must be non-negative")
+     return ("0" * length + str(index))[-length:]
+
+-def _download_sdk(*, module_ctx, sdks_by_version, used_versions, name, goos, goarch, download_tag):
++def _download_sdk(*, get_sdks_by_version, name, goos, goarch, download_tag):
+     version = download_tag.version
+     sdks = download_tag.sdks
+     if version and not sdks:
+-        # Avoid a download without a known digest in the SDK repo rule by fetching the SDKs filename
+-        # and digest here. When using a version of Bazel that supports module extension facts, this
+-        # info will be persisted in the lockfile, allowing for truly airgapped builds with an
+-        # up-to-date lockfile and download (formerly repository) cache.
+-        if version not in sdks_by_version:
+-            # Lazily fetch the information about all SDKs so that we avoid the download if the facts
+-            # already contain all the versions we care about.
+-            sdks_by_version.clear()
+-            sdks_by_version.update(fetch_sdks_by_version(module_ctx))
+-        if version not in sdks_by_version:
+-            fail("go_sdk: no SDKs found for version {} requested by".format(version), download_tag)
+-        used_versions[version] = True
+-        sdks = sdks_by_version[version]
++        sdks = get_sdks_by_version(version)
+
+     go_download_sdk_rule(
+         name = name,
+diff --git a/go/private/sdk.bzl b/go/private/sdk.bzl
+--- a/go/private/sdk.bzl
++++ b/go/private/sdk.bzl
+@@ -575,15 +575,25 @@
+         for sdk in sdks
+     }
+
+-def fetch_sdks_by_version(ctx):
+-    ctx.download(
++def fetch_sdks_by_version(ctx, allow_fail = False):
++    result = ctx.download(
+         url = [
+             "https://go.dev/dl/?mode=json&include=all",
+             "https://golang.google.cn/dl/?mode=json&include=all",
+         ],
+         output = "versions.json",
+-    )
++        allow_fail = allow_fail,
++    )
++    if not result.success:
++        return None
+     data = ctx.read("versions.json")
++
++    # If the download is redirected through a proxy such as Artifactory, it may
++    # drop the query parameters and return an HTML page instead. In that case,
++    # just return an empty map if allow_fail is set. It is unfortunately not
++    # possible to attempt parsing as JSON and catch the error.
++    if (not data or data[0] != "[") and allow_fail:
++        return None
+
+     # module_ctx doesn't have delete, but its files are temporary anyway.
+     if hasattr(ctx, "delete"):
+-- 
+2.43.0
