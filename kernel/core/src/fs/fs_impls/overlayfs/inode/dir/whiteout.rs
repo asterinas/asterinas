@@ -114,9 +114,6 @@ impl UpperWorkdirInuse {
                 /// The device number of the char-device whiteout: `0:0`, the identity every mount reads as one.
                 ///
                 /// Linux publishes the same device identity for it.
-                ///
-                /// Reference:
-                /// <https://elixir.bootlin.com/linux/v6.17/source/fs/overlayfs/overlayfs.h#L52>.
                 const WHITEOUT_CHAR_DEV: u64 = 0;
                 let temp = self.create_workdir_temp(
                     WHITEOUT_TEMP_NAME_COMPONENT,
@@ -129,11 +126,7 @@ impl UpperWorkdirInuse {
             }
             WhiteoutCapability::Xattr => {
                 // No xattr capability gate is needed: this arm is only reached under `Xattr`.
-                // A zero-size regular file carrying the record is the form Linux checks for one
-                // (`ovl_path_check_xwhiteout_xattr`).
-                //
-                // Reference:
-                // <https://elixir.bootlin.com/linux/v6.17/source/fs/overlayfs/util.c#L772-L783>.
+                // A zero-size regular file carrying the record is the form Linux checks for one.
                 let temp = self.create_workdir_temp(
                     WHITEOUT_TEMP_NAME_COMPONENT,
                     CreateOp::general(InodeType::File, InodeMode::empty()),

@@ -53,7 +53,9 @@ impl OverlayInode {
         if !access_mode.is_writable() {
             return None;
         }
-        match self.writable_real_object(self_dentry) {
+        // A writable open pays the data copy-up once: write_at and fallocate run no take point of
+        // their own.
+        match self.writable_data_object(self_dentry) {
             Ok(_) => None,
             Err(err) => Some(Err(err)),
         }

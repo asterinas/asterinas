@@ -9,6 +9,9 @@
 //! temp published with [`RenameMode::Replace`], since a real-layer `link` would
 //! fail with `EEXIST` there. Temp cleanup on failure is explicit and fallible.
 //!
+//! A metadata-only source, whose data stays in a lower layer, also receives an
+//! absolute redirect record before the link is made.
+//!
 //! Degradation note: without a persistent origin index (a lower-origin
 //! identity map used to deduplicate copy-up targets), two lower aliases of
 //! one lower inode that copy up separately may become two distinct upper
@@ -21,9 +24,14 @@ use crate::{
     fs::{
         fs_impls::overlayfs::{
             fs::OverlayFs,
-            inode::{Lookup, NegativeLookup, OverlayInode, OverlayXattrType},
+            inode::{
+                Lookup, NegativeLookup, OverlayInode, OverlayXattrType, redirect::RedirectForm,
+            },
         },
-        vfs::{inode::RenameMode, path::Dentry},
+        vfs::{
+            inode::{Inode, RenameMode},
+            path::Dentry,
+        },
     },
     prelude::*,
 };
@@ -45,12 +53,26 @@ impl OverlayInode {
     ) -> Result<()> {
         let fs = self.fs_arc();
         // The receiver and source promote before any lock: the linked name needs a real upper.
-        self.writable_real_object(self_dentry)?;
+        self.writable_meta_object(self_dentry)?;
         let source = self.promote_link_source(old_dentry)?;
+        // A metadata-only source needs an absolute redirect record. The source's upper entry
+        // now settles whether it holds the data, so this is where the need is known; a mount
+        // that cannot create the record refuses the link before the record write.
+        let needs_redirect = source.is_metadata_only_regular_file();
+        if needs_redirect && !fs.policy().can_create_redirects() {
+            return_errno_with_message!(
+                Errno::EXDEV,
+                "the overlay link of a metadata-only object requires redirect_dir=on"
+            );
+        }
         let source_upper = source.writable_upper().dentry();
+        let _renames_guard = needs_redirect.then(|| fs.lock_renames());
         let mut dir_guard = self.lock();
         let target = self.classify_link_target(&fs, name)?;
         self.set_link_impure_marker(&fs, source_upper)?;
+        if needs_redirect {
+            source.set_link_redirect(&fs, old_dentry)?;
+        }
         self.link_name(&fs, source_upper, name, target)?;
         // The linked name belongs to the parent's next merge: the snapshot lacking it is stale.
         *dir_guard = None;
@@ -62,7 +84,7 @@ impl OverlayInode {
             .expect("the link source is not an overlay inode");
         // TODO(VFS gap): the source-side admission (access, regular file, set-id) is the VFS's; its
         // `check_hardlink_source` probes the initial user namespace; overlay keeps no source check.
-        source.writable_real_object(old_dentry)?;
+        source.writable_meta_object(old_dentry)?;
         Ok(source)
     }
 
@@ -127,5 +149,47 @@ impl OverlayInode {
         let upper_workdir = fs.upper_workdir_inuse();
         let temp = upper_workdir.create_workdir_link_temp(name, source)?;
         temp.publish(upper_parent.dentry(), name, RenameMode::Replace)
+    }
+
+    /// Returns whether this regular file keeps its data in a lower layer.
+    ///
+    /// A link of such an object gives its data a second name while both names share one
+    /// upper record, so the record must name the object by its path from the overlay root.
+    /// The predicate is meaningful after the source's promotion settles whether its upper
+    /// entry holds the data.
+    fn is_metadata_only_regular_file(&self) -> bool {
+        self.type_().is_regular_file() && !self.has_upper_data()
+    }
+
+    /// Writes the absolute redirect record a link of this metadata-only file needs.
+    ///
+    /// The caller has established `is_metadata_only_regular_file` and
+    /// `can_create_redirects`; the record is absolute because the two names of one
+    /// hard-linked inode share it, so it must not name either of them.
+    fn set_link_redirect(&self, fs: &OverlayFs, source_dentry: &Dentry) -> Result<()> {
+        debug_assert!(self.is_metadata_only_regular_file());
+        let Some(parent_dentry) = source_dentry.parent() else {
+            return Ok(());
+        };
+        let source_name = source_dentry.name();
+        let form = RedirectForm::Absolute;
+        let Some(redirect) = self.redirect_value_for(fs, &source_name, &parent_dentry, form)?
+        else {
+            return Ok(());
+        };
+        let source_upper = self.writable_upper();
+        OverlayXattrType::Redirect
+            .set_value_on(
+                source_upper.dentry(),
+                fs.policy().xattr_namespace(),
+                Some(redirect.value().as_bytes()),
+            )
+            .map_err(|_| {
+                Error::with_message(
+                    Errno::EXDEV,
+                    "the overlay failed to write the redirect record required for the link",
+                )
+            })?;
+        Ok(())
     }
 }

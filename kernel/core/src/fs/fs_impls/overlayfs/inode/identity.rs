@@ -204,13 +204,8 @@ impl ObjectOriginRecord {
 impl IdentityPolicy {
     /// Assembles the way of projecting identities from the facts a mount resolved.
     ///
-    /// The `xino=auto` degradation follows Linux `ovl_lower_dir` and `ovl_make_workdir`, which turn
-    /// `xino=auto` into `xino=off` when the mount can keep no persistent identity for an object that
-    /// a copy-up replaces.
-    ///
-    /// Reference:
-    /// <https://elixir.bootlin.com/linux/v7.2/source/fs/overlayfs/super.c#L437-L446>,
-    /// <https://elixir.bootlin.com/linux/v7.2/source/fs/overlayfs/super.c#L745-L755>.
+    /// The `xino=auto` degradation aligns with Linux: it becomes `xino=off` when the mount can keep
+    /// no persistent identity for an object that a copy-up replaces.
     fn assemble(
         overlay_device: AnonDeviceId,
         xino_mode: XinoMode,
@@ -229,11 +224,7 @@ impl IdentityPolicy {
             IdentityMode::Fallback
         } else {
             IdentityMode::Xino {
-                // The payload width follows the number of filesystems the mount has, as in Linux
-                // `ovl_get_layers`.
-                //
-                // Reference:
-                // <https://elixir.bootlin.com/linux/v7.2/source/fs/overlayfs/super.c#L1159>.
+                // The payload width follows the number of filesystems the mount has, as in Linux.
                 xino_shift: 64 - (fs_count.max(2) - 1).ilog2() - 2,
             }
         };
@@ -356,11 +347,7 @@ impl IdentityPolicy {
     ///
     /// A self-allocated number has to stay distinguishable from an encoded one, so
     /// `xino_fallback_ino` sets the lowest encoding bit on it — the bit `encode_xino` keeps clear.
-    /// Linux marks a self-allocated number the same way with `ovl_map_dev_ino` and `ovl_map_ino`.
-    ///
-    /// Reference:
-    /// <https://elixir.bootlin.com/linux/v7.2/source/fs/overlayfs/inode.c#L120-L121>,
-    /// <https://elixir.bootlin.com/linux/v7.2/source/fs/overlayfs/inode.c#L867-L870>.
+    /// Linux marks a self-allocated number the same way.
     fn allocate_fallback_ino(&self) -> u64 {
         let range = self
             .fallback_ino
@@ -389,10 +376,7 @@ impl OverlayFs {
     ) -> IdentityPolicy {
         let mut fses: Vec<Arc<dyn FileSystem>> = Vec::new();
         let mut fsid_by_address: HashMap<usize, u64> = HashMap::new();
-        // The upper is assigned first, so its fsid is always 0 (Linux `ovl_layer[].fsid`).
-        //
-        // Reference:
-        // <https://elixir.bootlin.com/linux/v7.0/source/fs/overlayfs/ovl_entry.h#L33-L42>.
+        // The upper is assigned first, so its fsid is always 0, as in Linux.
         let mut assign_fsid = |layer: &Layer, fses: &mut Vec<Arc<dyn FileSystem>>| -> u64 {
             let address = Arc::as_ptr(layer.fs()) as *const () as usize;
             if let Some(fsid) = fsid_by_address.get(&address) {

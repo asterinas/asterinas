@@ -65,7 +65,7 @@ impl OverlayInode {
             .parent()
             .expect("the unlinked child has no parent dentry");
         self.refuse_removal_early(child_dentry, RemoveKind::Unlink)?;
-        self.writable_real_object(&parent_dentry)?;
+        self.writable_meta_object(&parent_dentry)?;
         self.remove_target(child_dentry, RemoveKind::Unlink)
     }
 
@@ -76,7 +76,7 @@ impl OverlayInode {
             .parent()
             .expect("the removed directory has no parent dentry");
         self.refuse_removal_early(child_dentry, RemoveKind::Rmdir)?;
-        self.writable_real_object(&parent_dentry)?;
+        self.writable_meta_object(&parent_dentry)?;
         self.remove_target(child_dentry, RemoveKind::Rmdir)
     }
 

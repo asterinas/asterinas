@@ -231,12 +231,9 @@ impl UpperWorkdirInuse {
     /// Prepares this mount's private staging workspace inside the workdir.
     ///
     /// It clears any residue at the `work` entry and creates a fresh directory there for the objects
-    /// this mount stages. The placement and the name follow Linux `ovl_workdir_create`, which creates
-    /// the `work` (`OVL_WORKDIR_NAME`) subdirectory inside the workdir the caller named, after
-    /// clearing the residue there.
-    ///
-    /// Reference:
-    /// <https://elixir.bootlin.com/linux/v7.2/source/fs/overlayfs/super.c>.
+    /// this mount stages. The placement and the name align with Linux: the `work` subdirectory
+    /// lives inside the workdir the caller named, and its residue is cleared before it is
+    /// recreated.
     pub(super) fn prepare_workdir(&mut self) -> Result<()> {
         const WORKDIR_NAME: &str = "work";
         const WORKDIR_MODE: InodeMode = InodeMode::from_bits_truncate(0o700);
