@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file::{Permission, file_table::RawFileDesc},
+        file::{InodeType, Permission, file_table::RawFileDesc},
         utils::PATH_MAX,
         vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, PerMountFlags},
     },
@@ -145,6 +145,18 @@ fn do_faccessat(
     let permission = mode.required_permission();
     if !permission.is_empty() {
         inode.check_permission(permission)?;
+    }
+
+    if mode.contains(AccessMode::W_OK)
+        && !matches!(
+            inode.type_(),
+            InodeType::CharDevice
+                | InodeType::BlockDevice
+                | InodeType::NamedPipe
+                | InodeType::Socket
+        )
+    {
+        path.check_mount_writable()?;
     }
 
     Ok(SyscallReturn::Return(0))

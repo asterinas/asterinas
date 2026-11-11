@@ -479,7 +479,7 @@ impl Path {
     }
 
     /// Checks whether the path is on a writable mount and filesystem.
-    fn check_mount_writable(&self) -> Result<()> {
+    pub(crate) fn check_mount_writable(&self) -> Result<()> {
         if self.mount.flags().contains(PerMountFlags::RDONLY)
             || self.fs().flags().contains(FsFlags::RDONLY)
         {
