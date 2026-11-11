@@ -106,7 +106,7 @@ macro_rules! import_generic_syscall_entries {
             recvfrom::sys_recvfrom,
             recvmsg::sys_recvmsg,
             removexattr::{sys_fremovexattr, sys_lremovexattr, sys_removexattr},
-            rename::sys_renameat2,
+            rename::{sys_renameat, sys_renameat2},
             rt_sigaction::sys_rt_sigaction,
             rt_sigpending::sys_rt_sigpending,
             rt_sigprocmask::sys_rt_sigprocmask,
@@ -240,6 +240,7 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_UNLINKAT = 35                => sys_unlinkat(args[..3]);
             SYS_SYMLINKAT = 36               => sys_symlinkat(args[..3]);
             SYS_LINKAT = 37                  => sys_linkat(args[..5]);
+            SYS_RENAMEAT = 38                => sys_renameat(args[..4]);
             SYS_UMOUNT = 39                  => sys_umount(args[..2]);
             SYS_MOUNT = 40                   => sys_mount(args[..5]);
             SYS_PIVOT_ROOT = 41              => sys_pivot_root(args[..2]);
