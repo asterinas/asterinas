@@ -90,10 +90,7 @@ impl RealObject {
 
     /// Writes `self`'s owner, group, mode, and (regular files) size onto `temp_dentry`.
     ///
-    /// A symlink's mode is left alone, as in Linux `ovl_set_attr`.
-    ///
-    /// Reference:
-    /// <https://elixir.bootlin.com/linux/latest/source/fs/overlayfs/copy_up.c#L392-L416>.
+    /// A symlink's mode is left alone, as in Linux.
     pub(super) fn copy_metadata_to(&self, temp_dentry: &Dentry) -> Result<()> {
         let source_inode = self.real_inode();
         let temp_inode = temp_dentry.inode();

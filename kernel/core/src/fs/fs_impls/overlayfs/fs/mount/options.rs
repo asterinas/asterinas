@@ -39,7 +39,8 @@ pub(super) struct MountOptions {
     pub(super) uuid_mode: Option<UuidMode>,
     /// The `xino` key's mode; the mount default applies when the key is absent.
     pub(super) xino_mode: Option<XinoMode>,
-    redirect_dir: Option<RedirectDirMode>,
+    /// The `redirect_dir` key's mode; the mount default applies when the key is absent.
+    redirect_dir_mode: Option<RedirectDirMode>,
     index: Option<bool>,
     nfs_export: Option<bool>,
     metacopy: Option<bool>,
@@ -72,11 +73,16 @@ pub(in overlayfs) enum XinoMode {
     On,
 }
 
+/// The `redirect_dir` option: whether the mount follows and creates redirect records.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RedirectDirMode {
+pub(super) enum RedirectDirMode {
+    /// The parsed `redirect_dir=off` request, which never becomes the effective mode.
     Off,
+    /// Follows records on lookup but creates none; a move that needs one fails with `EXDEV`.
     Follow,
+    /// Neither follows nor creates records; the effective form of an absent or `off` request.
     NoFollow,
+    /// Follows and creates records; without this form a lower-backed move fails with `EXDEV`.
     On,
 }
 
@@ -114,7 +120,7 @@ impl MountOptions {
             xattr_namespace: XattrNamespace::Trusted,
             uuid_mode: None,
             xino_mode: None,
-            redirect_dir: None,
+            redirect_dir_mode: None,
             index: None,
             nfs_export: None,
             metacopy: None,
@@ -144,6 +150,17 @@ impl MountOptions {
         Ok(options)
     }
 
+    /// Returns the redirect mode this mount applies; an absent or `off` request selects `nofollow`.
+    ///
+    /// `metacopy=on` selects `on` when the key is absent, because its data lookup needs redirects.
+    pub(super) fn effective_redirect_dir_mode(&self) -> RedirectDirMode {
+        match self.redirect_dir_mode {
+            None if self.metacopy == Some(true) => RedirectDirMode::On,
+            Some(RedirectDirMode::Off) | None => RedirectDirMode::NoFollow,
+            Some(mode) => mode,
+        }
+    }
+
     fn set_entry(&mut self, key: &str, value: Option<&str>) -> Result<()> {
         match key {
             "lowerdir" => {
@@ -159,8 +176,8 @@ impl MountOptions {
                 }
                 // The colon-separated layer list keeps the first entry topmost.
                 //
-                // Reference:
-                // <https://elixir.bootlin.com/linux/v7.0/source/Documentation/filesystems/overlayfs.rst#L350-L364>
+                // Documentation:
+                // <https://www.kernel.org/doc/html/latest/filesystems/overlayfs.html>
                 self.lower_dirs = value.split(':').map(str::to_string).collect();
                 if self.lower_dirs.iter().any(|lower_dir| lower_dir.is_empty()) {
                     return_errno_with_message!(
@@ -212,7 +229,7 @@ impl MountOptions {
                 },
             )?,
             "redirect_dir" => Self::set_once(
-                &mut self.redirect_dir,
+                &mut self.redirect_dir_mode,
                 match Self::require_value(value)? {
                     "off" => RedirectDirMode::Off,
                     "follow" => RedirectDirMode::Follow,
@@ -350,7 +367,7 @@ impl MountOptions {
         }
         if self.xattr_namespace == XattrNamespace::User
             && self
-                .redirect_dir
+                .redirect_dir_mode
                 .is_some_and(|mode| mode != RedirectDirMode::NoFollow)
         {
             return_errno_with_message!(
@@ -366,7 +383,7 @@ impl MountOptions {
         }
         if self.metacopy == Some(true)
             && self
-                .redirect_dir
+                .redirect_dir_mode
                 .is_some_and(|mode| mode != RedirectDirMode::On)
         {
             return_errno_with_message!(
@@ -387,15 +404,6 @@ impl MountOptions {
             );
         }
 
-        if let Some(mode) = self
-            .redirect_dir
-            .filter(|mode| *mode != RedirectDirMode::NoFollow)
-        {
-            warn!(
-                "`redirect_dir={}`: degrading to redirect_dir=nofollow",
-                mode.option_value()
-            );
-        }
         if self.index == Some(true) {
             warn!("`index=on`: degrading to index=off");
         }
@@ -423,18 +431,6 @@ impl MountOptions {
             warn!("`default_permissions`: inert; the mount already behaves as requested");
         }
         Ok(())
-    }
-}
-
-impl RedirectDirMode {
-    /// Returns the `redirect_dir=` value this mode is spelled with.
-    fn option_value(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Follow => "follow",
-            Self::NoFollow => "nofollow",
-            Self::On => "on",
-        }
     }
 }
 
@@ -606,19 +602,19 @@ mod test {
     #[ktest]
     fn parse_redirect_dir_domain() {
         assert_eq!(
-            parse_expect_ok("lowerdir=l,redirect_dir=on", FsFlags::empty()).redirect_dir,
+            parse_expect_ok("lowerdir=l,redirect_dir=on", FsFlags::empty()).redirect_dir_mode,
             Some(RedirectDirMode::On)
         );
         assert_eq!(
-            parse_expect_ok("lowerdir=l,redirect_dir=follow", FsFlags::empty()).redirect_dir,
+            parse_expect_ok("lowerdir=l,redirect_dir=follow", FsFlags::empty()).redirect_dir_mode,
             Some(RedirectDirMode::Follow)
         );
         assert_eq!(
-            parse_expect_ok("lowerdir=l,redirect_dir=nofollow", FsFlags::empty()).redirect_dir,
+            parse_expect_ok("lowerdir=l,redirect_dir=nofollow", FsFlags::empty()).redirect_dir_mode,
             Some(RedirectDirMode::NoFollow)
         );
         assert_eq!(
-            parse_expect_ok("lowerdir=l,redirect_dir=off", FsFlags::empty()).redirect_dir,
+            parse_expect_ok("lowerdir=l,redirect_dir=off", FsFlags::empty()).redirect_dir_mode,
             Some(RedirectDirMode::Off)
         );
         parse_expect_einval(Some("redirect_dir="), FsFlags::empty());
@@ -715,7 +711,7 @@ mod test {
         parse_expect_einval(Some("lowerdir=l,override_creds"), FsFlags::empty());
         parse_expect_einval(Some("override_creds=on"), FsFlags::empty());
         let options = parse_expect_ok("lowerdir=l,nooverride_creds", FsFlags::empty());
-        assert_eq!(options.redirect_dir, None);
+        assert_eq!(options.redirect_dir_mode, None);
         assert_eq!(options.index, None);
         assert_eq!(options.nfs_export, None);
         assert_eq!(options.metacopy, None);

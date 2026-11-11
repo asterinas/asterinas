@@ -10,7 +10,8 @@
 //!
 //! Copy-up writes the source's xattrs onto the promoted object verbatim, under the same filter.
 //!
-//! Decoding and meaning live with each record's semantic owner.
+//! Decoding and meaning live with each record's semantic owner: [`super::redirect`] decodes the
+//! redirect value, and [`super::copyup::metacopy`] validates the metacopy record.
 
 #![short_vis_path::add(overlayfs)]
 
@@ -45,6 +46,8 @@ pub(in overlayfs) enum OverlayXattrType {
     Impure,
     /// The uuid record: the identifier of the mount instance that wrote this inode.
     Uuid,
+    /// The redirect record: the lower name or path this upper entry's content lives under.
+    Redirect,
 }
 
 impl OverlayXattrType {
@@ -56,11 +59,13 @@ impl OverlayXattrType {
             (XattrNamespace::Trusted, Self::Whiteout) => "trusted.overlay.whiteout",
             (XattrNamespace::Trusted, Self::Impure) => "trusted.overlay.impure",
             (XattrNamespace::Trusted, Self::Uuid) => "trusted.overlay.uuid",
+            (XattrNamespace::Trusted, Self::Redirect) => "trusted.overlay.redirect",
             (XattrNamespace::User, Self::Origin) => "user.overlay.origin",
             (XattrNamespace::User, Self::Opaque) => "user.overlay.opaque",
             (XattrNamespace::User, Self::Whiteout) => "user.overlay.whiteout",
             (XattrNamespace::User, Self::Impure) => "user.overlay.impure",
             (XattrNamespace::User, Self::Uuid) => "user.overlay.uuid",
+            (XattrNamespace::User, Self::Redirect) => "user.overlay.redirect",
             _ => unreachable!("the mount stores only the trusted or user xattr namespace"),
         };
         XattrName::try_from_full_name(full_name)
@@ -69,12 +74,11 @@ impl OverlayXattrType {
 
     /// Returns the value a write stores when the write site supplies none.
     ///
-    /// The whiteout, opaque, and impure markers write `y`; origin and uuid always take the caller's
-    /// value instead.
+    /// The whiteout, opaque, and impure markers write `y`; the other records take the caller's value.
     fn default_value(&self) -> Option<&'static [u8]> {
         match self {
             Self::Opaque | Self::Whiteout | Self::Impure => Some(b"y"),
-            Self::Origin | Self::Uuid => None,
+            Self::Origin | Self::Uuid | Self::Redirect | Self::Metacopy => None,
         }
     }
 
@@ -121,6 +125,7 @@ impl OverlayXattrType {
         match self {
             Self::Opaque | Self::Impure => value == self.default_value().unwrap_or_default(),
             Self::Whiteout | Self::Origin | Self::Uuid => true,
+            Self::Redirect => unreachable!("the redirect record is decoded by read_redirect"),
         }
     }
 
@@ -149,6 +154,7 @@ impl OverlayXattrType {
             Self::Origin | Self::Uuid => {
                 unreachable!("the two owner-decoded records carry no marker value to call positive")
             }
+            Self::Redirect => unreachable!("the redirect record is decoded by read_redirect"),
         }
     }
 
@@ -190,7 +196,7 @@ impl OverlayInode {
         let used = XattrName::try_from_full_name(&used_name).ok_or_else(|| {
             Error::with_message(Errno::EINVAL, "invalid escaped overlay xattr name")
         })?;
-        let upper = self.writable_real_object(self_dentry)?;
+        let upper = self.writable_meta_object(self_dentry)?;
         upper
             .real_inode()
             .set_xattr(upper.dentry(), used, value_reader, flags)
@@ -201,7 +207,7 @@ impl OverlayInode {
         let used = XattrName::try_from_full_name(&used_name).ok_or_else(|| {
             Error::with_message(Errno::EINVAL, "invalid escaped overlay xattr name")
         })?;
-        let upper = self.writable_real_object(self_dentry)?;
+        let upper = self.writable_meta_object(self_dentry)?;
         upper.real_inode().remove_xattr(upper.dentry(), used)
     }
 

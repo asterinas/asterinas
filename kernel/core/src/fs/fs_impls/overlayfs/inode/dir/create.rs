@@ -38,7 +38,7 @@ impl OverlayInode {
     ) -> Result<Arc<dyn Inode>> {
         let fs = self.fs_arc();
         // The receiver promotes before its lock, so the created name gets a real upper entry.
-        self.writable_real_object(self_dentry)?;
+        self.writable_meta_object(self_dentry)?;
         let projected: Arc<dyn Inode> = self.create_object(&fs, name, op)?;
         Ok(projected)
     }

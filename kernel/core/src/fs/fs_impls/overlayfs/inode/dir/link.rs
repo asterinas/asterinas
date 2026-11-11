@@ -62,7 +62,7 @@ impl OverlayInode {
             .expect("the link source is not an overlay inode");
         // TODO(VFS gap): the source-side admission (access, regular file, set-id) is the VFS's; its
         // `check_hardlink_source` probes the initial user namespace; overlay keeps no source check.
-        source.writable_real_object(old_dentry)?;
+        source.writable_meta_object(old_dentry)?;
         Ok(source)
     }
 
