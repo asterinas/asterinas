@@ -51,6 +51,7 @@ jobs:
       matrix:
         include:
           - test_id: 'boot-debug-smp4'
+            release: false
             smp: 4
 
           - test_id: 'boot-release'
@@ -74,4 +75,5 @@ jobs:
           auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') || 'conformance' }}
           release: ${{ !contains(matrix.release, 'false') }}
           arch: 'riscv64'
+          smp: ${{ matrix.smp }}
           conformance_test_suite: 'ltp'
