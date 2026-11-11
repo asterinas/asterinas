@@ -5,8 +5,12 @@ use core::sync::atomic::Ordering;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::ResourceType::RLIMIT_NICE,
+    process::{
+        Process, ResourceType::RLIMIT_NICE, credentials::capabilities::CapSet,
+        posix_thread::AsPosixThread,
+    },
     sched::Nice,
+    security::lsm::hooks as lsm_hooks,
     syscall::get_priority::{PriorityTarget, get_processes},
 };
 
@@ -32,6 +36,8 @@ pub(super) fn sys_set_priority(
 
     let processes = get_processes(prio_target)?;
     for process in processes.iter() {
+        check_setpriority_permission(process, ctx)?;
+
         let rlimit = process.resource_limits();
         let limit = (rlimit.get_rlimit(RLIMIT_NICE).get_cur() as i8)
             .try_into()
@@ -47,4 +53,23 @@ pub(super) fn sys_set_priority(
     }
 
     Ok(SyscallReturn::Return(0))
+}
+
+/// Checks whether the caller may change the target process's nice value.
+fn check_setpriority_permission(target: &Process, ctx: &Context) -> Result<()> {
+    let caller_uid = ctx.posix_thread.credentials().euid();
+    let target_credentials = target
+        .main_thread()
+        .as_posix_thread()
+        .unwrap()
+        .credentials();
+
+    if caller_uid != target_credentials.ruid() && caller_uid != target_credentials.euid() {
+        lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+            target.user_ns().lock().as_ref(),
+            ctx.posix_thread,
+            CapSet::SYS_NICE,
+        ))?;
+    }
+    Ok(())
 }
