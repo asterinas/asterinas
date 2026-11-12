@@ -7,7 +7,7 @@ use ostd::{mm::VmIo, sync::Mutex};
 use ostd_pod::Pod;
 
 use crate::{
-    BlockDevice, BlockDeviceMeta, DEVICE_MINORS, SECTOR_SIZE,
+    AnyBlockDevice, BlockDeviceMeta, DEVICE_MINORS, SECTOR_SIZE,
     bio::{BioEnqueueError, SubmittedBio},
     device_id::EXTENDED_DEVICE_ID_ALLOCATOR,
     prelude::*,
@@ -151,7 +151,7 @@ impl GptEntry {
     }
 }
 
-pub(super) fn parse(device: &Arc<dyn BlockDevice>) -> Option<Vec<Option<PartitionInfo>>> {
+pub(super) fn parse(device: &Arc<dyn AnyBlockDevice>) -> Option<Vec<Option<PartitionInfo>>> {
     let mbr = device.read_val::<MbrHeader>(0).unwrap();
 
     // 0xEE indicates a GPT Protective MBR, a fake partition covering the entire disk.
@@ -164,7 +164,7 @@ pub(super) fn parse(device: &Arc<dyn BlockDevice>) -> Option<Vec<Option<Partitio
     partitions.iter().any(|p| p.is_some()).then_some(partitions)
 }
 
-fn parse_mbr(device: &Arc<dyn BlockDevice>, mbr: &MbrHeader) -> Vec<Option<PartitionInfo>> {
+fn parse_mbr(device: &Arc<dyn AnyBlockDevice>, mbr: &MbrHeader) -> Vec<Option<PartitionInfo>> {
     let mut partitions = Vec::new();
     let mut extended_partition = None;
     for entry in mbr.entries {
@@ -187,7 +187,7 @@ fn parse_mbr(device: &Arc<dyn BlockDevice>, mbr: &MbrHeader) -> Vec<Option<Parti
 }
 
 fn parse_ebr(
-    device: &Arc<dyn BlockDevice>,
+    device: &Arc<dyn AnyBlockDevice>,
     partitions: &mut Vec<Option<PartitionInfo>>,
     start_sector: u32,
     offset: u32,
@@ -211,7 +211,7 @@ fn parse_ebr(
     }
 }
 
-fn parse_gpt(device: &Arc<dyn BlockDevice>) -> Vec<Option<PartitionInfo>> {
+fn parse_gpt(device: &Arc<dyn AnyBlockDevice>) -> Vec<Option<PartitionInfo>> {
     let mut partitions = Vec::new();
 
     // The primary GPT Header must be located in LBA 1.
@@ -249,11 +249,11 @@ fn parse_gpt(device: &Arc<dyn BlockDevice>) -> Vec<Option<PartitionInfo>> {
 struct PartitionNode {
     id: DeviceId,
     name: String,
-    device: Arc<dyn BlockDevice>,
+    device: Arc<dyn AnyBlockDevice>,
     info: PartitionInfo,
 }
 
-impl BlockDevice for PartitionNode {
+impl AnyBlockDevice for PartitionNode {
     fn enqueue(&self, mut bio: SubmittedBio) -> Result<(), BioEnqueueError> {
         bio.set_sid_offset(self.info.start_sector());
         self.device.enqueue(bio)
@@ -279,7 +279,12 @@ impl BlockDevice for PartitionNode {
 }
 
 impl PartitionNode {
-    fn new(id: DeviceId, name: String, device: Arc<dyn BlockDevice>, info: PartitionInfo) -> Self {
+    fn new(
+        id: DeviceId,
+        name: String,
+        device: Arc<dyn AnyBlockDevice>,
+        info: PartitionInfo,
+    ) -> Self {
         Self {
             id,
             name,
@@ -313,7 +318,11 @@ impl PartitionManager {
     }
 
     /// Replaces the managed partitions with the parsed partition information.
-    pub(super) fn update(&self, device: &Arc<dyn BlockDevice>, infos: Vec<Option<PartitionInfo>>) {
+    pub(super) fn update(
+        &self,
+        device: &Arc<dyn AnyBlockDevice>,
+        infos: Vec<Option<PartitionInfo>>,
+    ) {
         // Lock order: partition lock -> `DEVICE_REGISTRY`
 
         let mut partitions = self.inner.lock();

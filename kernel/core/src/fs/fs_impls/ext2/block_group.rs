@@ -54,7 +54,7 @@ pub(super) struct BlockGroup {
     /// Group descriptor and bitmaps, protected by a single lock.
     metadata: RwMutex<BlockGroupMetadata>,
     /// Backing block device (shared with `Ext2` and other groups).
-    block_device: Arc<dyn BlockDevice>,
+    block_device: Arc<dyn AnyBlockDevice>,
     /// Cached geometry: first filesystem-wide block number of this group.
     first_block: u32,
     /// Cached geometry: last filesystem-wide block number of this group.
@@ -92,7 +92,7 @@ impl BlockGroup {
         group_descs: &USegment,
         group_idx: usize,
         sb: &SuperBlock,
-        block_device: Arc<dyn BlockDevice>,
+        block_device: Arc<dyn AnyBlockDevice>,
     ) -> Result<Self> {
         let offset = group_idx * size_of::<RawBlockGroup>();
         let raw_group = group_descs
@@ -524,7 +524,7 @@ impl BlockGroup {
 
     /// Loads and validates the block bitmap for this group.
     fn load_block_bitmap(
-        block_device: &dyn BlockDevice,
+        block_device: &dyn AnyBlockDevice,
         first_block: u32,
         last_block: u32,
         desc: &BlockGroupDesc,
@@ -547,7 +547,7 @@ impl BlockGroup {
 
     /// Loads the inode bitmap for this group.
     fn load_inode_bitmap(
-        block_device: &dyn BlockDevice,
+        block_device: &dyn AnyBlockDevice,
         nr_inodes_per_group: u32,
         desc: &BlockGroupDesc,
     ) -> Result<IdBitmap> {
@@ -739,7 +739,7 @@ struct InodeTableBackend {
     /// Total inode table size in bytes (`nr_inodes_per_group * inode_size`).
     raw_inodes_size: usize,
     /// Block device handle for I/O.
-    block_device: Arc<dyn BlockDevice>,
+    block_device: Arc<dyn AnyBlockDevice>,
 }
 
 impl BlockAsPageCacheBackend for InodeTableBackend {

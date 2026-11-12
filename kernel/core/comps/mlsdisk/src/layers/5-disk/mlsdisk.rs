@@ -70,7 +70,7 @@ struct DiskInner<D: BlockSet> {
     write_sync_region: RwLock<()>,
 }
 
-impl<D: BlockSet + 'static> aster_block::BlockDevice for MlsDisk<D> {
+impl<D: BlockSet + 'static> aster_block::AnyBlockDevice for MlsDisk<D> {
     fn enqueue(
         &self,
         bio: aster_block::bio::SubmittedBio,

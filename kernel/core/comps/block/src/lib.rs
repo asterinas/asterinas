@@ -70,7 +70,7 @@ pub const SECTOR_SIZE: usize = 512;
 /// remaining partitions via `EXTENDED_DEVICE_ID_ALLOCATOR`.
 pub const DEVICE_MINORS: u32 = 16;
 
-pub trait BlockDevice: Send + Sync + Any + Debug {
+pub trait AnyBlockDevice: Send + Sync + Any + Debug {
     /// Enqueues a new `SubmittedBio` to the block device.
     fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError>;
 
@@ -108,8 +108,8 @@ pub struct BlockDeviceMeta {
     // Additional useful metadata can be added here in the future.
 }
 
-impl dyn BlockDevice {
-    pub fn downcast_ref<T: BlockDevice>(&self) -> Option<&T> {
+impl dyn AnyBlockDevice {
+    pub fn downcast_ref<T: AnyBlockDevice>(&self) -> Option<&T> {
         (self as &dyn Any).downcast_ref::<T>()
     }
 }
@@ -130,7 +130,7 @@ pub enum Error {
 }
 
 /// Registers a new block device.
-pub fn register(device: Arc<dyn BlockDevice>) -> Result<(), Error> {
+pub fn register(device: Arc<dyn AnyBlockDevice>) -> Result<(), Error> {
     let mut registry = DEVICE_REGISTRY.lock();
     let id = device.id().to_raw();
     if registry.contains_key(&id) {
@@ -142,7 +142,7 @@ pub fn register(device: Arc<dyn BlockDevice>) -> Result<(), Error> {
 }
 
 /// Unregisters an existing block device, returning the device if found.
-pub fn unregister(id: DeviceId) -> Result<Arc<dyn BlockDevice>, Error> {
+pub fn unregister(id: DeviceId) -> Result<Arc<dyn AnyBlockDevice>, Error> {
     DEVICE_REGISTRY
         .lock()
         .remove(&id.to_raw())
@@ -150,17 +150,17 @@ pub fn unregister(id: DeviceId) -> Result<Arc<dyn BlockDevice>, Error> {
 }
 
 /// Collects all block devices.
-pub fn collect_all() -> Vec<Arc<dyn BlockDevice>> {
+pub fn collect_all() -> Vec<Arc<dyn AnyBlockDevice>> {
     DEVICE_REGISTRY.lock().values().cloned().collect()
 }
 
 /// Looks up a block device of a given device ID.
-pub fn lookup(id: DeviceId) -> Option<Arc<dyn BlockDevice>> {
+pub fn lookup(id: DeviceId) -> Option<Arc<dyn AnyBlockDevice>> {
     DEVICE_REGISTRY.lock().get(&id.to_raw()).cloned()
 }
 
 /// Looks up a block device by its kernel device name.
-pub fn lookup_by_name(name: &str) -> Option<Arc<dyn BlockDevice>> {
+pub fn lookup_by_name(name: &str) -> Option<Arc<dyn AnyBlockDevice>> {
     DEVICE_REGISTRY
         .lock()
         .values()
@@ -188,7 +188,7 @@ pub fn scan_partitions() {
     }
 }
 
-static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn BlockDevice>>> = Mutex::new(BTreeMap::new());
+static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn AnyBlockDevice>>> = Mutex::new(BTreeMap::new());
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {

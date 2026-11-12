@@ -28,7 +28,7 @@ use alloc::{string::ToString, sync::Arc, vec};
 use core::ops::Range;
 
 use aster_block::{
-    BlockDevice, SECTOR_SIZE,
+    AnyBlockDevice, SECTOR_SIZE,
     bio::{Bio, BioDirection, BioSegment, BioStatus, BioType},
     id::Sid,
 };
@@ -66,12 +66,12 @@ fn init() -> Result<(), ComponentInitError> {
 
 #[derive(Clone, Debug)]
 struct RawDisk {
-    inner: Arc<dyn BlockDevice>,
+    inner: Arc<dyn AnyBlockDevice>,
     region: Range<BlockId>,
 }
 
 impl RawDisk {
-    fn new(host_disk: Arc<dyn BlockDevice>) -> Self {
+    fn new(host_disk: Arc<dyn AnyBlockDevice>) -> Self {
         let end = host_disk.metadata().nr_sectors * SECTOR_SIZE / BLOCK_SIZE;
         Self {
             inner: host_disk,
@@ -166,7 +166,7 @@ mod test {
         }
     }
 
-    impl BlockDevice for MemoryDisk {
+    impl AnyBlockDevice for MemoryDisk {
         fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
             let bio_type = bio.type_();
             if bio_type == BioType::Flush {

@@ -8,7 +8,7 @@ use core::{
 };
 
 use aster_block::{
-    BLOCK_SIZE, BlockDevice, BlockDeviceMeta, SECTOR_SIZE,
+    AnyBlockDevice, BLOCK_SIZE, BlockDeviceMeta, SECTOR_SIZE,
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     id::Bid,
 };
@@ -106,7 +106,7 @@ impl Debug for Ext2MemoryDisk {
     }
 }
 
-impl BlockDevice for Ext2MemoryDisk {
+impl AnyBlockDevice for Ext2MemoryDisk {
     fn enqueue(&self, bio: SubmittedBio) -> core::result::Result<(), BioEnqueueError> {
         if bio.type_() == BioType::Flush {
             self.flush_count.fetch_add(1, Ordering::Relaxed);
@@ -499,7 +499,7 @@ pub(super) struct Ext2FixtureBuilder {
     init_root: bool,
     block_bitmap: Option<BlockBitmapInit>,
     inode_bitmap: Option<InodeBitmapInit>,
-    custom_device: Option<Arc<dyn BlockDevice>>,
+    custom_device: Option<Arc<dyn AnyBlockDevice>>,
 }
 
 impl Ext2FixtureBuilder {
@@ -725,9 +725,9 @@ impl Ext2FixtureBuilder {
             write_raw_inode_to_disk(&sb, &descs, ROOT_INO, &root_raw, &disk);
         }
 
-        let device: Arc<dyn BlockDevice> = self
+        let device: Arc<dyn AnyBlockDevice> = self
             .custom_device
-            .unwrap_or_else(|| disk.clone() as Arc<dyn BlockDevice>);
+            .unwrap_or_else(|| disk.clone() as Arc<dyn AnyBlockDevice>);
         let ext2 = Ext2::open(device, FsFlags::empty(), None)?;
 
         Ok(Ext2Fixture {

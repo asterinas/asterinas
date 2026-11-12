@@ -120,7 +120,7 @@ impl BlockDevice {
     }
 }
 
-impl aster_block::BlockDevice for BlockDevice {
+impl aster_block::AnyBlockDevice for BlockDevice {
     fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
         self.queue.enqueue(bio)
     }

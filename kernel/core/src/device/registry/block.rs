@@ -2,7 +2,7 @@
 
 use alloc::borrow::ToOwned;
 
-use aster_block::{BLOCK_SIZE, BlockDevice, SECTOR_SIZE, bio::BioStatus};
+use aster_block::{AnyBlockDevice, BLOCK_SIZE, SECTOR_SIZE, bio::BioStatus};
 use aster_nvme::NvmeBlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 use device_id::DeviceId;
@@ -101,14 +101,14 @@ mod ioctl_defs {
 
 /// Represents a block device inode in the filesystem.
 //
-// TODO: This type wraps an `Arc<dyn BlockDevice>` in another `Arc` just to implement the `Device`
+// TODO: This type wraps an `Arc<dyn AnyBlockDevice>` in another `Arc` just to implement the `Device`
 // trait. It leads to redundant vtable dispatch, reference counting, and heap allocation. We should
 // devise a better strategy to eliminate the unnecessary intermediate `Arc`.
 #[derive(Debug)]
-struct BlockFile(Arc<dyn BlockDevice>);
+struct BlockFile(Arc<dyn AnyBlockDevice>);
 
 impl BlockFile {
-    fn new(device: Arc<dyn BlockDevice>) -> Self {
+    fn new(device: Arc<dyn AnyBlockDevice>) -> Self {
         Self(device)
     }
 }
@@ -133,10 +133,10 @@ impl Device for BlockFile {
 
 /// Represents an opened block device file ready for I/O operations.
 //
-// TODO: This type wraps an `Arc<dyn BlockDevice>` in another `Box` just to implement the
+// TODO: This type wraps an `Arc<dyn AnyBlockDevice>` in another `Box` just to implement the
 // `PerOpenFileOps` trait. It leads to redundant vtable dispatch and heap allocation. We should
 // devise a better strategy to eliminate the unnecessary intermediate `Box`.
-struct OpenBlockFile(Arc<dyn BlockDevice>);
+struct OpenBlockFile(Arc<dyn AnyBlockDevice>);
 
 impl FileOps for OpenBlockFile {
     fn read_at(

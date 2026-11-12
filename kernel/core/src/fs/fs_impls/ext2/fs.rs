@@ -51,7 +51,7 @@ pub(super) const ROOT_INO: u32 = 2;
 #[derive(Debug)]
 pub(crate) struct Ext2 {
     /// Backing block device.
-    block_device: Arc<dyn BlockDevice>,
+    block_device: Arc<dyn AnyBlockDevice>,
     /// Superblock with dirty tracking.
     super_block: RwMutex<Dirty<SuperBlock>>,
     /// Block group descriptors and caches.
@@ -116,7 +116,7 @@ impl Ext2MountOptions {
 impl Ext2 {
     /// Opens and loads an Ext2 filesystem from a block device.
     pub(super) fn open(
-        device: Arc<dyn BlockDevice>,
+        device: Arc<dyn AnyBlockDevice>,
         flags: FsFlags,
         data: Option<&str>,
     ) -> Result<Arc<Self>> {
@@ -189,7 +189,7 @@ impl Ext2 {
     }
 
     /// Returns the block device.
-    pub(super) fn block_device(&self) -> &dyn BlockDevice {
+    pub(super) fn block_device(&self) -> &dyn AnyBlockDevice {
         self.block_device.as_ref()
     }
 
@@ -739,7 +739,7 @@ mod test {
     fn stat_minixdf_reports_total() {
         let f = Ext2FixtureBuilder::new(3, 512).build().unwrap();
         let ext2 = Ext2::open(
-            f.disk.clone() as Arc<dyn BlockDevice>,
+            f.disk.clone() as Arc<dyn AnyBlockDevice>,
             FsFlags::empty(),
             Some("minixdf"),
         )

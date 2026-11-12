@@ -5,7 +5,7 @@ use io_util::batch::IoBatch;
 use ostd::mm::{VmIo, VmReader, VmWriter};
 
 use super::{
-    BLOCK_SIZE, BlockDevice, SECTOR_SIZE,
+    AnyBlockDevice, BLOCK_SIZE, SECTOR_SIZE,
     bio::{Bio, BioCompleteFn, BioEnqueueError, BioSegment, BioStatus, BioType},
     id::{Bid, Sid},
 };
@@ -16,7 +16,7 @@ use crate::{
 
 /// Implements several commonly used APIs for the block device to conveniently
 /// read and write block(s).
-impl dyn BlockDevice {
+impl dyn AnyBlockDevice {
     /// Synchronously reads contiguous blocks starting from the `bid`.
     pub fn read_blocks(
         &self,
@@ -71,7 +71,7 @@ impl dyn BlockDevice {
     }
 }
 
-impl VmIo for dyn BlockDevice {
+impl VmIo for dyn AnyBlockDevice {
     /// Reads consecutive bytes of several sectors in size.
     fn read(&self, offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
         let read_len = writer.avail();
@@ -206,7 +206,7 @@ impl VmIo for dyn BlockDevice {
     }
 }
 
-impl dyn BlockDevice {
+impl dyn AnyBlockDevice {
     /// Asynchronously writes consecutive bytes of several sectors in size.
     pub fn write_bytes_async(
         &self,

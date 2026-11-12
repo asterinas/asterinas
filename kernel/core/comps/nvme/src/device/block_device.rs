@@ -2,7 +2,7 @@
 
 //! NVMe Block Device implementation.
 //!
-//! Implements the [`aster_block::BlockDevice`] trait on top of the NVMe transport.
+//! Implements the [`aster_block::AnyBlockDevice`] trait on top of the NVMe transport.
 //! BIOs are staged in [`BioRequestSingleQueue`] and drained by repeated calls to
 //! [`NvmeBlockDevice::handle_requests`] from the kernel registry's per-device kthread.
 //!
@@ -115,7 +115,7 @@ impl NvmeBlockDevice {
     }
 }
 
-impl aster_block::BlockDevice for NvmeBlockDevice {
+impl aster_block::AnyBlockDevice for NvmeBlockDevice {
     fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
         self.queue.enqueue(bio)
     }
