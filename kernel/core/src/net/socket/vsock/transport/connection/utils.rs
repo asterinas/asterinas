@@ -13,6 +13,7 @@ use crate::{
         connection::{ConnectionInner, ConnectionState, TimerState},
     },
     prelude::*,
+    time::timer::TimerGuard,
 };
 
 impl ConnectionState {
@@ -86,7 +87,7 @@ impl ConnectionState {
         let conn_id = conn.conn_id;
         let generation = next_timer_generation();
 
-        let timer = timer_manager.create_timer(move |_guard| {
+        let timer = timer_manager.create_timer(move |_guard: TimerGuard<'_>| {
             push_timer_event(conn_id, generation);
         });
         timer.lock().set_timeout(Timeout::After(duration));

@@ -23,7 +23,7 @@ use crate::{
     time::{
         Timer, clockid_t,
         clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
-        timer::TimerGuard,
+        timer::{TimerFn, TimerGuard},
         timer_t,
     },
 };
@@ -123,10 +123,7 @@ pub(super) fn sys_timer_delete(timer_id: timer_t, ctx: &Context) -> Result<Sysca
 /// Creates a timer associated with the specified fixed or dynamic clock ID.
 ///
 /// This timer will invoke the given callback function (`func`) when it expires.
-fn create_timer<F>(clockid: clockid_t, func: F, ctx: &Context) -> Result<Arc<Timer>>
-where
-    F: Fn(TimerGuard) + Send + Sync + 'static,
-{
+fn create_timer<F: TimerFn>(clockid: clockid_t, func: F, ctx: &Context) -> Result<Arc<Timer<F>>> {
     let timer = if clockid >= 0 {
         return create_timer_for_clock(ClockId::try_from(clockid)?, func, ctx);
     } else {
@@ -160,14 +157,11 @@ where
 /// Creates a timer associated with the specified clock ID.
 ///
 /// This timer will invoke the given callback function (`func`) when it expires.
-pub(crate) fn create_timer_for_clock<F>(
+pub(crate) fn create_timer_for_clock<F: TimerFn>(
     clock_id: ClockId,
     func: F,
     ctx: &Context,
-) -> Result<Arc<Timer>>
-where
-    F: Fn(TimerGuard) + Send + Sync + 'static,
-{
+) -> Result<Arc<Timer<F>>> {
     let process_timer_manager = ctx.process.timer_manager();
     let timer = match clock_id {
         ClockId::CLOCK_PROCESS_CPUTIME_ID => process_timer_manager.create_prof_timer(func),
