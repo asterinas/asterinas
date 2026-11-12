@@ -17,6 +17,7 @@ rec {
     path = builtins.getEnv "GVISOR_PREBUILT_DIR";
   };
   kselftest = callPackage ./kselftest.nix { };
+  kvmtest = callPackage ./kvmtest.nix { };
 
   conformanceSrc = lib.fileset.toSource {
     root = ./../../src/conformance;
@@ -41,6 +42,7 @@ rec {
       ${lib.optionalString (testSuite == "ltp") "export LTP_PREBUILT_DIR=${ltp}"}
       ${lib.optionalString (testSuite == "gvisor") "export GVISOR_PREBUILT_DIR=${gvisor}"}
       ${lib.optionalString (testSuite == "kselftest") "export KSELFTEST_PREBUILT_DIR=${kselftest}"}
+      ${lib.optionalString (testSuite == "kvmtest") "export KVMTEST_PREBUILT_DIR=${kvmtest}"}
       ${lib.optionalString (testSuite == "pjdfstest") "export PJDFSTEST_PREBUILT_DIR=${pjdfstest}"}
       ${lib.optionalString (testSuite == "xfstests") "export XFSTESTS_PREBUILT_DIR=${xfstests}"}
       make

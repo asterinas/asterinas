@@ -28,3 +28,9 @@ jobs:
 
         - name: Run OSDK tests
           run: make test_osdk
+
+        - name: Run KVM hello-world
+          run: make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=kvmtest
+
+        - name: Run kselftest
+          run: make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=kselftest
