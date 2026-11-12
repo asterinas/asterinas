@@ -141,6 +141,23 @@ wait_for_gdb_socket() {
     die "GDB socket did not appear after $timeout_secs seconds"
 }
 
+kernel_bin_name() {
+    local package_name
+
+    package_name="$(
+        cd "$PROJECT_ROOT"
+        cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[]
+                | select(.manifest_path | endswith("/kernel/Cargo.toml"))
+                | .name'
+    )"
+
+    if [ -z "$package_name" ] || [ "$package_name" = "null" ]; then
+        die "Cannot determine the kernel crate name"
+    fi
+    echo "${package_name}-osdk-bin"
+}
+
 kernel_elf() {
     local target
     local profile_dir
@@ -148,7 +165,7 @@ kernel_elf() {
 
     target="$(target_triple "$BUILD_TARGET_ARCH")"
     profile_dir="$(artifact_profile "$BUILD_PROFILE")"
-    elf="$PROJECT_ROOT/target/$target/$profile_dir/aster-kernel-osdk-bin"
+    elf="$PROJECT_ROOT/target/$target/$profile_dir/$(kernel_bin_name)"
 
     if [ ! -f "$elf" ]; then
         die "kernel ELF with debug symbols not found: $elf"
