@@ -10,10 +10,10 @@
 
 #include "../../common/test.h"
 
-/* Exercise an offset well beyond the two-byte file. */
-#define FAR_PAST_EOF 8192
 /* Use 2000-01-01 for atime and mtime to detect unintended updates without sleeping. */
 #define OLD_TIMESTAMP_SEC 946684800
+/* Exercise an offset well beyond the two-byte file. */
+#define FAR_PAST_EOF 8192
 /*
  * Keep the initial position distinct from every write offset so the test
  * detects pwrite or pwritev incorrectly moving the descriptor position.
@@ -42,9 +42,12 @@ static void reset_fixture(struct stat *before, off_t position)
 
 	CHECK(ftruncate(fd, 0));
 	CHECK_WITH(pwrite(fd, "hi", 2, 0), _ret == 2);
+
 	CHECK(futimens(fd, times));
+
 	CHECK(fstat(fd, before));
 	CHECK_WITH(before->st_size, _ret == 2);
+
 	CHECK_WITH(lseek(io_fd, position, SEEK_SET), _ret == position);
 }
 
@@ -70,13 +73,10 @@ static ssize_t empty_write(enum empty_write_op op, off_t offset)
 
 FN_SETUP(create_file)
 {
-	const char *dir = getenv("TEST_TMPDIR");
-	const char *direct_env = getenv("TEST_DIRECT");
-	int direct = direct_env && strcmp(direct_env, "1") == 0;
+	const char *dir = getenv("TEST_TMPDIR") ?: "/tmp";
+	const char *direct_env = getenv("TEST_DIRECT") ?: "0";
+	int direct = strcmp(direct_env, "1") == 0;
 
-	if (!dir) {
-		dir = "/tmp";
-	}
 	CHECK_WITH(snprintf(path, sizeof(path), "%s/empty-write-XXXXXX", dir),
 		   _ret > 0 && (size_t)_ret < sizeof(path));
 	fd = CHECK(mkstemp(path));
@@ -103,7 +103,8 @@ FN_TEST(empty_writes_preserve_metadata_and_position)
 			reset_fixture(&before, position);
 
 			TEST_RES(empty_write(ops[o], offsets[i]), _ret == 0);
-			CHECK(fstat(fd, &after));
+
+			TEST_SUCC(fstat(fd, &after));
 			TEST_RES(after.st_size, _ret == before.st_size);
 			TEST_RES(after.st_blocks, _ret == before.st_blocks);
 			TEST_RES(same_time(before.st_atim, after.st_atim),
@@ -112,6 +113,7 @@ FN_TEST(empty_writes_preserve_metadata_and_position)
 				 _ret);
 			TEST_RES(same_time(before.st_ctim, after.st_ctim),
 				 _ret);
+
 			/* Empty writes must leave the descriptor position unchanged. */
 			TEST_RES(lseek(io_fd, 0, SEEK_CUR), _ret == position);
 		}
