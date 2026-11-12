@@ -6,7 +6,7 @@ use alloc::{format, vec};
 use core::fmt;
 
 use aster_block::{
-    AnyBlockDevice, BlockDeviceMeta, SECTOR_SIZE,
+    AnyBlockDevice, BlockDeviceKind, BlockDeviceMeta, SECTOR_SIZE, WholeDisk,
     bio::{Bio, BioCompleteFn, BioEnqueueError, BioSegment, BioStatus, BioType, SubmittedBio},
     id::Sid,
 };
@@ -325,6 +325,17 @@ impl AnyBlockDevice for MockPageCacheBackend {
 
     fn id(&self) -> DeviceId {
         DeviceId::null()
+    }
+
+    fn kind(&self) -> BlockDeviceKind<'_> {
+        BlockDeviceKind::Disk(self)
+    }
+}
+
+impl WholeDisk for MockPageCacheBackend {
+    fn handle_requests(&self) -> Option<()> {
+        // Requests complete in `enqueue()` or are completed explicitly by the test.
+        None
     }
 }
 

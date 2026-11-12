@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! MBR and GPT partition discovery for whole disks.
+
 use alloc::format;
 
 use device_id::{DeviceId, MinorId};
-use ostd::{mm::VmIo, sync::Mutex};
+use ostd::mm::VmIo;
 use ostd_pod::Pod;
 
 use crate::{
-    AnyBlockDevice, BlockDeviceMeta, DEVICE_MINORS, SECTOR_SIZE,
+    AnyBlockDevice, BlockDeviceKind, BlockDeviceMeta, DEVICE_MINORS, SECTOR_SIZE,
     bio::{BioEnqueueError, SubmittedBio},
     device_id::EXTENDED_DEVICE_ID_ALLOCATOR,
     prelude::*,
-    register, unregister,
+    register,
 };
 
 /// Represents a partition entry.
@@ -151,7 +153,7 @@ impl GptEntry {
     }
 }
 
-pub(super) fn parse(device: &Arc<dyn AnyBlockDevice>) -> Option<Vec<Option<PartitionInfo>>> {
+fn parse(device: &Arc<dyn AnyBlockDevice>) -> Option<Vec<Option<PartitionInfo>>> {
     let mbr = device.read_val::<MbrHeader>(0).unwrap();
 
     // 0xEE indicates a GPT Protective MBR, a fake partition covering the entire disk.
@@ -251,6 +253,7 @@ struct PartitionNode {
     name: String,
     device: Arc<dyn AnyBlockDevice>,
     info: PartitionInfo,
+    number: u32,
 }
 
 impl AnyBlockDevice for PartitionNode {
@@ -273,8 +276,11 @@ impl AnyBlockDevice for PartitionNode {
         self.id
     }
 
-    fn is_partition(&self) -> bool {
-        true
+    fn kind(&self) -> BlockDeviceKind<'_> {
+        BlockDeviceKind::Partition {
+            number: self.number,
+            start_sector: self.info.start_sector(),
+        }
     }
 }
 
@@ -284,81 +290,47 @@ impl PartitionNode {
         name: String,
         device: Arc<dyn AnyBlockDevice>,
         info: PartitionInfo,
+        number: u32,
     ) -> Self {
         Self {
             id,
             name,
             device,
             info,
+            number,
         }
     }
 }
 
-/// Manages the partitions of a whole-disk block device.
-///
-/// The manager owns the device's current partition list and the lock that
-/// serializes partition replacement.
-#[derive(Debug)]
-pub struct PartitionManager {
-    inner: Mutex<Option<Vec<Arc<PartitionNode>>>>,
-}
+/// Scans and registers the initial partitions of a whole disk.
+pub(super) fn scan(device: &Arc<dyn AnyBlockDevice>) {
+    let Some(infos) = parse(device) else {
+        return;
+    };
 
-impl Default for PartitionManager {
-    fn default() -> Self {
-        Self::new()
+    let mut new_partitions = Vec::new();
+    for (index, info_opt) in infos.iter().enumerate() {
+        let Some(info) = info_opt else {
+            continue;
+        };
+
+        let index = index as u32 + 1;
+        let id = if index < DEVICE_MINORS {
+            let device_id = device.id();
+            DeviceId::new(
+                device_id.major(),
+                MinorId::new(device_id.minor().get() + index),
+            )
+        } else {
+            EXTENDED_DEVICE_ID_ALLOCATOR.get().unwrap().allocate()
+        };
+        let name = partition_name(device.name(), index);
+        let partition = Arc::new(PartitionNode::new(id, name, device.clone(), *info, index));
+        new_partitions.push(partition);
     }
-}
 
-impl PartitionManager {
-    /// Creates an empty partition manager.
-    pub const fn new() -> Self {
-        Self {
-            inner: Mutex::new(None),
-        }
-    }
-
-    /// Replaces the managed partitions with the parsed partition information.
-    pub(super) fn update(
-        &self,
-        device: &Arc<dyn AnyBlockDevice>,
-        infos: Vec<Option<PartitionInfo>>,
-    ) {
-        // Lock order: partition lock -> `DEVICE_REGISTRY`
-
-        let mut partitions = self.inner.lock();
-
-        if let Some(old_partitions) = partitions.take() {
-            for partition in old_partitions {
-                let _ = unregister(partition.id());
-            }
-        }
-
-        let mut new_partitions = Vec::new();
-        for (index, info_opt) in infos.iter().enumerate() {
-            let Some(info) = info_opt else {
-                continue;
-            };
-
-            let index = index as u32 + 1;
-            let id = if index < DEVICE_MINORS {
-                let device_id = device.id();
-                DeviceId::new(
-                    device_id.major(),
-                    MinorId::new(device_id.minor().get() + index),
-                )
-            } else {
-                EXTENDED_DEVICE_ID_ALLOCATOR.get().unwrap().allocate()
-            };
-            let name = partition_name(device.name(), index);
-            let partition = Arc::new(PartitionNode::new(id, name, device.clone(), *info));
-            new_partitions.push(partition);
-        }
-
-        for partition in new_partitions.iter() {
-            let _ = register(partition.clone());
-        }
-
-        *partitions = Some(new_partitions);
+    for partition in new_partitions.iter() {
+        let _ = register(partition.clone());
     }
 }
 

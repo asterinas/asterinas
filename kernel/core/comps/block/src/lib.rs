@@ -51,13 +51,10 @@ use ::device_id::DeviceId;
 use component::{ComponentInitError, init_component};
 use ostd::sync::Mutex;
 
+pub use self::device_id::{MAX_MAJOR, MajorIdOwner, acquire_major, allocate_major};
 use self::{
     bio::{BioEnqueueError, SubmittedBio},
     prelude::*,
-};
-pub use self::{
-    device_id::{MAX_MAJOR, MajorIdOwner, acquire_major, allocate_major},
-    partition::PartitionManager,
 };
 
 pub const BLOCK_SIZE: usize = ostd::mm::PAGE_SIZE;
@@ -83,19 +80,31 @@ pub trait AnyBlockDevice: Send + Sync + Any + Debug {
     /// Returns the device ID of the block device.
     fn id(&self) -> DeviceId;
 
-    /// Returns whether the block device is a partition.
-    fn is_partition(&self) -> bool {
-        false
-    }
+    /// Returns the kind of the block device.
+    fn kind(&self) -> BlockDeviceKind<'_>;
+}
 
-    /// Returns the partition manager of the block device.
+/// A whole disk with request processing.
+pub trait WholeDisk: AnyBlockDevice {
+    /// Handles one request, waiting if the queue is empty.
     ///
-    /// Whole-disk devices return their manager, which owns the device's
-    /// partitions. Partition devices and devices without partition support
-    /// return `None`.
-    fn partition_manager(&self) -> Option<&PartitionManager> {
-        None
-    }
+    /// Returns `Some(())` to continue processing, or `None` if no background
+    /// request processing is needed.
+    /// The I/O result is reported through BIO completion.
+    fn handle_requests(&self) -> Option<()>;
+}
+
+/// The kind of a block device.
+pub enum BlockDeviceKind<'a> {
+    /// A whole disk.
+    Disk(&'a dyn WholeDisk),
+    /// A partition of a whole disk.
+    Partition {
+        /// Partition number, starting at one.
+        number: u32,
+        /// Start offset in units of 512-byte sectors on the whole disk.
+        start_sector: u64,
+    },
 }
 
 /// Metadata for a block device.
@@ -168,23 +177,15 @@ pub fn lookup_by_name(name: &str) -> Option<Arc<dyn AnyBlockDevice>> {
         .cloned()
 }
 
-/// Scans registered whole-disk devices and updates their partitions.
+/// Scans registered whole disks for their initial partitions.
 pub fn scan_partitions() {
     let devices = collect_all();
     for device in devices {
-        if device.is_partition() {
+        if !matches!(device.kind(), BlockDeviceKind::Disk(_)) {
             continue;
         }
 
-        let Some(partition_manager) = device.partition_manager() else {
-            continue;
-        };
-
-        let Some(partition_infos) = partition::parse(&device) else {
-            continue;
-        };
-
-        partition_manager.update(&device, partition_infos);
+        partition::scan(&device);
     }
 }
 

@@ -3,8 +3,8 @@
 //! NVMe Block Device implementation.
 //!
 //! Implements the [`aster_block::AnyBlockDevice`] trait on top of the NVMe transport.
-//! BIOs are staged in [`BioRequestSingleQueue`] and drained by repeated calls to
-//! [`NvmeBlockDevice::handle_requests`] from the kernel registry's per-device kthread.
+//! BIOs are staged in [`BioRequestSingleQueue`] and drained by
+//! [`WholeDisk::handle_requests`] in the kernel registry's per-device kthread.
 //!
 //! Each in-flight hardware command is stored in the I/O submission queue's per-slot
 //! context under its CID. One [`BioRequest`] may require several NVMe commands (MDTS /
@@ -21,7 +21,7 @@ use core::{
 };
 
 use aster_block::{
-    BlockDeviceMeta, PartitionManager, SECTOR_SIZE,
+    BlockDeviceKind, BlockDeviceMeta, SECTOR_SIZE, WholeDisk,
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio, bio_segment_pool_init},
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
@@ -66,7 +66,6 @@ pub struct NvmeBlockDevice {
     queue: BioRequestSingleQueue,
     name: String,
     id: DeviceId,
-    partition_manager: PartitionManager,
 }
 
 static NR_NVME_DEVICE: AtomicU32 = AtomicU32::new(0);
@@ -88,7 +87,6 @@ impl NvmeBlockDevice {
             queue: BioRequestSingleQueue::new(),
             name,
             id,
-            partition_manager: PartitionManager::new(),
         });
 
         block_device
@@ -100,18 +98,6 @@ impl NvmeBlockDevice {
 
         bio_segment_pool_init();
         Ok(())
-    }
-
-    /// Dequeues a `BioRequest` from the software staging queue and
-    /// processes the request.
-    pub fn handle_requests(&self) {
-        let request = self.queue.dequeue();
-        debug!("Handle Request: {:?}", request);
-        match request.type_() {
-            BioType::Read => self.device.read(request),
-            BioType::Write => self.device.write(request),
-            BioType::Flush => self.device.flush(request),
-        }
     }
 }
 
@@ -138,8 +124,21 @@ impl aster_block::AnyBlockDevice for NvmeBlockDevice {
         self.id
     }
 
-    fn partition_manager(&self) -> Option<&PartitionManager> {
-        Some(&self.partition_manager)
+    fn kind(&self) -> BlockDeviceKind<'_> {
+        BlockDeviceKind::Disk(self)
+    }
+}
+
+impl WholeDisk for NvmeBlockDevice {
+    fn handle_requests(&self) -> Option<()> {
+        let request = self.queue.dequeue();
+        debug!("Handle Request: {:?}", request);
+        match request.type_() {
+            BioType::Read => self.device.read(request),
+            BioType::Write => self.device.write(request),
+            BioType::Flush => self.device.flush(request),
+        }
+        Some(())
     }
 }
 
@@ -967,7 +966,7 @@ mod test {
     use alloc::{sync::Arc, vec::Vec};
 
     use aster_block::{
-        BLOCK_SIZE,
+        BLOCK_SIZE, WholeDisk,
         bio::{Bio, BioDirection, BioSegment},
         id::{Bid, Sid},
     };
@@ -1026,7 +1025,7 @@ mod test {
             &[TEST_BUF_LENGTH / BLOCK_SIZE],
             TEST_CHAR,
         );
-        nvme_block_device.handle_requests();
+        nvme_block_device.handle_requests().unwrap();
         write_batch.wait_all().unwrap();
 
         let mut read_batch = IoBatch::with_capacity(1);
@@ -1038,7 +1037,7 @@ mod test {
             TEST_CHAR,
         )[0]
         .clone();
-        nvme_block_device.handle_requests();
+        nvme_block_device.handle_requests().unwrap();
         read_batch.wait_all().unwrap();
 
         let mut read_buf = [0u8; TEST_BUF_LENGTH];
@@ -1081,7 +1080,7 @@ mod test {
             &[1; NR_SEGMENTS],
             TEST_CHAR,
         );
-        nvme_block_device.handle_requests();
+        nvme_block_device.handle_requests().unwrap();
         write_batch.wait_all().unwrap();
 
         let peak = nvme_block_device.device.stats.max_in_flight();

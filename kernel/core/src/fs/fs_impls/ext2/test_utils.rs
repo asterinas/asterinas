@@ -8,7 +8,7 @@ use core::{
 };
 
 use aster_block::{
-    AnyBlockDevice, BLOCK_SIZE, BlockDeviceMeta, SECTOR_SIZE,
+    AnyBlockDevice, BLOCK_SIZE, BlockDeviceKind, BlockDeviceMeta, SECTOR_SIZE, WholeDisk,
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     id::Bid,
 };
@@ -158,6 +158,17 @@ impl AnyBlockDevice for Ext2MemoryDisk {
 
     fn id(&self) -> DeviceId {
         DeviceId::new(MajorId::new(1), MinorId::new(0))
+    }
+
+    fn kind(&self) -> BlockDeviceKind<'_> {
+        BlockDeviceKind::Disk(self)
+    }
+}
+
+impl WholeDisk for Ext2MemoryDisk {
+    fn handle_requests(&self) -> Option<()> {
+        // Requests are handled directly in `enqueue()`.
+        None
     }
 }
 

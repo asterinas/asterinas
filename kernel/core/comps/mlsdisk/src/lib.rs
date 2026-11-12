@@ -141,7 +141,7 @@ impl BlockSet for RawDisk {
 #[cfg(ktest)]
 mod test {
     use aster_block::{
-        BlockDeviceMeta,
+        BlockDeviceKind, BlockDeviceMeta, WholeDisk,
         bio::{BioEnqueueError, SubmittedBio},
     };
     use ostd::{
@@ -208,6 +208,17 @@ mod test {
 
         fn id(&self) -> DeviceId {
             todo!()
+        }
+
+        fn kind(&self) -> BlockDeviceKind<'_> {
+            BlockDeviceKind::Disk(self)
+        }
+    }
+
+    impl WholeDisk for MemoryDisk {
+        fn handle_requests(&self) -> Option<()> {
+            // Requests are handled directly in `enqueue()`.
+            None
         }
     }
 

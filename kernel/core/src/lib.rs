@@ -21,6 +21,7 @@
 #![feature(custom_inner_attributes)]
 
 extern crate alloc;
+extern crate aster_nvme;
 extern crate lru;
 #[macro_use]
 extern crate getset;

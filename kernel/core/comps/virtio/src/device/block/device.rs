@@ -7,7 +7,7 @@ use core::{
 };
 
 use aster_block::{
-    BlockDeviceMeta, PartitionManager,
+    BlockDeviceKind, BlockDeviceMeta, WholeDisk,
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio, bio_segment_pool_init},
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
@@ -44,7 +44,6 @@ pub struct BlockDevice {
     queue: BioRequestSingleQueue,
     id: DeviceId,
     name: String,
-    partition_manager: PartitionManager,
 }
 
 impl BlockDevice {
@@ -93,25 +92,12 @@ impl BlockDevice {
             ),
             id,
             name,
-            partition_manager: PartitionManager::new(),
         });
 
         aster_block::register(block_device).unwrap();
 
         bio_segment_pool_init();
         Ok(())
-    }
-
-    /// Dequeues a `BioRequest` from the software staging queue and
-    /// processes the request.
-    pub fn handle_requests(&self) {
-        let request = self.queue.dequeue();
-        info!("Handle Request: {:?}", request);
-        match request.type_() {
-            BioType::Read => self.device.read(request),
-            BioType::Write => self.device.write(request),
-            BioType::Flush => self.device.flush(request),
-        }
     }
 
     /// Negotiate features for the device specified bits 0~23
@@ -140,8 +126,21 @@ impl aster_block::AnyBlockDevice for BlockDevice {
         self.id
     }
 
-    fn partition_manager(&self) -> Option<&PartitionManager> {
-        Some(&self.partition_manager)
+    fn kind(&self) -> BlockDeviceKind<'_> {
+        BlockDeviceKind::Disk(self)
+    }
+}
+
+impl WholeDisk for BlockDevice {
+    fn handle_requests(&self) -> Option<()> {
+        let request = self.queue.dequeue();
+        info!("Handle Request: {:?}", request);
+        match request.type_() {
+            BioType::Read => self.device.read(request),
+            BioType::Write => self.device.write(request),
+            BioType::Flush => self.device.flush(request),
+        }
+        Some(())
     }
 }
 
