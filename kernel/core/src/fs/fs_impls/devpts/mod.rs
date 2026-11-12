@@ -17,6 +17,7 @@ use crate::{
         utils::{DirEntryVecExt, DirentVisitor, NAME_MAX},
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::{FsHandle, FsLifecycle},
             inode::{
                 Extension, FileOps, Inode, Metadata, MknodType, RenameMode, RevalidationPolicy,
             },
@@ -53,21 +54,23 @@ pub(crate) struct DevPts {
     root: Arc<RootInode>,
     index_alloc: Mutex<IdAlloc>,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
     this: Weak<Self>,
 }
 
 impl DevPts {
-    pub(crate) fn new() -> Arc<Self> {
+    pub(crate) fn new() -> FsHandle<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for devpts");
         let sb = SuperBlock::new(DEVPTS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-        Arc::new_cyclic(|weak_self| Self {
+        FsHandle::new(Arc::new_cyclic(|weak_self| Self {
             _anon_device_id: anon_device_id,
             sb: sb.clone(),
             root: RootInode::new(weak_self.clone(), &sb),
             index_alloc: Mutex::new(IdAlloc::with_capacity(MAX_PTY_NUM)),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
             this: weak_self.clone(),
-        })
+        }))
     }
 
     /// Create the master and slave pair.
@@ -104,6 +107,10 @@ impl DevPts {
 }
 
 impl FileSystem for DevPts {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "devpts"
     }
@@ -138,8 +145,8 @@ impl FsType for DevPtsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(DevPts::new())
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
+        Ok(DevPts::new().into_dyn())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

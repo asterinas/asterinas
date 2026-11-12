@@ -9,7 +9,7 @@ use device_id::DeviceId;
 
 use crate::{
     fs::vfs::{
-        file_system::FileSystem,
+        fs_handle::FsHandle,
         path::{Dentry, Path},
     },
     prelude::*,
@@ -19,7 +19,7 @@ use crate::{
 #[derive(Debug)]
 pub(super) struct Layer {
     root_dentry: Arc<Dentry>,
-    fs: Arc<dyn FileSystem>,
+    fs: FsHandle,
     container_dev_id: DeviceId,
 }
 
@@ -40,7 +40,7 @@ impl Layer {
         &self.root_dentry
     }
 
-    pub(super) fn fs(&self) -> &Arc<dyn FileSystem> {
+    pub(super) fn fs(&self) -> &FsHandle {
         &self.fs
     }
 

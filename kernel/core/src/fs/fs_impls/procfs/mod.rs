@@ -29,6 +29,7 @@ use crate::{
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
+            fs_handle::{FsHandle, FsLifecycle},
             inode::{Inode, RevalidationPolicy},
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -76,19 +77,21 @@ struct ProcFs {
     root: Arc<dyn Inode>,
     inode_allocator: AtomicU64,
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
 }
 
 impl ProcFs {
-    pub(self) fn new() -> Arc<Self> {
+    pub(self) fn new() -> FsHandle<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for procfs");
         let sb = SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-        Arc::new_cyclic(|weak_fs| Self {
+        FsHandle::new(Arc::new_cyclic(|weak_fs| Self {
             _anon_device_id: anon_device_id,
             sb: sb.clone(),
             root: RootDirOps::new_inode(weak_fs.clone(), &sb),
             inode_allocator: AtomicU64::new(PROC_ROOT_INO + 1),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
-        })
+            lifecycle: FsLifecycle::new(),
+        }))
     }
 
     pub(self) fn alloc_id(&self) -> u64 {
@@ -97,6 +100,10 @@ impl ProcFs {
 }
 
 impl FileSystem for ProcFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         "proc"
     }
@@ -131,8 +138,8 @@ impl FsType for ProcFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(ProcFs::new())
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
+        Ok(ProcFs::new().into_dyn())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

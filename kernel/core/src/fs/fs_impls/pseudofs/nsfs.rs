@@ -19,6 +19,7 @@ use crate::{
         pseudofs::{NaivePseudoFs, PseudoInode, PseudoInodeType},
         vfs::{
             file_system::FileSystem,
+            fs_handle::FsHandle,
             inode::{Extension, FileOps, Inode, Metadata},
             path::{Dentry, Mount, Path},
         },
@@ -43,15 +44,15 @@ struct NsFs {
 
 impl NsFs {
     /// Returns the singleton instance of the ns file system.
-    pub(self) fn singleton() -> &'static Arc<NaivePseudoFs> {
-        static NSFS: Once<Arc<NaivePseudoFs>> = Once::new();
+    pub(self) fn singleton() -> &'static FsHandle<NaivePseudoFs> {
+        static NSFS: Once<FsHandle<NaivePseudoFs>> = Once::new();
         NaivePseudoFs::singleton(&NSFS, "nsfs", NSFS_MAGIC)
     }
 
     /// Creates a pseudo `Path` for a namespace file.
     pub(self) fn new_path<T: NsCommonOps>(ino: u64, ns: Arc<T>) -> Path {
         let ns_inode = {
-            let fs = Arc::downgrade(Self::singleton());
+            let fs = Arc::downgrade(Self::singleton().as_arc());
             Arc::new(NsInode::new(ino, Uid::new_root(), Gid::new_root(), ns, fs))
         };
 
@@ -64,7 +65,7 @@ impl NsFs {
     /// Returns the pseudo mount node of the ns file system.
     pub(self) fn mount_node() -> &'static Arc<Mount> {
         static NSFS_MOUNT: Once<Arc<Mount>> = Once::new();
-        NSFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        NSFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone().into_dyn()).unwrap())
     }
 }
 

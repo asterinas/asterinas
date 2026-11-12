@@ -26,7 +26,8 @@ use crate::{
         },
         pseudofs::NsInode,
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FsFlags,
+            fs_handle::FsHandle,
             inode::{HardLinkability, Inode, Metadata, MknodType, RenameMode},
             notify,
             registry::FsAndRoot,
@@ -52,8 +53,9 @@ mod resolver;
 /// may have multiple `Path` instances referencing it due to mount operations.
 #[derive(Clone, Debug)]
 pub struct Path {
-    mount: Arc<Mount>,
     dentry: Arc<Dentry>,
+    // Inode destruction may access the filesystem; release the mount last.
+    mount: Arc<Mount>,
 }
 
 impl PartialEq for Path {
@@ -146,12 +148,17 @@ impl Path {
     }
 
     pub(in crate::fs) fn new(mount: Arc<Mount>, dentry: Arc<Dentry>) -> Self {
-        Self { mount, dentry }
+        Self { dentry, mount }
     }
 
     /// Gets the mount node of current `Path`.
     pub(crate) fn mount_node(&self) -> &Arc<Mount> {
         &self.mount
+    }
+
+    /// Borrows the active filesystem reference retained by this path's mount.
+    pub(crate) fn fs(&self) -> &FsHandle {
+        self.mount.fs()
     }
 
     /// Gets the dentry of current `Path`.
@@ -1009,7 +1016,6 @@ impl Path {
 // Methods inherited from `Inode`.
 #[inherit_methods(from = "self.inode()")]
 impl Path {
-    pub(crate) fn fs(&self) -> Arc<dyn FileSystem>;
     pub(crate) fn sync(&self, mode: SyncMode) -> Result<()>;
     pub(crate) fn metadata(&self) -> Result<Metadata>;
     pub(crate) fn mode(&self) -> Result<InodeMode>;

@@ -544,6 +544,11 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
     }
 
     /// Returns the filesystem containing this inode.
+    ///
+    /// The returned reference keeps the filesystem allocated but is not an [`FsHandle`]:
+    /// retaining it, or the inode itself, does not prevent final filesystem shutdown.
+    ///
+    /// [`FsHandle`]: super::fs_handle::FsHandle
     fn fs(&self) -> Arc<dyn FileSystem>;
 
     /// Returns the revalidation policy for cached children of this directory.

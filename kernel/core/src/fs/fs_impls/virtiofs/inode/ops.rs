@@ -34,6 +34,7 @@ use crate::{
     fs::{
         file::{AccessMode, PerOpenFileOps, StatusFlags},
         utils::DirentVisitor,
+        vfs::fs_handle::FsHandle,
     },
     prelude::*,
     thread::work_queue::{self, WorkPriority},
@@ -339,6 +340,9 @@ impl VirtioFsInode {
             .upgrade()
             .ok_or_else(|| Error::with_message(Errno::EIO, "virtiofs inode is unavailable"))?;
         let fs = self.fs_ref();
+        // The caller opens the file through a path, whose mount keeps the filesystem active.
+        let active_fs = FsHandle::try_acquire(fs.clone())
+            .ok_or_else(|| Error::with_message(Errno::ESTALE, "virtiofs is shutting down"))?;
 
         let open_out = fs.session().do_fuse_op(
             self.nodeid(),
@@ -380,6 +384,7 @@ impl VirtioFsInode {
             inode,
             open_handle,
             cache_policy,
+            active_fs,
         )))
     }
 

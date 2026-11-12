@@ -33,7 +33,10 @@ use super::{
 use crate::{
     fs::{
         ext2::utils,
-        vfs::file_system::{AtomicFsFlags, FsEventSubscriberStats, FsFlags},
+        vfs::{
+            file_system::{AtomicFsFlags, FsEventSubscriberStats, FsFlags},
+            fs_handle::{FsHandle, FsLifecycle},
+        },
     },
     process::{Gid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
     security::lsm::hooks as lsm_hooks,
@@ -66,6 +69,7 @@ pub(crate) struct Ext2 {
     flags: AtomicFsFlags,
     /// FS event stats for VFS.
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
     /// Per-filesystem inode generation counter.
     next_generation: AtomicU32,
     /// Weak self reference for inode back-pointers.
@@ -114,12 +118,16 @@ impl Ext2MountOptions {
 }
 
 impl Ext2 {
+    pub(super) fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     /// Opens and loads an Ext2 filesystem from a block device.
     pub(super) fn open(
         device: Arc<dyn BlockDevice>,
         flags: FsFlags,
         data: Option<&str>,
-    ) -> Result<Arc<Self>> {
+    ) -> Result<FsHandle<Self>> {
         let super_block = {
             let raw_super_block = device.read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)?;
             SuperBlock::try_from(raw_super_block)?
@@ -184,11 +192,12 @@ impl Ext2 {
             mount_options,
             flags: AtomicFsFlags::new(flags),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            lifecycle: FsLifecycle::new(),
             next_generation: AtomicU32::new(utils::duration_to_ext2_secs(utils::now())),
             self_ref: weak_self.clone(),
         });
 
-        Ok(ext2)
+        Ok(FsHandle::new(ext2))
     }
 
     /// Returns the block device.
@@ -525,6 +534,17 @@ impl Ext2 {
             group.sync_all(&self.group_descriptors_segment)?;
         }
         self.sync_metadata()
+    }
+
+    /// Syncs and releases inode caches while internal weak references remain valid.
+    pub(super) fn shutdown(&self) -> Result<()> {
+        let result = crate::fs::vfs::file_system::FileSystem::sync(self);
+        for group in &self.block_groups {
+            group.evict_inodes();
+        }
+        // Evicting inodes reclaims those already unlinked, dirtying allocation metadata.
+        // Sync again even if the first sync failed, so that the reclaim is not lost.
+        result.and(crate::fs::vfs::file_system::FileSystem::sync(self))
     }
 
     /// Allocates a new inode number.

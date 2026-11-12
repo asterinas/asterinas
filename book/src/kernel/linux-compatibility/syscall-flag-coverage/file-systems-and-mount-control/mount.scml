@@ -1,4 +1,6 @@
 // Create a new mount
+// Waits for final cleanup of a previous instance from the same source,
+// and fails if that cleanup failed.
 mount(
     source, target, filesystemtype,
     mountflags = MS_NODEV | MS_NOEXEC | MS_NOSYMFOLLOW,

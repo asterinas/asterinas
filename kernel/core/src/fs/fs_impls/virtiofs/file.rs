@@ -6,6 +6,7 @@ use aster_fuse::{FsyncFlags, FuseOpenFlags, ops::init::FuseInitFlags2};
 use ostd::warn;
 
 use super::{
+    fs::VirtioFs,
     inode::{VirtioFsInode, WriteOffset},
     open_handle::VirtioFsOpenHandle,
 };
@@ -13,7 +14,10 @@ use crate::{
     events::IoEvents,
     fs::{
         file::{MappableObject, PerOpenFileOps, StatusFlags, SyncMode},
-        vfs::inode::{FileOps, Inode},
+        vfs::{
+            fs_handle::FsHandle,
+            inode::{FileOps, Inode},
+        },
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},
@@ -33,6 +37,9 @@ pub(super) struct VirtioFsFile {
     inode: Arc<VirtioFsInode>,
     open_handle: Arc<VirtioFsOpenHandle>,
     cache_policy: CachePolicy,
+    // The flush deferred by `Drop` may outlive the file and its mount,
+    // so it needs its own active reference.
+    fs: FsHandle<VirtioFs>,
 }
 
 impl VirtioFsFile {
@@ -40,11 +47,13 @@ impl VirtioFsFile {
         inode: Arc<VirtioFsInode>,
         open_handle: Arc<VirtioFsOpenHandle>,
         cache_policy: CachePolicy,
+        fs: FsHandle<VirtioFs>,
     ) -> Self {
         Self {
             inode,
             open_handle,
             cache_policy,
+            fs,
         }
     }
 }
@@ -55,13 +64,14 @@ impl Drop for VirtioFsFile {
             return;
         }
 
-        let fs = self.inode.fs_ref();
+        let fs = self.fs.clone();
         let inode = self.inode.clone();
         let open_handle = self.open_handle.clone();
 
         work_queue::submit_work_func(
             move || {
-                // Keep the filesystem alive until the deferred flush completes.
+                // Keep the filesystem active until the deferred flush completes,
+                // so final shutdown and remounting wait for it.
                 let _fs_guard = &fs;
                 if let Err(err) = inode.invalidate_whole_page_cache() {
                     warn!(

@@ -10,7 +10,7 @@ use crate::{
         pseudofs::{NaivePseudoFs, PseudoInodeType},
         utils,
         vfs::{
-            file_system::FileSystem,
+            fs_handle::FsHandle,
             path::{Mount, Path},
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -29,8 +29,8 @@ pub(crate) struct SockFs {
 
 impl SockFs {
     /// Returns the singleton instance of the socket file system.
-    pub(crate) fn singleton() -> &'static Arc<NaivePseudoFs> {
-        static SOCKFS: Once<Arc<NaivePseudoFs>> = Once::new();
+    pub(crate) fn singleton() -> &'static FsHandle<NaivePseudoFs> {
+        static SOCKFS: Once<FsHandle<NaivePseudoFs>> = Once::new();
 
         NaivePseudoFs::singleton(&SOCKFS, "sockfs", SOCKFS_MAGIC)
     }
@@ -38,7 +38,7 @@ impl SockFs {
     /// Creates a pseudo `Path` for a socket.
     pub(crate) fn new_path() -> Path {
         let (uid, gid) = utils::current_fs_ids();
-        let socket_inode = Arc::new(Self::singleton().alloc_inode(
+        let socket_inode = Arc::new(Self::singleton().as_arc().alloc_inode(
             PseudoInodeType::Socket,
             mkmod!(a+rwx),
             uid,
@@ -54,7 +54,7 @@ impl SockFs {
     pub(crate) fn mount_node() -> &'static Arc<Mount> {
         static SOCKFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        SOCKFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        SOCKFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone().into_dyn()).unwrap())
     }
 }
 
@@ -71,7 +71,7 @@ impl FsType for SockFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
         return_errno_with_message!(Errno::EINVAL, "sockfs cannot be mounted");
     }
 

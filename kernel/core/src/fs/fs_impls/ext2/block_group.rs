@@ -212,6 +212,12 @@ impl BlockGroup {
         self.inode_cache.write().remove(&inode_idx)
     }
 
+    /// Releases cached inodes without holding the cache lock during destruction.
+    pub(super) fn evict_inodes(&self) {
+        let inodes = core::mem::take(&mut *self.inode_cache.write());
+        drop(inodes);
+    }
+
     /// Syncs per-group inode state and bitmap metadata.
     pub(super) fn sync_all(&self, group_descs: &USegment) -> Result<()> {
         self.sync_inodes()?;
