@@ -136,6 +136,8 @@ pub enum Error {
     IdAcquired,
     /// ID exhausted
     IdExhausted,
+    /// Block device I/O failed.
+    IoError,
 }
 
 /// Registers a new block device.
@@ -185,7 +187,9 @@ pub fn scan_partitions() {
             continue;
         }
 
-        partition::scan(&device);
+        if let Err(err) = partition::scan(&device) {
+            ostd::error!("cannot scan partitions of {}: {:?}", device.name(), err);
+        }
     }
 }
 

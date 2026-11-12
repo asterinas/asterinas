@@ -9,11 +9,11 @@ use ostd::mm::VmIo;
 use ostd_pod::Pod;
 
 use crate::{
-    AnyBlockDevice, BlockDeviceKind, BlockDeviceMeta, DEVICE_MINORS, SECTOR_SIZE,
+    AnyBlockDevice, BlockDeviceKind, BlockDeviceMeta, DEVICE_MINORS, DEVICE_REGISTRY, Error,
+    SECTOR_SIZE,
     bio::{BioEnqueueError, SubmittedBio},
     device_id::EXTENDED_DEVICE_ID_ALLOCATOR,
     prelude::*,
-    register,
 };
 
 /// Represents a partition entry.
@@ -153,20 +153,21 @@ impl GptEntry {
     }
 }
 
-fn parse(device: &Arc<dyn AnyBlockDevice>) -> Option<Vec<Option<PartitionInfo>>> {
-    let mbr = device.read_val::<MbrHeader>(0).unwrap();
+fn parse(device: &Arc<dyn AnyBlockDevice>) -> ostd::Result<Vec<Option<PartitionInfo>>> {
+    let mbr = device.read_val::<MbrHeader>(0)?;
 
     // 0xEE indicates a GPT Protective MBR, a fake partition covering the entire disk.
-    let partitions = if mbr.check_signature() && mbr.entries[0].type_ != 0xEE {
+    if mbr.check_signature() && mbr.entries[0].type_ != 0xEE {
         parse_mbr(device, &mbr)
     } else {
         parse_gpt(device)
-    };
-
-    partitions.iter().any(|p| p.is_some()).then_some(partitions)
+    }
 }
 
-fn parse_mbr(device: &Arc<dyn AnyBlockDevice>, mbr: &MbrHeader) -> Vec<Option<PartitionInfo>> {
+fn parse_mbr(
+    device: &Arc<dyn AnyBlockDevice>,
+    mbr: &MbrHeader,
+) -> ostd::Result<Vec<Option<PartitionInfo>>> {
     let mut partitions = Vec::new();
     let mut extended_partition = None;
     for entry in mbr.entries {
@@ -182,10 +183,10 @@ fn parse_mbr(device: &Arc<dyn AnyBlockDevice>, mbr: &MbrHeader) -> Vec<Option<Pa
     }
 
     if let Some(start_sector) = extended_partition {
-        parse_ebr(device, &mut partitions, start_sector, 0);
+        parse_ebr(device, &mut partitions, start_sector, 0)?;
     }
 
-    partitions
+    Ok(partitions)
 }
 
 fn parse_ebr(
@@ -193,11 +194,9 @@ fn parse_ebr(
     partitions: &mut Vec<Option<PartitionInfo>>,
     start_sector: u32,
     offset: u32,
-) {
+) -> ostd::Result<()> {
     let ebr_sector = start_sector + offset;
-    let mut ebr = device
-        .read_val::<MbrHeader>(ebr_sector as usize * SECTOR_SIZE)
-        .unwrap();
+    let mut ebr = device.read_val::<MbrHeader>(ebr_sector as usize * SECTOR_SIZE)?;
     if ebr.entries[0].is_valid() {
         ebr.entries[0].start_sector += ebr_sector;
         partitions.push(Some(PartitionInfo::Mbr(ebr.entries[0])));
@@ -209,18 +208,20 @@ fn parse_ebr(
             partitions,
             start_sector,
             ebr.entries[1].start_sector,
-        );
+        )?;
     }
+
+    Ok(())
 }
 
-fn parse_gpt(device: &Arc<dyn AnyBlockDevice>) -> Vec<Option<PartitionInfo>> {
+fn parse_gpt(device: &Arc<dyn AnyBlockDevice>) -> ostd::Result<Vec<Option<PartitionInfo>>> {
     let mut partitions = Vec::new();
 
     // The primary GPT Header must be located in LBA 1.
-    let gpt = device.read_val::<GptHeader>(SECTOR_SIZE).unwrap();
+    let gpt = device.read_val::<GptHeader>(SECTOR_SIZE)?;
 
     if !gpt.check_signature() {
-        return partitions;
+        return Ok(partitions);
     }
 
     // TODO: Check the CRC32 of the header and the partition entries, check the backup GPT header.
@@ -231,7 +232,7 @@ fn parse_gpt(device: &Arc<dyn AnyBlockDevice>) -> Vec<Option<PartitionInfo>> {
     for i in 0..total_sectors {
         let mut buf = [0u8; SECTOR_SIZE];
         let offset = (gpt.partition_entry_lba as usize + i) * SECTOR_SIZE;
-        device.read_bytes(offset, buf.as_mut_slice()).unwrap();
+        device.read_bytes(offset, buf.as_mut_slice())?;
 
         for j in 0..entries_per_sector {
             let entry_offset = j * gpt.size_of_partition_entry as usize;
@@ -244,7 +245,7 @@ fn parse_gpt(device: &Arc<dyn AnyBlockDevice>) -> Vec<Option<PartitionInfo>> {
         }
     }
 
-    partitions
+    Ok(partitions)
 }
 
 #[derive(Debug)]
@@ -286,52 +287,65 @@ impl AnyBlockDevice for PartitionNode {
 
 impl PartitionNode {
     fn new(
-        id: DeviceId,
-        name: String,
         device: Arc<dyn AnyBlockDevice>,
         info: PartitionInfo,
         number: u32,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, Error> {
+        let id = if number < DEVICE_MINORS {
+            let device_id = device.id();
+            DeviceId::new(
+                device_id.major(),
+                MinorId::new(device_id.minor().get() + number),
+            )
+        } else {
+            EXTENDED_DEVICE_ID_ALLOCATOR.get().unwrap().allocate()?
+        };
+
+        Ok(Self {
             id,
-            name,
+            name: partition_name(device.name(), number),
             device,
             info,
             number,
+        })
+    }
+}
+
+impl Drop for PartitionNode {
+    fn drop(&mut self) {
+        if self.number >= DEVICE_MINORS {
+            EXTENDED_DEVICE_ID_ALLOCATOR.get().unwrap().release(self.id);
         }
     }
 }
 
 /// Scans and registers the initial partitions of a whole disk.
-pub(super) fn scan(device: &Arc<dyn AnyBlockDevice>) {
-    let Some(infos) = parse(device) else {
-        return;
-    };
+pub(super) fn scan(device: &Arc<dyn AnyBlockDevice>) -> Result<(), Error> {
+    let infos = parse(device).map_err(|_| Error::IoError)?;
 
     let mut new_partitions = Vec::new();
-    for (index, info_opt) in infos.iter().enumerate() {
-        let Some(info) = info_opt else {
+    for (index, info) in infos.into_iter().enumerate() {
+        let Some(info) = info else {
             continue;
         };
-
-        let index = index as u32 + 1;
-        let id = if index < DEVICE_MINORS {
-            let device_id = device.id();
-            DeviceId::new(
-                device_id.major(),
-                MinorId::new(device_id.minor().get() + index),
-            )
-        } else {
-            EXTENDED_DEVICE_ID_ALLOCATOR.get().unwrap().allocate()
-        };
-        let name = partition_name(device.name(), index);
-        let partition = Arc::new(PartitionNode::new(id, name, device.clone(), *info, index));
-        new_partitions.push(partition);
+        let partition = PartitionNode::new(device.clone(), info, index as u32 + 1)?;
+        new_partitions.push(Arc::new(partition));
     }
 
-    for partition in new_partitions.iter() {
-        let _ = register(partition.clone());
+    // Keep registration and rollback under the registry lock so no caller
+    // can observe a partially registered partition list.
+    let mut registry = DEVICE_REGISTRY.lock();
+    for (index, partition) in new_partitions.iter().enumerate() {
+        if registry.contains_key(&partition.id().to_raw()) {
+            for registered in &new_partitions[..index] {
+                registry.remove(&registered.id().to_raw());
+            }
+            return Err(Error::Registered);
+        }
+        registry.insert(partition.id().to_raw(), partition.clone());
     }
+
+    Ok(())
 }
 
 /// Formats the name of a partition.
