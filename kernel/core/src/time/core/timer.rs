@@ -6,10 +6,7 @@ use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
-use core::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::Duration,
-};
+use core::time::Duration;
 
 use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 
@@ -38,8 +35,10 @@ pub(crate) struct Timer {
 
 #[derive(Default)]
 struct TimerInner {
+    // A `None` denotes that the timer has been cancelled.
+    expired_time: Option<Duration>,
+    // A `Duration::ZERO` denotes that the timer won't repeat.
     interval: Duration,
-    timer_callback: Weak<TimerCallback>,
 }
 
 /// A guard that provides exclusive access to a `Timer`.
@@ -70,46 +69,38 @@ impl TimerGuard<'_> {
             Timeout::When(timeout) => timeout,
         };
 
-        let timer_weak = Arc::downgrade(self.timer);
-        let new_timer_callback = Arc::new(TimerCallback::new(expired_time, timer_weak));
+        self.inner.expired_time = Some(expired_time);
 
-        if let Some(timer_callback) = self.inner.timer_callback.upgrade() {
-            timer_callback.cancel();
-        }
-
-        self.inner.timer_callback = Arc::downgrade(&new_timer_callback);
-        self.timer.timer_manager.insert(new_timer_callback);
+        let timer_callback = TimerCallback {
+            expired_time,
+            timer: Arc::downgrade(self.timer),
+        };
+        self.timer.timer_manager.insert(timer_callback);
     }
 
-    /// Cancels the currently set `TimerCallback`.
+    /// Cancels the timer.
     ///
-    /// Once cancelled, the current `TimerCallback` will not be triggered again.
-    pub(crate) fn cancel(&self) {
-        if let Some(timer_callback) = self.inner.timer_callback.upgrade() {
-            timer_callback.cancel();
-        }
+    /// Once cancelled, the timer will not be triggered again.
+    pub(crate) fn cancel(&mut self) {
+        self.inner.expired_time = None;
     }
 
     /// Returns the current expired time of this timer.
+    ///
+    /// If the timer has not been set, this method
+    /// will return a [`Duration::ZERO`].
     pub(crate) fn expired_time(&self) -> Duration {
-        let timer_callback = self.inner.timer_callback.upgrade();
-        timer_callback
-            .and_then(|callback| (!callback.is_cancelled()).then_some(callback.expired_time))
-            .unwrap_or(Duration::ZERO)
+        self.inner.expired_time.unwrap_or(Duration::ZERO)
     }
 
     /// Returns the remain time to expiration of this timer.
     ///
     /// If the timer has not been set, this method
-    /// will return `Duration::ZERO`.
+    /// will return a [`Duration::ZERO`].
     pub(crate) fn remain(&self) -> Duration {
         let now = self.timer.timer_manager.clock.read_time();
         let expired_time = self.expired_time();
-        if expired_time > now {
-            expired_time - now
-        } else {
-            Duration::ZERO
-        }
+        expired_time.saturating_sub(now)
     }
 
     /// Returns the interval time of the current timer.
@@ -157,7 +148,7 @@ impl Timer {
 /// will be actually dropped after all the created timers have been dropped.
 pub(crate) struct TimerManager {
     clock: Arc<dyn Clock>,
-    timer_callbacks: SpinLock<BinaryHeap<Arc<TimerCallback>>>,
+    timer_callbacks: SpinLock<BinaryHeap<TimerCallback>>,
 }
 
 impl TimerManager {
@@ -185,7 +176,7 @@ impl TimerManager {
         }
     }
 
-    fn insert(&self, timer_callback: Arc<TimerCallback>) {
+    fn insert(&self, timer_callback: TimerCallback) {
         self.timer_callbacks
             .disable_irq()
             .lock()
@@ -205,10 +196,7 @@ impl TimerManager {
             let mut callbacks = Vec::new();
             let current_time = self.clock.read_time();
             while let Some(t) = timeout_list.peek() {
-                if t.is_cancelled() {
-                    // Just ignore the cancelled callback
-                    timeout_list.pop();
-                } else if t.expired_time <= current_time {
+                if t.expired_time <= current_time {
                     callbacks.push(timeout_list.pop().unwrap());
                 } else {
                     break;
@@ -235,30 +223,9 @@ impl TimerManager {
 struct TimerCallback {
     expired_time: Duration,
     timer: Weak<Timer>,
-    is_cancelled: AtomicBool,
 }
 
 impl TimerCallback {
-    /// Creates an instance of `TimerCallback`.
-    fn new(timeout: Duration, timer: Weak<Timer>) -> Self {
-        Self {
-            expired_time: timeout,
-            timer,
-            is_cancelled: AtomicBool::new(false),
-        }
-    }
-
-    /// Cancels a `TimerCallback`. If the callback function has not been called,
-    /// it will never be called again.
-    fn cancel(&self) {
-        self.is_cancelled.store(true, Ordering::Release);
-    }
-
-    // Returns whether the `TimerCallback` is cancelled.
-    fn is_cancelled(&self) -> bool {
-        self.is_cancelled.load(Ordering::Acquire)
-    }
-
     fn call(&self) {
         let Some(timer) = self.timer.upgrade() else {
             return;
@@ -266,7 +233,7 @@ impl TimerCallback {
 
         let mut timer_guard = timer.lock();
 
-        if self.is_cancelled() {
+        if timer_guard.inner.expired_time != Some(self.expired_time) {
             // The callback is cancelled.
             return;
         }
@@ -274,6 +241,8 @@ impl TimerCallback {
         let interval = timer_guard.interval();
         if interval != Duration::ZERO {
             timer_guard.set_timeout(Timeout::After(interval));
+        } else {
+            timer_guard.cancel();
         }
 
         // Pass the `timer_guard` guard to the callback, allowing it to prevent race conditions.
