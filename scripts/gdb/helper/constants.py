@@ -13,13 +13,13 @@ the coupled layout.
 """
 
 # --- Crate prefixes ---
-_CRATE = "aster_kernel"
+_CRATE = "aster_core"
 _OSTD = "ostd"
 _ALLOC = "alloc"
 
 # --- Global symbols ---
 
-# COUPLED -> kernel/src/process/pid_table.rs
+# COUPLED -> kernel/core/src/process/pid_table.rs
 PID_TABLE_SYMBOL = f"{_CRATE}::process::pid_table::PID_TABLE"
 
 # COUPLED -> ostd/src/timer/jiffies.rs
@@ -30,34 +30,37 @@ TIMER_FREQ_HZ = 1000
 
 # --- Box<dyn Any> downcast type names ---
 
-# COUPLED -> kernel/src/thread/mod.rs
+# COUPLED -> kernel/core/src/thread/mod.rs
 TASK_DATA_CONCRETE = (
     f"{_ALLOC}::sync::Arc<{_CRATE}::thread::Thread, "
     f"{_ALLOC}::alloc::Global>"
 )
 
-# COUPLED -> kernel/src/process/posix_thread/mod.rs
+# COUPLED -> kernel/core/src/process/posix_thread/mod.rs
 THREAD_DATA_CONCRETE = f"{_CRATE}::process::posix_thread::PosixThread"
 
 # --- Layout constants ---
 
-# COUPLED -> kernel/src/process/posix_thread/name.rs
+# COUPLED -> kernel/core/src/process/posix_thread/mod.rs
 THREAD_NAME_MAX_LEN = 16
 
 # --- File vtable markers ---
 # Used to identify Arc<dyn FileLike> concrete type from its vtable symbol.
-# COUPLED -> kernel/src/fs/file/file_table.rs
+# COUPLED -> kernel/core/src/fs/file/file_table.rs
 FILE_VTABLE_MARKERS = (
-    "InodeFile",
-    "Socket",
+    "UnixStreamSocket",
+    "UnixDatagramSocket",
+    "VsockStreamSocket",
+    "StreamSocket",
+    "DatagramSocket",
+    "NetlinkSocket",
+    "InodeHandle",
     "EventFile",
     "EpollFile",
-    "TimerFile",
-    "PipeReader",
-    "PipeWriter",
-    "Pipe",
-    "UnixStream",
-    "TcpSocket",
-    "UdpSocket",
-    "DevPts",
+    "TimerfdFile",
+    "InotifyFile",
+    "SignalFile",
+    "PidFile",
+    "FsConfigFile",
+    "DetachedMountFile",
 )

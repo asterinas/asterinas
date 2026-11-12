@@ -69,7 +69,7 @@ class UptimeSnapshot:
 
 # --- PID table navigation ---
 #
-# COUPLED: kernel/src/process/pid_table.rs
+# COUPLED: kernel/core/src/process/pid_table.rs
 #   PID_TABLE: Mutex<PidTable>
 #   PidTable { entries: BTreeMap<u32, Arc<PidEntry>>, ... }
 #   PidEntry { inner: Mutex<PidEntryInner> }
@@ -129,7 +129,7 @@ def find_thread(tid):
 
 # --- Task -> Thread -> PosixThread navigation ---
 #
-# COUPLED: kernel/src/thread/mod.rs, kernel/src/process/posix_thread/mod.rs
+# COUPLED: kernel/core/src/thread/mod.rs, kernel/core/src/process/posix_thread/mod.rs
 #   Task.data: Box<dyn Any + Send + Sync> actually holds Arc<Thread>
 #   Thread.data: Box<dyn Any + Send + Sync> actually holds PosixThread
 
@@ -160,8 +160,8 @@ def get_posix_thread_from_task(task_val):
 
 # --- Process and thread row readers ---
 #
-# COUPLED: kernel/src/process/posix_thread/name.rs
-#   ThreadName([u8; MAX_THREAD_NAME_LEN])
+# COUPLED: kernel/core/src/process/posix_thread/mod.rs
+#   ThreadName = FixedCStr<MAX_THREAD_NAME_LEN>([u8; MAX_THREAD_NAME_LEN])
 
 
 def _read_ppid(process_val):
@@ -289,7 +289,7 @@ def process_tree():
 
 # --- File table and file descriptor readers ---
 #
-# COUPLED: kernel/src/fs/file/file_table.rs, kernel/src/process/posix_thread/mod.rs
+# COUPLED: kernel/core/src/fs/file/file_table.rs, kernel/core/src/process/posix_thread/mod.rs
 #   PosixThread.file_table: Mutex<Option<RoArc<FileTable>>>
 #   RoArc<T> = Arc<Inner<T>>; Inner<T> { data: RwLock<T>, ... }
 
@@ -326,10 +326,25 @@ def get_file_table(process_val):
     return None
 
 
+def _file_vtable_pointer(file_arc):
+    """Return the vtable address of an ``Arc<dyn FileLike>``."""
+    try:
+        return int(file_arc['ptr']['pointer']['vtable'])
+    except (gdb.error, KeyError, TypeError):
+        pass
+
+    try:
+        return int(file_arc['vtable']['pointer'])
+    except (gdb.error, KeyError, TypeError):
+        return None
+
+
 def _read_fd_type(entry_val):
     try:
-        vtable_ptr = entry_val['file']['vtable']['pointer']
-        info = gdb.execute(f"info symbol {int(vtable_ptr)}", to_string=True)
+        vtable_ptr = _file_vtable_pointer(entry_val['file'])
+        if vtable_ptr is None:
+            return "?"
+        info = gdb.execute(f"info symbol {vtable_ptr}", to_string=True)
         if "No symbol" in info:
             return "?"
         for marker in FILE_VTABLE_MARKERS:

@@ -165,7 +165,7 @@ def check_wrapper_printers():
 def check_direct_prints():
     try:
         pid_table = gdb.execute(
-            "p aster_kernel::process::pid_table::PID_TABLE",
+            "p aster_core::process::pid_table::PID_TABLE",
             to_string=True,
         )
         check("PID_TABLE renders with Mutex prefix",

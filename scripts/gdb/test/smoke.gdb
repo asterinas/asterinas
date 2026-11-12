@@ -15,7 +15,7 @@ source scripts/gdb/asterinas-gdb.py
 hbreak __ostd_main
 continue
 delete
-hbreak aster_kernel::syscall::handle_syscall
+hbreak aster_core::syscall::handle_syscall
 continue
 delete
 

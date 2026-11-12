@@ -49,7 +49,7 @@ interest already exist. For example, the first syscall is late enough
 for PID 1 to be present in the PID table.
 
 ```gdb
-(gdb) hbreak aster_kernel::syscall::handle_syscall
+(gdb) hbreak aster_core::syscall::handle_syscall
 (gdb) continue
 ```
 
@@ -72,7 +72,7 @@ Examples:
 
 ```gdb
 (gdb) p (*$ast_thread(1)).is_exited
-(gdb) p aster_kernel::process::pid_table::PID_TABLE
+(gdb) p aster_core::process::pid_table::PID_TABLE
 ```
 
 Use `/r` to print the raw DWARF layout when the wrapper internals are
