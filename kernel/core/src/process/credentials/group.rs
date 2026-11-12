@@ -10,6 +10,8 @@ use crate::prelude::*;
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Pod)]
 pub(crate) struct Gid(u32);
 
+const ROOT_GID: u32 = 0;
+
 /// The default overflow GID, which is the `nogroup` group (`65534`).
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/linux/highuid.h#L42>.
@@ -45,8 +47,6 @@ impl Gid {
         OVERFLOW_GID.store(gid.0, Ordering::Relaxed);
     }
 }
-
-const ROOT_GID: u32 = 0;
 
 impl From<u32> for Gid {
     fn from(value: u32) -> Self {
