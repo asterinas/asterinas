@@ -27,7 +27,7 @@ use crate::{
     time::{
         Timer, TimerManager,
         clocks::{ProfClock, RealTimeClock},
-        timer::TimerGuard,
+        timer::{TimerFn, TimerGuard},
         timer_t,
     },
 };
@@ -171,18 +171,12 @@ impl PosixTimerManager {
     }
 
     /// Creates a timer based on the profiling CPU clock of the current process.
-    pub(crate) fn create_prof_timer<F>(&self, func: F) -> Arc<Timer>
-    where
-        F: Fn(TimerGuard) + Send + Sync + 'static,
-    {
+    pub(crate) fn create_prof_timer<F: TimerFn>(&self, func: F) -> Arc<Timer<F>> {
         self.prof_timer.timer_manager().create_timer(func)
     }
 
     /// Creates a timer based on the user CPU clock of the current process.
-    pub(crate) fn create_virtual_timer<F>(&self, func: F) -> Arc<Timer>
-    where
-        F: Fn(TimerGuard) + Send + Sync + 'static,
-    {
+    pub(crate) fn create_virtual_timer<F: TimerFn>(&self, func: F) -> Arc<Timer<F>> {
         self.virtual_timer.timer_manager().create_timer(func)
     }
 

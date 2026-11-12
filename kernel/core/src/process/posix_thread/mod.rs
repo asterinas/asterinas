@@ -25,7 +25,7 @@ use crate::{
         signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
     thread::{Thread, Tid},
-    time::{Timer, TimerManager, clocks::ProfClock, timer::TimerGuard},
+    time::{Timer, TimerManager, clocks::ProfClock, timer::TimerFn},
 };
 
 pub(crate) mod alien_access;
@@ -278,18 +278,12 @@ impl PosixThread {
     }
 
     /// Creates a timer based on the profiling CPU clock of the current thread.
-    pub(crate) fn create_prof_timer<F>(&self, func: F) -> Arc<Timer>
-    where
-        F: Fn(TimerGuard) + Send + Sync + 'static,
-    {
+    pub(crate) fn create_prof_timer<F: TimerFn>(&self, func: F) -> Arc<Timer<F>> {
         self.prof_timer_manager.create_timer(func)
     }
 
     /// Creates a timer based on the user CPU clock of the current thread.
-    pub(crate) fn create_virtual_timer<F>(&self, func: F) -> Arc<Timer>
-    where
-        F: Fn(TimerGuard) + Send + Sync + 'static,
-    {
+    pub(crate) fn create_virtual_timer<F: TimerFn>(&self, func: F) -> Arc<Timer<F>> {
         self.virtual_timer_manager.create_timer(func)
     }
 

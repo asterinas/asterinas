@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{
-    boxed::Box,
     collections::BinaryHeap,
     sync::{Arc, Weak},
     vec::Vec,
 };
-use core::time::Duration;
+use core::{any::Any, time::Duration};
 
 use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 
@@ -27,10 +26,10 @@ pub(crate) enum Timeout {
 /// the set time. To enable its periodic functionality, users should set
 /// its `interval` field with [`TimerGuard::set_interval`]. By doing this,
 /// the timer will use the interval time to configure a new timing after expiration.
-pub(crate) struct Timer {
+pub(crate) struct Timer<F: ?Sized = dyn TimerFn> {
     inner: SpinLock<TimerInner>,
     timer_manager: Arc<TimerManager>,
-    registered_callback: Box<dyn Fn(TimerGuard) + Send + Sync>,
+    registered_callback: F,
 }
 
 #[derive(Default)]
@@ -41,26 +40,70 @@ struct TimerInner {
     interval: Duration,
 }
 
-/// A guard that provides exclusive access to a `Timer`.
-pub(crate) struct TimerGuard<'a> {
-    inner: SpinLockGuard<'a, TimerInner, LocalIrqDisabled>,
-    timer: &'a Arc<Timer>,
+impl<F: TimerFn> Timer<F> {
+    /// Creates a timer instance from a [`TimerManager`].
+    ///
+    /// This timer will be managed by the [`TimerManager`].
+    ///
+    /// Note that if the callback instructions involves sleep, users should put these instructions
+    /// into something like [`WorkQueue`] to avoid sleeping during system timer interruptions.
+    ///
+    /// [`WorkQueue`]: crate::thread::work_queue::WorkQueue
+    fn new(registered_callback: F, timer_manager: Arc<TimerManager>) -> Arc<Self> {
+        Arc::new(Self {
+            inner: SpinLock::new(TimerInner::default()),
+            timer_manager,
+            registered_callback,
+        })
+    }
 }
 
-impl TimerGuard<'_> {
-    /// Sets the interval time for this timer.
-    ///
-    /// The timer will be reset with the interval time upon expiration.
-    pub(crate) fn set_interval(&mut self, interval: Duration) {
-        self.inner.interval = interval;
+impl<F: ?Sized + TimerFn> Timer<F> {
+    /// Locks the timer and returns a [`TimerGuard`] for exclusive access.
+    pub(crate) fn lock(self: &Arc<Self>) -> TimerGuard<'_, F> {
+        TimerGuard {
+            inner: self.inner.disable_irq().lock(),
+            timer: self,
+        }
     }
 
+    /// Returns a reference to the [`TimerManager`] which manages
+    /// the current timer.
+    pub(crate) fn timer_manager(&self) -> &Arc<TimerManager> {
+        &self.timer_manager
+    }
+}
+
+/// A guard that provides exclusive access to a `Timer`.
+pub(crate) struct TimerGuard<'a, F: ?Sized = dyn TimerFn> {
+    inner: SpinLockGuard<'a, TimerInner, LocalIrqDisabled>,
+    timer: &'a Arc<Timer<F>>,
+}
+
+impl<F: TimerFn> TimerGuard<'_, F> {
     /// Sets the timer with a timeout.
     ///
     /// The registered callback function of this timer will be invoked
     /// when reaching timeout. If the timer has a valid interval, this timer
     /// will be set again with the interval when reaching timeout.
     pub(crate) fn set_timeout(&mut self, timeout: Timeout) {
+        self.set_timeout_impl(timeout, Arc::downgrade(self.timer) as _);
+    }
+}
+
+impl TimerGuard<'_> {
+    /// Sets the timer with a timeout.
+    ///
+    /// The registered callback function of this timer will be invoked
+    /// when reaching timeout. If the timer has a valid interval, this timer
+    /// will be set again with the interval when reaching timeout.
+    pub(crate) fn set_timeout(&mut self, timeout: Timeout) {
+        self.set_timeout_impl(timeout, Arc::downgrade(self.timer));
+    }
+}
+
+impl<F: ?Sized + TimerFn> TimerGuard<'_, F> {
+    fn set_timeout_impl(&mut self, timeout: Timeout, timer_weak: Weak<Timer>) {
         let expired_time = match timeout {
             Timeout::After(timeout) => {
                 let now = self.timer.timer_manager.clock.read_time();
@@ -73,9 +116,18 @@ impl TimerGuard<'_> {
 
         let timer_callback = TimerCallback {
             expired_time,
-            timer: Arc::downgrade(self.timer),
+            timer: timer_weak,
         };
         self.timer.timer_manager.insert(timer_callback);
+    }
+}
+
+impl<F: ?Sized + TimerFn> TimerGuard<'_, F> {
+    /// Sets the interval time for this timer.
+    ///
+    /// The timer will be reset with the interval time upon expiration.
+    pub(crate) fn set_interval(&mut self, interval: Duration) {
+        self.inner.interval = interval;
     }
 
     /// Cancels the timer.
@@ -109,43 +161,27 @@ impl TimerGuard<'_> {
     }
 }
 
-impl Timer {
-    /// Creates a `Timer` instance from a [`TimerManager`].
-    /// This timer will be managed by the `TimerManager`.
-    ///
-    /// Note that if the callback instructions involves sleep, users should put these instructions
-    /// into something like `WorkQueue` to avoid sleeping during system timer interruptions.
-    fn new<F>(registered_callback: F, timer_manager: Arc<TimerManager>) -> Arc<Self>
-    where
-        F: Fn(TimerGuard) + Send + Sync + 'static,
-    {
-        Arc::new(Self {
-            inner: SpinLock::new(TimerInner::default()),
-            timer_manager,
-            registered_callback: Box::new(registered_callback),
-        })
-    }
+/// A function that will be called when a timer expires.
+pub(crate) trait TimerFn: Send + Sync + Any {
+    /// Calls the function.
+    fn call(&self, guard: TimerGuard);
+}
 
-    /// Locks the timer and returns a [`TimerGuard`] for exclusive access.
-    pub(crate) fn lock(self: &Arc<Self>) -> TimerGuard<'_> {
-        TimerGuard {
-            inner: self.inner.disable_irq().lock(),
-            timer: self,
-        }
-    }
-
-    /// Returns a reference to the [`TimerManager`] which manages
-    /// the current timer.
-    pub(crate) fn timer_manager(&self) -> &Arc<TimerManager> {
-        &self.timer_manager
+impl<T> TimerFn for T
+where
+    T: Fn(TimerGuard) + Send + Sync + 'static,
+{
+    fn call(&self, guard: TimerGuard) {
+        (self)(guard)
     }
 }
 
-/// `TimerManager` is used to create timers and manage their expiries. It holds a clock and can
-/// create [`Timer`]s based on this clock.
+/// A manager that can be used to create timers and manage their expiration.
 ///
-/// These created `Timer`s will hold an `Arc` pointer to this manager, hence this manager
-/// will be actually dropped after all the created timers have been dropped.
+/// It holds a [`Clock`] and can create [`Timer`]s based on this clock.
+///
+/// These created [`Timer`]s will hold an [`Arc`] pointer to this manager, hence this
+/// manager will be actually dropped after all the created timers have been dropped.
 pub(crate) struct TimerManager {
     clock: Arc<dyn Clock>,
     timer_callbacks: SpinLock<BinaryHeap<TimerCallback>>,
@@ -211,10 +247,7 @@ impl TimerManager {
     }
 
     /// Creates an [`Timer`], which will be managed by this `TimerManager`.
-    pub(crate) fn create_timer<F>(self: &Arc<Self>, function: F) -> Arc<Timer>
-    where
-        F: Fn(TimerGuard) + Send + Sync + 'static,
-    {
+    pub(crate) fn create_timer<F: TimerFn>(self: &Arc<Self>, function: F) -> Arc<Timer<F>> {
         Timer::new(function, self.clone())
     }
 }
@@ -247,7 +280,7 @@ impl TimerCallback {
 
         // Pass the `timer_guard` guard to the callback, allowing it to prevent race conditions.
         // The callback may choose to use the guard or drop it if not needed.
-        (timer.registered_callback)(timer_guard);
+        timer.registered_callback.call(timer_guard);
     }
 }
 

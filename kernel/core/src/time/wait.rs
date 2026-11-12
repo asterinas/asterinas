@@ -5,7 +5,10 @@ use core::time::Duration;
 use ostd::sync::{WaitQueue, Waiter};
 
 use super::{Timer, TimerManager, clocks::JIFFIES_TIMER_MANAGER, timer::Timeout};
-use crate::{prelude::*, time::timer::TimerGuard};
+use crate::{
+    prelude::*,
+    time::timer::{TimerFn, TimerGuard},
+};
 
 /// A trait that provide the timeout related function for [`Waiter`] and [`WaitQueue`]`.
 pub(crate) trait WaitTimeout {
@@ -157,10 +160,7 @@ impl<'a> ManagedTimeout<'a> {
     }
 
     /// Creates a timer for the timeout.
-    pub(crate) fn create_timer<F>(&self, callback: F) -> Arc<Timer>
-    where
-        F: Fn(TimerGuard) + Send + Sync + 'static,
-    {
+    pub(crate) fn create_timer<F: TimerFn>(&self, callback: F) -> Arc<Timer<F>> {
         let timer = self.manager.create_timer(callback);
         timer.lock().set_timeout(self.timeout.clone());
         timer
