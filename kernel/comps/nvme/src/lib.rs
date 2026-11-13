@@ -8,6 +8,7 @@
 //! Reference: NVM Express Base Specification Revision 2.0
 
 #![no_std]
+#![deny(unsafe_code)]
 
 extern crate alloc;
 #[macro_use]
@@ -25,7 +26,7 @@ use component::{ComponentInitError, init_component};
 use spin::Once;
 use transport::pci::NVME_PCI_DRIVER;
 
-pub use self::device::block_device::NvmeBlockDevice;
+use self::device::block_device::NvmeBlockDevice;
 
 mod device;
 mod msix;
