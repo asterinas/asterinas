@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    sync::{Arc, Weak},
-    vec,
-    vec::Vec,
-};
+use alloc::{sync::Arc, vec, vec::Vec};
 
 use aster_core::prelude::*;
 use aster_util::fixed_str::FixedCStr;
 use int_to_c_enum::TryFromInt;
 use ostd::mm::VmIo;
 use ostd_pod::Pod;
+use zerocopy::IntoBytes;
 
 use crate::{
     device::DrmFeatures,
@@ -18,15 +15,19 @@ use crate::{
     ioctl::ioctl_defs,
     kms::{
         display_mode::{DrmDisplayMode, DrmModeInfo},
+        modeset::{
+            connector_state::DrmConnectorState, crtc_state::DrmCrtcState,
+            encoder_state::DrmEncoderState, plane_state::DrmPlaneState,
+        },
         objects::{
-            DrmKmsObjectType, KmsObjectIndex,
-            connector::{DrmConnector, DrmConnectorState},
-            crtc::DrmCrtcState,
+            DrmKmsObjectIndex, DrmKmsObjectType,
+            connector::DrmConnector,
             encoder::DrmEncoder,
             framebuffer::{DrmFramebuffer, DrmFramebufferFlags},
-            plane::{DrmPlaneState, DrmPlaneType},
+            plane::DrmPlaneType,
             property::{
                 DRM_PROP_NAME_LEN, DrmPropertyAttachments, DrmPropertyFlags, DrmPropertyValueType,
+                blob::DrmPropertyBlob,
             },
         },
         pixel_format::DrmPixelFormat,
@@ -116,18 +117,14 @@ impl DrmFile {
     pub(super) fn drm_mode_get_resources(&self, cmd: ioctl_defs::ModeGetResources) -> Result<i32> {
         cmd.with_data_ptr(|args_ptr| {
             let mut args: DrmModeGetResources = args_ptr.read()?;
-            let mode_config = self.device().as_kms_ops().unwrap().mode_config();
 
-            let object_store = mode_config.object_store().lock();
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let mode_config = kms_ops.mode_config();
+            let object_topology = mode_config.object_store().topology();
 
-            let crtc_ids = object_store.collect_sorted_crtc_ids();
-            let encoder_ids = object_store.collect_sorted_encoder_ids();
-            let connector_ids = object_store.collect_sorted_connector_ids();
-
-            // All store data needed below has been collected into local values.
-            // Release the mutex before copying to userspace, which may fault and
-            // does not require access to the object store.
-            drop(object_store);
+            let crtc_ids = object_topology.collect_sorted_crtc_ids();
+            let encoder_ids = object_topology.collect_sorted_encoder_ids();
+            let connector_ids = object_topology.collect_sorted_connector_ids();
 
             let framebuffer_ids = self.framebuffer_ids();
 
@@ -173,41 +170,40 @@ impl DrmFile {
 
     pub(super) fn drm_mode_get_crtc(&self, cmd: ioctl_defs::ModeGetCrtc) -> Result<i32> {
         let mut args: DrmModeCrtc = cmd.read()?;
-        let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-        let object_store = mode_config.object_store().lock();
 
-        let crtc = object_store
+        let kms_ops = self.device().as_kms_ops().unwrap();
+        let mode_config = kms_ops.mode_config();
+        let object_topology = mode_config.object_store().topology();
+
+        let crtc = object_topology
             .lookup_crtc_by_id(args.crtc_id)
             .ok_or(Errno::ENOENT)?;
-
-        args.gamma_size = crtc.gamma_size();
-        let mode = {
-            let crtc_state = crtc.state().lock();
-            crtc_state
-                .is_enabled()
-                .then(|| crtc_state.display_mode())
-                .flatten()
-        };
-
         let primary_plane = crtc.primary_plane().upgrade().ok_or(Errno::ENOENT)?;
-        let plane_state = primary_plane.state().lock();
-        // TODO: Convert source coordinates from 16.16 fixed-point once supported.
-        args.x = plane_state.source_rect().x();
-        args.y = plane_state.source_rect().y();
-        args.fb_id = plane_state
-            .framebuffer()
-            .upgrade()
-            .map_or(0, |framebuffer| framebuffer.id());
-        drop(plane_state);
 
-        if let Some(mode) = mode {
-            args.mode = DrmModeInfo::try_from(mode)?;
-            args.mode_valid = 1;
-        } else {
-            args.mode_valid = 0;
-        }
+        {
+            let state = mode_config.modeset_state().lock();
+            let crtc_state = state.crtc_state(crtc.index());
 
-        drop(object_store);
+            if let Some(display_mode) = crtc_state.display_mode() {
+                args.mode = DrmModeInfo::try_from(display_mode)?;
+                args.mode_valid = 1;
+            } else {
+                args.mode_valid = 0;
+            };
+
+            let plane_state = state.plane_state(primary_plane.index());
+            let source_rect = plane_state.source_rect();
+            // TODO: Convert source coordinates from 16.16 fixed-point once supported.
+            args.x = source_rect.x();
+            args.y = source_rect.y();
+
+            let fb_id = plane_state
+                .framebuffer()
+                .as_ref()
+                .map_or(0, |framebuffer| framebuffer.id());
+            args.fb_id = fb_id;
+        };
+        args.gamma_size = crtc.gamma_size();
 
         cmd.write(&args)?;
         Ok(0)
@@ -215,7 +211,11 @@ impl DrmFile {
 
     pub(super) fn drm_mode_set_crtc(&self, cmd: ioctl_defs::ModeSetCrtc) -> Result<i32> {
         let args: DrmModeCrtc = cmd.read()?;
+
         let kms_ops = self.device().as_kms_ops().unwrap();
+        let mode_config = kms_ops.mode_config();
+        let object_store = mode_config.object_store();
+        let object_topology = object_store.topology();
 
         // SETCRTC either configures a display mode or disables the CRTC and clears its state.
         // Enabling requires a framebuffer and connectors; disabling requires no connectors.
@@ -235,13 +235,7 @@ impl DrmFile {
         }
 
         // This check only prevents an excessively large allocation for the connector ID array below.
-        // The object-store lock need not be held beyond reading the count.
-        let connector_count = kms_ops
-            .mode_config()
-            .object_store()
-            .lock()
-            .connectors()
-            .count();
+        let connector_count = object_topology.connectors().count();
         if args.count_connectors as usize > connector_count {
             return_errno_with_message!(Errno::EINVAL, "too many connectors for SETCRTC");
         }
@@ -254,17 +248,22 @@ impl DrmFile {
             )
         })?;
 
-        // Serialize validation, driver application, and state publication with framebuffer removal.
-        let object_store = kms_ops.mode_config().object_store().lock();
-        let crtc = object_store
+        let crtc = object_topology
             .lookup_crtc_by_id(args.crtc_id)
             .ok_or(Errno::ENOENT)?;
         let primary_plane = crtc.primary_plane().upgrade().ok_or(Errno::ENOENT)?;
+
+        let mut modeset_state = mode_config.modeset_state().lock();
         let framebuffer = if display_mode.is_none() {
             None
         } else if args.fb_id == u32::MAX {
             // SETCRTC uses -1 to request the primary plane's currently bound framebuffer.
-            let Some(framebuffer) = primary_plane.state().lock().framebuffer().upgrade() else {
+            let Some(framebuffer) = modeset_state
+                .plane_state(primary_plane.index())
+                .framebuffer()
+                .as_ref()
+                .cloned()
+            else {
                 return_errno_with_message!(
                     Errno::EINVAL,
                     "the CRTC has no current framebuffer to reuse"
@@ -272,7 +271,11 @@ impl DrmFile {
             };
             Some(framebuffer)
         } else {
-            Some(self.lookup_framebuffer(args.fb_id).ok_or(Errno::ENOENT)?)
+            Some(
+                object_store
+                    .lookup_framebuffer(args.fb_id)
+                    .ok_or(Errno::ENOENT)?,
+            )
         };
         let source_rect = display_mode.map_or_else(DrmRect::default, |mode| {
             DrmRect::new(args.x, args.y, mode.hdisplay(), mode.vdisplay())
@@ -308,7 +311,7 @@ impl DrmFile {
             // Build the replacement routing without changing the current associations.
             let crtc_index = crtc.index().get();
             for connector_id in &connector_ids {
-                let connector = object_store
+                let connector = object_topology
                     .lookup_connector_by_id(*connector_id)
                     .ok_or(Errno::ENOENT)?;
 
@@ -328,8 +331,8 @@ impl DrmFile {
                         .possible_encoders()
                         .iter_ones()
                         .find_map(|encoder_index| {
-                            let candidate_encoder = object_store
-                                .lookup_encoder_by_index(KmsObjectIndex::new(encoder_index))?;
+                            let candidate_encoder = object_topology
+                                .lookup_encoder_by_index(DrmKmsObjectIndex::new(encoder_index))?;
                             if !candidate_encoder.possible_crtcs()[crtc_index] {
                                 return None;
                             }
@@ -360,37 +363,62 @@ impl DrmFile {
 
         // Remove the previous routing before attaching the replacement connectors.
         let crtc_ref = Arc::downgrade(crtc);
-        for connector in object_store.connectors() {
-            let mut state = connector.state().lock();
-            if state
+        for connector in object_topology.connectors() {
+            if modeset_state
+                .connector_state(connector.index())
                 .encoder()
                 .upgrade()
-                .is_some_and(|encoder| encoder.current_crtc().ptr_eq(&crtc_ref))
+                .is_some_and(|encoder| {
+                    modeset_state
+                        .encoder_state(encoder.index())
+                        .current_crtc()
+                        .ptr_eq(&crtc_ref)
+                })
             {
-                *state = DrmConnectorState::default();
+                modeset_state
+                    .replace_connector_state(connector.index(), DrmConnectorState::default());
             }
         }
-        for encoder in object_store.encoders() {
-            if encoder.current_crtc().ptr_eq(&crtc_ref) {
-                encoder.set_current_crtc(Weak::new());
+        for encoder in object_topology.encoders() {
+            if modeset_state
+                .encoder_state(encoder.index())
+                .current_crtc()
+                .ptr_eq(&crtc_ref)
+            {
+                modeset_state.replace_encoder_state(encoder.index(), DrmEncoderState::default());
             }
         }
 
         if let Some(display_mode) = display_mode {
-            crtc.update_state(DrmCrtcState::new(display_mode));
-            primary_plane.update_state(DrmPlaneState::new(
-                source_rect,
-                DrmRect::new(0, 0, display_mode.hdisplay(), display_mode.vdisplay()),
-                Arc::downgrade(framebuffer.as_ref().unwrap()),
-                crtc_ref,
-            ));
+            let mode_info = DrmModeInfo::try_from(display_mode)?;
+            let blob_id = object_store.alloc_object_id()?;
+            let mode_blob = Arc::new(DrmPropertyBlob::new(blob_id, mode_info.as_bytes().into()));
+            object_store.add_property_blob(&mode_blob);
+
+            modeset_state
+                .replace_crtc_state(crtc.index(), DrmCrtcState::new(mode_blob, display_mode));
+            modeset_state.replace_plane_state(
+                primary_plane.index(),
+                DrmPlaneState::new(
+                    source_rect,
+                    DrmRect::new(0, 0, display_mode.hdisplay(), display_mode.vdisplay()),
+                    framebuffer,
+                    crtc_ref,
+                ),
+            );
             for (connector, encoder) in matched_connector_encoders {
-                encoder.set_current_crtc(Arc::downgrade(crtc));
-                connector.update_state(DrmConnectorState::new(Arc::downgrade(encoder)));
+                modeset_state.replace_encoder_state(
+                    encoder.index(),
+                    DrmEncoderState::new(Arc::downgrade(crtc)),
+                );
+                modeset_state.replace_connector_state(
+                    connector.index(),
+                    DrmConnectorState::new(Arc::downgrade(encoder)),
+                );
             }
         } else {
-            crtc.update_state(DrmCrtcState::default());
-            primary_plane.update_state(DrmPlaneState::default());
+            modeset_state.replace_crtc_state(crtc.index(), DrmCrtcState::default());
+            modeset_state.replace_plane_state(primary_plane.index(), DrmPlaneState::default());
         }
 
         Ok(0)
@@ -398,19 +426,25 @@ impl DrmFile {
 
     pub(super) fn drm_mode_get_encoder(&self, cmd: ioctl_defs::ModeGetEncoder) -> Result<i32> {
         let mut args: DrmModeGetEncoder = cmd.read()?;
-        let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-        let object_store = mode_config.object_store().lock();
 
-        let encoder = object_store
+        let kms_ops = self.device().as_kms_ops().unwrap();
+        let mode_config = kms_ops.mode_config();
+        let object_topology = mode_config.object_store().topology();
+
+        let encoder = object_topology
             .lookup_encoder_by_id(args.encoder_id)
             .ok_or(Errno::ENOENT)?;
 
-        args.crtc_id = encoder.current_crtc().upgrade().map_or(0, |crtc| crtc.id());
+        args.crtc_id = mode_config
+            .modeset_state()
+            .lock()
+            .encoder_state(encoder.index())
+            .current_crtc()
+            .upgrade()
+            .map_or(0, |crtc| crtc.id());
         args.encoder_type = encoder.type_() as u32;
         args.possible_crtcs = encoder.possible_crtcs().as_raw_slice()[0];
         args.possible_clones = encoder.possible_clones().as_raw_slice()[0];
-
-        drop(object_store);
 
         cmd.write(&args)?;
         Ok(0)
@@ -420,43 +454,40 @@ impl DrmFile {
         cmd.with_data_ptr(|args_ptr| {
             let mut args: DrmModeGetConnector = args_ptr.read()?;
 
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let mode_config = kms_ops.mode_config();
+            let object_topology = mode_config.object_store().topology();
+
             // Linux treats `GETCONNECTOR` with `count_modes == 0` as a forced probe request.
             // Only the DRM master is allowed to refresh the connector state in this path;
             // non-master callers fall back to a read-only query.
             if args.count_modes == 0 && self.is_master() {
-                let kms_ops = self.device().as_kms_ops().unwrap();
-                // Keep the connector alive without holding the object-store mutex
-                // across the driver callback, which may perform I/O or acquire other locks.
-                let connector = {
-                    let object_store = kms_ops.mode_config().object_store().lock();
-                    object_store
-                        .lookup_connector_by_id(args.connector_id)
-                        .cloned()
-                        .ok_or(Errno::ENOENT)?
-                };
+                let connector = object_topology
+                    .lookup_connector_by_id(args.connector_id)
+                    .cloned()
+                    .ok_or(Errno::ENOENT)?;
                 let probe_state = kms_ops.probe_connector(&connector)?;
                 connector.update_probe_state(probe_state);
             }
 
-            let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-            let object_store = mode_config.object_store().lock();
-
-            let connector = object_store
+            let connector = object_topology
                 .lookup_connector_by_id(args.connector_id)
                 .ok_or(Errno::ENOENT)?;
             args.connector_type = connector.type_() as u32;
             args.connector_type_id = connector.type_index();
-            let encoder_id = {
-                let state = connector.state().lock();
-                state.encoder().upgrade().map_or(0, |encoder| encoder.id())
-            };
-            args.encoder_id = encoder_id;
+            args.encoder_id = mode_config
+                .modeset_state()
+                .lock()
+                .connector_state(connector.index())
+                .encoder()
+                .upgrade()
+                .map_or(0, |encoder| encoder.id());
 
             let possible_encoders = connector.possible_encoders();
             let mut encoder_ids = Vec::with_capacity(possible_encoders.count_ones());
             for index in possible_encoders.iter_ones() {
-                let encoder_index = KmsObjectIndex::new(index);
-                let encoder_id = object_store
+                let encoder_index = DrmKmsObjectIndex::new(index);
+                let encoder_id = object_topology
                     .lookup_encoder_by_index(encoder_index)
                     .map(|encoder| encoder.id())
                     .ok_or(Errno::ENOENT)?;
@@ -481,8 +512,6 @@ impl DrmFile {
                     .map(DrmModeInfo::try_from)
                     .collect::<Result<Vec<_>>>()?
             };
-
-            drop(object_store);
 
             copy_array_to_user(args_ptr.vm(), args.modes_ptr, args.count_modes, &mode_info)?;
             copy_array_to_user(args_ptr.vm(), args.props_ptr, args.count_props, &prop_ids)?;
@@ -514,10 +543,10 @@ impl DrmFile {
         let mut args: DrmModeGetProperty = cmd.read()?;
 
         cmd.with_data_ptr(|args_ptr| {
-            let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-            let object_store = mode_config.object_store().lock();
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let object_topology = kms_ops.mode_config().object_store().topology();
 
-            let property = object_store
+            let property = object_topology
                 .lookup_property(args.prop_id)
                 .ok_or(Errno::ENOENT)?;
 
@@ -541,7 +570,6 @@ impl DrmFile {
 
             args.name = *property.name();
             args.flags = property.flags().bits();
-            drop(object_store);
 
             copy_array_to_user(args_ptr.vm(), args.values_ptr, args.count_values, &values)?;
             copy_array_to_user(
@@ -565,14 +593,13 @@ impl DrmFile {
         let mut args: DrmModeGetBlob = cmd.read()?;
 
         cmd.with_data_ptr(|args_ptr| {
-            let blob = {
-                let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-                let object_store = mode_config.object_store().lock();
-                object_store
-                    .lookup_property_blob(args.blob_id)
-                    .ok_or(Errno::ENOENT)?
-                    .clone()
-            };
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let object_store = kms_ops.mode_config().object_store();
+
+            let blob = object_store
+                .lookup_property_blob(args.blob_id)
+                .ok_or(Errno::ENOENT)?
+                .clone();
 
             let data = blob.data();
             if args.length != 0 && !data.is_empty() {
@@ -600,9 +627,11 @@ impl DrmFile {
     pub(super) fn drm_mode_add_fb(&self, cmd: ioctl_defs::ModeAddFb) -> Result<i32> {
         let mut args: DrmModeFbCmd = cmd.read()?;
 
-        let pixel_format = DrmPixelFormat::try_from((args.bpp, args.depth))?;
+        let kms_ops = self.device().as_kms_ops().unwrap();
+        let mode_config = kms_ops.mode_config();
+        let object_store = mode_config.object_store();
+        let object_topology = object_store.topology();
 
-        let mode_config = self.device().as_kms_ops().unwrap().mode_config();
         let min_size = mode_config.min_fb_size();
         let max_size = mode_config.max_fb_size();
         let size = DrmSize::new(args.width, args.height);
@@ -617,12 +646,10 @@ impl DrmFile {
             );
         }
 
-        let supports_pixel_format = {
-            let object_store = mode_config.object_store().lock();
-            object_store
-                .planes()
-                .any(|plane| plane.pixel_formats().contains(&pixel_format))
-        };
+        let pixel_format = DrmPixelFormat::try_from((args.bpp, args.depth))?;
+        let supports_pixel_format = object_topology
+            .planes()
+            .any(|plane| plane.pixel_formats().contains(&pixel_format));
         if !supports_pixel_format {
             return_errno_with_message!(
                 Errno::EINVAL,
@@ -631,35 +658,23 @@ impl DrmFile {
         }
 
         let gem_object = self.lookup_gem_object(args.handle)?;
-        let framebuffer = {
-            let mut object_store = mode_config.object_store().lock();
-            let fb_id = object_store.alloc_object_id()?;
-            let framebuffer = DrmFramebuffer::new(
-                fb_id,
-                DrmSize::new(args.width, args.height),
-                pixel_format,
-                DrmFramebufferFlags::empty(),
-                args.pitch,
-                0,
-                0,
-                gem_object,
-            );
+        let fb_id = object_store.alloc_object_id()?;
+        let framebuffer = DrmFramebuffer::new(
+            fb_id,
+            DrmSize::new(args.width, args.height),
+            pixel_format,
+            DrmFramebufferFlags::empty(),
+            args.pitch,
+            0,
+            0,
+            gem_object,
+        )?;
 
-            match framebuffer {
-                Ok(framebuffer) => Arc::new(framebuffer),
-                Err(error) => {
-                    object_store.free_object_id(fb_id);
-                    return Err(error);
-                }
-            }
-        };
-        let fb_id = framebuffer.id();
-        args.fb_id = fb_id;
+        args.fb_id = framebuffer.id();
+        cmd.write(&args)?;
 
-        if let Err(error) = cmd.write(&args) {
-            mode_config.object_store().lock().free_object_id(fb_id);
-            return Err(error);
-        }
+        let framebuffer = Arc::new(framebuffer);
+        object_store.add_framebuffer(&framebuffer);
         self.add_framebuffer(framebuffer);
 
         Ok(0)
@@ -667,29 +682,9 @@ impl DrmFile {
 
     pub(super) fn drm_mode_rm_fb(&self, cmd: ioctl_defs::ModeRmFb) -> Result<i32> {
         let fb_id: u32 = cmd.read()?;
-
-        let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-        // Hold the object-store lock across lookup, removal, and ID release so
-        // `fb_id` cannot be reused for another framebuffer in between.
-        let mut object_store = mode_config.object_store().lock();
-        let framebuffer = self.lookup_framebuffer(fb_id).ok_or(Errno::ENOENT)?;
-
-        if object_store.planes().any(|plane| {
-            plane
-                .state()
-                .lock()
-                .framebuffer()
-                .ptr_eq(&Arc::downgrade(&framebuffer))
-        }) {
-            return_errno_with_message!(
-                Errno::EBUSY,
-                "the DRM framebuffer is still in use by a plane"
-            );
-        }
-
-        self.remove_framebuffer(fb_id).ok_or(Errno::ENOENT)?;
-        object_store.free_object_id(fb_id);
-
+        // TODO: Disable the affected display paths through the driver
+        // and synchronize the CRTC and routing states as needed.
+        let _ = self.remove_framebuffer(fb_id)?;
         Ok(0)
     }
 
@@ -698,7 +693,11 @@ impl DrmFile {
         // treat every dirtyfb request as a whole-framebuffer refresh.
         let args: DrmModeFbDirtyCmd = cmd.read()?;
 
-        let framebuffer = self.lookup_framebuffer(args.fb_id).ok_or(Errno::ENOENT)?;
+        let kms_ops = self.device().as_kms_ops().unwrap();
+        let mode_config = kms_ops.mode_config();
+        let object_store = mode_config.object_store();
+        let object_topology = object_store.topology();
+
         if (args.num_clips == 0) != (args.clips_ptr == 0) {
             return_errno_with_message!(
                 Errno::EINVAL,
@@ -724,16 +723,20 @@ impl DrmFile {
                 .map(drop)
         })?;
 
-        let kms_ops = self.device().as_kms_ops().unwrap();
-        let object_store = kms_ops.mode_config().object_store().lock();
-        let source_rects = object_store
+        let framebuffer = object_store
+            .lookup_framebuffer(args.fb_id)
+            .ok_or(Errno::ENOENT)?;
+
+        let modeset_state = mode_config.modeset_state().lock();
+        let source_rects = object_topology
             .planes()
             .filter_map(|plane| {
-                let state = plane.state().lock();
-                state
+                let plane_state = modeset_state.plane_state(plane.index());
+                plane_state
                     .framebuffer()
-                    .ptr_eq(&Arc::downgrade(&framebuffer))
-                    .then_some(state.source_rect())
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, &framebuffer))
+                    .then_some(plane_state.source_rect())
             })
             .collect::<Vec<_>>();
 
@@ -748,11 +751,13 @@ impl DrmFile {
     ) -> Result<i32> {
         cmd.with_data_ptr(|args_ptr| {
             let mut args: DrmModeGetPlaneRes = args_ptr.read()?;
+
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let object_topology = kms_ops.mode_config().object_store().topology();
+
             let plane_ids = {
-                let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-                let object_store = mode_config.object_store().lock();
                 let universal_planes = self.has_client_caps(DrmClientCaps::UNIVERSAL_PLANES);
-                let mut planes = object_store
+                let mut planes = object_topology
                     .planes()
                     .filter(|plane| universal_planes || plane.type_() == DrmPlaneType::Overlay)
                     .collect::<Vec<_>>();
@@ -783,23 +788,28 @@ impl DrmFile {
     pub(super) fn drm_mode_get_plane(&self, cmd: ioctl_defs::ModeGetPlane) -> Result<i32> {
         cmd.with_data_ptr(|args_ptr| {
             let mut args: DrmModeGetPlane = args_ptr.read()?;
+
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let mode_config = kms_ops.mode_config();
+            let object_topology = mode_config.object_store().topology();
+
             let pixel_format = {
-                let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-                let object_store = mode_config.object_store().lock();
-                let plane = object_store
+                let plane = object_topology
                     .lookup_plane_by_id(args.plane_id)
                     .ok_or(Errno::ENOENT)?;
                 args.possible_crtcs = plane.possible_crtcs().as_raw_slice()[0];
                 // `drm_mode_get_plane::gamma_size` is unused by Linux and must remain zero.
                 args.gamma_size = 0;
 
-                let plane_state = plane.state().lock();
-                args.crtc_id = plane_state.crtc().upgrade().map_or(0, |crtc| crtc.id());
-                args.fb_id = plane_state
-                    .framebuffer()
-                    .upgrade()
-                    .map_or(0, |framebuffer| framebuffer.id());
-                drop(plane_state);
+                {
+                    let modeset_state = mode_config.modeset_state().lock();
+                    let plane_state = modeset_state.plane_state(plane.index());
+                    args.crtc_id = plane_state.crtc().upgrade().map_or(0, |crtc| crtc.id());
+                    args.fb_id = plane_state
+                        .framebuffer()
+                        .as_ref()
+                        .map_or(0, |framebuffer| framebuffer.id());
+                }
 
                 plane
                     .pixel_formats()
@@ -832,24 +842,24 @@ impl DrmFile {
         let mut args: DrmModeObjectGetProps = cmd.read()?;
 
         cmd.with_data_ptr(|args_ptr| {
-            let mode_config = self.device().as_kms_ops().unwrap().mode_config();
-            let object_store = mode_config.object_store().lock();
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let object_topology = kms_ops.mode_config().object_store().topology();
 
             let object_type =
                 DrmKmsObjectType::try_from(args.obj_type).map_err(|_| Errno::ENOENT)?;
 
             let properties = match object_type {
-                DrmKmsObjectType::Plane => object_store
+                DrmKmsObjectType::Plane => object_topology
                     .lookup_plane_by_id(args.obj_id)
                     .map(|plane| plane.properties()),
-                DrmKmsObjectType::Crtc => object_store
+                DrmKmsObjectType::Crtc => object_topology
                     .lookup_crtc_by_id(args.obj_id)
                     .map(|crtc| crtc.properties()),
-                DrmKmsObjectType::Connector => object_store
+                DrmKmsObjectType::Connector => object_topology
                     .lookup_connector_by_id(args.obj_id)
                     .map(|connector| connector.properties()),
                 DrmKmsObjectType::Encoder => {
-                    if object_store.lookup_encoder_by_id(args.obj_id).is_some() {
+                    if object_topology.lookup_encoder_by_id(args.obj_id).is_some() {
                         return_errno_with_message!(
                             Errno::EINVAL,
                             "the DRM encoder has no property table"
@@ -857,7 +867,9 @@ impl DrmFile {
                     }
                     None
                 }
-                DrmKmsObjectType::Any => object_store.lookup_any_object_properties(args.obj_id)?,
+                DrmKmsObjectType::Any => {
+                    object_topology.lookup_any_object_properties(args.obj_id)?
+                }
                 _ => None,
             }
             .ok_or_else(|| {
@@ -868,7 +880,6 @@ impl DrmFile {
             })?;
 
             let (prop_ids, prop_values) = self.visible_property_values(properties);
-            drop(object_store);
 
             copy_array_to_user(args_ptr.vm(), args.props_ptr, args.count_props, &prop_ids)?;
             copy_array_to_user(
@@ -883,6 +894,48 @@ impl DrmFile {
             Ok(())
         })?;
 
+        Ok(0)
+    }
+
+    pub(super) fn drm_mode_create_prop_blob(
+        &self,
+        cmd: ioctl_defs::ModeCreatePropBlob,
+    ) -> Result<i32> {
+        let mut args: DrmModeCreateBlob = cmd.read()?;
+
+        if args.length == 0 || args.length > i32::MAX.cast_unsigned() {
+            return_errno_with_message!(Errno::EINVAL, "the DRM blob length is invalid");
+        }
+
+        cmd.with_data_ptr(|args_ptr| {
+            let mut data = vec![0u8; args.length as usize];
+            args_ptr.vm().read_bytes(args.data as usize, &mut data)?;
+
+            let kms_ops = self.device().as_kms_ops().unwrap();
+            let object_store = kms_ops.mode_config().object_store();
+
+            let blob_id = object_store.alloc_object_id()?;
+            let prop_blob = DrmPropertyBlob::new(blob_id, data.into());
+
+            args.blob_id = prop_blob.id();
+            args_ptr.write(&args)?;
+
+            let prop_blob = Arc::new(prop_blob);
+            object_store.add_property_blob(&prop_blob);
+            self.add_property_blob(prop_blob);
+
+            Ok(())
+        })?;
+
+        Ok(0)
+    }
+
+    pub(super) fn drm_mode_destroy_prop_blob(
+        &self,
+        cmd: ioctl_defs::ModeDestroyPropBlob,
+    ) -> Result<i32> {
+        let args: DrmModeDestroyBlob = cmd.read()?;
+        self.remove_property_blob(args.blob_id)?;
         Ok(0)
     }
 
@@ -1168,4 +1221,24 @@ pub(super) struct DrmModeObjectGetProps {
     count_props: u32,
     obj_id: u32,
     obj_type: u32,
+}
+
+/// `struct drm_mode_create_blob` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L1213-L1226>.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(super) struct DrmModeCreateBlob {
+    data: u64,
+    length: u32,
+    blob_id: u32,
+}
+
+/// `struct drm_mode_destroy_blob` in Linux.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L1228-L1242>.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(super) struct DrmModeDestroyBlob {
+    blob_id: u32,
 }

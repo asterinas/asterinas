@@ -13,16 +13,20 @@ use ostd::sync::Mutex;
 
 use crate::{
     device::DrmDevice,
-    kms::objects::{
-        DrmKmsObjectStore, KmsObjectIndex,
-        connector::{DrmConnector, DrmConnectorProbeState},
-        framebuffer::DrmFramebuffer,
+    kms::{
+        modeset::DrmModesetState,
+        objects::{
+            DrmKmsObjectIndex, DrmKmsObjectStore,
+            connector::{DrmConnector, DrmConnectorProbeState},
+            framebuffer::DrmFramebuffer,
+        },
     },
     utils::{DrmRect, DrmSize},
 };
 
 pub mod display_info;
 pub mod display_mode;
+pub mod modeset;
 pub mod objects;
 pub mod pixel_format;
 
@@ -30,8 +34,8 @@ pub mod pixel_format;
 ///
 /// A KMS-capable device exposes this interface through [`DrmDevice::as_kms_ops`].
 ///
-/// It provides access to the device's mode configuration and implements hardware-facing operations
-/// such as connector probing.
+/// It provides access to the device's mode configuration and object store and implements
+/// hardware-facing operations such as connector probing.
 pub trait DrmKmsOps: DrmDevice {
     fn mode_config(&self) -> &DrmModeConfig;
 
@@ -47,24 +51,18 @@ pub trait DrmKmsOps: DrmDevice {
     ///
     /// The DRM core validates the mode and connector-encoder assignments before calling this
     /// method. It updates the corresponding core state only if this method returns successfully.
-    ///
-    /// # Locking
-    ///
-    /// The DRM core holds the object-store lock across this call. Implementations must not access
-    /// the object store while this method is running.
+    // TODO: Replaces this legacy callback with atomic check and commit callbacks,
+    // and translates SETCRTC requests into atomic updates through a shared helper.
     fn set_crtc(
         &self,
-        crtc_index: KmsObjectIndex,
+        crtc_index: DrmKmsObjectIndex,
         framebuffer: Option<&DrmFramebuffer>,
         source_rect: DrmRect,
     ) -> Result<()>;
 
     /// Refreshes the regions of a framebuffer currently scanned out by planes.
-    ///
-    /// # Locking
-    ///
-    /// The DRM core holds the object-store lock across this call. Implementations must not access
-    /// the object store while this method is running.
+    // TODO: Replaces this legacy callback with atomic damage updates
+    // and reuses the driver's atomic commit path for framebuffer refreshes.
     fn refresh_dirty_fb(
         &self,
         framebuffer: &DrmFramebuffer,
@@ -72,7 +70,7 @@ pub trait DrmKmsOps: DrmDevice {
     ) -> Result<()>;
 }
 
-/// Describes a DRM device's global mode-setting capabilities and KMS objects.
+/// A DRM device's global mode-setting capabilities, KMS objects, and configuration state.
 #[derive(Debug)]
 pub struct DrmModeConfig {
     min_fb_size: DrmSize,
@@ -84,7 +82,8 @@ pub struct DrmModeConfig {
     supports_fb_modifiers: bool,
     prefer_shadow_buffer: bool,
 
-    object_store: Mutex<DrmKmsObjectStore>,
+    object_store: DrmKmsObjectStore,
+    modeset_state: Mutex<DrmModesetState>,
 }
 
 impl DrmModeConfig {
@@ -100,6 +99,8 @@ impl DrmModeConfig {
             );
         }
 
+        let state = DrmModesetState::from_topology(object_store.topology());
+
         Ok(Self {
             min_fb_size,
             max_fb_size,
@@ -108,7 +109,8 @@ impl DrmModeConfig {
             supports_async_page_flip: false,
             supports_fb_modifiers: false,
             prefer_shadow_buffer: false,
-            object_store: Mutex::new(object_store),
+            object_store,
+            modeset_state: Mutex::new(state),
         })
     }
 
@@ -188,7 +190,11 @@ impl DrmModeConfig {
         self.prefer_shadow_buffer
     }
 
-    pub(crate) fn object_store(&self) -> &Mutex<DrmKmsObjectStore> {
+    pub(crate) fn object_store(&self) -> &DrmKmsObjectStore {
         &self.object_store
+    }
+
+    pub(crate) fn modeset_state(&self) -> &Mutex<DrmModesetState> {
+        &self.modeset_state
     }
 }
