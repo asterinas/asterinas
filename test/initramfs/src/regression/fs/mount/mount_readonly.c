@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/wait.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 
 #include "../../common/test.h"
@@ -15,6 +16,8 @@
 #define SOURCE "/tmp/readonly_source"
 #define ALIAS "/tmp/readonly_alias"
 #define CONTENT "ORIGINAL"
+#define XATTR_NAME "user.test"
+#define XATTR_VALUE "old"
 
 FN_SETUP(mount_fixtures)
 {
@@ -29,6 +32,8 @@ FN_SETUP(mount_fixtures)
 	CHECK_WITH(write(fd, CONTENT, sizeof(CONTENT) - 1),
 		   _ret == sizeof(CONTENT) - 1);
 	CHECK(close(fd));
+	CHECK(setxattr(SOURCE "/file", XATTR_NAME, XATTR_VALUE,
+		       sizeof(XATTR_VALUE) - 1, 0));
 
 	CHECK(mkfifo(SOURCE "/fifo", 0666));
 	CHECK(mknod(SOURCE "/null", S_IFCHR | 0666, makedev(1, 3)));
@@ -130,6 +135,27 @@ FN_TEST(readonly_allows_path_and_special_file_opens)
 	TEST_SUCC(close(fd));
 
 	TEST_ERRNO(open(SOURCE, O_WRONLY), EISDIR);
+}
+END_TEST()
+
+FN_TEST(readonly_rejects_xattr_changes)
+{
+	int fd = TEST_SUCC(open(SOURCE "/file", O_RDONLY));
+
+	TEST_ERRNO(setxattr(SOURCE "/file", XATTR_NAME, "new", 3, 0), EROFS);
+	TEST_ERRNO(lsetxattr(SOURCE "/file", XATTR_NAME, "new", 3, 0), EROFS);
+	TEST_ERRNO(fsetxattr(fd, XATTR_NAME, "new", 3, 0), EROFS);
+	TEST_ERRNO(removexattr(SOURCE "/file", XATTR_NAME), EROFS);
+	TEST_ERRNO(lremovexattr(SOURCE "/file", XATTR_NAME), EROFS);
+	TEST_ERRNO(fremovexattr(fd, XATTR_NAME), EROFS);
+
+	char value[sizeof(XATTR_VALUE)] = { 0 };
+	TEST_RES(getxattr(SOURCE "/file", XATTR_NAME, value, sizeof(value)),
+		 _ret == sizeof(XATTR_VALUE) - 1);
+	TEST_RES(memcmp(value, XATTR_VALUE, sizeof(XATTR_VALUE) - 1),
+		 _ret == 0);
+
+	TEST_SUCC(close(fd));
 }
 END_TEST()
 
