@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/stat.h>
 #include <sched.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -62,8 +63,41 @@ FN_TEST(fsconfig_and_fsmount)
 			  0));
 	int mount_fd =
 		TEST_SUCC(syscall(SYS_fsmount, fs_fd, FSMOUNT_CLOEXEC, 0));
+	TEST_RES(fcntl(mount_fd, F_GETFL), _ret == O_PATH);
 	TEST_SUCC(close(mount_fd));
 	TEST_SUCC(close(fs_fd));
+}
+END_TEST()
+
+FN_TEST(fsmount_fdinfo_matches_statx)
+{
+	int fs_fd = TEST_SUCC(syscall(SYS_fsopen, "tmpfs", 0));
+	TEST_SUCC(syscall(SYS_fsconfig, fs_fd, FSCONFIG_CMD_CREATE, NULL, NULL,
+			  0));
+	int mount_fd = TEST_SUCC(syscall(SYS_fsmount, fs_fd, 0, 0));
+	TEST_SUCC(close(fs_fd));
+
+	struct statx stx = { 0 };
+	TEST_SUCC(statx(mount_fd, "", AT_EMPTY_PATH, STATX_INO | STATX_MNT_ID,
+			&stx));
+	TEST_RES(stx.stx_mask & (STATX_INO | STATX_MNT_ID),
+		 _ret == (STATX_INO | STATX_MNT_ID));
+
+	char path[64];
+	TEST_RES(snprintf(path, sizeof(path), "/proc/self/fdinfo/%d", mount_fd),
+		 _ret > 0 && _ret < sizeof(path));
+	FILE *info = TEST_RES(fopen(path, "r"), _ret != NULL);
+
+	unsigned long long mnt_id = 0, ino = 0;
+	TEST_RES(fscanf(info,
+			"pos:\t%*u\nflags:\t%*o\nmnt_id:\t%llu\nino:\t%llu",
+			&mnt_id, &ino),
+		 _ret == 2);
+	TEST_RES(mnt_id, _ret == stx.stx_mnt_id);
+	TEST_RES(ino, _ret == stx.stx_ino);
+	TEST_SUCC(fclose(info));
+
+	TEST_SUCC(close(mount_fd));
 }
 END_TEST()
 
