@@ -74,6 +74,27 @@ runs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Restore OSDK binary
+      uses: actions/cache@v6
+      id: osdk-cache
+      with:
+        path: ~/.cargo/bin/cargo-osdk
+        # The binary is determined only by
+        # 1. OSDK itself (`osdk/**`),
+        # 2. the local crates it links against (`ostd/libs/**`, e.g. `linux-bzimage/builder`),
+        # 3. the workspace settings those crates inherit from the root `Cargo.toml`,
+        # 4. the Rust toolchain.
+        # Recheck the local crates with `cargo metadata --manifest-path osdk/Cargo.toml`
+        # (the packages that have no `source`).
+        # `make install_osdk` always builds it with `OSDK_LOCAL_DEV=1`, so that
+        # compile-time environment is constant and needs no key of its own.
+        key: osdk-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('osdk/**', 'ostd/libs/**', 'Cargo.toml', 'rust-toolchain.toml') }}
+
+    - name: Skip rebuilding the restored OSDK
+      if: ${{ steps.osdk-cache.outputs.cache-hit == 'true' }}
+      shell: bash
+      run: touch ~/.cargo/bin/cargo-osdk
+
     - name: Setup environment
       shell: bash
       run: |
