@@ -73,7 +73,7 @@ impl MountRoots {
             lowers,
         };
 
-        if options.uuid_mode == Some(UuidMode::On) && roots.is_effective_read_only(options) {
+        if options.requested_uuid_mode() == UuidMode::On && roots.is_effective_read_only(options) {
             warn!(
                 "option `uuid=on` is ineffective on a read-only overlay; the overlay uuid is not persisted"
             );
@@ -117,7 +117,7 @@ impl MountRoots {
         let (Some(upper_root), Some(work_root)) = (&self.upper, &self.work) else {
             return Ok(None);
         };
-        let uuid_mode = options.uuid_mode.unwrap_or(UuidMode::Auto);
+        let uuid_mode = options.requested_uuid_mode();
         let uuid = if self.is_effective_read_only(options) {
             Ok(Uuid::generate())
         } else {

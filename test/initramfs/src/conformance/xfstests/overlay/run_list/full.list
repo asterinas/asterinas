@@ -1,4 +1,4 @@
-# The 21 overlay cases that pass on this lane.
+# The 22 overlay cases that pass on this lane.
 overlay/029
 overlay/002
 overlay/003
@@ -17,6 +17,7 @@ overlay/026
 overlay/031
 overlay/038
 overlay/039
+overlay/041
 overlay/063
 overlay/077
 overlay/028

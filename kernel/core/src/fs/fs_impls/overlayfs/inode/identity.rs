@@ -112,8 +112,8 @@ pub(in overlayfs) struct IdentityPolicy {
 }
 
 /// How this mount projects the dev/ino pair an object publishes.
-#[derive(Debug)]
-enum IdentityMode {
+#[derive(Clone, Copy, Debug)]
+pub(in overlayfs) enum IdentityMode {
     /// Every layer is on one filesystem, where a layer's own numbers are already unique.
     SameFs,
     /// A directory takes a number this mount allocates; anything else keeps its layer's numbers.
@@ -304,6 +304,11 @@ impl IdentityPolicy {
     /// Whether the published pairs are the layers' own numbers.
     pub(super) fn is_same_fs_passthrough(&self) -> bool {
         matches!(self.mode, IdentityMode::SameFs)
+    }
+
+    /// Returns the form this mount resolved to.
+    pub(in overlayfs) fn mode(&self) -> IdentityMode {
+        self.mode
     }
 
     /// Returns the layer `layer_index` selects.
