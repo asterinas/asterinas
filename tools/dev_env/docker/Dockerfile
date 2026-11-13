@@ -20,6 +20,40 @@ RUN apt update \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install ACR's Python dependencies.
+COPY tools/acr/pyproject.toml /tmp/acr-pyproject.toml
+ENV ACR_PYTHON=/opt/acr-venv/bin/python
+RUN <<'EOF'
+set -e
+python3 -m venv /opt/acr-venv
+"${ACR_PYTHON}" - <<'PYTHON'
+import subprocess
+import sys
+import tomllib
+
+with open("/tmp/acr-pyproject.toml", "rb") as file:
+    dependencies = tomllib.load(file)["project"]["dependencies"]
+subprocess.run(
+    [sys.executable, "-m", "pip", "install", "--no-cache-dir", *dependencies],
+    check=True,
+)
+PYTHON
+rm /tmp/acr-pyproject.toml
+EOF
+
+# Install Node.js and Pi.
+FROM node:24.22.2-bookworm-slim AS pi-runtime
+ENV PI_RELEASE=1.5.2
+RUN npm install --global --ignore-scripts "@earendil-works/pi-coding-agent@${PI_RELEASE}"
+
+FROM build-base
+COPY --from=pi-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=pi-runtime /usr/local/lib/node_modules/@earendil-works/pi-coding-agent \
+    /usr/local/lib/node_modules/@earendil-works/pi-coding-agent
+RUN ln -s ../lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js /usr/local/bin/pi \
+    && node --version \
+    && pi --version
+
 # Install Claude Code.
 ENV CLAUDE_CODE_RELEASE=2.1.223
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- ${CLAUDE_CODE_RELEASE} \
