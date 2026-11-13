@@ -1090,6 +1090,8 @@ impl Path {
         flags: XattrSetFlags,
         ctx: &Context,
     ) -> Result<()> {
+        self.check_mount_writable()?;
+
         let inode = self.inode();
         if name.full_name() == xattr::SECURITY_CAPABILITY_XATTR_NAME {
             capable_modify_file_cap(inode.as_ref(), ctx)?;
@@ -1108,6 +1110,8 @@ impl Path {
 
     /// Removes an xattr of the file.
     pub(crate) fn remove_xattr(&self, name: XattrName, ctx: &Context) -> Result<()> {
+        self.check_mount_writable()?;
+
         let inode = self.inode();
         if name.full_name() == xattr::SECURITY_CAPABILITY_XATTR_NAME {
             capable_modify_file_cap(inode.as_ref(), ctx)?;
