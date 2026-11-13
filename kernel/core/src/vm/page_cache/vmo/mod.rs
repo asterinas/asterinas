@@ -201,6 +201,7 @@ impl From<Error> for VmoCommitError {
 }
 
 impl From<ostd::Error> for VmoCommitError {
+    #[track_caller]
     fn from(e: ostd::Error) -> Self {
         Error::from(e).into()
     }

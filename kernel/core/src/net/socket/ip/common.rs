@@ -25,6 +25,7 @@ pub(super) fn resolve_bind_iface_and_config(
 }
 
 impl From<BindError> for Error {
+    #[track_caller]
     fn from(value: BindError) -> Self {
         match value {
             BindError::Exhausted => {

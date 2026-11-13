@@ -104,6 +104,7 @@ impl Device for TdxGuest {
 }
 
 impl From<TdCallError> for Error {
+    #[track_caller]
     fn from(err: TdCallError) -> Self {
         match err {
             TdCallError::TdxNoValidVeInfo => {
@@ -128,6 +129,7 @@ impl From<TdCallError> for Error {
 }
 
 impl From<TdVmcallError> for Error {
+    #[track_caller]
     fn from(err: TdVmcallError) -> Self {
         match err {
             TdVmcallError::TdxRetry => {
