@@ -148,6 +148,10 @@ impl FileSystem for OverlayFs {
         Ok(())
     }
 
+    fn options(&self) -> Option<String> {
+        Some(self.policy.render_fs_options(self.identity.mode()))
+    }
+
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
         &self.fs_event_stats
     }

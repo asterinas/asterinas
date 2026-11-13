@@ -24,7 +24,7 @@ use crate::{
 #[derive(Debug)]
 pub(super) struct MountOptions {
     /// The caller asked the overlay to run its own permission checks.
-    is_default_permissions: bool,
+    pub(super) is_default_permissions: bool,
     /// The `lowerdir`/`lowerdir+` layer paths in merge order, topmost first.
     pub(super) lower_dirs: Vec<String>,
     /// The `upperdir` path; `None` on a mount that has no upper.
@@ -45,11 +45,11 @@ pub(super) struct MountOptions {
     metacopy: Option<bool>,
     verity: Option<VerityMode>,
     fsync_mode: Option<FsyncMode>,
-    is_lowerdir_plus_seen: bool,
+    pub(super) is_lowerdir_plus_seen: bool,
     is_nooverride_creds_seen: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) enum UuidMode {
     /// UUID-blind mode: no persistent overlay UUID is written or matched.
     Off,
@@ -58,38 +58,43 @@ pub(super) enum UuidMode {
     /// Requires a persistent UUID: reuse the upper's, else create and persist one.
     On,
     /// Reuses an existing UUID, else upgrades to `On`; persistence failure degrades to `Null`.
+    #[default]
     Auto,
 }
 
 /// The `xino` option: whether the overlay publishes its own device ID with a layer-encoded ino.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in overlayfs) enum XinoMode {
     /// Never encode; a non-directory publishes the underlying dev/ino.
     Off,
     /// Encode when the layers span several filesystems and the mount keeps a `st_ino`.
+    #[default]
     Auto,
     /// Forces the encoding attempt; objects that do not fit fall back to xino-off.
     On,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum RedirectDirMode {
     Off,
+    #[default]
     Follow,
     NoFollow,
     On,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum VerityMode {
+    #[default]
     Off,
     On,
     Require,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum FsyncMode {
     Volatile,
+    #[default]
     Auto,
     Strict,
 }
@@ -378,7 +383,7 @@ impl MountOptions {
         {
             warn!(
                 "`redirect_dir={}`: degrading to redirect_dir=nofollow",
-                mode.option_value()
+                mode.to_str()
             );
         }
         if self.index == Some(true) {
@@ -391,7 +396,7 @@ impl MountOptions {
             warn!("`metacopy=on`: degrading to metacopy=off");
         }
         if let Some(mode) = self.verity.filter(|mode| *mode != VerityMode::Off) {
-            warn!("`verity={}`: degrading to verity=off", mode.option_value());
+            warn!("`verity={}`: degrading to verity=off", mode.to_str());
         }
         match self.fsync_mode {
             Some(FsyncMode::Strict) => {
@@ -409,11 +414,29 @@ impl MountOptions {
         }
         Ok(())
     }
+
+    /// Returns the `uuid` mode the caller requested, applying the default.
+    pub(super) fn requested_uuid_mode(&self) -> UuidMode {
+        self.uuid_mode.unwrap_or_default()
+    }
+}
+
+impl UuidMode {
+    /// Returns the `uuid=` value this mode is spelled with, or `None` for the default.
+    pub(super) fn to_str(self) -> Option<&'static str> {
+        match self {
+            Self::On => Some("on"),
+            Self::Off => Some("off"),
+            Self::Null => Some("null"),
+            // `Auto` is the option default and is omitted.
+            Self::Auto => None,
+        }
+    }
 }
 
 impl RedirectDirMode {
     /// Returns the `redirect_dir=` value this mode is spelled with.
-    fn option_value(self) -> &'static str {
+    fn to_str(self) -> &'static str {
         match self {
             Self::Off => "off",
             Self::Follow => "follow",
@@ -425,7 +448,7 @@ impl RedirectDirMode {
 
 impl VerityMode {
     /// Returns the `verity=` value this mode is spelled with.
-    fn option_value(self) -> &'static str {
+    fn to_str(self) -> &'static str {
         match self {
             Self::Off => "off",
             Self::On => "on",
