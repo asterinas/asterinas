@@ -411,11 +411,21 @@ impl DirDentry<'_> {
         Ok(self.insert_positive_child(&mut children, name, new_child))
     }
 
+    fn validate_name_len(&self, name: &str) -> Result<()> {
+        let max_namelen = self.inode.fs().sb().namelen;
+        if name.len() > max_namelen {
+            return_errno_with_message!(Errno::ENAMETOOLONG, "the path name is too long");
+        }
+        Ok(())
+    }
+
     /// Validates that `name` is absent and keeps that result stable for creation.
     fn validate_child_absent<'a>(
         &'a self,
         name: &str,
     ) -> Result<RwMutexUpgradeableGuard<'a, DentryChildren>> {
+        self.validate_name_len(name)?;
+
         let mut children = self.children.upread();
 
         if let Some(cached_entry) = children.find(name) {
@@ -563,6 +573,7 @@ impl DirDentry<'_> {
     /// [`super::PathResolver::lookup_at_path`].
     pub(in crate::fs) fn lookup_child(&self, name: &str) -> Result<Arc<Dentry>> {
         debug_assert!(!is_dot_or_dotdot(name));
+        self.validate_name_len(name)?;
 
         let mut children = self.children.upread();
 
@@ -723,6 +734,8 @@ impl DirDentry<'_> {
         name: &str,
         remove_child_fn: impl FnOnce(&dyn Inode, &Dentry) -> Result<()>,
     ) -> Result<Arc<Dentry>> {
+        self.validate_name_len(name)?;
+
         let dir_inode = self.inode();
         let mut children = self.children.upread();
         let cached_child = match children.find(name) {
@@ -786,12 +799,10 @@ impl DirDentry<'_> {
             }
         }
 
-        let old_dir_inode = self.inode();
+        self.validate_name_len(old_name)?;
+        new_dir.validate_name_len(new_name)?;
 
-        let max_namelen = old_dir_inode.fs().sb().namelen;
-        if old_name.len() > max_namelen || new_name.len() > max_namelen {
-            return_errno_with_message!(Errno::ENAMETOOLONG, "old_name or new_name is too long");
-        }
+        let old_dir_inode = self.inode();
 
         if core::ptr::eq(self.inner, new_dir.inner) {
             // The two are the same dentry, we just modify the name
