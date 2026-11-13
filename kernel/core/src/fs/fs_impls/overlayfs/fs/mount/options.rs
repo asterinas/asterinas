@@ -13,11 +13,18 @@
 //! raw-intent key records an explicitly requested feature that is not
 //! implemented: the request is accepted, and the verify phase warns once at
 //! mount time that the mount proceeds without that feature.
+//!
+//! It also renders the options a mount effectively settled on into the one
+//! `/proc` options-field segment the mount publishes.
 
 #![short_vis_path::add(overlayfs)]
 
+use super::inuse::Uuid;
 use crate::{
-    fs::vfs::{file_system::FsFlags, xattr::XattrNamespace},
+    fs::{
+        fs_impls::overlayfs::inode::IdentityMode,
+        vfs::{file_system::FsFlags, xattr::XattrNamespace},
+    },
     prelude::*,
 };
 
@@ -423,6 +430,122 @@ impl MountOptions {
             warn!("`default_permissions`: inert; the mount already behaves as requested");
         }
         Ok(())
+    }
+
+    /// Returns the final `uuid` mode this mount reports, or `None` for no key.
+    pub(super) fn effective_uuid_mode(&self, published_uuid: Option<&Uuid>) -> Option<UuidMode> {
+        if published_uuid.is_some() {
+            return Some(UuidMode::On);
+        }
+        match self.uuid_mode.unwrap_or(UuidMode::Auto) {
+            UuidMode::Off => Some(UuidMode::Off),
+            UuidMode::Null => Some(UuidMode::Null),
+            // A mount with an upper that published no uuid reports the `null` it settled on; a
+            // lower-only mount has no uuid state to report.
+            UuidMode::On | UuidMode::Auto if self.upper_dir.is_some() => Some(UuidMode::Null),
+            UuidMode::On | UuidMode::Auto => None,
+        }
+    }
+
+    /// Renders this mount's effective options as one `/proc` options-field segment.
+    pub(super) fn options_segment(
+        &self,
+        uuid_mode: Option<UuidMode>,
+        identity_mode: IdentityMode,
+    ) -> String {
+        let mut rendered = String::new();
+
+        if self.is_lowerdir_plus_seen {
+            for lower_dir in self.lower_dirs.iter() {
+                Self::push_option(&mut rendered, "lowerdir+", lower_dir);
+            }
+        } else {
+            let lower_dirs = self.lower_dirs.join(":");
+            Self::push_option(&mut rendered, "lowerdir", &lower_dirs);
+        }
+        if let Some(upper_dir) = &self.upper_dir {
+            Self::push_option(&mut rendered, "upperdir", upper_dir);
+        }
+        if let Some(work_dir) = &self.work_dir {
+            Self::push_option(&mut rendered, "workdir", work_dir);
+        }
+        if self.is_default_permissions {
+            Self::push_bare_option(&mut rendered, "default_permissions");
+        }
+        if let Some(uuid_value) = Self::uuid_option_value(uuid_mode) {
+            Self::push_option(&mut rendered, "uuid", uuid_value);
+        }
+        if let Some(xino_value) = self.xino_option_value(identity_mode) {
+            Self::push_option(&mut rendered, "xino", xino_value);
+        }
+        if self.xattr_namespace == XattrNamespace::User {
+            Self::push_bare_option(&mut rendered, "userxattr");
+        }
+
+        rendered
+    }
+
+    /// Returns the `uuid=` value the final mode is spelled with, or `None` for no key.
+    fn uuid_option_value(uuid_mode: Option<UuidMode>) -> Option<&'static str> {
+        match uuid_mode {
+            Some(UuidMode::On) => Some("on"),
+            Some(UuidMode::Off) => Some("off"),
+            Some(UuidMode::Null) => Some("null"),
+            // `effective_uuid_mode` never returns `Auto`; `None` means no key.
+            Some(UuidMode::Auto) | None => None,
+        }
+    }
+
+    /// Returns the `xino=` value the settled projection reports, or `None` when it
+    /// reports no `xino` key at all.
+    fn xino_option_value(&self, identity_mode: IdentityMode) -> Option<&'static str> {
+        let requested_mode = self.xino_mode.unwrap_or(XinoMode::Auto);
+        match identity_mode {
+            // The projection found every layer on one filesystem, so there is no encoding to
+            // report; this mirrors the same-filesystem suppression of the option.
+            IdentityMode::SameFs => None,
+            IdentityMode::Xino { .. } => match requested_mode {
+                XinoMode::On => Some("on"),
+                // A healthy `auto` keeps its spelling; `xino=off` never resolves to the encoding.
+                XinoMode::Auto | XinoMode::Off => Some("auto"),
+            },
+            // A mount that fell back reports the `off` it settled on, whatever it was asked.
+            IdentityMode::Fallback => Some("off"),
+        }
+    }
+
+    /// Appends `{name}={value}`, adding `,` only once an entry is already there.
+    fn push_option(rendered: &mut String, name: &str, value: &str) {
+        if !rendered.is_empty() {
+            rendered.push(',');
+        }
+        rendered.push_str(name);
+        rendered.push('=');
+        rendered.push_str(&Self::escape_mount_option_value(value));
+    }
+
+    /// Escapes an option value for the `/proc` options field.
+    fn escape_mount_option_value(value: &str) -> String {
+        let mut escaped = String::with_capacity(value.len());
+        for character in value.chars() {
+            match character {
+                ',' => escaped.push_str("\\054"),
+                ' ' => escaped.push_str("\\040"),
+                '\t' => escaped.push_str("\\011"),
+                '\n' => escaped.push_str("\\012"),
+                '\\' => escaped.push_str("\\134"),
+                _ => escaped.push(character),
+            }
+        }
+        escaped
+    }
+
+    /// Appends `{name}`, adding `,` only once an entry is already there.
+    fn push_bare_option(rendered: &mut String, name: &str) {
+        if !rendered.is_empty() {
+            rendered.push(',');
+        }
+        rendered.push_str(name);
     }
 }
 

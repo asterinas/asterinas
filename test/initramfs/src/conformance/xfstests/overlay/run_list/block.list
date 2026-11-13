@@ -1,4 +1,4 @@
-# Expected non-passing overlay cases (not in the confirmed 21-case pass list).
+# Expected non-passing overlay cases (not in the confirmed pass list).
 overlay/001
 overlay/004
 overlay/005
@@ -20,7 +20,6 @@ overlay/035
 overlay/036
 overlay/037
 overlay/040
-overlay/041
 overlay/042
 overlay/043
 overlay/044

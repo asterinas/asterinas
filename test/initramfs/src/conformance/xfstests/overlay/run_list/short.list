@@ -1,9 +1,10 @@
-# Representative smoke subset of the 21 passed overlay cases.
+# Representative smoke subset of the 22 passed overlay cases.
 overlay/002
 overlay/003
 overlay/007
 overlay/012
 overlay/014
+overlay/041
 overlay/077
 
 # Basic, fast generic cases (each <=3s on this lane):
