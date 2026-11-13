@@ -198,9 +198,9 @@ impl InotifyFile {
 
     /// Removes a watch by watch descriptor.
     pub(crate) fn remove_watch(&self, wd: u32) -> Result<()> {
-        let mut watch_map = self.watch_map.lock();
+        let entry = self.watch_map.lock().remove(&wd);
 
-        let Some(entry) = watch_map.remove(&wd) else {
+        let Some(entry) = entry else {
             return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist");
         };
 
@@ -383,7 +383,15 @@ impl FileLike for InotifyFile {
                 writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
                 writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())?;
 
-                for (wd, entry) in self.inner.watch_map.lock().iter() {
+                let entries: Vec<(u32, SubscriberEntry)> = self
+                    .inner
+                    .watch_map
+                    .lock()
+                    .iter()
+                    .map(|(wd, entry)| (*wd, entry.clone()))
+                    .collect();
+
+                for (wd, entry) in entries {
                     let Some(inode) = entry.inode.upgrade() else {
                         continue;
                     };
