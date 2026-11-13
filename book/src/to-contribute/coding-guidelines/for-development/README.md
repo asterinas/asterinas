@@ -13,6 +13,7 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 - [`checked-arithmetic`](correctness.md#checked-arithmetic): Use checked or saturating arithmetic where overflow is possible; don't rely on wrapping.
 - [`debug-assert`](correctness.md#debug-assert): Invariants that should never fail in correct code go in `debug_assert!`, not `assert!`.
 - [`propagate-errors`](correctness.md#propagate-errors): Propagate errors with `?`; don't `.unwrap()` where failure is legitimate.
+- [`match-linux-semantics`](correctness.md#match-linux-semantics): Match Linux syscall results, errno, and side effects for each argument combination; recheck every affected branch when accepting new flags or values.
 
 **[Concurrency](concurrency.md)**
 - [`lock-ordering`](concurrency.md#lock-ordering): Establish and document one global, hierarchical lock order to avoid deadlock.

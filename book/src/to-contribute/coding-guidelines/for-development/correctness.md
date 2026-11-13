@@ -61,3 +61,31 @@ let tsc_info = cpuid.get_tsc_info().unwrap();
 See also:
 _The Rust Programming Language_, Chapter 9 "Error Handling"
 and [Rust by Example: unpacking options and defaults with `?`](https://doc.rust-lang.org/rust-by-example/std/result/question_mark.html).
+
+### Match Linux syscall semantics (`match-linux-semantics`) {#match-linux-semantics}
+
+Syscall implementations must match Linux's return values,
+error codes, and side effects for supported argument combinations.
+A recognized flag may still be invalid in a particular branch.
+
+When accepting new flags or argument values,
+recheck every affected branch, including unchanged ones.
+Keep null pointers, empty strings, and sentinel values distinct
+when Linux assigns them different meanings.
+
+For example, `utimensat`'s null-pathname update branch
+must reject nonzero flags:
+
+```rust
+// Good — reject invalid flags before resolving the fd-only target
+if !flags.is_empty() {
+    return_errno_with_message!(Errno::EINVAL, "flags require a pathname");
+}
+let fs_path = FsPath::from_fd(dirfd)?;
+
+// Bad — resolve the fd-only target without checking its flags
+let fs_path = FsPath::from_fd(dirfd)?;
+```
+
+See also:
+PR [#3176](https://github.com/asterinas/asterinas/pull/3176#discussion_r3137887431).
