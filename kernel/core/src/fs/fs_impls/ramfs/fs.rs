@@ -481,41 +481,6 @@ impl DirEntry {
         self.children.put_at(child_idx_b, (name_b, inode_a));
     }
 
-    fn visit_entry(&self, idx: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        // The visitor's offset is where the next directory read should resume.
-        let try_visit = |idx: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
-            // Read the two special entries("." and "..").
-            if *idx == 0 {
-                let this_inode = self.this.upgrade().unwrap();
-                visitor.visit(".", this_inode.ino, this_inode.typ, *idx + 1)?;
-                *idx += 1;
-            }
-            if *idx == 1 {
-                let parent_inode = self.parent.upgrade().unwrap();
-                visitor.visit("..", parent_inode.ino, parent_inode.typ, *idx + 1)?;
-                *idx += 1;
-            }
-            // Read the normal child entries.
-            let start_idx = *idx;
-            for (offset_children, (name, child)) in self
-                .children
-                .idxes_and_items()
-                .skip_while(|(offset, _)| offset + NUM_SPECIAL_ENTRIES < start_idx)
-            {
-                let offset = offset_children + NUM_SPECIAL_ENTRIES;
-                visitor.visit(name.as_str().unwrap(), child.ino, child.typ, offset + 1)?;
-                *idx = offset + 1;
-            }
-            Ok(())
-        };
-
-        let mut iterate_idx = idx;
-        match try_visit(&mut iterate_idx, visitor) {
-            Err(e) if idx == iterate_idx => Err(e),
-            _ => Ok(iterate_idx - idx),
-        }
-    }
-
     fn is_empty_children(&self) -> bool {
         self.children.is_empty()
     }
@@ -1099,12 +1064,45 @@ impl FileOps for RamInode {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
 
-        let cnt = self
-            .inner
-            .as_direntry()
-            .unwrap()
-            .read()
-            .visit_entry(offset, visitor)?;
+        let dir_entry = self.inner.as_direntry().unwrap();
+        // The visitor's offset is where the next directory read should resume.
+        let try_readdir = |offset: &mut usize, visitor: &mut dyn DirentVisitor| -> Result<()> {
+            // Read the two special entries("." and "..").
+            if *offset == 0 {
+                visitor.visit(".", self.ino, self.typ, *offset + 1)?;
+                *offset += 1;
+            }
+            if *offset == 1 {
+                let parent_inode = dir_entry.read().parent.upgrade().unwrap();
+                visitor.visit("..", parent_inode.ino, parent_inode.typ, *offset + 1)?;
+                *offset += 1;
+            }
+
+            // Read the normal child entries one by one (`*offset >= 2` here). Release the lock
+            // before visiting each entry, since the visitor may write to user space and a page
+            // fault may sleep.
+            loop {
+                let next_child = {
+                    let self_dir = dir_entry.read();
+                    (*offset - NUM_SPECIAL_ENTRIES..self_dir.children.slots_len()).find_map(|idx| {
+                        let (name, child) = self_dir.children.get(idx)?;
+                        Some((idx + NUM_SPECIAL_ENTRIES, *name, child.ino, child.typ))
+                    })
+                };
+                let Some((idx, name, ino, typ)) = next_child else {
+                    return Ok(());
+                };
+
+                visitor.visit(name.as_str().unwrap(), ino, typ, idx + 1)?;
+                *offset = idx + 1;
+            }
+        };
+
+        let mut iterate_offset = offset;
+        let cnt = match try_readdir(&mut iterate_offset, visitor) {
+            Err(e) if offset == iterate_offset => return Err(e),
+            _ => iterate_offset - offset,
+        };
 
         self.metadata.lock().set_atime(now());
 
