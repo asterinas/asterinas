@@ -300,7 +300,7 @@ else
         $Q35_NETWORK_DEVICE_ARGS \
         -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
         -drive if=none,format=raw,id=nvme0n1,file=./test/initramfs/build/nvme0n1.img \
-        -device nvme,drive=nvme0n1,serial=nvme0n1 \
+        -device nvme,bus=pcie.0,addr=0x4,drive=nvme0n1,serial=nvme0n1 \
         $CONSOLE_ARGS \
         $IOMMU_EXTRA_ARGS \
     "

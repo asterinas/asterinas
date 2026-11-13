@@ -2,7 +2,7 @@
 
 //! Device attribute tests.
 
-use alloc::sync::Arc;
+use alloc::boxed::Box;
 
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::prelude::ktest;
@@ -45,12 +45,15 @@ fn attribute_ids_survive_bind_and_unbind() {
 
     // 2. Register a matching driver and check that binding preserves existing IDs.
     let driver = bus
-        .register_driver(Arc::new(ToyDiskDriver {
+        .register_driver(Box::new(ToyDiskDriver {
             match_data: ToyMatch { vendor: 9 },
             class: class.clone(),
         }))
         .unwrap();
     assert!(dev.driver().is_some());
+    let driver_attrs = utils::attr_names("/bus/toy/drivers/toy_disk");
+    assert!(driver_attrs.iter().any(|name| name == "bind"));
+    assert!(driver_attrs.iter().any(|name| name == "unbind"));
 
     let bound = utils::attr_ids(path);
     for (name, id) in &before {
