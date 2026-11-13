@@ -52,7 +52,6 @@ ProcTask.VerifyTaskDirNlinks
 ProcTaskNs.AccessOnNsNodeSucceeds
 ProcTaskNs.NsDirExistsAndHasCorrectMetadata
 ProcDevices.ExpectedLines
-ProcSysKernel.RandomizeVaSpace
 
 SelfAndNumericPid/ProcPidStatTest.HasBasicFields/0
 SelfAndNumericPid/ProcPidStatTest.HasBasicFields/1
