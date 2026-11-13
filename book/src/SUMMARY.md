@@ -106,6 +106,8 @@
             * [Functions & Methods](to-contribute/coding-guidelines/for-maintainability/rust-specific/functions-and-methods.md)
             * [Attributes & Macros](to-contribute/coding-guidelines/for-maintainability/rust-specific/attributes-and-macros.md)
             * [Comments](to-contribute/coding-guidelines/for-maintainability/rust-specific/comments.md)
+        * [Path-Specific](to-contribute/coding-guidelines/for-maintainability/path-specific/README.md)
+            * [`kernel/`](to-contribute/coding-guidelines/for-maintainability/path-specific/kernel.md)
     * [For Development](to-contribute/coding-guidelines/for-development/README.md)
         * [Correctness](to-contribute/coding-guidelines/for-development/correctness.md)
         * [Concurrency](to-contribute/coding-guidelines/for-development/concurrency.md)

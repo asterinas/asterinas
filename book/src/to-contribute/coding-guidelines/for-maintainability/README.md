@@ -76,4 +76,7 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
     - [`backtick-identifiers`](rust-specific/comments.md#backtick-identifiers): Wrap identifiers in doc comments in backticks; prefer rustdoc links where possible.
     - [`no-impl-in-docs`](rust-specific/comments.md#no-impl-in-docs): Doc comments describe what an API does and how to use it, not its internal implementation.
 
-No **path-specific** guidelines yet.
+**[Path-Specific](path-specific/)**
+- [`kernel/`](path-specific/kernel.md)
+    - [`use-errno-macro`](path-specific/kernel.md#use-errno-macro): Prefer `errno!` over `Error::new` when constructing kernel errors.
+    - [`track-error-caller`](path-specific/kernel.md#track-error-caller): Add `#[track_caller]` to conversions that construct a kernel `Error`, preserving the conversion call site.
