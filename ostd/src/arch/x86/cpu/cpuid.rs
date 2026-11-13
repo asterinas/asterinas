@@ -97,9 +97,9 @@ pub(in crate::arch) fn query_xstate_max_features() -> Option<u64> {
     Some(xcr_bits | xss_bits)
 }
 
-/// Queries the size in bytes of the XSAVE area containing states enabled by `XCRO` and `IA32_XSS`.
+/// Queries the size of the standard XSAVE area for the states enabled by XCR0.
 pub(in crate::arch) fn query_xsave_area_size() -> Option<u32> {
-    cpuid(Leaf::Xstate as u32, 1).map(|res| res.ebx)
+    cpuid(Leaf::Xstate as u32, 0).map(|res| res.ebx)
 }
 
 /// Queries whether the system is running in QEMU.
