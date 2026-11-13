@@ -38,7 +38,7 @@ pub(crate) struct ThreadLocal {
     /// File table.
     file_table: RefCell<Option<RwArc<FileTable>>>,
     /// File system.
-    fs: RefCell<Arc<ThreadFsInfo>>,
+    fs: RefCell<Option<Arc<ThreadFsInfo>>>,
 
     // Supplementary userspace CPU context.
     supp_user_context: SuppUserContext,
@@ -77,7 +77,7 @@ impl ThreadLocal {
             page_fault_disabled: Cell::new(false),
             robust_list: RefCell::new(None),
             file_table: RefCell::new(Some(file_table)),
-            fs: RefCell::new(fs),
+            fs: RefCell::new(Some(fs)),
             supp_user_context,
             sig_stack: RefCell::new(SigStack::default()),
             sig_mask_saved: Cell::new(None),
@@ -150,18 +150,35 @@ impl ThreadLocal {
         ThreadLocalOptionRefMut(self.file_table.borrow_mut())
     }
 
+    /// Returns a reference to the file system information.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the thread has exited and the file system information has been
+    /// dropped.
     pub(crate) fn borrow_fs(&self) -> Ref<'_, Arc<ThreadFsInfo>> {
-        self.fs.borrow()
+        Ref::map(self.fs.borrow(), |fs| fs.as_ref().unwrap())
     }
 
+    /// Returns a mutable reference to the file system information.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the thread has exited and the file system information has been
+    /// dropped.
     pub(in crate::process) fn borrow_fs_mut(&self) -> RefMut<'_, Arc<ThreadFsInfo>> {
-        self.fs.borrow_mut()
+        RefMut::map(self.fs.borrow_mut(), |fs| fs.as_mut().unwrap())
+    }
+
+    /// Removes the file system information and returns it.
+    pub(super) fn remove_fs(&self) -> Option<Arc<ThreadFsInfo>> {
+        self.fs.borrow_mut().take()
     }
 
     pub(crate) fn is_fs_shared(&self) -> bool {
         // If the filesystem information is not shared, its reference count should be exactly 2:
         // one reference is held by `ThreadLocal` and the other by `PosixThread`.
-        Arc::strong_count(&self.fs.borrow()) > 2
+        Arc::strong_count(&self.borrow_fs()) > 2
     }
 
     pub(crate) fn supp_user_context(&self) -> &SuppUserContext {

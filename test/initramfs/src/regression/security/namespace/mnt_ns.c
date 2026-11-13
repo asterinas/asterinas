@@ -305,6 +305,64 @@ FN_TEST(setns_newns_rejects_shared_fs)
 }
 END_TEST()
 
+static int exit_child_fn(void *arg)
+{
+	return 0;
+}
+
+FN_TEST(setns_newns_after_shared_fs_exits)
+{
+	// Setup
+	TEST_SUCC(mkdir_if_absent("/mnt", 0755));
+	TEST_SUCC(mkdir_if_absent(SETNS_MNT, 0755));
+	int initial_mnt_ns_fd = TEST_SUCC(open("/proc/self/ns/mnt", O_RDONLY));
+
+	int pipefd[2];
+	TEST_SUCC(pipe(pipefd));
+
+	pid_t child_pid = TEST_SUCC(fork());
+
+	if (child_pid == 0) {
+		CHECK(close(pipefd[0]));
+		exit(setns_target_fn(pipefd[1]));
+	}
+
+	TEST_SUCC(close(pipefd[1]));
+
+	char ok;
+	TEST_RES(read(pipefd[0], &ok, 1), _ret == 1 && ok == 'K');
+	TEST_SUCC(close(pipefd[0]));
+
+	int pid_fd = TEST_SUCC(syscall(SYS_pidfd_open, child_pid, 0));
+
+	char *stack = TEST_SUCC(malloc(STACK_SIZE));
+	char *stack_top = stack + STACK_SIZE;
+	pid_t test_pid = TEST_SUCC(
+		clone(exit_child_fn, stack_top, CLONE_FS | SIGCHLD, NULL));
+
+	// An exited child no longer shares the filesystem information, even if
+	// it has not been reaped.
+	TEST_SUCC(waitid(P_PID, test_pid, NULL, WEXITED | WNOWAIT));
+	TEST_SUCC(setns(pid_fd, CLONE_NEWNS));
+	TEST_SUCC(setns(initial_mnt_ns_fd, CLONE_NEWNS));
+
+	int status;
+	TEST_RES(waitpid(test_pid, &status, 0),
+		 _ret == test_pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == 0);
+
+	TEST_SUCC(close(pid_fd));
+	TEST_SUCC(close(initial_mnt_ns_fd));
+
+	// Teardown
+	free(stack);
+	TEST_SUCC(kill(child_pid, SIGKILL));
+	TEST_SUCC(waitpid(child_pid, NULL, 0));
+
+	TEST_SUCC(rmdir(SETNS_MNT));
+}
+END_TEST()
+
 FN_TEST(setns_newns_requires_cap_sys_chroot)
 {
 	// Setup
