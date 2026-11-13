@@ -93,6 +93,9 @@ impl ProcFileOps for MountStatsFileOps {
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let fs = posix_thread.read_fs();
+        let Some(fs) = fs.as_ref() else {
+            return_errno_with_message!(Errno::EINVAL, "the thread has exited");
+        };
         let path_resolver = fs.resolver().read();
         self.read_mount_stats(&path_resolver, offset, writer)
     }

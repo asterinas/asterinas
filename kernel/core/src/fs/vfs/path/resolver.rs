@@ -529,7 +529,11 @@ impl PathResolver {
                 continue;
             }
             let fs = posix_thread.read_fs();
-            if Arc::ptr_eq(&fs, &ctx.thread_local.borrow_fs()) {
+            let Some(fs) = fs.as_ref() else {
+                // The thread has exited.
+                continue;
+            };
+            if Arc::ptr_eq(fs, &ctx.thread_local.borrow_fs()) {
                 continue;
             }
 

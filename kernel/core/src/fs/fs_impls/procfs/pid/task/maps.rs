@@ -96,7 +96,7 @@ impl FileOps for MapsFileHandle {
 
         let current = current_thread!();
         let fs_ref = current.as_posix_thread().unwrap().read_fs();
-        let path_resolver = fs_ref.resolver().read();
+        let path_resolver = fs_ref.as_ref().unwrap().resolver().read();
 
         // To maintain a consistent lock order and avoid race conditions, we must lock the heap
         // before querying the VMAR.
