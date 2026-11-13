@@ -68,6 +68,7 @@ if [ "$(uname -m)" = "x86_64" ]; then
     ./signal/fault_signals
     ./signal/sigaltstack
     ./signal/signal_fpu
+    ./signal/signal_fpstate
     ./signal/signal_rflags_df
     ./signal/signal_test
     ./signal/sigtrap

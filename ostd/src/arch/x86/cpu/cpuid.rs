@@ -84,22 +84,19 @@ pub(in crate::arch) fn query_tsc_freq() -> Option<u64> {
     Some((crystal_freq as u64) * (numerator as u64) / (denominator as u64))
 }
 
-/// Queries the supported XSTATE features, i.e., the supported bits of `XCR0` and `IA32_XSS`.
-pub(in crate::arch) fn query_xstate_max_features() -> Option<u64> {
-    let res0 = cpuid(Leaf::Xstate as u32, 0)?;
-    let res1 = cpuid(Leaf::Xstate as u32, 1)?;
-
-    // Supported bits in `XCR0`.
-    let xcr_bits = (res0.eax as u64) | ((res0.edx as u64) << 32);
-    // Supported bits in `IA32_XSS`.
-    let xss_bits = (res1.ecx as u64) | ((res1.edx as u64) << 32);
-
-    Some(xcr_bits | xss_bits)
+/// Queries the size of the standard XSAVE area for the states enabled by XCR0.
+pub(in crate::arch) fn query_xsave_area_size() -> Option<u32> {
+    cpuid(Leaf::Xstate as u32, 0).map(|res| res.ebx)
 }
 
-/// Queries the size in bytes of the XSAVE area containing states enabled by `XCRO` and `IA32_XSS`.
-pub(in crate::arch) fn query_xsave_area_size() -> Option<u32> {
-    cpuid(Leaf::Xstate as u32, 1).map(|res| res.ebx)
+/// Queries the XSAVE instruction capabilities.
+pub(in crate::arch) fn query_xsave_capabilities() -> Option<u32> {
+    cpuid(Leaf::Xstate as u32, 1).map(|res| res.eax)
+}
+
+/// Queries a user or supervisor extended-state component's layout.
+pub(in crate::arch) fn query_xstate_component(index: u32) -> Option<CpuidResult> {
+    cpuid(Leaf::Xstate as u32, index)
 }
 
 /// Queries whether the system is running in QEMU.
