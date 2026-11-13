@@ -9,15 +9,12 @@ use ostd::sync::{LocalIrqDisabled, WaitQueue};
 use spin::Once;
 
 use crate::{
-    device::{
-        registry::char,
-        tty::{
-            Tty,
-            vt::{
-                MAX_CONSOLES, VtIndex,
-                c_types::{CVtState, ReleaseDisplayType},
-                driver::VtDriver,
-            },
+    device::tty::{
+        Tty, class,
+        vt::{
+            MAX_CONSOLES, VtIndex,
+            c_types::{CVtState, ReleaseDisplayType},
+            driver::VtDriver,
         },
     },
     prelude::*,
@@ -84,7 +81,7 @@ impl VtManager {
             let vt_index = VtIndex::new((i + 1) as u8).unwrap();
             let driver = VtDriver::new(vt_index);
             let tty = Tty::new(vt_index.get() as u32, driver);
-            char::register(tty.clone())?;
+            class::add_tty_device(tty.clone())?;
             Ok::<Arc<Tty<VtDriver>>, Error>(tty)
         })?;
 
