@@ -62,7 +62,9 @@ use core::{
 use spin::Once;
 
 pub(super) use self::{
-    dir::whiteout::WhiteoutCache, identity::IdentityPolicy, inode_cache::InodeCache,
+    dir::whiteout::WhiteoutCache,
+    identity::{IdentityMode, IdentityPolicy},
+    inode_cache::InodeCache,
     xattr::OverlayXattrType,
 };
 use self::{

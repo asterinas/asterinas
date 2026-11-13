@@ -46,6 +46,13 @@ pub(crate) trait FileSystem: Any + Sync + Send {
         Ok(())
     }
 
+    /// Returns this mount's own filesystem options, or `None` if it has none.
+    ///
+    /// The text is escaped for the `/proc` options field and has no leading comma.
+    fn mount_options(&self) -> Option<&str> {
+        None
+    }
+
     /// Returns the FS event subscriber stats of this file system.
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats;
 }

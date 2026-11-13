@@ -143,12 +143,16 @@ impl OverlayFs {
             &policy,
         );
 
+        let uuid_mode = options.effective_uuid_mode(policy.uuid());
+        let mount_options = options.options_segment(uuid_mode, identity.mode());
+
         let inodes = InodeCache::new();
 
         let overlay_fs = Arc::new_cyclic(move |weak| OverlayFs {
             layer_stack,
             policy,
             identity,
+            mount_options,
             upper_workdir_inuse,
             whiteout_cache,
             inodes,

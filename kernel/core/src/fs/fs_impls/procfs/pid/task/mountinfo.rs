@@ -67,6 +67,8 @@ struct MountInfoEntry<'a> {
     source: &'a str,
     /// Per-filesystem flags.
     fs_flags: FsFlags,
+    /// The filesystem's own options, already escaped and without a leading comma.
+    fs_mount_options: Option<&'a str>,
 }
 
 impl core::fmt::Display for MountInfoEntry<'_> {
@@ -85,7 +87,12 @@ impl core::fmt::Display for MountInfoEntry<'_> {
             self.fs_type,
             self.source,
             self.fs_flags,
-        )
+        )?;
+        if let Some(fs_mount_options) = self.fs_mount_options.filter(|options| !options.is_empty())
+        {
+            write!(f, ",{}", fs_mount_options)?;
+        }
+        Ok(())
     }
 }
 
@@ -134,6 +141,7 @@ impl MountInfoFileOps {
             let fs_type = mount.fs().name();
             let source = mount.source().unwrap_or("none");
             let fs_flags = mount.fs().flags();
+            let fs_mount_options = mount.fs().mount_options();
 
             let entry = MountInfoEntry {
                 mount_id,
@@ -147,6 +155,7 @@ impl MountInfoFileOps {
                 fs_type,
                 source,
                 fs_flags,
+                fs_mount_options,
             };
 
             writeln!(printer, "{}", entry)?;
