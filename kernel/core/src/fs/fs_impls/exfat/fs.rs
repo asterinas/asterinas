@@ -183,7 +183,7 @@ impl ExfatFs {
         let sector_size = sb.sector_size;
 
         if !self.is_valid_cluster(cluster) {
-            return_errno_with_message!(Errno::EIO, "invalid access to FAT")
+            return Err(errno!(EIO, "invalid access to FAT"));
         }
 
         let position =
@@ -241,11 +241,11 @@ impl ExfatFs {
         let boot_sector = block_device.read_val::<ExfatBootSector>(0)?;
         /* Check the validity of BOOT */
         if boot_sector.signature != BOOT_SIGNATURE {
-            return_errno_with_message!(Errno::EINVAL, "invalid boot record signature");
+            return Err(errno!(EINVAL, "invalid boot record signature"));
         }
 
         if !boot_sector.fs_name.eq(STR_EXFAT.as_bytes()) {
-            return_errno_with_message!(Errno::EINVAL, "invalid fs name");
+            return Err(errno!(EINVAL, "invalid fs name"));
         }
 
         /*
@@ -253,25 +253,25 @@ impl ExfatFs {
          * from FAT volume.
          */
         if boot_sector.must_be_zero.iter().any(|&x| x != 0) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "must_be_zero field must be filled with zero"
-            );
+            ));
         }
 
         if boot_sector.num_fats != 1 && boot_sector.num_fats != 2 {
-            return_errno_with_message!(Errno::EINVAL, "bogus number of FAT structure");
+            return Err(errno!(EINVAL, "bogus number of FAT structure"));
         }
 
         // sect_size_bits could be at least 9 and at most 12.
         if boot_sector.sector_size_bits < EXFAT_MIN_SECT_SIZE_BITS
             || boot_sector.sector_size_bits > EXFAT_MAX_SECT_SIZE_BITS
         {
-            return_errno_with_message!(Errno::EINVAL, "bogus sector size bits");
+            return Err(errno!(EINVAL, "bogus sector size bits"));
         }
 
         if boot_sector.sector_per_cluster_bits + boot_sector.sector_size_bits > 25 {
-            return_errno_with_message!(Errno::EINVAL, "bogus sector size bits per cluster");
+            return Err(errno!(EINVAL, "bogus sector size bits per cluster"));
         }
 
         let super_block = ExfatSuperBlock::try_from(boot_sector)?;
@@ -280,14 +280,14 @@ impl ExfatFs {
         if ((super_block.num_fat_sectors as u64) << boot_sector.sector_size_bits)
             < (super_block.num_clusters as u64) * 4
         {
-            return_errno_with_message!(Errno::EINVAL, "bogus fat length");
+            return Err(errno!(EINVAL, "bogus fat length"));
         }
 
         if super_block.data_start_sector
             < super_block.fat1_start_sector
                 + (super_block.num_fat_sectors as u64 * boot_sector.num_fats as u64)
         {
-            return_errno_with_message!(Errno::EINVAL, "bogus data start vector");
+            return Err(errno!(EINVAL, "bogus data start vector"));
         }
 
         if (super_block.vol_flags & VOLUME_DIRTY as u32) != 0 {
@@ -384,7 +384,7 @@ impl BlockAsPageCacheBackend for ExfatFs {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.fs_size() < idx * PAGE_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "invalid read size");
+            return Err(errno!(EINVAL, "invalid read size"));
         }
         self.block_device.read_blocks_async(
             BlockId::new(idx as u64),
@@ -403,7 +403,7 @@ impl BlockAsPageCacheBackend for ExfatFs {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.fs_size() < idx * PAGE_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "invalid write size");
+            return Err(errno!(EINVAL, "invalid write size"));
         }
         self.block_device.write_blocks_async(
             BlockId::new(idx as u64),

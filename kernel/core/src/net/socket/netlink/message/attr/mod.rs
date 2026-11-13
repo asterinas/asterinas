@@ -161,10 +161,7 @@ pub(crate) trait Attribute: Debug + Send + Sync {
         while total_len > 0 {
             // Validate the remaining length for the attribute header length.
             if total_len < size_of::<CAttrHeader>() {
-                error = Some(Error::with_message(
-                    Errno::EINVAL,
-                    "the reader length is too small",
-                ));
+                error = Some(errno!(EINVAL, "the reader length is too small",));
                 break;
             }
 
@@ -172,19 +169,13 @@ pub(crate) trait Attribute: Debug + Send + Sync {
             let header = reader.read_val_opt::<CAttrHeader>()?.unwrap();
             total_len -= size_of::<CAttrHeader>();
             if header.total_len() < size_of::<CAttrHeader>() {
-                error = Some(Error::with_message(
-                    Errno::EINVAL,
-                    "the attribute length is too small",
-                ));
+                error = Some(errno!(EINVAL, "the attribute length is too small",));
                 break;
             }
 
             // Validate the remaining length for the attribute payload length.
             if header.payload_len() > total_len {
-                error = Some(Error::with_message(
-                    Errno::EINVAL,
-                    "the reader size is too small",
-                ));
+                error = Some(errno!(EINVAL, "the reader size is too small",));
                 break;
             }
             total_len -= header.payload_len();
@@ -194,10 +185,7 @@ pub(crate) trait Attribute: Debug + Send + Sync {
                 ContinueAttrRead::Parsed(attr) => res.push(attr),
                 ContinueAttrRead::SkippedUnsupported => {
                     if validation == AttrValidation::Strict {
-                        error = Some(Error::with_message(
-                            Errno::EINVAL,
-                            "the attribute is not supported",
-                        ));
+                        error = Some(errno!(EINVAL, "the attribute is not supported",));
                         break;
                     }
                 }

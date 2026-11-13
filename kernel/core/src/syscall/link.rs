@@ -22,8 +22,8 @@ pub(super) fn sys_linkat(
 
     let old_path_name = user_space.read_cstring(old_path_addr, MAX_FILENAME_LEN)?;
     let new_path_name = user_space.read_cstring(new_path_addr, MAX_FILENAME_LEN)?;
-    let flags: LinkFlags = LinkFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let flags: LinkFlags =
+        LinkFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
     debug!(
         "old_dirfd = {}, old_path = {:?}, new_dirfd = {}, new_path = {:?}, flags = {:?}",
         old_dirfd, old_path_name, new_dirfd, new_path_name, flags
@@ -49,7 +49,7 @@ pub(super) fn sys_linkat(
             path_resolver.lookup_no_follow(&old_fs_path)?
         };
         if old_path.type_() == InodeType::Dir {
-            return_errno_with_message!(Errno::EPERM, "the link path is a directory");
+            return Err(errno!(EPERM, "the link path is a directory"));
         }
 
         let (new_path, new_name) = path_resolver

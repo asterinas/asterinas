@@ -148,19 +148,15 @@ impl Inode for Ext2Inode {
             inode_type @ (InodeType::BlockDevice | InodeType::CharDevice) => {
                 let device_id = self.device_id();
                 let Some(device_id) = DeviceId::from_encoded_u64(device_id) else {
-                    return Some(Err(Error::with_message(
-                        Errno::ENODEV,
-                        "the device ID is invalid",
-                    )));
+                    return Some(Err(errno!(ENODEV, "the device ID is invalid",)));
                 };
                 let device_type = inode_type
                     .device_type()
                     .expect("BlockDevice and CharDevice always have a device type");
                 let Some(device) = device::lookup(device_type, device_id) else {
-                    return Some(Err(Error::with_message(
-                        Errno::ENODEV,
-                        "the required device ID does not exist",
-                    )));
+                    return Some(Err(
+                        errno!(ENODEV, "the required device ID does not exist",),
+                    ));
                 };
 
                 Some(device.open())
@@ -243,7 +239,7 @@ impl Inode for Ext2Inode {
         mode: RenameMode,
     ) -> Result<()> {
         if mode == RenameMode::Exchange {
-            return_errno_with_message!(Errno::EINVAL, "RENAME_EXCHANGE is not supported on ext2");
+            return Err(errno!(EINVAL, "RENAME_EXCHANGE is not supported on ext2"));
         }
 
         let new_dir_inode = new_dir_dentry.inode().downcast_ref::<Ext2Inode>().unwrap();
@@ -275,7 +271,7 @@ impl Inode for Ext2Inode {
         let block_group = fs.block_group(self.block_group_idx());
         block_group.sync_inode_table()?;
         if fs.block_device().sync()? != BioStatus::Complete {
-            return_errno_with_message!(Errno::EIO, "failed to flush block device");
+            return Err(errno!(EIO, "failed to flush block device"));
         }
         Ok(())
     }

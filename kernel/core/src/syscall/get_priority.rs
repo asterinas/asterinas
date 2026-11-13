@@ -35,7 +35,7 @@ pub(super) fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<Sy
 pub(super) fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Process>>> {
     let processes = collect_processes(prio_target);
     if processes.is_empty() {
-        return_errno_with_message!(Errno::ESRCH, "the target process does not exist");
+        return Err(errno!(ESRCH, "the target process does not exist"));
     }
     Ok(processes)
 }
@@ -80,8 +80,7 @@ pub(super) enum PriorityTarget {
 
 impl PriorityTarget {
     pub(super) fn new(which: i32, who: u32, ctx: &Context) -> Result<Self> {
-        let which = Which::try_from(which)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "invalid which value"))?;
+        let which = Which::try_from(which).map_err(|_| errno!(EINVAL, "invalid which value"))?;
         match which {
             Which::PRIO_PROCESS => {
                 let pid = if who == 0 {

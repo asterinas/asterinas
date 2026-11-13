@@ -146,48 +146,48 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
 
     fn try_from(sb: RawSuperBlock) -> Result<Self> {
         if sb.magic != MAGIC_NUM {
-            return_errno_with_message!(Errno::EINVAL, "bad ext2 magic number");
+            return Err(errno!(EINVAL, "bad ext2 magic number"));
         }
 
         if sb.log_block_size != 2 {
-            return_errno_with_message!(Errno::EINVAL, "unsupported block size");
+            return Err(errno!(EINVAL, "unsupported block size"));
         }
         if sb.log_frag_size != sb.log_block_size {
-            return_errno_with_message!(Errno::EINVAL, "invalid fragment size");
+            return Err(errno!(EINVAL, "invalid fragment size"));
         }
 
         let block_size = BLOCK_SIZE;
         let frag_size = BLOCK_SIZE;
 
-        let state = FsState::from_bits(sb.state)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid fs state"))?;
+        let state =
+            FsState::from_bits(sb.state).ok_or_else(|| errno!(EINVAL, "invalid fs state"))?;
 
         let errors_behavior = ErrorsBehavior::try_from(sb.errors)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "invalid errors behavior"))?;
+            .map_err(|_| errno!(EINVAL, "invalid errors behavior"))?;
         if errors_behavior != ErrorsBehavior::Continue {
-            return_errno_with_message!(Errno::EINVAL, "unsupported errors behavior");
+            return Err(errno!(EINVAL, "unsupported errors behavior"));
         }
 
-        let creator_os = OsId::try_from(sb.creator_os)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "invalid creator os"))?;
+        let creator_os =
+            OsId::try_from(sb.creator_os).map_err(|_| errno!(EINVAL, "invalid creator os"))?;
         if creator_os != OsId::Linux {
-            return_errno_with_message!(Errno::EINVAL, "not supported os id");
+            return Err(errno!(EINVAL, "not supported os id"));
         }
 
         let rev_level = RevLevel::try_from(sb.rev_level)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "invalid revision level"))?;
+            .map_err(|_| errno!(EINVAL, "invalid revision level"))?;
         let (first_ino, inode_size) = match rev_level {
             RevLevel::GoodOld => (11, 128usize),
             RevLevel::Dynamic => {
                 let inode_size = sb.inode_size as usize;
                 if inode_size < 128 {
-                    return_errno_with_message!(Errno::EINVAL, "inode size is too small");
+                    return Err(errno!(EINVAL, "inode size is too small"));
                 }
                 if inode_size > BLOCK_SIZE {
-                    return_errno_with_message!(Errno::EINVAL, "inode size is too large");
+                    return Err(errno!(EINVAL, "inode size is too large"));
                 }
                 if !inode_size.is_power_of_two() {
-                    return_errno_with_message!(Errno::EINVAL, "inode size is not power of two");
+                    return Err(errno!(EINVAL, "inode size is not power of two"));
                 }
                 (sb.first_ino, inode_size)
             }
@@ -196,31 +196,31 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
         let nr_inodes_per_group = sb.inodes_per_group;
         let nr_blocks_per_group = sb.blocks_per_group;
         if nr_inodes_per_group == 0 || nr_blocks_per_group == 0 {
-            return_errno_with_message!(Errno::EINVAL, "invalid group sizes");
+            return Err(errno!(EINVAL, "invalid group sizes"));
         }
 
         let inodes_per_block = (block_size / inode_size) as u32;
         if nr_inodes_per_group < inodes_per_block {
-            return_errno_with_message!(Errno::EINVAL, "inodes per group is too small");
+            return Err(errno!(EINVAL, "inodes per group is too small"));
         }
 
         let max_bits_per_group = (block_size as u32) * 8;
         if nr_inodes_per_group > max_bits_per_group {
-            return_errno_with_message!(Errno::EINVAL, "inodes per group is too large");
+            return Err(errno!(EINVAL, "inodes per group is too large"));
         }
         if nr_blocks_per_group > max_bits_per_group {
-            return_errno_with_message!(Errno::EINVAL, "blocks per group is too large");
+            return Err(errno!(EINVAL, "blocks per group is too large"));
         }
 
         let nr_inode_table_blocks_per_group = nr_inodes_per_group / inodes_per_block;
         if nr_blocks_per_group <= nr_inode_table_blocks_per_group + 3 {
-            return_errno_with_message!(Errno::EINVAL, "blocks per group is too small");
+            return Err(errno!(EINVAL, "blocks per group is too small"));
         }
 
         let blocks_count = sb.blocks_count as u64;
         let first_data_block = sb.first_data_block as u64;
         if blocks_count <= first_data_block + 1 {
-            return_errno_with_message!(Errno::EINVAL, "invalid blocks count");
+            return Err(errno!(EINVAL, "invalid blocks count"));
         }
         let blocks_after_first_data = blocks_count - first_data_block - 1;
         let nr_block_groups = (blocks_after_first_data / nr_blocks_per_group as u64) + 1;
@@ -231,20 +231,20 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
         let min_inodes = (nr_block_groups - 1) * (nr_inodes_per_group as u64);
         let inodes_count = sb.inodes_count as u64;
         if inodes_count <= min_inodes || inodes_count > max_inodes {
-            return_errno_with_message!(Errno::EINVAL, "invalid inodes count");
+            return Err(errno!(EINVAL, "invalid inodes count"));
         }
         if sb.free_blocks_count > sb.blocks_count {
-            return_errno_with_message!(Errno::EINVAL, "free blocks count exceeds blocks count");
+            return Err(errno!(EINVAL, "free blocks count exceeds blocks count"));
         }
         if sb.free_inodes_count > sb.inodes_count {
-            return_errno_with_message!(Errno::EINVAL, "free inodes count exceeds inodes count");
+            return Err(errno!(EINVAL, "free inodes count exceeds inodes count"));
         }
 
         let feature_compat = FeatureCompatSet::from_bits_truncate(sb.feature_compat);
 
         let allowed_incompat = FeatureInCompatSet::FILETYPE.bits();
         if (sb.feature_incompat & !allowed_incompat) != 0 {
-            return_errno_with_message!(Errno::EINVAL, "unsupported incompat feature");
+            return Err(errno!(EINVAL, "unsupported incompat feature"));
         }
         let feature_incompat = FeatureInCompatSet::from_bits_truncate(sb.feature_incompat);
 
@@ -252,7 +252,7 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             | FeatureRoCompatSet::LARGE_FILE.bits()
             | FeatureRoCompatSet::BTREE_DIR.bits();
         if (sb.feature_ro_compat & !allowed_ro_compat) != 0 {
-            return_errno_with_message!(Errno::EINVAL, "unsupported ro-compatible feature");
+            return Err(errno!(EINVAL, "unsupported ro-compatible feature"));
         }
         let feature_ro_compat = FeatureRoCompatSet::from_bits_truncate(sb.feature_ro_compat);
 
@@ -490,7 +490,7 @@ impl SuperBlock {
         self.free_blocks_count = self
             .free_blocks_count
             .checked_add(count)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "free block counter overflow"))?;
+            .ok_or_else(|| errno!(EIO, "free block counter overflow"))?;
         Ok(())
     }
 
@@ -504,7 +504,7 @@ impl SuperBlock {
         self.free_blocks_count = self
             .free_blocks_count
             .checked_sub(count)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "free block counter underflow"))?;
+            .ok_or_else(|| errno!(EIO, "free block counter underflow"))?;
         Ok(())
     }
 
@@ -523,7 +523,7 @@ impl SuperBlock {
         self.free_inodes_count = self
             .free_inodes_count
             .checked_add(1)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "free inode counter overflow"))?;
+            .ok_or_else(|| errno!(EIO, "free inode counter overflow"))?;
         Ok(())
     }
 
@@ -537,7 +537,7 @@ impl SuperBlock {
         self.free_inodes_count = self
             .free_inodes_count
             .checked_sub(1)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "free inode counter underflow"))?;
+            .ok_or_else(|| errno!(EIO, "free inode counter underflow"))?;
         Ok(())
     }
 

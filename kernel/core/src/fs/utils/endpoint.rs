@@ -143,7 +143,7 @@ impl<T: AsRef<EndpointState>> Endpoint<T> {
         } else if is_shutdown {
             Ok(0)
         } else {
-            return_errno_with_message!(Errno::EAGAIN, "the channel is empty");
+            Err(errno!(EAGAIN, "the channel is empty"))
         }
     }
 
@@ -159,13 +159,13 @@ impl<T: AsRef<EndpointState>> Endpoint<T> {
         F: FnOnce() -> Result<usize>,
     {
         if self.is_shutdown() {
-            return_errno_with_message!(Errno::EPIPE, "the channel is shut down");
+            return Err(errno!(EPIPE, "the channel is shut down"));
         }
 
         let written_len = write()?;
 
         if written_len == 0 {
-            return_errno_with_message!(Errno::EAGAIN, "the channel is full");
+            return Err(errno!(EAGAIN, "the channel is full"));
         }
 
         Ok(written_len)

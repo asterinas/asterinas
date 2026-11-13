@@ -27,7 +27,7 @@ impl FileSystem for Ext2 {
     fn sync(&self) -> Result<()> {
         self.sync_all()?;
         if self.block_device().sync()? != BioStatus::Complete {
-            return_errno_with_message!(Errno::EIO, "failed to flush block device");
+            return Err(errno!(EIO, "failed to flush block device"));
         }
         Ok(())
     }

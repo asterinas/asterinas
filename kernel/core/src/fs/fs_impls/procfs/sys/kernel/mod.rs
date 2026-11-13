@@ -83,7 +83,7 @@ impl ProcDirOps for KernelDirOps {
             return Ok(YamaDirOps::new_inode(this_dir.this_weak().clone()));
         }
 
-        return_errno_with_message!(Errno::ENOENT, "the file does not exist");
+        Err(errno!(ENOENT, "the file does not exist"))
     }
 
     fn visit_entries_from_offset<'a, F>(&'a self, offset: usize, visit_fn: F) -> Result<()>

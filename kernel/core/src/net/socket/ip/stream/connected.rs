@@ -52,14 +52,14 @@ impl ConnectedStream {
 
         if cmd.shut_read() {
             if !self.tcp_conn.shut_recv() {
-                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+                return Err(errno!(ENOTCONN, "the socket is not connected"));
             }
             events |= IoEvents::IN | IoEvents::RDHUP;
         }
 
         if cmd.shut_write() {
             if !self.tcp_conn.shut_send() {
-                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+                return Err(errno!(ENOTCONN, "the socket is not connected"));
             }
             events |= IoEvents::OUT | IoEvents::HUP;
         }
@@ -93,9 +93,7 @@ impl ConnectedStream {
 
         match result {
             Ok((recv_bytes, need_poll)) => Ok((recv_bytes.get(), need_poll)),
-            Err(IoError::NoProgress) => {
-                return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
-            }
+            Err(IoError::NoProgress) => Err(errno!(EAGAIN, "the receive buffer is empty")),
             Err(IoError::Copy(e)) => Err(e.into()),
             Err(IoError::Socket(RecvError::Finished | RecvError::InvalidState)) => {
                 // `InvalidState` occurs when the connection is reset but `ECONNRESET` was reported
@@ -103,7 +101,7 @@ impl ConnectedStream {
                 Ok((0, NeedIfacePoll::FALSE))
             }
             Err(IoError::Socket(RecvError::ConnReset)) => {
-                return_errno_with_message!(Errno::ECONNRESET, "the connection is reset")
+                Err(errno!(ECONNRESET, "the connection is reset"))
             }
         }
     }
@@ -119,15 +117,13 @@ impl ConnectedStream {
 
         match result {
             Ok((sent_bytes, need_poll)) => Ok((sent_bytes.get(), need_poll)),
-            Err(IoError::NoProgress) => {
-                return_errno_with_message!(Errno::EAGAIN, "the send buffer is full")
-            }
+            Err(IoError::NoProgress) => Err(errno!(EAGAIN, "the send buffer is full")),
             Err(IoError::Copy(e)) => Err(e.into()),
             Err(IoError::Socket(SendError::InvalidState)) => {
-                return_errno_with_message!(Errno::EPIPE, "the connection is closed");
+                Err(errno!(EPIPE, "the connection is closed"))
             }
             Err(IoError::Socket(SendError::ConnReset)) => {
-                return_errno_with_message!(Errno::ECONNRESET, "the connection is reset");
+                Err(errno!(ECONNRESET, "the connection is reset"))
             }
         }
     }
@@ -150,7 +146,7 @@ impl ConnectedStream {
 
     pub(super) fn finish_last_connect(&mut self) -> Result<()> {
         if !self.is_new_connection {
-            return_errno_with_message!(Errno::EISCONN, "the socket is already connected");
+            return Err(errno!(EISCONN, "the socket is already connected"));
         }
 
         self.is_new_connection = false;
@@ -198,10 +194,7 @@ impl ConnectedStream {
 
     pub(super) fn test_and_clear_error(&self) -> Option<Error> {
         if self.tcp_conn.clear_rst_closed() {
-            Some(Error::with_message(
-                Errno::ECONNRESET,
-                "the connection is reset",
-            ))
+            Some(errno!(ECONNRESET, "the connection is reset",))
         } else {
             None
         }

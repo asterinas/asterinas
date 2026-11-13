@@ -42,10 +42,10 @@ pub(super) fn sys_rt_sigaction(
 
     let old_action = if sig_action_addr != 0 {
         if sig_num == SIGKILL || sig_num == SIGSTOP {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "cannot set a new signal action for SIGKILL and SIGSTOP"
-            );
+            ));
         }
 
         let sig_action_c = ctx.user_space().read_val::<sigaction_t>(sig_action_addr)?;

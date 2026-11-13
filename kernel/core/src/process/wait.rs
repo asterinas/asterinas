@@ -80,10 +80,7 @@ pub(crate) fn do_wait(
                 };
 
                 if !has_unready_tracee && !has_unready_child {
-                    return Some(Err(Error::with_message(
-                        Errno::ECHILD,
-                        "the process has no child to wait",
-                    )));
+                    return Some(Err(errno!(ECHILD, "the process has no child to wait",)));
                 }
 
                 if wait_options.contains(WaitOptions::WNOHANG) {
@@ -91,8 +88,8 @@ pub(crate) fn do_wait(
                 }
 
                 if is_nonblocking {
-                    return Some(Err(Error::with_message(
-                        Errno::EAGAIN,
+                    return Some(Err(errno!(
+                        EAGAIN,
                         "the PID file is nonblocking and the child has not terminated",
                     )));
                 }

@@ -407,7 +407,7 @@ impl InitStackWriter<'_> {
             self.pos.store(new_pos, Ordering::Relaxed);
             return Ok(new_pos);
         }
-        return_errno_with_message!(Errno::E2BIG, "the init stack overflows");
+        Err(errno!(E2BIG, "the init stack overflows"))
     }
 
     fn pos(&self) -> Vaddr {

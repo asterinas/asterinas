@@ -63,7 +63,7 @@ impl FsType for PipeFsType {
     }
 
     fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        return_errno_with_message!(Errno::EINVAL, "pipefs cannot be mounted");
+        Err(errno!(EINVAL, "pipefs cannot be mounted"))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

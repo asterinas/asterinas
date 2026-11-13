@@ -94,7 +94,7 @@ impl ListenerInner {
     pub(self) fn pop_incoming(&self) -> Result<Arc<ConnectionInner>> {
         let mut incoming_conns = self.incoming_conns.lock();
         let Some(connection) = incoming_conns.pop_front() else {
-            return_errno_with_message!(Errno::EAGAIN, "no pending connection is available");
+            return Err(errno!(EAGAIN, "no pending connection is available"));
         };
         self.num_conns
             .store(incoming_conns.len(), Ordering::Relaxed);

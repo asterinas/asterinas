@@ -50,9 +50,9 @@ use crate::{
 impl OverlayFs {
     pub(in overlayfs) fn new(fs_creation_ctx: &FsCreationCtx) -> Result<Arc<Self>> {
         let options = MountOptions::parse(fs_creation_ctx.args(), fs_creation_ctx.flags())?;
-        let ctx = fs_creation_ctx.ctx().ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "the overlay mount has no task context")
-        })?;
+        let ctx = fs_creation_ctx
+            .ctx()
+            .ok_or_else(|| errno!(EINVAL, "the overlay mount has no task context"))?;
         let roots = MountRoots::resolve(ctx, &options)?;
         let is_effective_read_only = roots.is_effective_read_only(&options);
         let upper_workdir = roots.claim_upper_workdir(&options)?;
@@ -75,10 +75,10 @@ impl OverlayFs {
                     UpperFilesystemCapabilities::probe(&inuse_pair, xattr_namespace)?;
                 // Whiteout suppression and the merge trust the reported type; no stat fallback.
                 if !capabilities.can_report_directory_type() {
-                    return_errno_with_message!(
-                        Errno::EOPNOTSUPP,
+                    return Err(errno!(
+                        EOPNOTSUPP,
                         "the upper filesystem cannot report directory entry types"
-                    );
+                    ));
                 }
                 let is_uuid_effective = capabilities.validate_uuid_support(uuid_mode)?;
 
@@ -89,10 +89,10 @@ impl OverlayFs {
                         }
                         Err(persist_err) => match uuid_mode {
                             UuidMode::On => {
-                                return_errno_with_message!(
-                                    Errno::EOPNOTSUPP,
+                                return Err(errno!(
+                                    EOPNOTSUPP,
                                     "failed to persist the overlay uuid"
-                                );
+                                ));
                             }
                             UuidMode::Auto => {
                                 warn!(
@@ -129,8 +129,8 @@ impl OverlayFs {
         );
 
         let anon_device_id = AnonDeviceId::acquire().ok_or_else(|| {
-            Error::with_message(
-                Errno::ENOSPC,
+            errno!(
+                ENOSPC,
                 "no anonymous device ID is available for the overlay mount",
             )
         })?;

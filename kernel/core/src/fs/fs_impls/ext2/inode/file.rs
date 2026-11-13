@@ -26,7 +26,7 @@ impl Inode {
     /// Reads file data at `offset` through the page cache.
     pub(in ext2) fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         if self.type_ == InodeType::Dir {
-            return_errno!(Errno::EISDIR);
+            return Err(errno!(EISDIR));
         }
 
         if writer.avail() == 0 {
@@ -43,7 +43,7 @@ impl Inode {
     /// Writes file data at `offset` through the page cache.
     pub(in ext2) fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         if self.type_ == InodeType::Dir {
-            return_errno!(Errno::EISDIR);
+            return Err(errno!(EISDIR));
         }
 
         let write_len = reader.remain();
@@ -59,13 +59,13 @@ impl Inode {
     /// Direct-I/O read path.
     pub(in ext2) fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         if self.type_ == InodeType::Dir {
-            return_errno!(Errno::EISDIR);
+            return Err(errno!(EISDIR));
         }
 
         let read_len = writer.avail();
         if !is_block_aligned(offset) || !is_block_aligned(read_len) {
             // TODO: Implement a fallback mechanism.
-            return_errno_with_message!(Errno::EINVAL, "not block-aligned");
+            return Err(errno!(EINVAL, "not block-aligned"));
         }
         if read_len == 0 {
             return Ok(0);
@@ -82,7 +82,7 @@ impl Inode {
     /// Direct-I/O write path with pre-allocation and rollback.
     pub(in ext2) fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         if self.type_ == InodeType::Dir {
-            return_errno!(Errno::EISDIR);
+            return Err(errno!(EISDIR));
         }
 
         let write_len = reader.remain();
@@ -91,7 +91,7 @@ impl Inode {
         }
         if !is_block_aligned(offset) || !is_block_aligned(write_len) {
             // TODO: Implement a fallback mechanism.
-            return_errno_with_message!(Errno::EINVAL, "not block-aligned");
+            return Err(errno!(EINVAL, "not block-aligned"));
         }
 
         let fs = self.fs()?;
@@ -102,23 +102,23 @@ impl Inode {
     /// Truncates or extends the file to `new_size` bytes.
     pub(in ext2) fn resize(&self, new_size: usize) -> Result<()> {
         if self.type_ == InodeType::Dir {
-            return_errno!(Errno::EISDIR);
+            return Err(errno!(EISDIR));
         }
         if self.type_ != InodeType::File && self.type_ != InodeType::SymLink {
-            return_errno!(Errno::EINVAL);
+            return Err(errno!(EINVAL));
         }
 
         let fs = self.fs()?;
         let mut inner = self.inner.write();
         if inner.is_fast_symlink() && inner.file_size() != 0 {
-            return_errno!(Errno::EINVAL);
+            return Err(errno!(EINVAL));
         }
         if inner
             .desc
             .flags
             .intersects(FileFlags::APPEND_ONLY | FileFlags::IMMUTABLE)
         {
-            return_errno!(Errno::EPERM);
+            return Err(errno!(EPERM));
         }
 
         let old_size = inner.file_size();
@@ -142,7 +142,7 @@ impl Inode {
         }
         let end = offset
             .checked_add(len)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "fallocate range overflow"))?;
+            .ok_or_else(|| errno!(EINVAL, "fallocate range overflow"))?;
         let fs = self.fs()?;
         let inner = self.inner.write();
         let old_size = inner.file_size();
@@ -163,10 +163,10 @@ impl Inode {
             }
             _ => {
                 let _ = DropGuard::dismiss(inner);
-                return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
+                return Err(errno!(
+                    EOPNOTSUPP,
                     "fallocate with the specified flags is not supported"
-                );
+                ));
             }
         }
 
@@ -248,7 +248,7 @@ impl InodeInner {
 
         let end = offset
             .checked_add(write_len)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
+            .ok_or_else(|| errno!(EINVAL, "write range overflow"))?;
         let old_size = self.file_size();
 
         let mut this = DropGuard::new(self, |this| this.rollback_write(old_size, end));
@@ -296,7 +296,7 @@ impl InodeInner {
 
         let end = offset
             .checked_add(write_len)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
+            .ok_or_else(|| errno!(EINVAL, "write range overflow"))?;
         let old_size = self.file_size();
 
         let mut this = DropGuard::new(self, |this| this.rollback_write(old_size, end));
@@ -328,9 +328,9 @@ impl InodeInner {
         writer: &mut VmWriter,
     ) -> Result<()> {
         let iblock_start = Iblock::try_from(offset / BLOCK_SIZE)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
+            .map_err(|_| errno!(EINVAL, "logical block number overflow"))?;
         let iblock_end = Iblock::try_from(end.div_ceil(BLOCK_SIZE))
-            .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
+            .map_err(|_| errno!(EINVAL, "logical block number overflow"))?;
         let iblock_range = iblock_start..iblock_end;
         let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range);
 
@@ -365,9 +365,9 @@ impl InodeInner {
         // `end` is already checked in `InodeInner::write_direct_at`.
         let end = offset + write_len;
         let iblock_start = Iblock::try_from(offset / BLOCK_SIZE)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
+            .map_err(|_| errno!(EINVAL, "logical block number overflow"))?;
         let iblock_end = Iblock::try_from(end.div_ceil(BLOCK_SIZE))
-            .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
+            .map_err(|_| errno!(EINVAL, "logical block number overflow"))?;
         let iblock_range = iblock_start..iblock_end;
         let mut range_iter = self.block_manager()?.iter_io_ranges(iblock_range);
 
@@ -386,7 +386,7 @@ impl InodeInner {
                     //
                     // TODO: Consider removing preallocation and falling back to
                     // buffered I/O on holes, as Linux does.
-                    return_errno_with_message!(Errno::EIO, "unexpected hole in direct write path");
+                    return Err(errno!(EIO, "unexpected hole in direct write path"));
                 }
             }
         }
@@ -433,7 +433,7 @@ impl InodeInner {
             _ => u32::MAX as usize,
         };
         if new_size > max_size {
-            return_errno_with_message!(Errno::EFBIG, "inode size exceeds ext2 maximum");
+            return Err(errno!(EFBIG, "inode size exceeds ext2 maximum"));
         }
 
         Ok(())

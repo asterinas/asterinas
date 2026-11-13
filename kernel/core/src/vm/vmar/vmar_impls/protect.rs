@@ -29,10 +29,10 @@ impl Vmar {
         let mut last_mapping_end = range.start;
         for (vm_mapping_range, vm_mapping_perms) in protect_mappings {
             if last_mapping_end < vm_mapping_range.start {
-                return_errno_with_message!(
-                    Errno::ENOMEM,
+                return Err(errno!(
+                    ENOMEM,
                     "the range contains pages that are not mapped"
-                );
+                ));
             }
             last_mapping_end = vm_mapping_range.end;
 
@@ -71,10 +71,10 @@ impl Vmar {
         }
 
         if last_mapping_end < range.end {
-            return_errno_with_message!(
-                Errno::ENOMEM,
+            return Err(errno!(
+                ENOMEM,
                 "the range contains pages that are not mapped"
-            );
+            ));
         }
 
         Ok(())

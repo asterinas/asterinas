@@ -111,7 +111,7 @@ impl TryFrom<u32> for SigActionFlags {
 
     fn try_from(bits: u32) -> Result<Self> {
         let flags = SigActionFlags::from_bits(bits)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid sig action flag"))?;
+            .ok_or_else(|| errno!(EINVAL, "invalid sig action flag"))?;
         Ok(flags)
     }
 }

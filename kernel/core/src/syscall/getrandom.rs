@@ -9,18 +9,17 @@ pub(super) fn sys_getrandom(
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = GetRandomFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let flags = GetRandomFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
     debug!(
         "buf = 0x{:x}, count = 0x{:x}, flags = {:?}",
         buf, count, flags
     );
 
     if flags.contains(GetRandomFlags::GRND_INSECURE | GetRandomFlags::GRND_RANDOM) {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "requesting insecure and blocking randomness makes no sense"
-        );
+        ));
     }
 
     // Currently we don't really generate true randomness by collecting environment noise, so we

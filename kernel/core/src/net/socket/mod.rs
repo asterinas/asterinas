@@ -61,7 +61,7 @@ mod private {
                 self.wait_events(events, timeout.as_ref(), try_op)
                     .map_err(|err| match err.error() {
                         Errno::ETIME => {
-                            Error::with_message(Errno::EAGAIN, "the socket timeout expired")
+                            errno!(EAGAIN, "the socket timeout expired")
                         }
                         _ => err,
                     })
@@ -70,7 +70,7 @@ mod private {
 
         /// Handles commands specific to its protocol or socket type.
         fn protocol_ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
-            return_errno_with_message!(Errno::ENOTTY, "the socket ioctl command is unknown");
+            Err(errno!(ENOTTY, "the socket ioctl command is unknown"))
         }
     }
 }
@@ -79,49 +79,49 @@ mod private {
 pub(crate) trait Socket: private::SocketPrivate + Send + Sync {
     /// Assigns the specified address to the socket.
     fn bind(&self, _socket_addr: SocketAddr) -> Result<()> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "bind() is not supported");
+        Err(errno!(EOPNOTSUPP, "bind() is not supported"))
     }
 
     /// Builds a connection for the given address
     fn connect(&self, _socket_addr: SocketAddr) -> Result<()> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "connect() is not supported");
+        Err(errno!(EOPNOTSUPP, "connect() is not supported"))
     }
 
     /// Listens for connections on the socket.
     fn listen(&self, _backlog: usize) -> Result<()> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "listen() is not supported");
+        Err(errno!(EOPNOTSUPP, "listen() is not supported"))
     }
 
     /// Accepts a connection on the socket.
     fn accept(&self, _is_nonblocking: bool) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "accept() is not supported");
+        Err(errno!(EOPNOTSUPP, "accept() is not supported"))
     }
 
     /// Shuts down part of a full-duplex connection.
     fn shutdown(&self, _cmd: SockShutdownCmd) -> Result<()> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "shutdown() is not supported");
+        Err(errno!(EOPNOTSUPP, "shutdown() is not supported"))
     }
 
     /// Gets the address of this socket.
     fn addr(&self) -> Result<SocketAddr> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "getsockname() is not supported");
+        Err(errno!(EOPNOTSUPP, "getsockname() is not supported"))
     }
 
     /// Gets the address of the peer socket.
     fn peer_addr(&self) -> Result<SocketAddr> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "getpeername() is not supported");
+        Err(errno!(EOPNOTSUPP, "getpeername() is not supported"))
     }
 
     /// Gets options on the socket.
     ///
     /// If the method succeeds, the result will be stored in the `option` parameter.
     fn get_option(&self, _option: &mut dyn SocketOption) -> Result<()> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "getsockopt() is not supported");
+        Err(errno!(EOPNOTSUPP, "getsockopt() is not supported"))
     }
 
     /// Sets options on the socket.
     fn set_option(&self, _option: &dyn SocketOption) -> Result<()> {
-        return_errno_with_message!(Errno::EOPNOTSUPP, "setsockopt() is not supported");
+        Err(errno!(EOPNOTSUPP, "setsockopt() is not supported"))
     }
 
     /// Sends a message on the socket.

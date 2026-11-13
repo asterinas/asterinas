@@ -58,7 +58,7 @@ pub(super) fn set_new_stack(stack: stack_t, ctx: &Context, sp: usize) -> Result<
     let mut old_stack = ctx.thread_local.sig_stack().borrow_mut();
 
     if old_stack.contains(sp) {
-        return_errno_with_message!(Errno::EPERM, "the old stack is active now");
+        return Err(errno!(EPERM, "the old stack is active now"));
     }
 
     let flags = check_new_ss_flags(stack.ss_flags as u32)?;
@@ -67,11 +67,11 @@ pub(super) fn set_new_stack(stack: stack_t, ctx: &Context, sp: usize) -> Result<
         SigStack::new(0, flags, 0)
     } else {
         if stack.ss_size < MINSTKSZ {
-            return_errno_with_message!(Errno::ENOMEM, "stack size is less than MINSTKSZ");
+            return Err(errno!(ENOMEM, "stack size is less than MINSTKSZ"));
         }
 
         if stack.ss_sp.checked_add(stack.ss_size).is_none() {
-            return_errno_with_message!(Errno::EINVAL, "overflow for given stack addr and size");
+            return Err(errno!(EINVAL, "overflow for given stack addr and size"));
         }
 
         SigStack::new(stack.ss_sp, flags, stack.ss_size)
@@ -86,7 +86,7 @@ pub(super) fn set_new_stack(stack: stack_t, ctx: &Context, sp: usize) -> Result<
 
 fn check_new_ss_flags(ss_flags: u32) -> Result<SigStackFlags> {
     let ss_flags = SigStackFlags::from_bits(ss_flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown signal stack flags"))?;
+        .ok_or_else(|| errno!(EINVAL, "unknown signal stack flags"))?;
 
     let status_flags = SigStackStatusFlags::from_bits_truncate(ss_flags.bits());
 
@@ -97,7 +97,7 @@ fn check_new_ss_flags(ss_flags: u32) -> Result<SigStackFlags> {
         && status_flags != SigStackStatusFlags::SS_ONSTACK
         && status_flags != SigStackStatusFlags::empty()
     {
-        return_errno_with_message!(Errno::EINVAL, "invalid signal stack flags")
+        return Err(errno!(EINVAL, "invalid signal stack flags"));
     }
 
     Ok(ss_flags)

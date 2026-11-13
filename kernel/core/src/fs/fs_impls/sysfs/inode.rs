@@ -100,10 +100,7 @@ impl Inode for SysFsInode {
         _type_: InodeType,
         _mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::with_message(
-            Errno::EPERM,
-            "file creation under sysfs is not allowed",
-        ))
+        Err(errno!(EPERM, "file creation under sysfs is not allowed",))
     }
 
     fn revalidation_policy(&self) -> RevalidationPolicy {

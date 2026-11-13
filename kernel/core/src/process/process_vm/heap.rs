@@ -71,7 +71,7 @@ impl Heap {
         let heap_start = heap_base.align_up(PAGE_SIZE) + nr_pages_padding * PAGE_SIZE;
         let heap_end = heap_start + PAGE_SIZE;
         if heap_end > VMAR_CAP_ADDR {
-            return_errno_with_message!(Errno::ENOMEM, "the mapping address is too large");
+            return Err(errno!(ENOMEM, "the mapping address is too large"));
         }
 
         let vmar_map_options = {
@@ -192,7 +192,7 @@ fn check_data_rlimit(
         .get_cur();
 
     if rlimit_data.saturating_sub(data_segment_size as u64) < new_heap_range.len() as u64 {
-        return_errno_with_message!(Errno::ENOSPC, "the data segment size limit is reached");
+        return Err(errno!(ENOSPC, "the data segment size limit is reached"));
     }
     Ok(())
 }

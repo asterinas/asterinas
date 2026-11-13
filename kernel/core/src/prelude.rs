@@ -33,8 +33,8 @@ pub(crate) use crate::{
     util::ReadCString,
 };
 pub use crate::{
+    errno,
     error::{Errno, Error},
-    return_errno, return_errno_with_message,
 };
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;

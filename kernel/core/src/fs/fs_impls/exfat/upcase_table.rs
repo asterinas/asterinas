@@ -34,7 +34,7 @@ impl ExfatUpcaseTable {
         dentry: &ExfatUpcaseDentry,
     ) -> Result<Self> {
         if (dentry.size as usize) < UPCASE_MANDATORY_SIZE * UNICODE_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "Upcase table too small")
+            return Err(errno!(EINVAL, "Upcase table too small"));
         }
 
         let fs = fs_weak.upgrade().unwrap();
@@ -50,7 +50,7 @@ impl ExfatUpcaseTable {
         fs.read_meta_at(chain.physical_cluster_start_offset(), &mut buf)?;
 
         if dentry.checksum != calc_checksum_32(&buf) {
-            return_errno_with_message!(Errno::EINVAL, "invalid checksum")
+            return Err(errno!(EINVAL, "invalid checksum"));
         }
 
         let mut res = ExfatUpcaseTable {

@@ -55,7 +55,7 @@ pub(super) fn sys_socket(
                     };
                     StreamSocket::new(is_nonblocking, family) as Arc<dyn FileLike>
                 }
-                _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported protocol"),
+                _ => return Err(errno!(EAFNOSUPPORT, "unsupported protocol")),
             }
         }
         (CSocketAddrFamily::AF_INET, SockType::SOCK_DGRAM) => {
@@ -65,7 +65,7 @@ pub(super) fn sys_socket(
                 Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP => {
                     DatagramSocket::new(is_nonblocking) as Arc<dyn FileLike>
                 }
-                _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported protocol"),
+                _ => return Err(errno!(EAFNOSUPPORT, "unsupported protocol")),
             }
         }
         (CSocketAddrFamily::AF_NETLINK, SockType::SOCK_RAW | SockType::SOCK_DGRAM) => {
@@ -79,26 +79,26 @@ pub(super) fn sys_socket(
                     NetlinkUeventSocket::new(is_nonblocking, sock_type) as Arc<dyn FileLike>
                 }
                 Ok(_) => {
-                    return_errno_with_message!(
-                        Errno::EAFNOSUPPORT,
+                    return Err(errno!(
+                        EAFNOSUPPORT,
                         "some standard netlink families are not supported yet"
-                    );
+                    ));
                 }
                 Err(_) => {
                     if is_valid_protocol(protocol as u32) {
-                        return_errno_with_message!(
-                            Errno::EAFNOSUPPORT,
+                        return Err(errno!(
+                            EAFNOSUPPORT,
                             "user-provided netlink family is not supported"
-                        )
+                        ));
                     }
-                    return_errno_with_message!(Errno::EAFNOSUPPORT, "invalid netlink family");
+                    return Err(errno!(EAFNOSUPPORT, "invalid netlink family"));
                 }
             }
         }
         (CSocketAddrFamily::AF_VSOCK, SockType::SOCK_STREAM) => {
             VsockStreamSocket::new(is_nonblocking)? as Arc<dyn FileLike>
         }
-        _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
+        _ => return Err(errno!(EAFNOSUPPORT, "unsupported domain")),
     };
 
     let fd = {

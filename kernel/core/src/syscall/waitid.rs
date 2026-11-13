@@ -27,22 +27,22 @@ pub(super) fn sys_waitid(
 ) -> Result<SyscallReturn> {
     // FIXME: what does rusage use for?
     let process_filter = ProcessFilter::from_which_and_id(which, upid as _, ctx)?;
-    let wait_options = WaitOptions::from_bits(options as u32)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid options"))?;
+    let wait_options =
+        WaitOptions::from_bits(options as u32).ok_or_else(|| errno!(EINVAL, "invalid options"))?;
 
     // Check for waitid options
     if !wait_options
         .intersects(WaitOptions::WSTOPPED | WaitOptions::WCONTINUED | WaitOptions::WEXITED)
     {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "at least one of WSTOPPED, WCONTINUED, or WEXITED should be specified"
-        );
+        ));
     }
 
     let wait_status =
         do_wait(process_filter, wait_options, ctx).map_err(|err| match err.error() {
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            Errno::EINTR => errno!(ERESTARTSYS),
             _ => err,
         })?;
 

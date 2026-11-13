@@ -107,10 +107,10 @@ impl TryFrom<ClockId> for EvdevClock {
             ClockId::CLOCK_REALTIME => Ok(EvdevClock::Realtime),
             ClockId::CLOCK_MONOTONIC => Ok(EvdevClock::Monotonic),
             ClockId::CLOCK_BOOTTIME => Ok(EvdevClock::Boottime),
-            _ => return_errno_with_message!(
-                Errno::EINVAL,
+            _ => Err(errno!(
+                EINVAL,
                 "the clock is not a valid clock for evdev files"
-            ),
+            )),
         }
     }
 }
@@ -258,7 +258,7 @@ impl EvdevFile {
         }
 
         if event_count == 0 {
-            return_errno_with_message!(Errno::EAGAIN, "the evdev file has no events");
+            return Err(errno!(EAGAIN, "the evdev file has no events"));
         }
 
         Ok(event_count * EVENT_SIZE)
@@ -275,9 +275,9 @@ impl EvdevFile {
     }
 
     fn upgrade_device(&self) -> Result<Arc<EvdevDevice>> {
-        self.evdev.upgrade().ok_or_else(|| {
-            Error::with_message(Errno::ENODEV, "the evdev device has been disconnected")
-        })
+        self.evdev
+            .upgrade()
+            .ok_or_else(|| errno!(ENODEV, "the evdev device has been disconnected"))
     }
 
     fn set_clock(&self, clock: EvdevClock) -> Result<()> {
@@ -346,7 +346,7 @@ fn handle_get_bit(evdev: &Arc<EvdevDevice>, event_type: u8, writer: &mut VmWrite
             writer.fill_zeros(writer.avail())?;
         }
         _ => {
-            return_errno_with_message!(Errno::EINVAL, "the event type is not supported yet");
+            return Err(errno!(EINVAL, "the event type is not supported yet"));
         }
     }
     Ok(())
@@ -371,7 +371,7 @@ impl FileOps for EvdevFile {
         let max_events = requested_bytes / size_of::<EvdevEvent>();
 
         if max_events == 0 && requested_bytes != 0 {
-            return_errno_with_message!(Errno::EINVAL, "the buffer is too short");
+            return Err(errno!(EINVAL, "the buffer is too short"));
         }
 
         // TODO: Return `ENODEV` if the device has been disconnected.
@@ -381,7 +381,7 @@ impl FileOps for EvdevFile {
         // If we're in non-blocking mode, we won't bother the user space with an incomplete packet.
         // Note that this aligns to the behavior of `check_io_events`.
         if is_nonblocking && !self.inner.has_complete_packets() {
-            return_errno_with_message!(Errno::EAGAIN, "the evdev file has no packets");
+            return Err(errno!(EAGAIN, "the evdev file has no packets"));
         }
 
         // Even if `max_events` is zero, the above checks are still needed.
@@ -405,13 +405,16 @@ impl FileOps for EvdevFile {
         _status_flags: StatusFlags,
     ) -> Result<usize> {
         // TODO: In Linux, writing to evdev files is permitted and will inject input events.
-        return_errno_with_message!(Errno::ENOSYS, "writing to evdev files is not supported yet");
+        Err(errno!(
+            ENOSYS,
+            "writing to evdev files is not supported yet"
+        ))
     }
 }
 
 impl PerOpenFileOps for EvdevFile {
     fn check_seekable(&self) -> Result<()> {
-        return_errno_with_message!(Errno::ESPIPE, "the inode is an evdev file");
+        Err(errno!(ESPIPE, "the inode is an evdev file"))
     }
 
     fn is_offset_aware(&self) -> bool {
@@ -492,10 +495,10 @@ impl PerOpenFileOps for EvdevFile {
                 // specified operation does not apply". However, according to the Linux implementation,
                 // evdev files return `EINVAL` in this case.
                 // Reference: <https://elixir.bootlin.com/linux/v6.17.8/source/drivers/input/evdev.c#L1251>
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "the ioctl command is not supported by evdev files"
-                );
+                ));
             }
         });
 

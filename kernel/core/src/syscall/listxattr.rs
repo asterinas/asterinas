@@ -84,7 +84,7 @@ fn listxattr(
     ctx: &Context,
 ) -> Result<usize> {
     if list_len > XATTR_LIST_MAX_LEN {
-        return_errno_with_message!(Errno::E2BIG, "xattr list too long");
+        return Err(errno!(E2BIG, "xattr list too long"));
     }
 
     let namespace = get_current_xattr_namespace(ctx);

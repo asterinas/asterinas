@@ -53,10 +53,10 @@ pub(super) fn sys_pidfd_send_signal(
             };
 
             if !is_self && (siginfo.si_code >= 0 || siginfo.si_code == SI_TKILL) {
-                return_errno_with_message!(
-                    Errno::EPERM,
+                return Err(errno!(
+                    EPERM,
                     "signals with custom code can only be sent to the current thread/process"
-                );
+                ));
             }
         }
 
@@ -86,10 +86,10 @@ fn read_siginfo_from_user(info_ptr: Vaddr, sig_num: SigNum, ctx: &Context) -> Re
     if info_ptr != 0 {
         let si = ctx.user_space().read_val::<siginfo_t>(info_ptr)?;
         if si.si_signo != sig_num.as_u8() as i32 {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "`siginfo.si_signo` does not match the specified signal number"
-            );
+            ));
         }
         Ok(si)
     } else {
@@ -134,11 +134,11 @@ fn get_target_from_pidfd(
             // FIXME: On Linux, a pidfd can be also obtained by opening a `/proc/pid` directory.
             // Reference: <https://man7.org/linux/man-pages/man2/pidfd_send_signal.2.html>
             let Some(pid_file) = file.downcast_ref::<PidFile>() else {
-                return_errno_with_message!(Errno::EBADF, "the file is not a PID file");
+                return Err(errno!(EBADF, "the file is not a PID file"));
             };
 
             let Some(process) = pid_file.process_opt() else {
-                return_errno_with_message!(Errno::ESRCH, "the target process has been reaped");
+                return Err(errno!(ESRCH, "the target process has been reaped"));
             };
 
             match flags {

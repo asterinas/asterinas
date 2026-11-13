@@ -30,12 +30,12 @@ impl ProcSymOps for ExeSymOps {
 
     fn read_link(&self) -> Result<SymbolicLink> {
         let Some(process) = self.0.process() else {
-            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+            return Err(errno!(ESRCH, "the process does not exist"));
         };
 
         let vmar_guard = process.lock_vmar();
         let Some(vmar) = vmar_guard.as_ref() else {
-            return_errno_with_message!(Errno::ENOENT, "the process has exited");
+            return Err(errno!(ENOENT, "the process has exited"));
         };
         let path = vmar.process_vm().executable_path().clone();
 

@@ -114,7 +114,7 @@ impl IndirectBlockManager {
             BioDirection::FromDevice,
         );
         fs.read_blocks(bid, bio_segment)
-            .map_err(|_| Error::with_message(Errno::EIO, "failed to submit indirect block read"))?;
+            .map_err(|_| errno!(EIO, "failed to submit indirect block read"))?;
         block.mark_clean();
         Ok(block)
     }
@@ -128,9 +128,8 @@ impl IndirectBlockManager {
             Segment::<()>::from(block.frame().clone()).into(),
             BioDirection::ToDevice,
         );
-        fs.write_blocks(block.bid(), bio_segment).map_err(|_| {
-            Error::with_message(Errno::EIO, "failed to submit indirect block writeback")
-        })?;
+        fs.write_blocks(block.bid(), bio_segment)
+            .map_err(|_| errno!(EIO, "failed to submit indirect block writeback"))?;
 
         block.mark_clean();
         Ok(())
@@ -139,7 +138,7 @@ impl IndirectBlockManager {
     fn fs(&self) -> Result<Arc<Ext2>> {
         self.fs
             .upgrade()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "filesystem already dropped"))
+            .ok_or_else(|| errno!(EIO, "filesystem already dropped"))
     }
 }
 
@@ -180,7 +179,7 @@ impl IndirectBlock {
         let slot_offset = self.slot_offset(idx);
         self.block
             .read_val(slot_offset)
-            .map_err(|_| Error::with_message(Errno::EIO, "failed to read indirect pointer"))
+            .map_err(|_| errno!(EIO, "failed to read indirect pointer"))
     }
 
     /// Writes a block pointer at slot `idx` and marks the block dirty.
@@ -188,7 +187,7 @@ impl IndirectBlock {
         let slot_offset = self.slot_offset(idx);
         self.block
             .write_val(slot_offset, &bid)
-            .map_err(|_| Error::with_message(Errno::EIO, "failed to write indirect pointer"))?;
+            .map_err(|_| errno!(EIO, "failed to write indirect pointer"))?;
         self.dirty = true;
         Ok(())
     }

@@ -112,10 +112,10 @@ impl NsCommonOps for CgroupNamespace {
     }
 
     fn parent(&self) -> Result<&Arc<Self>> {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        Err(errno!(
+            EINVAL,
             "a cgroup namespace does not have a parent namespace"
-        );
+        ))
     }
 
     fn stashed_dentry(&self) -> &StashedDentry {

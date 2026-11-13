@@ -34,7 +34,7 @@ pub(super) fn sys_recvfrom(
             .recvmsg(&mut writers, flags)
             .map_err(|err| match err.error() {
                 // FIXME: `recvfrom` should not be restarted if a timeout has been set on the socket using `setsockopt`.
-                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+                Errno::EINTR => errno!(ERESTARTSYS),
                 _ => err,
             })?
     };

@@ -188,15 +188,13 @@ impl VtConsole {
     pub(in vt) fn set_font(&self, font: BitmapFont) -> Result<()> {
         let mut backend = self.backend.lock();
         match &mut *backend {
-            VtConsoleBackend::Framebuffer(c) => c.set_font(font).map_err(|_| {
-                Error::with_message(Errno::EINVAL, "the font is invalid for the console")
-            }),
-            VtConsoleBackend::None => {
-                return_errno_with_message!(
-                    Errno::ENOTTY,
-                    "the console has no support for font setting"
-                );
-            }
+            VtConsoleBackend::Framebuffer(c) => c
+                .set_font(font)
+                .map_err(|_| errno!(EINVAL, "the font is invalid for the console")),
+            VtConsoleBackend::None => Err(errno!(
+                ENOTTY,
+                "the console has no support for font setting"
+            )),
         }
     }
 }

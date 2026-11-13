@@ -35,7 +35,7 @@ pub(crate) trait Bound {
 
     fn local_endpoint(&self) -> Self::Endpoint;
     fn bind(&mut self, _endpoint: &Self::Endpoint) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address")
+        Err(errno!(EINVAL, "the socket is already bound to an address"))
     }
     fn remote_endpoint(&self) -> Option<&Self::Endpoint>;
     fn set_remote_endpoint(&mut self, endpoint: &Self::Endpoint);
@@ -141,9 +141,7 @@ where
         flags: RecvFlags,
     ) -> Result<(RecvOutput, UnboundSocket::Endpoint)> {
         match self {
-            Inner::Unbound(_) => {
-                return_errno_with_message!(Errno::EAGAIN, "the socket is not bound");
-            }
+            Inner::Unbound(_) => Err(errno!(EAGAIN, "the socket is not bound")),
             Inner::Bound(bound_datagram) => bound_datagram.try_recv(writer, flags),
         }
     }
@@ -209,12 +207,7 @@ where
 
     let remote_endpoint = remote
         .or_else(|| bound_datagram.remote_endpoint())
-        .ok_or_else(|| {
-            Error::with_message(
-                Errno::EDESTADDRREQ,
-                "the destination address is not specified",
-            )
-        })?;
+        .ok_or_else(|| errno!(EDESTADDRREQ, "the destination address is not specified",))?;
 
     op(bound_datagram, remote_endpoint)
 }

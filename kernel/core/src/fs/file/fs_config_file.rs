@@ -106,11 +106,9 @@ impl FsConfigFile {
                 }
             },
             FsConfigState::AwaitingMount(_) => {
-                return_errno_with_message!(Errno::EBUSY, "the file system is awaiting fsmount");
+                Err(errno!(EBUSY, "the file system is awaiting fsmount"))
             }
-            FsConfigState::Failed => {
-                return_errno_with_message!(Errno::EBUSY, "the file system configuration failed");
-            }
+            FsConfigState::Failed => Err(errno!(EBUSY, "the file system configuration failed")),
         }
     }
 
@@ -124,10 +122,7 @@ impl FsConfigFile {
             FsConfigState::Configuring => match key {
                 "source" => {
                     if config.source.is_some() {
-                        return_errno_with_message!(
-                            Errno::EINVAL,
-                            "the source is already specified"
-                        );
+                        return Err(errno!(EINVAL, "the source is already specified"));
                     }
                     config.source = Some(value.to_string());
                     Ok(())
@@ -144,11 +139,9 @@ impl FsConfigFile {
                 Ok(())
             }
             FsConfigState::AwaitingMount(_) => {
-                return_errno_with_message!(Errno::EBUSY, "the file system is awaiting fsmount");
+                Err(errno!(EBUSY, "the file system is awaiting fsmount"))
             }
-            FsConfigState::Failed => {
-                return_errno_with_message!(Errno::EBUSY, "the file system configuration failed");
-            }
+            FsConfigState::Failed => Err(errno!(EBUSY, "the file system configuration failed")),
         }
     }
 
@@ -160,7 +153,7 @@ impl FsConfigFile {
     pub(crate) fn create_fs(&self, ctx: &Context) -> Result<()> {
         let mut config = self.config.lock();
         if !matches!(&config.state, FsConfigState::Configuring) {
-            return_errno_with_message!(Errno::EBUSY, "the file system has already been created");
+            return Err(errno!(EBUSY, "the file system has already been created"));
         }
 
         let result = (|| {
@@ -197,16 +190,13 @@ impl FsConfigFile {
         let fs_and_root = match &config.state {
             FsConfigState::AwaitingMount(fs_and_root) => fs_and_root.clone(),
             FsConfigState::Configuring => {
-                return_errno_with_message!(Errno::EINVAL, "the file system is not created");
+                return Err(errno!(EINVAL, "the file system is not created"));
             }
             FsConfigState::Reconfiguring(_) => {
-                return_errno_with_message!(
-                    Errno::EBUSY,
-                    "a detached mount has already been created"
-                );
+                return Err(errno!(EBUSY, "a detached mount has already been created"));
             }
             FsConfigState::Failed => {
-                return_errno_with_message!(Errno::EBUSY, "the file system configuration failed");
+                return Err(errno!(EBUSY, "the file system configuration failed"));
             }
         };
 
@@ -228,7 +218,7 @@ impl FsConfigFile {
     pub(crate) fn reconfigure_fs(&self, ctx: &Context) -> Result<()> {
         let mut config = self.config.lock();
         let FsConfigState::Reconfiguring(fs) = &config.state else {
-            return_errno_with_message!(Errno::EBUSY, "the file system is not reconfiguring");
+            return Err(errno!(EBUSY, "the file system is not reconfiguring"));
         };
         let fs = fs.clone();
 

@@ -221,7 +221,7 @@ impl Backlog {
         let mut locked_incoming_conns = self.incoming_conns.lock();
 
         let Some(incoming_conns) = &mut *locked_incoming_conns else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is shut down for reading");
+            return Err(errno!(EINVAL, "the socket is shut down for reading"));
         };
         let conn = incoming_conns.pop_front();
 
@@ -232,7 +232,7 @@ impl Backlog {
             self.connect_wait_queue.wake_one();
         }
 
-        conn.ok_or_else(|| Error::with_message(Errno::EAGAIN, "no pending connection is available"))
+        conn.ok_or_else(|| errno!(EAGAIN, "no pending connection is available"))
     }
 
     fn set_backlog(&self, backlog: usize) {
@@ -285,8 +285,8 @@ impl Backlog {
             // maintaining two socket tables for SOCK_STREAM sockets and SOCK_SEQPACKET sockets
             // separately.
             return Err((
-                Error::with_message(
-                    Errno::ECONNREFUSED,
+                errno!(
+                    ECONNREFUSED,
                     "the listening socket has a different socket type",
                 ),
                 init,
@@ -297,8 +297,8 @@ impl Backlog {
 
         let Some(incoming_conns) = &mut *locked_incoming_conns else {
             return Err((
-                Error::with_message(
-                    Errno::ECONNREFUSED,
+                errno!(
+                    ECONNREFUSED,
                     "the listening socket is shut down for reading",
                 ),
                 init,
@@ -307,8 +307,8 @@ impl Backlog {
 
         if incoming_conns.len() >= self.backlog.load(Ordering::Relaxed) {
             return Err((
-                Error::with_message(
-                    Errno::EAGAIN,
+                errno!(
+                    EAGAIN,
                     "the pending connection queue on the listening socket is full",
                 ),
                 init,
@@ -349,17 +349,14 @@ impl Backlog {
                 timeout.as_ref(),
             )
             .map_err(|err| match err.error() {
-                Errno::ETIME => Error::with_message(Errno::EAGAIN, "the socket timeout expired"),
+                Errno::ETIME => errno!(EAGAIN, "the socket timeout expired"),
                 _ => err,
             })?
     }
 }
 
 pub(super) fn get_backlog(server_key: &UnixSocketAddrKey) -> Result<Arc<Backlog>> {
-    BACKLOG_TABLE.get_backlog(server_key).ok_or_else(|| {
-        Error::with_message(
-            Errno::ECONNREFUSED,
-            "no socket is listening at the remote address",
-        )
-    })
+    BACKLOG_TABLE
+        .get_backlog(server_key)
+        .ok_or_else(|| errno!(ECONNREFUSED, "no socket is listening at the remote address",))
 }

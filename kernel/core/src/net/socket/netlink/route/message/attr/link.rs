@@ -152,10 +152,10 @@ impl Attribute for LinkAttr {
                 reader.read(&mut writer)?;
 
                 if !name_bytes.contains(&0) {
-                    return Ok(ContinueAttrRead::skipped_invalid(
-                        Errno::ERANGE,
+                    return Ok(ContinueAttrRead::SkippedInvalid(errno!(
+                        ERANGE,
                         "the link attribute is invalid",
-                    ));
+                    )));
                 }
 
                 let name = InterfaceName::from_bytes_until_nul(&name_bytes);
@@ -179,13 +179,12 @@ impl Attribute for LinkAttr {
             ) => {
                 warn!("link attribute `{:?}` contains invalid payload", class);
                 reader.skip_some(payload_len);
-                return Ok(ContinueAttrRead::skipped_invalid(
+                return Ok(ContinueAttrRead::SkippedInvalid(
                     if class == LinkAttrClass::IFNAME {
-                        Errno::ERANGE
+                        errno!(ERANGE, "the link attribute is invalid")
                     } else {
-                        Errno::EINVAL
+                        errno!(EINVAL, "the link attribute is invalid")
                     },
-                    "the link attribute is invalid",
                 ));
             }
 

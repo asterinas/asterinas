@@ -111,10 +111,7 @@ impl Vmar {
         }
 
         if !is_userspace_vaddr_range(vaddr, len) {
-            return Err((
-                Error::with_message(Errno::EINVAL, "the address range is not in userspace"),
-                0,
-            ));
+            return Err((errno!(EINVAL, "the address range is not in userspace"), 0));
         }
         let range = vaddr.align_down(PAGE_SIZE)..(vaddr + len).align_up(PAGE_SIZE);
 
@@ -160,10 +157,10 @@ impl Vmar {
                     match vm_item {
                         VmQueriedItem::MappedRam { frame, .. } => return Ok((*frame).clone()),
                         VmQueriedItem::MappedIoMem { .. } => {
-                            return_errno_with_message!(
-                                Errno::EOPNOTSUPP,
+                            return Err(errno!(
+                                EOPNOTSUPP,
                                 "accessing alien MMIO memory is not supported currently"
-                            );
+                            ));
                         }
                     }
                 }

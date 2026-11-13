@@ -75,9 +75,7 @@ impl datagram_common::Bound for BoundDatagram {
                 Ok((output, endpoint))
             }
             Ok((Err(e), _, _)) => Err(e),
-            Err(RecvError::Exhausted) => {
-                return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
-            }
+            Err(RecvError::Exhausted) => Err(errno!(EAGAIN, "the receive buffer is empty")),
             Err(RecvError::Truncated) => {
                 unreachable!("`recv` should never fail with `RecvError::Truncated`")
             }
@@ -106,15 +104,11 @@ impl datagram_common::Bound for BoundDatagram {
 
         match result {
             Ok(inner) => inner,
-            Err(SendError::TooLarge) => {
-                return_errno_with_message!(Errno::EMSGSIZE, "the message is too large");
-            }
+            Err(SendError::TooLarge) => Err(errno!(EMSGSIZE, "the message is too large")),
             Err(SendError::Unaddressable) => {
-                return_errno_with_message!(Errno::EINVAL, "the destination address is invalid");
+                Err(errno!(EINVAL, "the destination address is invalid"))
             }
-            Err(SendError::BufferFull) => {
-                return_errno_with_message!(Errno::EAGAIN, "the send buffer is full");
-            }
+            Err(SendError::BufferFull) => Err(errno!(EAGAIN, "the send buffer is full")),
         }
     }
 

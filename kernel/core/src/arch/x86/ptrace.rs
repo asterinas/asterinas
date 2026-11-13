@@ -113,12 +113,12 @@ impl CUserRegsStruct {
 
         let fsbase = read_word(bytes, core::mem::offset_of!(CUserRegsStruct, fsbase));
         if !is_user_addr(fsbase) {
-            return_errno_with_message!(Errno::EIO, "invalid register value");
+            return Err(errno!(EIO, "invalid register value"));
         }
 
         let gsbase = read_word(bytes, core::mem::offset_of!(CUserRegsStruct, gsbase));
         if !is_user_addr(gsbase) {
-            return_errno_with_message!(Errno::EIO, "invalid register value");
+            return Err(errno!(EIO, "invalid register value"));
         }
 
         *user_context.general_regs_mut() = new_general_regs;
@@ -229,14 +229,14 @@ impl PtraceState {
         }
         if offset == core::mem::offset_of!(CUserRegsStruct, fsbase) {
             if !is_user_addr(value) {
-                return_errno_with_message!(Errno::EIO, "invalid register value");
+                return Err(errno!(EIO, "invalid register value"));
             }
             self.fs_base = FsBase::new(value);
             return Ok(());
         }
         if offset == core::mem::offset_of!(CUserRegsStruct, gsbase) {
             if !is_user_addr(value) {
-                return_errno_with_message!(Errno::EIO, "invalid register value");
+                return Err(errno!(EIO, "invalid register value"));
             }
             self.gs_base = GsBase::new(value);
             return Ok(());
@@ -246,10 +246,10 @@ impl PtraceState {
             return Ok(());
         }
         if debug_register_index(offset).is_some() {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
+            return Err(errno!(
+                EOPNOTSUPP,
                 "writing x86 debug registers is not supported currently"
-            );
+            ));
         }
 
         let rule =
@@ -380,13 +380,13 @@ impl RegRule {
             }
             Policy::SetIf(check) => {
                 if !check(value) {
-                    return_errno_with_message!(Errno::EIO, "invalid register value");
+                    return Err(errno!(EIO, "invalid register value"));
                 }
                 (self.set.unwrap())(regs, value);
             }
             Policy::Fixed(expected) => {
                 if value != expected {
-                    return_errno_with_message!(Errno::EIO, "invalid fixed register value");
+                    return Err(errno!(EIO, "invalid fixed register value"));
                 }
             }
         }
@@ -414,7 +414,7 @@ const fn is_user_addr(v: usize) -> bool {
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/user_64.h#L103-L132>
 fn check_user_offset(offset: usize) -> Result<()> {
     if !offset.is_multiple_of(size_of::<usize>()) {
-        return_errno_with_message!(Errno::EIO, "invalid USER area offset");
+        return Err(errno!(EIO, "invalid USER area offset"));
     }
 
     // We only support the offsets for general-purpose registers,
@@ -428,10 +428,10 @@ fn check_user_offset(offset: usize) -> Result<()> {
         return Ok(());
     }
 
-    return_errno_with_message!(
-        Errno::EOPNOTSUPP,
+    Err(errno!(
+        EOPNOTSUPP,
         "only offsets for general-purpose registers and debug registers are supported currently"
-    );
+    ))
 }
 
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/user_64.h#L103-L132>.

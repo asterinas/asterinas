@@ -140,10 +140,10 @@ impl FileSystem for OverlayFs {
     fn set_fs_flags(&self, flags: FsFlags, _data: Option<&str>, _ctx: &Context) -> Result<()> {
         let current_flags = self.flags();
         if current_flags.contains(FsFlags::RDONLY) && !flags.contains(FsFlags::RDONLY) {
-            return_errno!(Errno::EROFS);
+            return Err(errno!(EROFS));
         }
         if flags != current_flags {
-            return_errno_with_message!(Errno::EINVAL, "unsupported overlayfs remount delta");
+            return Err(errno!(EINVAL, "unsupported overlayfs remount delta"));
         }
         Ok(())
     }

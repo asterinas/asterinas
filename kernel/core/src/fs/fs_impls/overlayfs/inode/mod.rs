@@ -133,7 +133,7 @@ impl OverlayInode {
     fn writable_real_object(&self, copyup_dentry: &Dentry) -> Result<&RealObject> {
         let fs = self.fs_arc();
         if fs.policy().is_effective_read_only() {
-            return_errno_with_message!(Errno::EROFS, "the overlay mount is read-only");
+            return Err(errno!(EROFS, "the overlay mount is read-only"));
         }
         if let Some(upper) = self.upper.get() {
             return Ok(upper);
@@ -215,10 +215,10 @@ impl<'a> CreateOp<'a> {
         // The read side reads a raw `0:0` char device back as a whiteout, so a caller must not
         // be able to create one and forge the name-level shadow this mount publishes itself.
         if matches!(node, MknodType::CharDevice(0)) {
-            return_errno_with_message!(
-                Errno::EPERM,
+            return Err(errno!(
+                EPERM,
                 "a raw 0:0 whiteout char device must not be user-creatable"
-            );
+            ));
         }
         Ok(Self::Mknod { mode, node })
     }
@@ -328,17 +328,18 @@ impl Inode for OverlayInode {
         let _dir_guard = self.lock();
         // The directory bit comes from the real object alone; the payload says nothing about it.
         if !self.type_().is_directory() {
-            return_errno_with_message!(
-                Errno::ENOTDIR,
+            return Err(errno!(
+                ENOTDIR,
                 "lookup is supported on overlay directories only"
-            );
+            ));
         }
-        let fs = self.fs.upgrade().ok_or_else(|| {
-            Error::with_message(Errno::EIO, "the overlay mount is no longer alive")
-        })?;
+        let fs = self
+            .fs
+            .upgrade()
+            .ok_or_else(|| errno!(EIO, "the overlay mount is no longer alive"))?;
         match fs.lookup(self, name)? {
             Lookup::Positive(inode) => Ok(inode),
-            Lookup::Negative(_) => Err(Error::new(Errno::ENOENT)),
+            Lookup::Negative(_) => Err(errno!(ENOENT)),
         }
     }
 

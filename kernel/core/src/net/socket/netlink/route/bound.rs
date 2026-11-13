@@ -53,10 +53,10 @@ impl datagram_common::Bound for BoundNetlinkRoute {
 
         // TODO: Further check whether other socket address can be supported.
         if *remote != NetlinkSocketAddr::new_unspecified() {
-            return_errno_with_message!(
-                Errno::ECONNREFUSED,
+            return Err(errno!(
+                ECONNREFUSED,
                 "sending netlink route messages to user space is not supported"
-            );
+            ));
         }
 
         let sum_lens = reader.sum_lens();

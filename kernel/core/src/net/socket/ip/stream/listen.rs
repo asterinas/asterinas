@@ -29,10 +29,9 @@ impl ListenStream {
 
         match TcpListener::new_listen(bound_port, max_conn, option, observer) {
             Ok(tcp_listener) => Ok(Self { tcp_listener }),
-            Err((bound_port, ListenError::AddressInUse)) => Err((
-                bound_port,
-                Error::with_message(Errno::EADDRINUSE, "listener key conflicts"),
-            )),
+            Err((bound_port, ListenError::AddressInUse)) => {
+                Err((bound_port, errno!(EADDRINUSE, "listener key conflicts")))
+            }
             Err((_, err)) => {
                 unreachable!("`new_listen` fails with {:?}, which should not happen", err)
             }
@@ -40,9 +39,10 @@ impl ListenStream {
     }
 
     pub(super) fn try_accept(&self) -> Result<ConnectedStream> {
-        let (new_conn, remote_endpoint) = self.tcp_listener.accept().ok_or_else(|| {
-            Error::with_message(Errno::EAGAIN, "no pending connection is available")
-        })?;
+        let (new_conn, remote_endpoint) = self
+            .tcp_listener
+            .accept()
+            .ok_or_else(|| errno!(EAGAIN, "no pending connection is available"))?;
 
         Ok(ConnectedStream::new(new_conn, remote_endpoint, false))
     }

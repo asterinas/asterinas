@@ -152,8 +152,7 @@ impl Mount {
         mnt_ns: Weak<MountNamespace>,
         source: Option<String>,
     ) -> Result<Arc<Self>> {
-        let id = MountId::alloc()
-            .ok_or_else(|| Error::with_message(Errno::ENOMEM, "mount ID space exhausted"))?;
+        let id = MountId::alloc().ok_or_else(|| errno!(ENOMEM, "mount ID space exhausted"))?;
 
         let mount = Arc::new_cyclic(|weak_self| Self {
             id,
@@ -212,7 +211,7 @@ impl Mount {
         topology: &mut MountTopology,
     ) -> Result<Arc<Self>> {
         if mountpoint.type_() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
+            return Err(errno!(ENOTDIR));
         }
 
         let child_mount = Self::new_detached(fs_and_root, flags, self.mnt_ns.clone(), source)?;
@@ -240,13 +239,11 @@ impl Mount {
     ) -> Result<Arc<Self>> {
         let child_mount = self
             .get(mountpoint)
-            .ok_or_else(|| Error::with_message(Errno::ENOENT, "can not find child mount"))?;
+            .ok_or_else(|| errno!(ENOENT, "can not find child mount"))?;
         let parent = child_mount
             .parent()
             .and_then(|parent| parent.upgrade())
-            .ok_or_else(|| {
-                Error::with_message(Errno::EINVAL, "the root mount cannot be unmounted")
-            })?;
+            .ok_or_else(|| errno!(EINVAL, "the root mount cannot be unmounted"))?;
 
         let mut unmounted_mounts = vec![child_mount];
         for receiver in topology.propagation_receivers(&parent, mountpoint) {
@@ -279,8 +276,7 @@ impl Mount {
         propagation: MountPropagation,
         new_ns: &Weak<MountNamespace>,
     ) -> Result<Arc<Self>> {
-        let id = MountId::alloc()
-            .ok_or_else(|| Error::with_message(Errno::ENOMEM, "mount ID space exhausted"))?;
+        let id = MountId::alloc().ok_or_else(|| errno!(ENOMEM, "mount ID space exhausted"))?;
 
         let mount = Arc::new_cyclic(|weak_self| Self {
             id,
@@ -333,13 +329,13 @@ impl Mount {
     ) -> Result<Arc<Self>> {
         let skip_unbindable = clone_mode == MountTreeCloneMode::Bind;
         if skip_unbindable && self.is_unbindable() {
-            return_errno_with_message!(Errno::EINVAL, "the source mount is unbindable");
+            return Err(errno!(EINVAL, "the source mount is unbindable"));
         }
         if clone_mode != MountTreeCloneMode::Bind && try_get_mnt_ns_inode(root_dentry).is_some() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "a mount namespace file cannot be the root of this mount tree clone"
-            );
+            ));
         }
 
         let mut clone_mount_fn = |source_mount: &Mount,

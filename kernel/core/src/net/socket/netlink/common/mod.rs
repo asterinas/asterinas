@@ -177,7 +177,7 @@ where
 
         if reader.is_empty() {
             // Based on how Linux behaves, zero-sized messages are not allowed for netlink sockets.
-            return_errno_with_message!(Errno::ENODATA, "there are no data to send");
+            return Err(errno!(ENODATA, "there are no data to send"));
         }
 
         // TODO: Make sure our blocking behavior matches that of Linux
@@ -340,7 +340,10 @@ fn do_netlink_setsockopt<P: SupportedNetlinkProtocol>(
             options.netlink.set_strict_check(*strict.get().unwrap());
         }
         _ =>
-            return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown"),
+            return Err(errno!(
+                ENOPROTOOPT,
+                "the socket option to be set is unknown"
+            )),
     });
 
     Ok(())

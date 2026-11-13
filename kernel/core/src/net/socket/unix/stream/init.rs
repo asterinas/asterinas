@@ -83,10 +83,7 @@ impl Init {
         is_seqpacket: bool,
     ) -> Result<Listener, (Error, Self)> {
         let Some(addr) = self.addr else {
-            return Err((
-                Error::with_message(Errno::EINVAL, "the socket is not bound"),
-                self,
-            ));
+            return Err((errno!(EINVAL, "the socket is not bound"), self));
         };
 
         pollee.invalidate();

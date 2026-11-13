@@ -38,7 +38,7 @@ impl ProcFileOpsByHandle for MemFileOps {
         _status_flags: StatusFlags,
     ) -> Result<Box<dyn PerOpenFileOps>> {
         let Some(process) = self.0.process() else {
-            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+            return Err(errno!(ESRCH, "the process does not exist"));
         };
         // Hold the process VMAR lock while checking access permissions and
         // taking the VMAR identity snapshot to prevent race conditions.
@@ -52,7 +52,7 @@ impl ProcFileOpsByHandle for MemFileOps {
                 current_thread!().as_posix_thread().unwrap(),
                 AlienAccessMode::ATTACH_WITH_FS_CREDS,
             )
-            .map_err(|_| Error::with_message(Errno::EACCES, "alien access is denied"))?;
+            .map_err(|_| errno!(EACCES, "alien access is denied"))?;
 
         let vmar = vmar_guard.snapshot();
         Ok(Box::new(MemFileHandle(self.0.clone(), vmar)))
@@ -92,7 +92,7 @@ impl FileOps for MemFileHandle {
 
         match vmar.read_alien(offset, writer) {
             Ok(bytes) => Ok(bytes),
-            Err((_, 0)) => Err(Error::new(Errno::EIO)),
+            Err((_, 0)) => Err(errno!(EIO)),
             Err((_, bytes)) => Ok(bytes),
         }
     }
@@ -119,7 +119,7 @@ impl FileOps for MemFileHandle {
 
         match vmar.write_alien(offset, reader) {
             Ok(bytes) => Ok(bytes),
-            Err((_, 0)) => Err(Error::new(Errno::EIO)),
+            Err((_, 0)) => Err(errno!(EIO)),
             Err((_, bytes)) => Ok(bytes),
         }
     }

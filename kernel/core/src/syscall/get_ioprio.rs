@@ -34,18 +34,18 @@ impl IoPrioWho {
 
                 let thread = crate::process::pid_table::pid_table_mut()
                     .get_thread(target_tid)
-                    .ok_or_else(|| Error::new(Errno::ESRCH))?;
+                    .ok_or_else(|| errno!(ESRCH))?;
                 Ok(Self::Thread(thread))
             }
             Self::IOPRIO_WHO_PGRP => {
                 // TODO: Implement process group support
-                return_errno!(Errno::EINVAL);
+                Err(errno!(EINVAL))
             }
             Self::IOPRIO_WHO_USER => {
                 // TODO: Implement user support
-                return_errno!(Errno::EINVAL);
+                Err(errno!(EINVAL))
             }
-            _ => return_errno!(Errno::EINVAL),
+            _ => Err(errno!(EINVAL)),
         }
     }
 }
@@ -66,11 +66,11 @@ pub(super) fn sys_ioprio_get(which: u32, who: u32, ctx: &Context) -> Result<Sysc
         }
         IoPrioWho::ProcessGroup(_) => {
             // TODO: Implement process group support
-            return_errno!(Errno::EINVAL);
+            Err(errno!(EINVAL))
         }
         IoPrioWho::User(_) => {
             // TODO: Implement user support
-            return_errno!(Errno::EINVAL);
+            Err(errno!(EINVAL))
         }
     }
 }

@@ -32,7 +32,7 @@ pub(super) fn sys_getdents(
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let inode_handle = file.as_inode_handle_or_err()?;
     if inode_handle.path().type_() != InodeType::Dir {
-        return_errno!(Errno::ENOTDIR);
+        return Err(errno!(ENOTDIR));
     }
     let user_space = ctx.user_space();
     let writer = user_space.writer(buf_addr, buf_len)?;
@@ -58,7 +58,7 @@ pub(super) fn sys_getdents64(
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let inode_handle = file.as_inode_handle_or_err()?;
     if inode_handle.path().type_() != InodeType::Dir {
-        return_errno!(Errno::ENOTDIR);
+        return Err(errno!(ENOTDIR));
     }
     let user_space = ctx.user_space();
     let writer = user_space.writer(buf_addr, buf_len)?;
@@ -106,10 +106,10 @@ impl<T: DirentSerializer> DirentVisitor for DirentBufferReader<'_, T> {
         let dirent_serializer = T::new(ino, offset as u64, type_, CString::new(name)?);
         let len = dirent_serializer.len();
         if self.writer.avail() < len {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the buffer is too small for the directory entry"
-            );
+            ));
         }
 
         dirent_serializer.serialize(&mut self.writer)?;

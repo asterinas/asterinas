@@ -258,11 +258,11 @@ impl Inode for VirtioFsInode {
 
     fn resize(&self, _self_dentry: &Dentry, new_size: usize) -> Result<()> {
         if self.type_() != InodeType::File {
-            return_errno_with_message!(Errno::EISDIR, "resize on non-regular file");
+            return Err(errno!(EISDIR, "resize on non-regular file"));
         }
 
-        let size = u64::try_from(new_size)
-            .map_err(|_| Error::with_message(Errno::EFBIG, "virtiofs resize size too large"))?;
+        let size =
+            u64::try_from(new_size).map_err(|_| errno!(EFBIG, "virtiofs resize size too large"))?;
 
         let setattr_req = SetattrReq::new(SetattrValid::FATTR_SIZE).set_size(size);
         self.setattr(setattr_req)
@@ -352,8 +352,8 @@ impl Inode for VirtioFsInode {
             InodeType::File => Some(self.open_file(access_mode, status_flags)),
             InodeType::Dir => Some(self.open_directory(access_mode, status_flags)),
             // TODO: Support opening special files like device files and named pipes.
-            _ => Some(Err(Error::with_message(
-                Errno::EOPNOTSUPP,
+            _ => Some(Err(errno!(
+                EOPNOTSUPP,
                 "opening this virtiofs inode type is not supported",
             ))),
         }
@@ -402,10 +402,10 @@ impl Inode for VirtioFsInode {
                 ),
             )?,
             _ => {
-                return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
+                return Err(errno!(
+                    EOPNOTSUPP,
                     "virtiofs create supports file/dir/socket only"
-                )
+                ));
             }
         };
 
@@ -495,10 +495,10 @@ impl Inode for VirtioFsInode {
         mode: RenameMode,
     ) -> Result<()> {
         if mode == RenameMode::Exchange {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "RENAME_EXCHANGE is not supported on virtiofs"
-            );
+            ));
         }
 
         let new_dir_inode = new_dir_dentry
@@ -577,7 +577,7 @@ impl Inode for VirtioFsInode {
 
     fn read_link(&self) -> Result<SymbolicLink> {
         if self.type_ != InodeType::SymLink {
-            return_errno_with_message!(Errno::EINVAL, "read_link on non-symlink")
+            return Err(errno!(EINVAL, "read_link on non-symlink"));
         }
 
         let fs = self.fs_ref();
@@ -599,10 +599,10 @@ impl FileOps for VirtioFsInode {
         status_flags: StatusFlags,
     ) -> Result<usize> {
         if self.type_ != InodeType::File {
-            return_errno_with_message!(
-                Errno::EBADF,
+            return Err(errno!(
+                EBADF,
                 "virtiofs inode I/O requires an open file handle"
-            );
+            ));
         }
 
         // `execve` may call `read_at` on the inode directly, bypassing the
@@ -623,10 +623,10 @@ impl FileOps for VirtioFsInode {
         // normal writes go through the per-open `VirtioFsFile`, which owns the
         // server-provided handle from `FUSE_OPEN`. If a future direct-inode
         // writer appears, it must define the handle semantics explicitly.
-        return_errno_with_message!(
-            Errno::EOPNOTSUPP,
+        Err(errno!(
+            EOPNOTSUPP,
             "virtiofs inode write_at without an open file handle is not supported"
-        )
+        ))
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {

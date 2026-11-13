@@ -56,12 +56,12 @@ impl TryFrom<timespec_t> for Duration {
 
     fn try_from(value: timespec_t) -> Result<Self> {
         if value.sec < 0 || value.nsec < 0 {
-            return_errno_with_message!(Errno::EINVAL, "timesepc_t cannot be negative");
+            return Err(errno!(EINVAL, "timesepc_t cannot be negative"));
         }
         if value.nsec >= NSEC_PER_SEC {
             // The value of nanoseconds must be strictly less than 10^9,
             // otherwise the value for seconds should be set.
-            return_errno_with_message!(Errno::EINVAL, "nsec is not normalized");
+            return Err(errno!(EINVAL, "nsec is not normalized"));
         }
 
         Ok(Duration::new(value.sec as u64, value.nsec as u32))
@@ -104,12 +104,12 @@ impl TryFrom<timeval_t> for Duration {
 
     fn try_from(timeval: timeval_t) -> Result<Self> {
         if timeval.sec < 0 || timeval.usec < 0 {
-            return_errno_with_message!(Errno::EINVAL, "timeval_t cannot be negative");
+            return Err(errno!(EINVAL, "timeval_t cannot be negative"));
         }
         if timeval.usec >= USEC_PER_SEC {
             // The value of microseconds must be strictly less than 10^6,
             // otherwise the value for seconds should be set.
-            return_errno_with_message!(Errno::EINVAL, "usec is not normalized");
+            return Err(errno!(EINVAL, "usec is not normalized"));
         }
 
         Ok(Duration::new(

@@ -76,7 +76,7 @@ impl DevPts {
             .index_alloc
             .lock()
             .alloc()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "cannot alloc index"))?;
+            .ok_or_else(|| errno!(EIO, "cannot alloc index"))?;
 
         let (master, slave) = crate::device::new_pty_pair(index as u32, self.root.ptmx.clone())?;
 
@@ -187,7 +187,7 @@ impl FileOps for RootInode {
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
+        Err(errno!(EISDIR))
     }
 
     fn write_at(
@@ -196,7 +196,7 @@ impl FileOps for RootInode {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
+        Err(errno!(EISDIR))
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -248,7 +248,7 @@ impl Inode for RootInode {
     }
 
     fn resize(&self, _self_dentry: &Dentry, new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
+        Err(errno!(EISDIR))
     }
 
     fn metadata(&self) -> Result<Metadata> {
@@ -325,7 +325,7 @@ impl Inode for RootInode {
         type_: InodeType,
         mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn mknod(
@@ -335,31 +335,29 @@ impl Inode for RootInode {
         mode: InodeMode,
         type_: MknodType,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn link(&self, _self_dentry: &Dentry, _old_dentry: &Dentry, _name: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn unlink(&self, child_dentry: &Dentry) -> Result<()> {
         let name = child_dentry.name();
         match name.as_str() {
-            "." | ".." => {
-                return_errno_with_message!(Errno::EISDIR, "the devpts directory cannot be unlinked")
-            }
-            "ptmx" => return_errno_with_message!(Errno::EPERM, "the ptmx inode cannot be unlinked"),
+            "." | ".." => Err(errno!(EISDIR, "the devpts directory cannot be unlinked")),
+            "ptmx" => Err(errno!(EPERM, "the ptmx inode cannot be unlinked")),
             slave => {
                 if self.slaves.read().find_entry_by_name(slave).is_none() {
-                    return_errno_with_message!(Errno::ENOENT, "the slave inode does not exist");
+                    return Err(errno!(ENOENT, "the slave inode does not exist"));
                 }
-                return_errno_with_message!(Errno::EPERM, "the slave inode cannot be unlinked");
+                Err(errno!(EPERM, "the slave inode cannot be unlinked"))
             }
         }
     }
 
     fn rmdir(&self, _child_dentry: &Dentry) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
@@ -372,7 +370,7 @@ impl Inode for RootInode {
                 .read()
                 .find_entry_by_name(slave)
                 .cloned()
-                .ok_or(Error::new(Errno::ENOENT))?,
+                .ok_or(errno!(ENOENT))?,
         };
         Ok(inode)
     }
@@ -385,7 +383,7 @@ impl Inode for RootInode {
         _replaced_inode: Option<&Arc<dyn Inode>>,
         _mode: RenameMode,
     ) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

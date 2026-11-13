@@ -22,10 +22,10 @@ impl DrmGemObject {
     /// Creates a GEM object with a page-aligned, nonzero size.
     pub fn new(size: usize, backend: Arc<dyn DrmGemObjectBackend>) -> Result<Self> {
         if size == 0 {
-            return_errno_with_message!(Errno::EINVAL, "the GEM object size must not be zero");
+            return Err(errno!(EINVAL, "the GEM object size must not be zero"));
         }
         if !size.is_multiple_of(PAGE_SIZE) {
-            return_errno_with_message!(Errno::EINVAL, "the GEM object size is not page-aligned");
+            return Err(errno!(EINVAL, "the GEM object size is not page-aligned"));
         }
 
         Ok(Self {
@@ -45,7 +45,7 @@ impl DrmGemObject {
     pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         let end = offset.checked_add(buf.len()).ok_or(Errno::EOVERFLOW)?;
         if end > self.size {
-            return_errno_with_message!(Errno::EINVAL, "the GEM read exceeds the object");
+            return Err(errno!(EINVAL, "the GEM read exceeds the object"));
         }
 
         self.backend.read_bytes(offset, buf)

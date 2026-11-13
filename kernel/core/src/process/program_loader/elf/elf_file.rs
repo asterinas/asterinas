@@ -33,7 +33,7 @@ impl ElfHeaders {
     pub(crate) fn parse(input: &[u8]) -> Result<Self> {
         // Parse the ELF header.
         let header = header::parse_header(input)
-            .map_err(|_| Error::with_message(Errno::ENOEXEC, "the ELF header is invalid"))?;
+            .map_err(|_| errno!(ENOEXEC, "the ELF header is invalid"))?;
         let elf_header = ElfHeader::parse(header)?;
         check_elf_header(&elf_header)?;
 
@@ -42,10 +42,10 @@ impl ElfHeaders {
         let ph_entry_size = elf_header.pt2.ph_entry_size;
         let ph_offset = elf_header.pt2.ph_offset;
         if ph_entry_size as usize != size_of::<ProgramHeader64>() {
-            return_errno_with_message!(
-                Errno::ENOEXEC,
+            return Err(errno!(
+                ENOEXEC,
                 "the size of ELF program headers is invalid"
-            );
+            ));
         }
         if ph_offset >= input.len() as u64
             || (input.len() as u64 - ph_offset) / (ph_entry_size as u64) < (ph_count as u64)
@@ -53,10 +53,10 @@ impl ElfHeaders {
             // TODO: Currently, the program headers must follow the ELF header immediately (they
             // must reside in `input`, the first page of the ELF file). This requirement may be
             // relaxed in the future.
-            return_errno_with_message!(
-                Errno::ENOEXEC,
+            return Err(errno!(
+                ENOEXEC,
                 "the placement of ELF program headers is not supported"
-            );
+            ));
         }
 
         // Parse the ELF program headers.
@@ -64,17 +64,12 @@ impl ElfHeaders {
         let mut max_load_align = PAGE_SIZE;
         let mut interp_phdr = None;
         for index in 0..ph_count {
-            let program_header =
-                program::parse_program_header(input, header, index).map_err(|_| {
-                    Error::with_message(Errno::ENOEXEC, "the ELF program header is invalid")
-                })?;
+            let program_header = program::parse_program_header(input, header, index)
+                .map_err(|_| errno!(ENOEXEC, "the ELF program header is invalid"))?;
             let ph64 = match program_header {
                 program::ProgramHeader::Ph64(ph64) => *ph64,
                 program::ProgramHeader::Ph32(_) => {
-                    return_errno_with_message!(
-                        Errno::ENOEXEC,
-                        "the ELF program header is not 64-bit"
-                    )
+                    return Err(errno!(ENOEXEC, "the ELF program header is not 64-bit"));
                 }
             };
             match ph64.get_type() {
@@ -94,7 +89,7 @@ impl ElfHeaders {
             }
         }
         if loadable_phdrs.is_empty() {
-            return_errno_with_message!(Errno::ENOEXEC, "there are no loadable ELF program headers");
+            return Err(errno!(ENOEXEC, "there are no loadable ELF program headers"));
         }
 
         Ok(Self {
@@ -153,10 +148,10 @@ impl ElfHeaders {
                     + (ph_offset - loadable_phdrs.file_range().start));
             }
         }
-        return_errno_with_message!(
-            Errno::ENOEXEC,
+        Err(errno!(
+            ENOEXEC,
             "the ELF program headers are not located in any segments"
-        );
+        ))
     }
 
     /// Calculates the virtual address bounds of all segments as a range.
@@ -219,7 +214,7 @@ impl ElfHeader {
                     sh_str_index: *sh_str_index,
                 }
             }
-            _ => return_errno_with_message!(Errno::ENOEXEC, "the ELF file is not 64-bit"),
+            _ => return Err(errno!(ENOEXEC, "the ELF file is not 64-bit")),
         };
         Ok(ElfHeader { pt1, pt2 })
     }
@@ -260,25 +255,25 @@ fn check_elf_header(elf_header: &ElfHeader) -> Result<()> {
     const EXPECTED_ELF_MACHINE: header::Machine = header::Machine::AArch64;
 
     if elf_header.pt1.class() != header::Class::SixtyFour {
-        return_errno_with_message!(Errno::ENOEXEC, "the ELF file is not 64-bit");
+        return Err(errno!(ENOEXEC, "the ELF file is not 64-bit"));
     }
 
     if elf_header.pt1.data() != header::Data::LittleEndian {
-        return_errno_with_message!(Errno::ENOEXEC, "the ELF file is not in little endian");
+        return Err(errno!(ENOEXEC, "the ELF file is not in little endian"));
     }
 
     // TODO: Should we check `pt1.os_abi()` or `pt1.version()`?
 
     if elf_header.pt2.machine.as_machine() != EXPECTED_ELF_MACHINE {
-        return_errno_with_message!(
-            Errno::ENOEXEC,
+        return Err(errno!(
+            ENOEXEC,
             "the ELF file is of a different architecture"
-        );
+        ));
     }
 
     let elf_type = elf_header.pt2.type_.as_type();
     if elf_type != header::Type::Executable && elf_type != header::Type::SharedObject {
-        return_errno_with_message!(Errno::ENOEXEC, "the ELF file is not an executable");
+        return Err(errno!(ENOEXEC, "the ELF file is not an executable"));
     }
 
     Ok(())
@@ -301,28 +296,28 @@ impl LoadablePhdr {
         {
             virt_end
         } else {
-            return_errno_with_message!(Errno::ENOMEM, "the mapping address is too large");
+            return Err(errno!(ENOMEM, "the mapping address is too large"));
         };
 
         let file_start = phdr.offset;
         let Some(file_end) = file_start.checked_add(phdr.file_size) else {
-            return_errno_with_message!(Errno::EINVAL, "the mapping offset overflows");
+            return Err(errno!(EINVAL, "the mapping offset overflows"));
         };
         if file_end >= isize::MAX as u64 {
-            return_errno_with_message!(Errno::EOVERFLOW, "the mapping offset overflows");
+            return Err(errno!(EOVERFLOW, "the mapping offset overflows"));
         }
 
         if phdr.mem_size == 0 {
-            return_errno_with_message!(Errno::EINVAL, "the mapping length is zero");
+            return Err(errno!(EINVAL, "the mapping length is zero"));
         }
         if phdr.mem_size < phdr.file_size {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the mapping length is smaller than the file length"
-            );
+            ));
         }
         if virt_start % (PAGE_SIZE as u64) != file_start % (PAGE_SIZE as u64) {
-            return_errno_with_message!(Errno::EINVAL, "the mapping address is not aligned");
+            return Err(errno!(EINVAL, "the mapping address is not aligned"));
         }
 
         Ok(Self {
@@ -382,11 +377,11 @@ impl InterpPhdr {
             .checked_add(phdr.file_size)
             .is_none_or(|file_end| file_end > isize::MAX as u64)
         {
-            return_errno_with_message!(Errno::EINVAL, "the interpreter offset overflows");
+            return Err(errno!(EINVAL, "the interpreter offset overflows"));
         }
 
         if phdr.file_size >= PATH_MAX as u64 {
-            return_errno_with_message!(Errno::ENOEXEC, "the interpreter path is too long");
+            return Err(errno!(ENOEXEC, "the interpreter path is too long"));
         }
 
         const { assert!(PATH_MAX as u64 <= u16::MAX as u64) };
@@ -403,15 +398,11 @@ impl InterpPhdr {
         let file_size = self.file_size as usize;
         let mut buffer = vec![0; file_size];
         if elf_file.read_bytes_at(self.file_offset, &mut buffer)? != file_size {
-            return_errno_with_message!(Errno::EIO, "the interpreter path cannot be fully read");
+            return Err(errno!(EIO, "the interpreter path cannot be fully read"));
         }
 
-        let ldso_path = CString::from_vec_with_nul(buffer).map_err(|_| {
-            Error::with_message(
-                Errno::ENOEXEC,
-                "the interpreter path is not a valid C string",
-            )
-        })?;
+        let ldso_path = CString::from_vec_with_nul(buffer)
+            .map_err(|_| errno!(ENOEXEC, "the interpreter path is not a valid C string",))?;
         Ok(ldso_path)
     }
 }

@@ -27,10 +27,10 @@ pub(super) fn sys_capget(
         if cap_user_data_addr == 0 {
             return Ok(SyscallReturn::Return(0));
         }
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "capability versions other than v3 are not supported"
-        );
+        ));
     };
 
     if cap_user_data_addr == 0 {
@@ -38,13 +38,13 @@ pub(super) fn sys_capget(
     }
 
     if cap_user_header.pid.cast_signed() < 0 {
-        return_errno_with_message!(Errno::EINVAL, "negative PIDs are not valid");
+        return Err(errno!(EINVAL, "negative PIDs are not valid"));
     }
 
     let credentials = if cap_user_header.pid != 0 {
         pid_table::pid_table_mut()
             .get_thread(cap_user_header.pid)
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target thread does not exist"))?
+            .ok_or_else(|| errno!(ESRCH, "the target thread does not exist"))?
             .as_posix_thread()
             .unwrap()
             .credentials()

@@ -227,8 +227,7 @@ fn do_utimes(
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = UtimensFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let flags = UtimensFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
 
     // Unlike other system calls, `utimesat` has special handling for the NULL path string.
     // Reference: <https://elixir.bootlin.com/linux/v6.17.1/source/fs/utimes.c#L138-L139>
@@ -254,15 +253,15 @@ fn do_utimes(
         // Linux will reject non-zero flags and `O_PATH` files if the pathname is null.
         // Reference: <https://elixir.bootlin.com/linux/v7.1/source/fs/utimes.c#L108>
         if !flags.is_empty() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "flags must be zero when the pathname is NULL"
-            );
+            ));
         }
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, dirfd.try_into()?);
         if file.status_flags().contains(StatusFlags::O_PATH) {
-            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+            return Err(errno!(EBADF, "the file is opened as a path"));
         }
         file.path().clone()
     };

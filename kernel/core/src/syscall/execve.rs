@@ -50,8 +50,7 @@ pub(super) fn sys_execveat(
     user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     let (executable, thread_name) = {
-        let flags = OpenFlags::from_bits(flags)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+        let flags = OpenFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
         lookup_and_open_executable_file(dfd, filename_ptr, flags, ctx)?
     };
 

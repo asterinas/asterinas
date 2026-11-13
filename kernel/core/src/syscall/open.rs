@@ -46,7 +46,7 @@ pub(super) fn sys_openat(
             InodeMode::from_bits_truncate(mask_mode),
         )
         .map_err(|err| match err.error() {
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            Errno::EINTR => errno!(ERESTARTSYS),
             _ => err,
         })?
     };
@@ -104,13 +104,13 @@ fn do_open(
             if !open_args.creation_flags.contains(CreationFlags::O_CREAT)
                 || open_args.status_flags.contains(StatusFlags::O_PATH)
             {
-                return_errno_with_message!(Errno::ENOENT, "the file does not exist");
+                return Err(errno!(ENOENT, "the file does not exist"));
             }
             if result.target_is_dir() {
-                return_errno_with_message!(
-                    Errno::EISDIR,
+                return Err(errno!(
+                    EISDIR,
                     "O_CREAT is specified but the file is a directory"
-                );
+                ));
             }
 
             let (parent, tail_name) = result.into_parent_and_basename();

@@ -46,10 +46,10 @@ impl datagram_common::Bound for BoundNetlinkUevent {
         }
 
         if *remote != NetlinkSocketAddr::new_unspecified() {
-            return_errno_with_message!(
-                Errno::ECONNREFUSED,
+            return Err(errno!(
+                ECONNREFUSED,
                 "sending uevent messages to user space is not supported"
-            );
+            ));
         }
 
         // FIXME: How to deal with sending message to kernel socket?

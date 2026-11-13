@@ -17,8 +17,7 @@ pub(super) fn sys_sendmmsg(
     flags: i32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = SendFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid send flags"))?;
+    let flags = SendFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid send flags"))?;
 
     debug!(
         "sockfd = {}, mmsghdrs = {:#x}, count = {}, flags = {:?}",

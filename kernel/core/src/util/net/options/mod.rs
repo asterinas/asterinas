@@ -116,7 +116,7 @@ macro_rules! impl_raw_sock_option_get_only {
     ($option:ty) => {
         impl RawSocketOption for $option {
             fn read_from_user(&mut self, _addr: Vaddr, _max_len: u32) -> Result<()> {
-                return_errno_with_message!(Errno::ENOPROTOOPT, "the option is getter-only");
+                return Err(errno!(ENOPROTOOPT, "the option is getter-only"));
             }
 
             fn write_to_user(&self, addr: Vaddr, max_len: &mut u32) -> Result<usize> {
@@ -150,7 +150,7 @@ pub(crate) fn new_raw_socket_option(
         CSocketOptionLevel::SOL_IP => new_ip_option(name),
         CSocketOptionLevel::SOL_TCP => new_tcp_option(name),
         CSocketOptionLevel::SOL_NETLINK => new_netlink_option(name),
-        _ => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported option level"),
+        _ => Err(errno!(EOPNOTSUPP, "unsupported option level")),
     }
 }
 

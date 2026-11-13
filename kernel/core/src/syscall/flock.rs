@@ -27,7 +27,7 @@ pub(super) fn sys_flock(raw_fd: RawFileDesc, ops: i32, ctx: &Context) -> Result<
         inode_file
             .set_flock(flock, is_nonblocking)
             .map_err(|err| match err.error() {
-                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+                Errno::EINTR => errno!(ERESTARTSYS),
                 _ => err,
             })?;
     }
@@ -65,18 +65,18 @@ impl FlockOps {
         if let Some(ops) = Self::from_bits(bits) {
             if ops.contains(Self::LOCK_SH) {
                 if ops.contains(Self::LOCK_EX) || ops.contains(Self::LOCK_UN) {
-                    return_errno_with_message!(Errno::EINVAL, "invalid operation");
+                    return Err(errno!(EINVAL, "invalid operation"));
                 }
             } else if ops.contains(Self::LOCK_EX) {
                 if ops.contains(Self::LOCK_UN) {
-                    return_errno_with_message!(Errno::EINVAL, "invalid operation");
+                    return Err(errno!(EINVAL, "invalid operation"));
                 }
             } else if !ops.contains(Self::LOCK_UN) {
-                return_errno_with_message!(Errno::EINVAL, "invalid operation");
+                return Err(errno!(EINVAL, "invalid operation"));
             }
             Ok(ops)
         } else {
-            return_errno_with_message!(Errno::EINVAL, "invalid operation");
+            Err(errno!(EINVAL, "invalid operation"))
         }
     }
 }

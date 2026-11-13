@@ -13,8 +13,7 @@ pub(super) fn sys_mremap(
     new_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = MremapFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let flags = MremapFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
     let new_addr = do_sys_mremap(old_addr, old_size, new_size, flags, new_addr, ctx)?;
     Ok(SyscallReturn::Return(new_addr as _))
 }
@@ -33,17 +32,17 @@ fn do_sys_mremap(
     );
 
     if !old_addr.is_multiple_of(PAGE_SIZE) {
-        return_errno_with_message!(Errno::EINVAL, "old_addr must be page-aligned");
+        return Err(errno!(EINVAL, "old_addr must be page-aligned"));
     }
     if new_size == 0 {
-        return_errno_with_message!(Errno::EINVAL, "new_size cannot be zero");
+        return Err(errno!(EINVAL, "new_size cannot be zero"));
     }
     if old_size == 0 {
-        return_errno_with_message!(Errno::EINVAL, "copying shareable mapping is not supported");
+        return Err(errno!(EINVAL, "copying shareable mapping is not supported"));
     }
 
     if old_size.checked_add(PAGE_SIZE).is_none() || new_size.checked_add(PAGE_SIZE).is_none() {
-        return_errno_with_message!(Errno::EINVAL, "the size overflows")
+        return Err(errno!(EINVAL, "the size overflows"));
     }
 
     // `MREMAP_DONTUNMAP` keeps the old VMA in the tree as an anonymous
@@ -52,16 +51,16 @@ fn do_sys_mremap(
     // stay at its current address (the physical pages must be relocated).
     if flags.contains(MremapFlags::MREMAP_DONTUNMAP) {
         if !flags.contains(MremapFlags::MREMAP_MAYMOVE) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "MREMAP_DONTUNMAP must be combined with MREMAP_MAYMOVE"
-            );
+            ));
         }
         if new_size != old_size {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "MREMAP_DONTUNMAP requires new_size to equal old_size"
-            );
+            ));
         }
     }
 
@@ -98,10 +97,10 @@ fn do_sys_mremap(
         }
     } else {
         if flags.contains(MremapFlags::MREMAP_FIXED) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "MREMAP_FIXED specified without also specifying MREMAP_MAYMOVE"
-            );
+            ));
         }
         // We can ensure that `new_size > old_size` here. Since we are enlarging
         // the old mapping, it is necessary to check whether the old range lies

@@ -18,11 +18,11 @@ pub(super) fn sys_sched_setattr(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     if addr == 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid user space address");
+        return Err(errno!(EINVAL, "invalid user space address"));
     }
     if flags != 0 {
         // Linux also has no support for any flags yet.
-        return_errno_with_message!(Errno::EINVAL, "invalid flags");
+        return Err(errno!(EINVAL, "invalid flags"));
     }
 
     let attr = read_linux_sched_attr_from_user(addr, ctx)?;
@@ -41,7 +41,7 @@ pub(super) fn update_sched_attr_with<T>(
     f: impl FnOnce(&SchedAttr) -> Result<T>,
 ) -> Result<T> {
     if tid.cast_signed() < 0 {
-        return_errno_with_message!(Errno::EINVAL, "all negative TIDs are not valid");
+        return Err(errno!(EINVAL, "all negative TIDs are not valid"));
     }
 
     if tid == 0 {
@@ -49,7 +49,7 @@ pub(super) fn update_sched_attr_with<T>(
     }
 
     let Some(thread) = pid_table::pid_table_mut().get_thread(tid) else {
-        return_errno_with_message!(Errno::ESRCH, "the target thread does not exist");
+        return Err(errno!(ESRCH, "the target thread does not exist"));
     };
 
     let target = thread.as_posix_thread().unwrap();

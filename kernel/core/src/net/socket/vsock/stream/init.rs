@@ -55,7 +55,7 @@ impl InitStream {
 
     pub(super) fn bind(&mut self, addr: VsockSocketAddr) -> Result<()> {
         if self.bound_port.is_some() {
-            return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
+            return Err(errno!(EINVAL, "the socket is already bound to an address"));
         }
 
         if let Ok(port) = u16::try_from(addr.port) {
@@ -75,15 +75,12 @@ impl InitStream {
     ) -> Result<ConnectingStream, (Error, Self)> {
         if remote_addr.cid != VMADDR_CID_HOST {
             return Err((
-                Error::with_message(Errno::ENETUNREACH, "only the host vsock CID is supported"),
+                errno!(ENETUNREACH, "only the host vsock CID is supported"),
                 self,
             ));
         }
         if remote_addr.port == VMADDR_PORT_ANY {
-            return Err((
-                Error::with_message(Errno::EINVAL, "the vsock port is invalid to connect"),
-                self,
-            ));
+            return Err((errno!(EINVAL, "the vsock port is invalid to connect"), self));
         }
 
         let bound_port = if let Some(bound_port) = self.bound_port {
@@ -109,15 +106,12 @@ impl InitStream {
         pollee: &Pollee,
     ) -> Result<ListenStream, (Error, Self)> {
         if !self.is_connect_done {
-            return Err((
-                Error::with_message(Errno::EINVAL, "a previous connection attempt exists"),
-                self,
-            ));
+            return Err((errno!(EINVAL, "a previous connection attempt exists"), self));
         }
 
         let Some(bound_port) = self.bound_port else {
             return Err((
-                Error::with_message(Errno::EINVAL, "listen() without bind() is not implemented"),
+                errno!(EINVAL, "listen() without bind() is not implemented"),
                 self,
             ));
         };
@@ -133,7 +127,7 @@ impl InitStream {
             return Ok(());
         }
 
-        return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+        Err(errno!(ENOTCONN, "the socket is not connected"))
     }
 
     pub(super) fn local_addr(&self) -> Option<VsockSocketAddr> {

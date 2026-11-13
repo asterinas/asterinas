@@ -23,7 +23,7 @@ pub(super) fn sys_readlinkat(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     if usr_buf_len == 0 {
-        return_errno_with_message!(Errno::EINVAL, "the buffer length is zero");
+        return Err(errno!(EINVAL, "the buffer length is zero"));
     }
 
     let user_space = ctx.user_space();

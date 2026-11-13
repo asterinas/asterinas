@@ -397,13 +397,13 @@ fn validate_page_range(start_idx: usize, page_count: usize, file_size: usize) ->
 
     let last_idx = start_idx
         .checked_add(page_count - 1)
-        .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "virtiofs page index overflow"))?;
+        .ok_or_else(|| errno!(EOVERFLOW, "virtiofs page index overflow"))?;
     let last_offset = last_idx
         .checked_mul(PAGE_SIZE)
-        .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "virtiofs page offset overflow"))?;
+        .ok_or_else(|| errno!(EOVERFLOW, "virtiofs page offset overflow"))?;
 
     if last_offset >= file_size {
-        return_errno_with_message!(Errno::EINVAL, "virtiofs page is beyond EOF");
+        return Err(errno!(EINVAL, "virtiofs page is beyond EOF"));
     }
 
     Ok(())

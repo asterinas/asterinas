@@ -8,7 +8,7 @@ use crate::{
 
 pub(super) fn sys_setuid(uid: i32, ctx: &Context) -> Result<SyscallReturn> {
     if uid < 0 {
-        return_errno_with_message!(Errno::EINVAL, "UIDs cannot be negative");
+        return Err(errno!(EINVAL, "UIDs cannot be negative"));
     }
 
     let uid = Uid::new(uid.cast_unsigned());

@@ -191,7 +191,7 @@ impl<'a> FsCreationCtx<'a> {
 
         let source = self
             .source()
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the source is not specified"))?;
+            .ok_or_else(|| errno!(EINVAL, "the source is not specified"))?;
         let fs_path = FsPath::from_fd_at(AT_FDCWD, source, EmptyPathStr::Reject)?;
         let path = task_ctx
             .thread_local
@@ -201,13 +201,13 @@ impl<'a> FsCreationCtx<'a> {
             .lookup(&fs_path)?;
 
         if !path.type_().is_device() {
-            return_errno_with_message!(Errno::ENODEV, "the path is not a device file");
+            return Err(errno!(ENODEV, "the path is not a device file"));
         }
         let id = path.metadata()?.self_dev_id;
 
         let block_device = id
             .and_then(aster_block::lookup)
-            .ok_or_else(|| Error::with_message(Errno::ENODEV, "the device is not found"))?;
+            .ok_or_else(|| errno!(ENODEV, "the device is not found"))?;
         self.block_device = BlockDeviceResolution::Resolved(block_device);
 
         Ok(())
@@ -355,10 +355,10 @@ impl<K: Eq + Ord + Clone + Send + Sync + 'static> FsCache<K> {
                     let extant_readonly = fs_and_root.fs.flags().contains(FsFlags::RDONLY);
                     let requested_readonly = required_flags.contains(FsFlags::RDONLY);
                     if extant_readonly != requested_readonly {
-                        return_errno_with_message!(
-                            Errno::EBUSY,
+                        return Err(errno!(
+                            EBUSY,
                             "the read-only flag of the extant file system does not match"
-                        );
+                        ));
                     }
                     return Ok(fs_and_root);
                 }
@@ -414,7 +414,7 @@ impl FsRegistry {
     fn register(&self, new_type: &'static dyn DynFsType) -> Result<()> {
         let mut fs_table = self.fs_table.lock();
         if fs_table.contains_key(new_type.name()) {
-            return_errno_with_message!(Errno::EEXIST, "the file system type already exists");
+            return Err(errno!(EEXIST, "the file system type already exists"));
         }
 
         if let Some(node) = new_type.sysnode() {

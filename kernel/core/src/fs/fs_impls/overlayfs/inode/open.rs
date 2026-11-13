@@ -170,7 +170,7 @@ impl FileOps for OverlayDirOpenHandle {
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
+        Err(errno!(EISDIR, "the inode is a directory"))
     }
 
     fn write_at(
@@ -179,7 +179,7 @@ impl FileOps for OverlayDirOpenHandle {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
+        Err(errno!(EISDIR, "the inode is a directory"))
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -202,7 +202,7 @@ impl PerOpenFileOps for OverlayDirOpenHandle {
     }
 
     fn mappable(&self, _request: FileMmapRequest) -> Result<MappableObject<'_>> {
-        return_errno_with_message!(Errno::ENODEV, "the file is not mappable");
+        Err(errno!(ENODEV, "the file is not mappable"))
     }
 
     fn sync(&self, mode: SyncMode) -> Result<()> {

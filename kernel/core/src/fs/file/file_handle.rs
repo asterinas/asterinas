@@ -39,9 +39,9 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     /// before performing the operation.
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if !self.common().access_mode().is_readable() {
-            return_errno_with_message!(Errno::EBADF, "the file is not opened for reading");
+            return Err(errno!(EBADF, "the file is not opened for reading"));
         }
-        return_errno_with_message!(Errno::EINVAL, "read is not supported for this file type");
+        Err(errno!(EINVAL, "read is not supported for this file type"))
     }
 
     /// Writes data to this file.
@@ -59,9 +59,9 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     /// before performing the operation.
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         if !self.common().access_mode().is_writable() {
-            return_errno_with_message!(Errno::EBADF, "the file is not opened for writing");
+            return Err(errno!(EBADF, "the file is not opened for writing"));
         }
-        return_errno_with_message!(Errno::EINVAL, "write is not supported for this file type");
+        Err(errno!(EINVAL, "write is not supported for this file type"))
     }
 
     /// Read at the given file offset.
@@ -71,7 +71,7 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     ///
     /// [`read`]: FileLike::read
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        return_errno_with_message!(Errno::ESPIPE, "read_at is not supported");
+        Err(errno!(ESPIPE, "read_at is not supported"))
     }
 
     /// Write at the given file offset.
@@ -82,14 +82,14 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     ///
     /// [`write`]: FileLike::write
     fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        return_errno_with_message!(Errno::ESPIPE, "write_at is not supported");
+        Err(errno!(ESPIPE, "write_at is not supported"))
     }
 
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
         // `ENOTTY` means that "The specified operation does not apply to the kind of object that
         // the file descriptor references".
         // Reference: <https://man7.org/linux/man-pages/man2/ioctl.2.html>.
-        return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
+        Err(errno!(ENOTTY, "ioctl is not supported"))
     }
 
     /// Obtains the mappable object to map this file into the user address space.
@@ -103,11 +103,11 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
         // `ENODEV` means that "The underlying filesystem of the specified file does not support
         // memory mapping".
         // Reference: <https://man7.org/linux/man-pages/man2/mmap.2.html>.
-        return_errno_with_message!(Errno::ENODEV, "the file is not mappable");
+        Err(errno!(ENODEV, "the file is not mappable"))
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "resize is not supported");
+        Err(errno!(EINVAL, "resize is not supported"))
     }
 
     /// Returns the status flags that can be set for this file.
@@ -118,14 +118,14 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     }
 
     fn seek(&self, seek_from: SeekFrom) -> Result<usize> {
-        return_errno_with_message!(Errno::ESPIPE, "seek is not supported");
+        Err(errno!(ESPIPE, "seek is not supported"))
     }
 
     fn fallocate(&self, _mode: FallocMode, _offset: usize, _len: usize) -> Result<()> {
-        return_errno_with_message!(
-            Errno::ENODEV,
+        Err(errno!(
+            ENODEV,
             "fallocate is not supported for this file type"
-        );
+        ))
     }
 
     fn as_socket(&self) -> Option<&dyn Socket> {
@@ -154,7 +154,7 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
     /// when a file's operations do not provide an `fsync` method.
     /// Reference: <https://github.com/torvalds/linux/blob/v6.16/fs/sync.c#L179-L188>
     fn sync(&self, _mode: SyncMode) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "the file does not support synchronization")
+        Err(errno!(EINVAL, "the file does not support synchronization"))
     }
 }
 
@@ -200,7 +200,7 @@ impl dyn FileLike {
         if update.flags().contains(StatusFlags::O_DIRECT)
             && !settable_flags.contains(StatusFlags::O_DIRECT)
         {
-            return_errno_with_message!(Errno::EINVAL, "the `O_DIRECT` flag is not supported");
+            return Err(errno!(EINVAL, "the `O_DIRECT` flag is not supported"));
         }
         if !settable_flags.contains(StatusFlags::O_ASYNC) {
             update.ignore(StatusFlags::O_ASYNC);
@@ -228,7 +228,7 @@ impl dyn FileLike {
     pub(crate) fn update_status_async(&self, is_async: bool) -> Result<()> {
         let settable_flags = self.settable_status_flags();
         if is_async && !settable_flags.contains(StatusFlags::O_ASYNC) {
-            return_errno_with_message!(Errno::ENOTTY, "signal-driven I/O is not supported");
+            return Err(errno!(ENOTTY, "signal-driven I/O is not supported"));
         }
 
         let update = if is_async {
@@ -277,13 +277,12 @@ impl dyn FileLike {
 
     pub(crate) fn as_socket_or_err(&self) -> Result<&dyn Socket> {
         self.as_socket()
-            .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the file is not a socket"))
+            .ok_or_else(|| errno!(ENOTSOCK, "the file is not a socket"))
     }
 
     pub(crate) fn as_inode_handle_or_err(&self) -> Result<&InodeHandle> {
-        self.downcast_ref().ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "the file is not related to an inode")
-        })
+        self.downcast_ref()
+            .ok_or_else(|| errno!(EINVAL, "the file is not related to an inode"))
     }
 }
 
@@ -378,10 +377,10 @@ pub trait MappedObject: Send + Sync + Debug {
     /// `offset` specifies the memory address offset within the mapping, which must be smaller than
     /// the mapping size and page-aligned.
     fn handle_page_fault(&self, _offset: usize, _handle: MapHandle) -> Result<()> {
-        return_errno_with_message!(
-            Errno::EFAULT,
+        Err(errno!(
+            EFAULT,
             "device memory page faults cannot be resolved"
-        );
+        ))
     }
 }
 

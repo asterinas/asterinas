@@ -38,7 +38,7 @@ impl Inode {
     /// Sets the encoded device ID for special files and persists it.
     pub(in ext2) fn set_device_id(&self, device_id: u64) -> Result<()> {
         if self.type_ != InodeType::CharDevice && self.type_ != InodeType::BlockDevice {
-            return_errno!(Errno::EINVAL);
+            return Err(errno!(EINVAL));
         }
         let mut inner = self.inner.write();
         inner.payload = super::InodePayload::Device { device_id };
@@ -161,9 +161,10 @@ impl Inode {
         name: XattrName,
         value_writer: &mut VmWriter,
     ) -> Result<usize> {
-        let xattr = self.xattr.as_ref().ok_or_else(|| {
-            Error::with_message(Errno::ENODATA, "xattr not supported on this inode type")
-        })?;
+        let xattr = self
+            .xattr
+            .as_ref()
+            .ok_or_else(|| errno!(ENODATA, "xattr not supported on this inode type"))?;
         xattr.get_xattr(name, value_writer)
     }
 
@@ -186,9 +187,10 @@ impl Inode {
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
     ) -> Result<()> {
-        let xattr = self.xattr.as_ref().ok_or_else(|| {
-            Error::with_message(Errno::EPERM, "xattr not supported on this inode type")
-        })?;
+        let xattr = self
+            .xattr
+            .as_ref()
+            .ok_or_else(|| errno!(EPERM, "xattr not supported on this inode type"))?;
         xattr.set_xattr(name, value_reader, flags)?;
         let new_bid = xattr.bid();
 
@@ -200,9 +202,10 @@ impl Inode {
 
     /// Removes one extended attribute.
     pub(in ext2) fn remove_xattr(&self, name: XattrName) -> Result<()> {
-        let xattr = self.xattr.as_ref().ok_or_else(|| {
-            Error::with_message(Errno::EPERM, "xattr not supported on this inode type")
-        })?;
+        let xattr = self
+            .xattr
+            .as_ref()
+            .ok_or_else(|| errno!(EPERM, "xattr not supported on this inode type"))?;
         xattr.remove_xattr(name)?;
         let new_bid = xattr.bid();
 

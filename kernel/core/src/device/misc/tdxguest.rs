@@ -108,21 +108,21 @@ impl From<TdCallError> for Error {
     fn from(err: TdCallError) -> Self {
         match err {
             TdCallError::TdxNoValidVeInfo => {
-                Error::with_message(Errno::EINVAL, "TdCallError::TdxNoValidVeInfo")
+                errno!(EINVAL, "TdCallError::TdxNoValidVeInfo")
             }
             TdCallError::TdxOperandInvalid => {
-                Error::with_message(Errno::EINVAL, "TdCallError::TdxOperandInvalid")
+                errno!(EINVAL, "TdCallError::TdxOperandInvalid")
             }
             TdCallError::TdxPageAlreadyAccepted => {
-                Error::with_message(Errno::EINVAL, "TdCallError::TdxPageAlreadyAccepted")
+                errno!(EINVAL, "TdCallError::TdxPageAlreadyAccepted")
             }
             TdCallError::TdxPageSizeMismatch => {
-                Error::with_message(Errno::EINVAL, "TdCallError::TdxPageSizeMismatch")
+                errno!(EINVAL, "TdCallError::TdxPageSizeMismatch")
             }
             TdCallError::TdxOperandBusy => {
-                Error::with_message(Errno::EBUSY, "TdCallError::TdxOperandBusy")
+                errno!(EBUSY, "TdCallError::TdxOperandBusy")
             }
-            TdCallError::Other => Error::with_message(Errno::EAGAIN, "TdCallError::Other"),
+            TdCallError::Other => errno!(EAGAIN, "TdCallError::Other"),
             _ => todo!(),
         }
     }
@@ -133,18 +133,18 @@ impl From<TdVmcallError> for Error {
     fn from(err: TdVmcallError) -> Self {
         match err {
             TdVmcallError::TdxRetry => {
-                Error::with_message(Errno::EINVAL, "TdVmcallError::TdxRetry")
+                errno!(EINVAL, "TdVmcallError::TdxRetry")
             }
             TdVmcallError::TdxOperandInvalid => {
-                Error::with_message(Errno::EINVAL, "TdVmcallError::TdxOperandInvalid")
+                errno!(EINVAL, "TdVmcallError::TdxOperandInvalid")
             }
             TdVmcallError::TdxGpaInuse => {
-                Error::with_message(Errno::EINVAL, "TdVmcallError::TdxGpaInuse")
+                errno!(EINVAL, "TdVmcallError::TdxGpaInuse")
             }
             TdVmcallError::TdxAlignError => {
-                Error::with_message(Errno::EINVAL, "TdVmcallError::TdxAlignError")
+                errno!(EINVAL, "TdVmcallError::TdxAlignError")
             }
-            TdVmcallError::Other => Error::with_message(Errno::EAGAIN, "TdVmcallError::Other"),
+            TdVmcallError::Other => errno!(EAGAIN, "TdVmcallError::Other"),
         }
     }
 }
@@ -165,7 +165,7 @@ impl FileOps for TdxGuestFile {
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "the file is not valid for reading")
+        Err(errno!(EINVAL, "the file is not valid for reading"))
     }
 
     fn write_at(
@@ -174,13 +174,13 @@ impl FileOps for TdxGuestFile {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "the file not valid for writing")
+        Err(errno!(EINVAL, "the file not valid for writing"))
     }
 }
 
 impl PerOpenFileOps for TdxGuestFile {
     fn check_seekable(&self) -> Result<()> {
-        return_errno_with_message!(Errno::ESPIPE, "seek is not supported")
+        Err(errno!(ESPIPE, "seek is not supported"))
     }
 
     fn is_offset_aware(&self) -> bool {
@@ -206,7 +206,7 @@ impl PerOpenFileOps for TdxGuestFile {
                     Ok(0)
                 })
             }
-            _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+            _ => Err(errno!(ENOTTY, "the ioctl command is unknown")),
         })
     }
 }
@@ -216,7 +216,7 @@ static TDX_REPORT: Once<RwMutex<USegment>> = Once::new();
 fn tdx_report_or_err() -> Result<&'static RwMutex<USegment>> {
     TDX_REPORT
         .get()
-        .ok_or_else(|| Error::with_message(Errno::ENODEV, "the TDX report is not initialized"))
+        .ok_or_else(|| errno!(ENODEV, "the TDX report is not initialized"))
 }
 
 /// Runtime Measurement Register (RTMR) index.
@@ -387,7 +387,7 @@ fn refresh_tdx_report_locked(
 ) -> Result<()> {
     if let Some(inblob) = inblob {
         if inblob.len() != size_of::<ReportData>() {
-            return_errno_with_message!(Errno::EINVAL, "Invalid inblob length");
+            return Err(errno!(EINVAL, "Invalid inblob length"));
         }
 
         // Use `inblob` as the data associated with the report.

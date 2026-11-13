@@ -136,7 +136,7 @@ impl VirtioFsInode {
         let offset = self.resolve_write_offset(write_offset);
         let requested_end = offset
             .checked_add(write_len)
-            .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "virtiofs write size overflow"))?;
+            .ok_or_else(|| errno!(EOVERFLOW, "virtiofs write size overflow"))?;
 
         let old_size = self.size();
         let page_cache = inner.page_cache_mut().unwrap();
@@ -186,7 +186,7 @@ impl VirtioFsInode {
         let offset = self.resolve_write_offset(write_offset);
         let write_end = offset
             .checked_add(write_len)
-            .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "virtiofs write size overflow"))?;
+            .ok_or_else(|| errno!(EOVERFLOW, "virtiofs write size overflow"))?;
 
         if let Some(page_cache) = inner.page_cache() {
             page_cache.invalidate_range(offset..write_end)?;
@@ -199,7 +199,7 @@ impl VirtioFsInode {
 
         let new_size = offset
             .checked_add(written)
-            .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "virtiofs write size overflow"))?;
+            .ok_or_else(|| errno!(EOVERFLOW, "virtiofs write size overflow"))?;
 
         let new_size = self.size().max(new_size);
         let attr_version = self.fs_ref().session().bump_attr_version();
@@ -273,7 +273,7 @@ impl VirtioFsInode {
                 Some(request_offset) => request_offset,
                 None if total_written > 0 => return Ok(total_written),
                 None => {
-                    return_errno_with_message!(Errno::EOVERFLOW, "virtiofs write offset overflow");
+                    return Err(errno!(EOVERFLOW, "virtiofs write offset overflow"));
                 }
             };
             let ret = fs
@@ -302,7 +302,7 @@ impl VirtioFsInode {
                     return Ok(total_written);
                 }
 
-                return_errno_with_message!(Errno::EIO, "virtiofs write response is too large");
+                return Err(errno!(EIO, "virtiofs write response is too large"));
             }
             if written == 0 {
                 break;
@@ -329,7 +329,7 @@ impl VirtioFsInode {
         let inode = self
             .weak_self
             .upgrade()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "virtiofs inode is unavailable"))?;
+            .ok_or_else(|| errno!(EIO, "virtiofs inode is unavailable"))?;
         let fs = self.fs_ref();
 
         let open_out = fs.session().do_fuse_op(
@@ -383,7 +383,7 @@ impl VirtioFsInode {
         let inode = self
             .weak_self
             .upgrade()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "virtiofs inode is unavailable"))?;
+            .ok_or_else(|| errno!(EIO, "virtiofs inode is unavailable"))?;
         let fs = self.fs_ref();
 
         let open_out = fs
@@ -567,7 +567,7 @@ impl VirtioFsInode {
                     err
                 );
             }
-            return_errno_with_message!(Errno::ESTALE, "virtiofs stale dentry after revalidate");
+            return Err(errno!(ESTALE, "virtiofs stale dentry after revalidate"));
         }
 
         self.commit_entry_reply(

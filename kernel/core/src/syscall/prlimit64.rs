@@ -53,9 +53,9 @@ pub(super) fn sys_prlimit64(
     let old_raw = if pid == 0 || pid == ctx.process.pid() {
         do_prlimit64(&ctx.process, resource, new_raw, ctx)?
     } else {
-        let target_process = pid_table::pid_table_mut().get_process(pid).ok_or_else(|| {
-            Error::with_message(Errno::ESRCH, "the target process does not exist")
-        })?;
+        let target_process = pid_table::pid_table_mut()
+            .get_process(pid)
+            .ok_or_else(|| errno!(ESRCH, "the target process does not exist"))?;
         // Check permissions
         check_rlimit_perm(&target_process, ctx)?;
         do_prlimit64(&target_process, resource, new_raw, ctx)?
@@ -89,7 +89,7 @@ fn do_prlimit64(
 
     let old_raw = if let Some(new_raw) = new_raw {
         if resource == ResourceType::RLIMIT_NOFILE && new_raw.max > SYSCTL_NR_OPEN {
-            return_errno_with_message!(Errno::EPERM, "the new limit exceeds the system limit");
+            return Err(errno!(EPERM, "the new limit exceeds the system limit"));
         }
         rlimit.set_raw_rlimit(new_raw, ctx)?
     } else {
@@ -134,8 +134,8 @@ fn check_rlimit_perm(target_process: &Process, ctx: &Context) -> Result<()> {
         return Ok(());
     }
 
-    return_errno_with_message!(
-        Errno::EPERM,
+    Err(errno!(
+        EPERM,
         "accessing the resource limits of the target process is not allowed"
-    )
+    ))
 }

@@ -29,13 +29,13 @@ pub(super) fn sys_renameat2(
         old_dirfd, old_path_name, new_dirfd, new_path_name
     );
     let Some(flags) = Flags::from_bits(flags) else {
-        return_errno_with_message!(Errno::EINVAL, "invalid renameat2 flags");
+        return Err(errno!(EINVAL, "invalid renameat2 flags"));
     };
     if flags.contains(Flags::NOREPLACE | Flags::EXCHANGE) {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "NOREPLACE and EXCHANGE cannot be used together"
-        );
+        ));
     }
 
     let mode = if flags.contains(Flags::NOREPLACE) {
@@ -60,13 +60,13 @@ pub(super) fn sys_renameat2(
     };
     let old_path = path_resolver.lookup_at_path(&old_parent_path, old_name)?;
     if old_path.type_() != InodeType::Dir && old_path_name.ends_with('/') {
-        return_errno_with_message!(Errno::ENOTDIR, "the old path is not a directory");
+        return Err(errno!(ENOTDIR, "the old path is not a directory"));
     }
 
     let new_path_name = new_path_name.to_string_lossy();
     let (new_parent_path, new_name) = {
         if old_path.type_() != InodeType::Dir && new_path_name.ends_with('/') {
-            return_errno_with_message!(Errno::EISDIR, "the new path is a directory");
+            return Err(errno!(EISDIR, "the new path is a directory"));
         }
         let (new_parent_path_name, new_name) = new_path_name
             .split_dirname_and_basename()

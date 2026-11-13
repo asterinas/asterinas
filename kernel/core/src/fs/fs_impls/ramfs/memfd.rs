@@ -48,7 +48,7 @@ impl MemfdInode {
         let mut seals = self.seals.lock();
 
         if seals.contains(FileSeals::F_SEAL_SEAL) {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against sealing");
+            return Err(errno!(EPERM, "the file is sealed against sealing"));
         }
 
         // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/memfd.c#L262-L266>
@@ -82,7 +82,7 @@ impl MemfdInode {
         let seals = self.seals.lock();
         if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE) {
             if perms.contains(VmPerms::WRITE) {
-                return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
+                return Err(errno!(EPERM, "the file is sealed against writing"));
             }
             // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/mm/memfd.c#L356>
             may_perms.remove(VmPerms::MAY_WRITE);
@@ -116,7 +116,7 @@ impl FileOps for MemfdInode {
 
         let seals = self.seals.lock();
         if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE) {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
+            return Err(errno!(EPERM, "the file is sealed against writing"));
         }
 
         if seals.contains(FileSeals::F_SEAL_GROW) {
@@ -135,7 +135,7 @@ impl FileOps for MemfdInode {
             if new_size > old_size {
                 let eof_page = old_size.align_down(PAGE_SIZE);
                 if offset >= eof_page {
-                    return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+                    return Err(errno!(EPERM, "the file is sealed against growing"));
                 } else {
                     reader.limit(eof_page - offset);
                 }
@@ -180,10 +180,10 @@ impl Inode for MemfdInode {
         let seals = self.seals.lock();
         let old_size = self.inode.size();
         if seals.contains(FileSeals::F_SEAL_SHRINK) && new_size < old_size {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against shrinking");
+            return Err(errno!(EPERM, "the file is sealed against shrinking"));
         }
         if seals.contains(FileSeals::F_SEAL_GROW) && new_size > old_size {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+            return Err(errno!(EPERM, "the file is sealed against growing"));
         }
 
         self.inode.resize(self_dentry, new_size)
@@ -194,10 +194,10 @@ impl Inode for MemfdInode {
         if seals.contains(FileSeals::F_SEAL_EXEC)
             && (self.mode().unwrap() ^ mode).intersects(mkmod!(a+x))
         {
-            return_errno_with_message!(
-                Errno::EPERM,
+            return Err(errno!(
+                EPERM,
                 "the file is sealed against modifying executable bits"
-            );
+            ));
         }
 
         self.inode.set_mode(self_dentry, mode)
@@ -206,12 +206,12 @@ impl Inode for MemfdInode {
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
         let seals = self.seals.lock();
         if seals.contains(FileSeals::F_SEAL_GROW) && offset + len > self.inode.size() {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against growing");
+            return Err(errno!(EPERM, "the file is sealed against growing"));
         }
         if seals.intersects(FileSeals::F_SEAL_WRITE | FileSeals::F_SEAL_FUTURE_WRITE)
             && mode == FallocMode::PunchHoleKeepSize
         {
-            return_errno_with_message!(Errno::EPERM, "the file is sealed against writing");
+            return Err(errno!(EPERM, "the file is sealed against writing"));
         }
 
         self.inode.fallocate(mode, offset, len)
@@ -231,7 +231,7 @@ pub(crate) trait MemfdInodeHandle: Sized {
 impl MemfdInodeHandle for InodeHandle {
     fn new_memfd(name: String, memfd_flags: MemfdFlags) -> Result<Self> {
         if name.len() > MAX_MEMFD_NAME_LEN {
-            return_errno_with_message!(Errno::EINVAL, "the memfd name is too long");
+            return Err(errno!(EINVAL, "the memfd name is too long"));
         }
 
         let memfd_inode = Arc::new_cyclic(|weak_self| {
@@ -278,10 +278,10 @@ impl MemfdInodeHandle for InodeHandle {
 
     fn add_seals(&self, new_seals: FileSeals) -> Result<()> {
         if self.status_flags().contains(StatusFlags::O_PATH) {
-            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+            return Err(errno!(EBADF, "the file is opened as a path"));
         }
         if !self.access_mode().is_writable() {
-            return_errno_with_message!(Errno::EPERM, "the file is not opened writable");
+            return Err(errno!(EPERM, "the file is not opened writable"));
         }
 
         memfd_inode_or_err(self)?.add_seals(new_seals)
@@ -289,7 +289,7 @@ impl MemfdInodeHandle for InodeHandle {
 
     fn get_seals(&self) -> Result<FileSeals> {
         if self.status_flags().contains(StatusFlags::O_PATH) {
-            return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
+            return Err(errno!(EBADF, "the file is opened as a path"));
         }
 
         Ok(memfd_inode_or_err(self)?.get_seals())
@@ -300,12 +300,7 @@ fn memfd_inode_or_err(file: &InodeHandle) -> Result<&MemfdInode> {
     file.path()
         .inode()
         .downcast_ref::<MemfdInode>()
-        .ok_or_else(|| {
-            Error::with_message(
-                Errno::EINVAL,
-                "file seals can only be applied to memfd files",
-            )
-        })
+        .ok_or_else(|| errno!(EINVAL, "file seals can only be applied to memfd files",))
 }
 
 struct MemfdTmpFs {

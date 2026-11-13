@@ -107,7 +107,7 @@ pub(super) struct RequireFullSize;
 impl RequireFullSize {
     pub(super) fn new(size: usize) -> Result<Self> {
         if size != size_of::<SigSet>() {
-            return_errno_with_message!(Errno::EINVAL, "the sigset size is invalid");
+            return Err(errno!(EINVAL, "the sigset size is invalid"));
         }
         Ok(RequireFullSize)
     }
@@ -125,7 +125,7 @@ pub(super) struct AllowTruncSize {
 impl AllowTruncSize {
     pub(super) fn new(size: usize) -> Result<Self> {
         if size > size_of::<SigSet>() {
-            return_errno_with_message!(Errno::EINVAL, "the sigset size is too large");
+            return Err(errno!(EINVAL, "the sigset size is too large"));
         }
         Ok(AllowTruncSize {
             requested_size: size,

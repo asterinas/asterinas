@@ -141,7 +141,7 @@ impl ConnectionState {
             return Ok(None);
         }
 
-        return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty");
+        Err(errno!(EAGAIN, "the receive buffer is empty"))
     }
 
     fn pop_rx_packets<'a>(

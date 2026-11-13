@@ -56,7 +56,7 @@ pub(super) fn sys_preadv2(
     let offset = offset_low.cast_signed();
     let flags = match RWFFlag::from_bits(flags) {
         Some(flags) => flags,
-        None => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported flags"),
+        None => return Err(errno!(EOPNOTSUPP, "unsupported flags")),
     };
     let res = if offset == -1 {
         do_sys_readv(raw_fd, io_vec_ptr, io_vec_count, ctx)?
@@ -80,7 +80,7 @@ fn do_sys_preadv(
     );
 
     if offset < 0 {
-        return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
+        return Err(errno!(EINVAL, "offset cannot be negative"));
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();

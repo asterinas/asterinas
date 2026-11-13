@@ -47,8 +47,8 @@ impl NetlinkRouteKernelSocket {
             RtnlSegment::GetAddr(request_segment) => {
                 addr::do_get_addr(request_segment, strict_check)
             }
-            _ => Err(Error::with_message(
-                Errno::EOPNOTSUPP,
+            _ => Err(errno!(
+                EOPNOTSUPP,
                 "the netlink route request is not supported",
             )),
         };

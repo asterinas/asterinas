@@ -51,7 +51,7 @@ pub(super) fn sys_dup3(
     let fdflag = match flags {
         0x0 => FdFlags::empty(),
         0x80000 => FdFlags::CLOEXEC,
-        _ => return_errno_with_message!(Errno::EINVAL, "flags must be O_CLOEXEC or 0"),
+        _ => return Err(errno!(EINVAL, "flags must be O_CLOEXEC or 0")),
     };
 
     do_dup3(old_fd, new_fd, fdflag, ctx)
@@ -67,7 +67,7 @@ fn do_dup3(
     let new_fd = FileDesc::try_from(new_fd)?;
 
     if old_fd == new_fd {
-        return_errno_with_message!(Errno::EINVAL, "an FD cannot be duplicated to itself");
+        return Err(errno!(EINVAL, "an FD cannot be duplicated to itself"));
     }
 
     let file_table = ctx.thread_local.borrow_file_table();

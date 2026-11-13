@@ -8,7 +8,7 @@ use crate::{
 
 pub(super) fn sys_unshare(unshare_flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let mut flags = CloneFlags::from_bits(unshare_flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid `unshare` flags"))?;
+        .ok_or_else(|| errno!(EINVAL, "invalid `unshare` flags"))?;
     debug!("unshare flags = {:?}", flags);
 
     apply_implied_flags(&mut flags);
@@ -64,23 +64,23 @@ fn check_flags(flags: CloneFlags, ctx: &Context) -> Result<()> {
 
     let invalid_flags = flags - VALID_FLAGS;
     if !invalid_flags.is_empty() {
-        return_errno_with_message!(Errno::EINVAL, "unsupported `unshare` flags");
+        return Err(errno!(EINVAL, "unsupported `unshare` flags"));
     }
 
     if flags.intersects(CloneFlags::CLONE_THREAD | CloneFlags::CLONE_VM | CloneFlags::CLONE_SIGHAND)
         && ctx.process.tasks().lock().as_slice().len() != 1
     {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "`CLONE_THREAD`, `CLONE_VM`, and `CLONE_SIGHAND` can be specified only if the process is single-threaded"
-        );
+        ));
     }
 
     if flags.contains(CloneFlags::CLONE_VM) && ctx.user_space().vmar().has_multiple_handles() {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "`CLONE_VM` can only be used when the VMAR is not shared"
-        );
+        ));
     }
 
     Ok(())

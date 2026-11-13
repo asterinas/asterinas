@@ -53,7 +53,7 @@ impl DrmFile {
         let args: DrmSetClientCap = cmd.read()?;
 
         let Ok(cap) = DrmSetCapability::try_from(args.capability) else {
-            return_errno_with_message!(Errno::EINVAL, "the DRM client capability is unknown");
+            return Err(errno!(EINVAL, "the DRM client capability is unknown"));
         };
 
         match cap {
@@ -67,10 +67,10 @@ impl DrmFile {
             ),
             DrmSetCapability::Atomic => {
                 // TODO: Support atomic modesetting.
-                return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
+                return Err(errno!(
+                    EOPNOTSUPP,
                     "the DRM device lacks atomic modesetting"
-                );
+                ));
             }
             DrmSetCapability::AspectRatio => self.set_client_caps(
                 DrmClientCaps::ASPECT_RATIO,
@@ -78,10 +78,10 @@ impl DrmFile {
             ),
             DrmSetCapability::WritebackConnectors => {
                 if !self.has_client_caps(DrmClientCaps::ATOMIC) {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
+                    return Err(errno!(
+                        EINVAL,
                         "the atomic DRM client capability must be enabled before writeback connectors"
-                    );
+                    ));
                 }
 
                 self.set_client_caps(
@@ -91,17 +91,17 @@ impl DrmFile {
             }
             DrmSetCapability::CursorPlaneHotspot => {
                 if !self.device().has_features(DrmFeatures::CURSOR_HOTSPOT) {
-                    return_errno_with_message!(
-                        Errno::EOPNOTSUPP,
+                    return Err(errno!(
+                        EOPNOTSUPP,
                         "the DRM device lacks cursor hotspot support"
-                    );
+                    ));
                 }
 
                 if !self.has_client_caps(DrmClientCaps::ATOMIC) {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
+                    return Err(errno!(
+                        EINVAL,
                         "the atomic DRM client capability must be enabled before cursor hotspots"
-                    );
+                    ));
                 }
 
                 self.set_client_caps(
@@ -224,14 +224,14 @@ impl DrmFile {
             .transpose()?;
 
         if display_mode.is_none() && args.count_connectors != 0 {
-            return_errno_with_message!(Errno::EINVAL, "disabling a CRTC requires no connectors");
+            return Err(errno!(EINVAL, "disabling a CRTC requires no connectors"));
         }
 
         if display_mode.is_some() && (args.count_connectors == 0 || args.fb_id == 0) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "enabling a CRTC requires connectors and a framebuffer"
-            );
+            ));
         }
 
         // This check only prevents an excessively large allocation for the connector ID array below.
@@ -243,7 +243,7 @@ impl DrmFile {
             .connectors()
             .count();
         if args.count_connectors as usize > connector_count {
-            return_errno_with_message!(Errno::EINVAL, "too many connectors for SETCRTC");
+            return Err(errno!(EINVAL, "too many connectors for SETCRTC"));
         }
 
         let connector_ids = cmd.with_data_ptr(|args_ptr| {
@@ -265,10 +265,10 @@ impl DrmFile {
         } else if args.fb_id == u32::MAX {
             // SETCRTC uses -1 to request the primary plane's currently bound framebuffer.
             let Some(framebuffer) = primary_plane.state().lock().framebuffer().upgrade() else {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "the CRTC has no current framebuffer to reuse"
-                );
+                ));
             };
             Some(framebuffer)
         } else {
@@ -289,20 +289,20 @@ impl DrmFile {
                 .pixel_formats()
                 .contains(&framebuffer.pixel_format())
             {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "the DRM framebuffer format is unsupported by the primary plane"
-                );
+                ));
             }
 
             let framebuffer_size = framebuffer.size();
             if !DrmRect::new(0, 0, framebuffer_size.width(), framebuffer_size.height())
                 .contains_rect(&source_rect)
             {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "the CRTC scanout rectangle exceeds the DRM framebuffer"
-                );
+                ));
             }
 
             // Build the replacement routing without changing the current associations.
@@ -318,7 +318,7 @@ impl DrmFile {
                         Arc::ptr_eq(previously_matched_connector, connector)
                     })
                 {
-                    return_errno_with_message!(Errno::EINVAL, "a DRM connector is specified twice");
+                    return Err(errno!(EINVAL, "a DRM connector is specified twice"));
                 }
 
                 // Encoders may move from another CRTC, but each must be unique and
@@ -345,10 +345,10 @@ impl DrmFile {
                             compatible.then_some(candidate_encoder)
                         })
                 else {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
+                    return Err(errno!(
+                        EINVAL,
                         "the connector has no encoder compatible with the requested routing"
-                    );
+                    ));
                 };
 
                 matched_connector_encoders.push((connector, matched_encoder));
@@ -577,10 +577,7 @@ impl DrmFile {
             let data = blob.data();
             if args.length != 0 && !data.is_empty() {
                 if args.data == 0 {
-                    return_errno_with_message!(
-                        Errno::EFAULT,
-                        "the DRM blob output pointer is null"
-                    );
+                    return Err(errno!(EFAULT, "the DRM blob output pointer is null"));
                 }
 
                 let write_len = core::cmp::min(args.length as usize, data.len());
@@ -611,10 +608,10 @@ impl DrmFile {
             min_size.width()..=max_size.width(),
             min_size.height()..=max_size.height(),
         ) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the DRM framebuffer dimensions are outside the supported range"
-            );
+            ));
         }
 
         let supports_pixel_format = {
@@ -624,10 +621,10 @@ impl DrmFile {
                 .any(|plane| plane.pixel_formats().contains(&pixel_format))
         };
         if !supports_pixel_format {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "no DRM plane supports the framebuffer pixel format"
-            );
+            ));
         }
 
         let gem_object = self.lookup_gem_object(args.handle)?;
@@ -681,10 +678,10 @@ impl DrmFile {
                 .framebuffer()
                 .ptr_eq(&Arc::downgrade(&framebuffer))
         }) {
-            return_errno_with_message!(
-                Errno::EBUSY,
+            return Err(errno!(
+                EBUSY,
                 "the DRM framebuffer is still in use by a plane"
-            );
+            ));
         }
 
         self.remove_framebuffer(fb_id).ok_or(Errno::ENOENT)?;
@@ -700,22 +697,22 @@ impl DrmFile {
 
         let framebuffer = self.lookup_framebuffer(args.fb_id).ok_or(Errno::ENOENT)?;
         if (args.num_clips == 0) != (args.clips_ptr == 0) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the DRM clip count and pointer are inconsistent"
-            );
+            ));
         }
         if args.flags & DrmModeFbDirtyFlags::ANNOTATE_COPY.bits() != 0
             && !args.num_clips.is_multiple_of(2)
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "DRM copy annotation requires pairs of clip rectangles"
-            );
+            ));
         }
         const DRM_MODE_FB_DIRTY_MAX_CLIPS: u32 = 256;
         if args.num_clips > DRM_MODE_FB_DIRTY_MAX_CLIPS {
-            return_errno_with_message!(Errno::EINVAL, "too many DRM clip rectangles");
+            return Err(errno!(EINVAL, "too many DRM clip rectangles"));
         }
 
         // Validate userspace access even though the refresh covers the whole framebuffer.
@@ -850,22 +847,14 @@ impl DrmFile {
                     .map(|connector| connector.properties()),
                 DrmKmsObjectType::Encoder => {
                     if object_store.lookup_encoder_by_id(args.obj_id).is_some() {
-                        return_errno_with_message!(
-                            Errno::EINVAL,
-                            "the DRM encoder has no property table"
-                        );
+                        return Err(errno!(EINVAL, "the DRM encoder has no property table"));
                     }
                     None
                 }
                 DrmKmsObjectType::Any => object_store.lookup_any_object_properties(args.obj_id)?,
                 _ => None,
             }
-            .ok_or_else(|| {
-                Error::with_message(
-                    Errno::ENOENT,
-                    "the DRM object type does not match the object ID",
-                )
-            })?;
+            .ok_or_else(|| errno!(ENOENT, "the DRM object type does not match the object ID",))?;
 
             let (prop_ids, prop_values) = self.visible_property_values(properties);
             drop(object_store);
@@ -913,10 +902,10 @@ fn parse_boolean_capability(value: u64) -> Result<bool> {
     match value {
         0 => Ok(false),
         1 => Ok(true),
-        _ => return_errno_with_message!(
-            Errno::EINVAL,
+        _ => Err(errno!(
+            EINVAL,
             "a boolean DRM client capability must be zero or one"
-        ),
+        )),
     }
 }
 
@@ -931,7 +920,7 @@ fn copy_array_to_user<T: Pod>(
         return Ok(());
     }
     if user_ptr == 0 {
-        return_errno_with_message!(Errno::EFAULT, "the DRM userspace array pointer is null");
+        return Err(errno!(EFAULT, "the DRM userspace array pointer is null"));
     }
 
     userspace.write_slice(user_ptr as usize, &values[..copy_count])?;
@@ -948,7 +937,7 @@ fn copy_array_from_user<T: Pod>(
         return Ok(Vec::new());
     }
     if user_ptr == 0 {
-        return_errno_with_message!(Errno::EFAULT, "the DRM userspace array pointer is null");
+        return Err(errno!(EFAULT, "the DRM userspace array pointer is null"));
     }
 
     let mut values = vec![T::new_zeroed(); count];

@@ -170,9 +170,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             let child_type = child_sysnode.type_();
             match child_type {
                 SysNodeType::Branch => {
-                    let child_branch = child_sysnode
-                        .cast_to_branch()
-                        .ok_or(Error::new(Errno::EIO))?;
+                    let child_branch = child_sysnode.cast_to_branch().ok_or(errno!(EIO))?;
                     let inode = Self::new_branch_dir(
                         SysTreeNodeKind::Branch(child_branch),
                         None,
@@ -182,8 +180,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                     Ok(inode)
                 }
                 SysNodeType::Leaf => {
-                    let child_leaf_node =
-                        child_sysnode.cast_to_node().ok_or(Error::new(Errno::EIO))?;
+                    let child_leaf_node = child_sysnode.cast_to_node().ok_or(errno!(EIO))?;
                     let inode = Self::new_leaf_dir(
                         SysTreeNodeKind::Leaf(child_leaf_node),
                         None,
@@ -193,9 +190,7 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
                     Ok(inode)
                 }
                 SysNodeType::Symlink => {
-                    let child_symlink = child_sysnode
-                        .cast_to_symlink()
-                        .ok_or(Error::new(Errno::EIO))?;
+                    let child_symlink = child_sysnode.cast_to_symlink().ok_or(errno!(EIO))?;
                     let inode = Self::new_symlink(child_symlink, Arc::downgrade(&self.this()), &sb);
                     Ok(inode)
                 }
@@ -203,20 +198,20 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
         } else {
             // If no child node found, try finding an attribute of the current branch node
             if sysnode.is_attr_absent(name) {
-                return_errno_with_message!(Errno::ENOENT, "attribute is not present");
+                return Err(errno!(ENOENT, "attribute is not present"));
             }
             let Some(attr) = sysnode.node_attrs().get(name).cloned() else {
-                return_errno_with_message!(Errno::ENOENT, "child node or attribute not found");
+                return Err(errno!(ENOENT, "child node or attribute not found"));
             };
 
             let parent_node_arc: Arc<dyn SysNode> = match &self.node_kind() {
                 SysTreeNodeKind::Branch(branch_arc) => branch_arc.clone(),
                 // This case shouldn't happen if lookup_node_or_attr is called correctly
                 _ => {
-                    return_errno_with_message!(
-                        Errno::EIO,
+                    return Err(errno!(
+                        EIO,
                         "lookup_node_or_attr called on non-branch inode"
-                    );
+                    ));
                 }
             };
 
@@ -231,17 +226,17 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
     {
         // This function is called when the current inode is a Leaf directory
         if sysnode.is_attr_absent(name) {
-            return_errno_with_message!(Errno::ENOENT, "attribute is not present");
+            return Err(errno!(ENOENT, "attribute is not present"));
         }
         let Some(attr) = sysnode.node_attrs().get(name).cloned() else {
-            return_errno_with_message!(Errno::ENOENT, "child node or attribute not found");
+            return Err(errno!(ENOENT, "child node or attribute not found"));
         };
 
         let leaf_node_arc: Arc<dyn SysNode> = match &self.node_kind() {
             SysTreeNodeKind::Leaf(leaf_arc) => leaf_arc.clone(),
             // This case shouldn't happen if lookup_attr is called correctly
             _ => {
-                return_errno_with_message!(Errno::EIO, "lookup_attr called on non-leaf inode");
+                return Err(errno!(EIO, "lookup_attr called on non-leaf inode"));
             }
         };
 
@@ -309,7 +304,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
         _status_flags: StatusFlags,
     ) -> Result<usize> {
         let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
-            return_errno!(Errno::EINVAL);
+            return Err(errno!(EINVAL));
         };
 
         let len = leaf.read_attr_at(attr.name(), offset, buf)?;
@@ -324,7 +319,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
         _status_flags: StatusFlags,
     ) -> Result<usize> {
         let SysTreeNodeKind::Attr(attr, leaf) = &self.node_kind() else {
-            return_errno!(Errno::EINVAL);
+            return Err(errno!(EINVAL));
         };
 
         let len = if offset == 0 {
@@ -383,7 +378,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> FileOps for KInode {
 
             if res.is_err() {
                 if count == 0 {
-                    return_errno_with_message!(Errno::EINVAL, "dirent visitor error");
+                    return Err(errno!(EINVAL, "dirent visitor error"));
                 } else {
                     break;
                 }
@@ -457,7 +452,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     }
 
     default fn set_owner(&self, _self_dentry: &VfsDentry, _uid: Uid) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     default fn group(&self) -> Result<Gid> {
@@ -465,7 +460,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     }
 
     default fn set_group(&self, _self_dentry: &VfsDentry, _gid: Gid) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     default fn fs(&self) -> Arc<dyn FileSystem> {
@@ -484,7 +479,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
         let SysTreeNodeKind::Branch(branch_node) = &self.node_kind() else {
-            return_errno_with_message!(Errno::ENOTDIR, "self is not a dir");
+            return Err(errno!(ENOTDIR, "self is not a dir"));
         };
 
         let new_child = branch_node.create_child(name)?;
@@ -516,7 +511,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         _mode: InodeMode,
         _dev: MknodType,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     default fn link(
@@ -525,15 +520,15 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         _old_dentry: &VfsDentry,
         _name: &str,
     ) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     default fn unlink(&self, _child_dentry: &VfsDentry) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     default fn rmdir(&self, _child_dentry: &VfsDentry) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     default fn rename(
@@ -544,12 +539,12 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
         _replaced_inode: Option<&Arc<dyn Inode>>,
         _mode: RenameMode,
     ) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     default fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
         if self.type_() != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "not a directory inode");
+            return Err(errno!(ENOTDIR, "not a directory inode"));
         }
 
         if name == "." {
@@ -570,16 +565,14 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
                 self.lookup_attr(name, leaf_node.as_ref())
             }
             // Attr and Symlink nodes are not directories
-            SysTreeNodeKind::Attr(_, _) | SysTreeNodeKind::Symlink(_) => {
-                Err(Error::new(Errno::ENOTDIR))
-            }
+            SysTreeNodeKind::Attr(_, _) | SysTreeNodeKind::Symlink(_) => Err(errno!(ENOTDIR)),
         }
     }
 
     default fn read_link(&self) -> Result<SymbolicLink> {
         match &self.node_kind() {
             SysTreeNodeKind::Symlink(s) => Ok(SymbolicLink::Plain(s.target_path().to_string())),
-            _ => Err(Error::new(Errno::EINVAL)),
+            _ => Err(errno!(EINVAL)),
         }
     }
 
@@ -597,7 +590,7 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
     }
 
     default fn fallocate(&self, _mode: FallocMode, _offset: usize, _len: usize) -> Result<()> {
-        Err(Error::new(Errno::EOPNOTSUPP))
+        Err(errno!(EOPNOTSUPP))
     }
 
     default fn revalidation_policy(&self) -> RevalidationPolicy {

@@ -65,7 +65,7 @@ impl<Message: QueueableMessage> MessageQueue<Message> {
         }
 
         let Some(message) = self.messages.front() else {
-            return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty");
+            return Err(errno!(EAGAIN, "the receive buffer is empty"));
         };
 
         let length = message.total_len();
@@ -87,10 +87,7 @@ impl<Message: QueueableMessage> MessageQueue<Message> {
         // kernel can enqueue new messages. If the kernel fails to enqueue a new message, `ENOBUFS`
         // will be returned when userspace calls `recv`.
         if NETLINK_DEFAULT_BUF_SIZE - self.total_length < length {
-            self.error = Some(Error::with_message(
-                Errno::ENOBUFS,
-                "the receive buffer is full",
-            ));
+            self.error = Some(errno!(ENOBUFS, "the receive buffer is full",));
             return false;
         }
 

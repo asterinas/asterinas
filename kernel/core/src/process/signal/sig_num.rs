@@ -17,7 +17,7 @@ impl TryFrom<u8> for SigNum {
 
     fn try_from(sig_num: u8) -> Result<Self> {
         if !(MIN_STD_SIG_NUM..=MAX_RT_SIG_NUM).contains(&sig_num) {
-            return_errno_with_message!(Errno::EINVAL, "invalid signal number");
+            return Err(errno!(EINVAL, "invalid signal number"));
         }
         Ok(SigNum { sig_num })
     }

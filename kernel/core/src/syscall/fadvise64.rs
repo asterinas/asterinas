@@ -25,7 +25,7 @@ pub(super) fn sys_fadvise64(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let behavior = FadviseBehavior::try_from(advice)
-        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid fadvise behavior:"))?;
+        .map_err(|_| errno!(EINVAL, "invalid fadvise behavior:"))?;
 
     debug!(
         "raw_fd={}, offset={}, len={}, behavior={:?}",

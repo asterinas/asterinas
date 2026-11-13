@@ -54,7 +54,7 @@ impl<T> IpcIds<T> {
         let mut objects = self.objects.write();
 
         let Entry::Occupied(entry) = objects.entry(id) else {
-            return_errno_with_message!(Errno::EINVAL, "the ID does not exist");
+            return Err(errno!(EINVAL, "the ID does not exist"));
         };
 
         may_remove(entry.get())?;
@@ -78,7 +78,7 @@ impl<T> IpcIds<T> {
             .alloc()
             .map(|id| IpcId::new(id as u32))
         else {
-            return_errno_with_message!(Errno::ENOSPC, "all IDs are exhausted");
+            return Err(errno!(ENOSPC, "all IDs are exhausted"));
         };
 
         let object = match new_object_fn(id) {
@@ -106,7 +106,7 @@ impl<T> IpcIds<T> {
             .alloc_specific(id.get() as usize)
             .is_none()
         {
-            return_errno_with_message!(Errno::EEXIST, "the ID already exists");
+            return Err(errno!(EEXIST, "the ID already exists"));
         }
 
         let object = match new_object_fn(id) {
@@ -128,6 +128,6 @@ pub(super) struct IdNotExistError;
 impl From<IdNotExistError> for Error {
     #[track_caller]
     fn from(_value: IdNotExistError) -> Self {
-        Error::with_message(Errno::EINVAL, "the ID does not exist")
+        errno!(EINVAL, "the ID does not exist")
     }
 }

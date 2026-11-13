@@ -26,7 +26,7 @@ impl GroupIdSet {
     /// Returns `EINVAL` if the ID is outside the supported range of 1 through 32.
     pub(in netlink) fn from_group_id(group_id: u32) -> Result<Self> {
         if !(1..=MAX_GROUPS).contains(&group_id) {
-            return_errno_with_message!(Errno::EINVAL, "invalid netlink group ID");
+            return Err(errno!(EINVAL, "invalid netlink group ID"));
         }
         Ok(Self(1 << (group_id - 1)))
     }

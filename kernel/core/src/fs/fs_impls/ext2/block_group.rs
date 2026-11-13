@@ -97,7 +97,7 @@ impl BlockGroup {
         let offset = group_idx * size_of::<RawBlockGroup>();
         let raw_group = group_descs
             .read_val::<RawBlockGroup>(offset)
-            .map_err(|_| Error::with_message(Errno::EIO, "failed to read group descriptor"))?;
+            .map_err(|_| errno!(EIO, "failed to read group descriptor"))?;
         let group_desc = BlockGroupDesc::from(raw_group);
 
         // Cache geometry from `SuperBlock` at load time.
@@ -183,7 +183,7 @@ impl BlockGroup {
 
         // Slow path: check allocation bitmap, then load from disk.
         if !self.is_inode_allocated(ino) {
-            return_errno!(Errno::ENOENT);
+            return Err(errno!(ENOENT));
         }
 
         // Revalidate under write lock since another thread may have inserted
@@ -300,7 +300,7 @@ impl BlockGroup {
 
         let Some(range) = allocated_range else {
             if metadata.desc.free_blocks_count > 0 {
-                return_errno_with_message!(Errno::EIO, "block bitmap corruption detected");
+                return Err(errno!(EIO, "block bitmap corruption detected"));
             }
             return Ok(0..0);
         };
@@ -315,7 +315,7 @@ impl BlockGroup {
             || sb_free_blocks < alloc_count
         {
             metadata.block_bitmap.free_consecutive(range);
-            return_errno_with_message!(Errno::EIO, "block bitmap corruption detected");
+            return Err(errno!(EIO, "block bitmap corruption detected"));
         }
 
         let alloc_count = alloc_count as u16;
@@ -340,7 +340,7 @@ impl BlockGroup {
         let mut metadata = self.metadata.write();
 
         if self.overlaps_system_zone_with(&metadata.desc, abs_range) {
-            return_errno_with_message!(Errno::EIO, "freeing blocks in system zone");
+            return Err(errno!(EIO, "freeing blocks in system zone"));
         }
 
         // Clear bits one by one and count only allocated-to-free transitions.
@@ -366,7 +366,7 @@ impl BlockGroup {
             .desc
             .free_blocks_count
             .checked_add(freed_count)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "free block count overflow in group"))?;
+            .ok_or_else(|| errno!(EIO, "free block count overflow in group"))?;
 
         Ok(actually_freed)
     }
@@ -382,7 +382,7 @@ impl BlockGroup {
             return Ok(None);
         }
         if inode_type.is_directory() && metadata.desc.used_dirs_count == u16::MAX {
-            return_errno_with_message!(Errno::EIO, "group used directory counter overflow");
+            return Err(errno!(EIO, "group used directory counter overflow"));
         }
 
         let Some(inode_idx) = metadata.inode_bitmap.alloc() else {
@@ -393,7 +393,7 @@ impl BlockGroup {
             .desc
             .free_inodes_count
             .checked_sub(1)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "group free inode counter underflow"))?;
+            .ok_or_else(|| errno!(EIO, "group free inode counter underflow"))?;
         if inode_type.is_directory() {
             metadata.desc.used_dirs_count += 1;
         }
@@ -418,16 +418,14 @@ impl BlockGroup {
             .desc
             .free_inodes_count
             .checked_add(1)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "group free inode counter overflow"))?;
+            .ok_or_else(|| errno!(EIO, "group free inode counter overflow"))?;
         let used_dirs_count = if inode_type.is_directory() {
             Some(
                 metadata
                     .desc
                     .used_dirs_count
                     .checked_sub(1)
-                    .ok_or_else(|| {
-                        Error::with_message(Errno::EIO, "group used directory counter underflow")
-                    })?,
+                    .ok_or_else(|| errno!(EIO, "group used directory counter underflow"))?,
             )
         } else {
             None
@@ -479,7 +477,7 @@ impl BlockGroup {
                 .is_err()
             {
                 // Keep dirty bit set on writeback failure for retry.
-                return_errno_with_message!(Errno::EIO, "failed to write block bitmap");
+                return Err(errno!(EIO, "failed to write block bitmap"));
             }
             metadata.block_bitmap.clear_dirty();
         }
@@ -496,7 +494,7 @@ impl BlockGroup {
                 .is_err()
             {
                 // Keep dirty bit set on writeback failure for retry.
-                return_errno_with_message!(Errno::EIO, "failed to write inode bitmap");
+                return Err(errno!(EIO, "failed to write inode bitmap"));
             }
             metadata.inode_bitmap.clear_dirty();
         }
@@ -536,7 +534,7 @@ impl BlockGroup {
             .read_bytes(Bid::new(bitmap_bid as u64).to_offset(), &mut buf)
             .is_err()
         {
-            return_errno_with_message!(Errno::EIO, "failed to read block bitmap");
+            return Err(errno!(EIO, "failed to read block bitmap"));
         }
 
         let max_bit = last_block - first_block;
@@ -558,7 +556,7 @@ impl BlockGroup {
             .read_bytes(Bid::new(bitmap_bid as u64).to_offset(), &mut buf)
             .is_err()
         {
-            return_errno_with_message!(Errno::EIO, "failed to read inode bitmap");
+            return Err(errno!(EIO, "failed to read inode bitmap"));
         }
 
         let capacity = nr_inodes_per_group as usize;
@@ -655,16 +653,16 @@ impl BlockGroupDesc {
     /// Validates that free counters fit within this group's capacity.
     fn validate_free_counts(&self, nr_blocks_in_group: u32, nr_inodes_in_group: u32) -> Result<()> {
         if u32::from(self.free_blocks_count) > nr_blocks_in_group {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "group free blocks count exceeds group blocks count"
-            );
+            ));
         }
         if u32::from(self.free_inodes_count) > nr_inodes_in_group {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "group free inodes count exceeds group inodes count"
-            );
+            ));
         }
 
         Ok(())
@@ -692,23 +690,23 @@ impl BlockGroupDesc {
         };
 
         if !is_valid_fn(self.block_bitmap_bid) {
-            return_errno_with_message!(Errno::EINVAL, "block bitmap block invalid or not marked");
+            return Err(errno!(EINVAL, "block bitmap block invalid or not marked"));
         }
         if !is_valid_fn(self.inode_bitmap_bid) {
-            return_errno_with_message!(Errno::EINVAL, "inode bitmap block invalid or not marked");
+            return Err(errno!(EINVAL, "inode bitmap block invalid or not marked"));
         }
 
         if self.inode_table_bid < first_block || self.inode_table_bid - first_block > max_bit {
-            return_errno_with_message!(Errno::EINVAL, "inode table start out of group range");
+            return Err(errno!(EINVAL, "inode table start out of group range"));
         }
         let table_start_bit = self.inode_table_bid - first_block;
         let table_end_bit = table_start_bit + nr_inode_table_blocks_per_group;
         if table_end_bit - 1 > max_bit {
-            return_errno_with_message!(Errno::EINVAL, "inode table extends beyond group");
+            return Err(errno!(EINVAL, "inode table extends beyond group"));
         }
         for table_bit in table_start_bit..table_end_bit {
             if !block_bitmap.is_allocated(table_bit as u16) {
-                return_errno_with_message!(Errno::EINVAL, "inode table block not marked in bitmap");
+                return Err(errno!(EINVAL, "inode table block not marked in bitmap"));
             }
         }
 
@@ -751,7 +749,7 @@ impl BlockAsPageCacheBackend for InodeTableBackend {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.raw_inodes_size <= idx * BLOCK_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "invalid read size");
+            return Err(errno!(EINVAL, "invalid read size"));
         }
         let bid = Bid::new(self.inode_table_bid as u64) + idx as u64;
         self.block_device
@@ -761,7 +759,7 @@ impl BlockAsPageCacheBackend for InodeTableBackend {
 
     fn submit_read_page_run(&self, mut pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
         if self.raw_inodes_size < (pages.start_idx() + pages.len()) * BLOCK_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "invalid read size");
+            return Err(errno!(EINVAL, "invalid read size"));
         }
 
         let start_idx = pages.start_idx();
@@ -779,7 +777,7 @@ impl BlockAsPageCacheBackend for InodeTableBackend {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.raw_inodes_size <= idx * BLOCK_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "invalid write size");
+            return Err(errno!(EINVAL, "invalid write size"));
         }
         let bid = Bid::new(self.inode_table_bid as u64) + idx as u64;
         self.block_device.write_blocks_async(
@@ -793,7 +791,7 @@ impl BlockAsPageCacheBackend for InodeTableBackend {
 
     fn submit_write_page_run(&self, mut pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
         if self.raw_inodes_size < (pages.start_idx() + pages.len()) * BLOCK_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "invalid write size");
+            return Err(errno!(EINVAL, "invalid write size"));
         }
 
         let start_idx = pages.start_idx();

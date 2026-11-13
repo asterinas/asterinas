@@ -30,7 +30,7 @@ pub(super) fn sys_fallocate(
 
     let falloc_mode = FallocMode::try_from(
         RawFallocMode::from_bits(mode as _)
-            .ok_or_else(|| Error::with_message(Errno::EOPNOTSUPP, "invalid fallocate mode"))?,
+            .ok_or_else(|| errno!(EOPNOTSUPP, "invalid fallocate mode"))?,
     )?;
     file.fallocate(falloc_mode, offset as usize, len as usize)?;
 
@@ -40,13 +40,13 @@ pub(super) fn sys_fallocate(
 
 fn check_offset_and_len(offset: i64, len: i64, ctx: &Context) -> Result<()> {
     if offset < 0 || len <= 0 {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "offset is less than 0, or len is less than or equal to 0"
-        );
+        ));
     }
     if offset.checked_add(len).is_none() {
-        return_errno_with_message!(Errno::EINVAL, "offset+len has overflowed");
+        return Err(errno!(EINVAL, "offset+len has overflowed"));
     }
 
     let max_file_size = {
@@ -56,7 +56,7 @@ fn check_offset_and_len(offset: i64, len: i64, ctx: &Context) -> Result<()> {
             .get_cur() as usize
     };
     if (offset + len) as usize > max_file_size {
-        return_errno_with_message!(Errno::EFBIG, "offset+len exceeds the maximum file size");
+        return Err(errno!(EFBIG, "offset+len exceeds the maximum file size"));
     }
     Ok(())
 }
@@ -99,44 +99,44 @@ impl TryFrom<RawFallocMode> for FallocMode {
         if raw_mode.contains(RawFallocMode::FALLOC_FL_PUNCH_HOLE)
             && raw_mode.contains(RawFallocMode::FALLOC_FL_ZERO_RANGE)
         {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
+            return Err(errno!(
+                EOPNOTSUPP,
                 "PUNCH_HOLE and ZERO_RANGE cannot be used together"
-            );
+            ));
         }
         if raw_mode.contains(RawFallocMode::FALLOC_FL_PUNCH_HOLE)
             && !raw_mode.contains(RawFallocMode::FALLOC_FL_KEEP_SIZE)
         {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
+            return Err(errno!(
+                EOPNOTSUPP,
                 "PUNCH_HOLE must be combined with KEEP_SIZE"
-            );
+            ));
         }
         if raw_mode.contains(RawFallocMode::FALLOC_FL_COLLAPSE_RANGE)
             && !(raw_mode - RawFallocMode::FALLOC_FL_COLLAPSE_RANGE).is_empty()
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "COLLAPSE_RANGE must be used exclusively without any other flags"
-            );
+            ));
         }
         if raw_mode.contains(RawFallocMode::FALLOC_FL_INSERT_RANGE)
             && !(raw_mode - RawFallocMode::FALLOC_FL_INSERT_RANGE).is_empty()
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "INSERT_RANGE must be used exclusively without any other flags"
-            );
+            ));
         }
         if raw_mode.contains(RawFallocMode::FALLOC_FL_UNSHARE_RANGE)
             && !(raw_mode
                 - (RawFallocMode::FALLOC_FL_UNSHARE_RANGE | RawFallocMode::FALLOC_FL_KEEP_SIZE))
                 .is_empty()
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "UNSHARE_RANGE can only be combined with KEEP_SIZE."
-            );
+            ));
         }
 
         // Transform valid flags into the fallocate mode

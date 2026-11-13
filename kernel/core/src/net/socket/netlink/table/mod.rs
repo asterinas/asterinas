@@ -134,7 +134,7 @@ impl<Message: 'static> ProtocolSocketTable<Message> {
         };
 
         if self.unicast_sockets.contains_key(&port) {
-            return_errno_with_message!(Errno::EADDRINUSE, "the netlink port is already in use");
+            return Err(errno!(EADDRINUSE, "the netlink port is already in use"));
         }
 
         self.unicast_sockets.insert(port, receiver);

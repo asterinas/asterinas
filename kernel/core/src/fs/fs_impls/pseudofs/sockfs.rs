@@ -72,7 +72,7 @@ impl FsType for SockFsType {
     }
 
     fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        return_errno_with_message!(Errno::EINVAL, "sockfs cannot be mounted");
+        Err(errno!(EINVAL, "sockfs cannot be mounted"))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

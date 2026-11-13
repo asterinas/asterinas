@@ -87,7 +87,7 @@ pub(super) fn sys_rt_sigtimedwait(
                 )
                 .map_err(|e| {
                     if e.error() == Errno::ETIME {
-                        Error::new(Errno::EAGAIN)
+                        errno!(EAGAIN)
                     } else {
                         e
                     }

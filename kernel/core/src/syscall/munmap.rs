@@ -9,13 +9,13 @@ pub(super) fn sys_munmap(addr: Vaddr, len: usize, ctx: &Context) -> Result<Sysca
     debug!("addr = 0x{:x}, len = {}", addr, len);
 
     if !addr.is_multiple_of(PAGE_SIZE) {
-        return_errno_with_message!(Errno::EINVAL, "the mapping address is not aligned");
+        return Err(errno!(EINVAL, "the mapping address is not aligned"));
     }
     if len == 0 {
-        return_errno_with_message!(Errno::EINVAL, "the mapping length is zero");
+        return Err(errno!(EINVAL, "the mapping length is zero"));
     }
     if VMAR_CAP_ADDR.checked_sub(addr).is_none_or(|gap| gap < len) {
-        return_errno_with_message!(Errno::EINVAL, "the mapping range is not in userspace");
+        return Err(errno!(EINVAL, "the mapping range is not in userspace"));
     }
     let addr_range = addr..(addr + len).align_up(PAGE_SIZE);
 

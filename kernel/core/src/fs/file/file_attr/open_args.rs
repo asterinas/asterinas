@@ -28,24 +28,24 @@ impl OpenArgs {
             && !status_flags.contains(StatusFlags::O_PATH)
         {
             if !creation_flags.contains(CreationFlags::O_DIRECTORY) {
-                return_errno_with_message!(Errno::EINVAL, "O_TMPFILE requires O_DIRECTORY");
+                return Err(errno!(EINVAL, "O_TMPFILE requires O_DIRECTORY"));
             }
             if !access_mode.is_writable() {
-                return_errno_with_message!(Errno::EINVAL, "O_TMPFILE requires O_RDWR or O_WRONLY");
+                return Err(errno!(EINVAL, "O_TMPFILE requires O_RDWR or O_WRONLY"));
             }
             if creation_flags.contains(CreationFlags::O_CREAT) {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "O_TMPFILE and O_CREAT are mutually exclusive"
-                );
+                ));
             }
         } else if creation_flags.contains(CreationFlags::O_CREAT)
             && creation_flags.contains(CreationFlags::O_DIRECTORY)
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "O_CREAT and O_DIRECTORY cannot be specified together"
-            );
+            ));
         }
 
         Ok(Self {

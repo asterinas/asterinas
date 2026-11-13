@@ -62,8 +62,7 @@ pub(super) fn sys_fchownat(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let path_name = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
-    let flags = ChownFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let flags = ChownFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
     debug!(
         "dirfd = {}, path = {:?}, uid = {}, gid = {}, flags = {:?}",
         dirfd, path_name, uid, gid, flags
@@ -97,7 +96,7 @@ fn to_optional_id<T>(id: i32, f: impl Fn(u32) -> T) -> Result<Option<T>> {
         // If the owner or group is specified as -1, then that ID is not changed.
         None
     } else {
-        return_errno!(Errno::EINVAL);
+        return Err(errno!(EINVAL));
     };
 
     Ok(id)

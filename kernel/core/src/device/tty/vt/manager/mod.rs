@@ -253,14 +253,14 @@ impl VtManagerGuard<'_> {
         let vt_console = self.manager.vt(vt_index).driver().vt_console();
         let mode_type = vt_console.lock_inner().vt_mode().mode_type();
         if mode_type != VtModeType::Process {
-            return_errno_with_message!(Errno::EINVAL, "the VT is not in process mode");
+            return Err(errno!(EINVAL, "the VT is not in process mode"));
         }
 
         if vt_index != self.state.active {
             if reldisp_type == ReleaseDisplayType::AckAcquire {
                 return Ok(());
             } else {
-                return_errno_with_message!(Errno::EINVAL, "the VT is not active");
+                return Err(errno!(EINVAL, "the VT is not active"));
             }
         }
 
@@ -268,7 +268,7 @@ impl VtManagerGuard<'_> {
             if reldisp_type == ReleaseDisplayType::AckAcquire {
                 return Ok(());
             } else {
-                return_errno_with_message!(Errno::EINVAL, "no VT switch is pending");
+                return Err(errno!(EINVAL, "no VT switch is pending"));
             };
         };
 
@@ -313,7 +313,7 @@ impl VtManagerGuard<'_> {
     /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt_ioctl.c#L629-L646>
     pub(super) fn disallocate_vt(&self, index: VtIndex) -> Result<()> {
         if self.is_busy(index) {
-            return_errno_with_message!(Errno::EBUSY, "the VT is busy");
+            return Err(errno!(EBUSY, "the VT is busy"));
         }
 
         if index.get() != 1
@@ -426,7 +426,7 @@ impl VtManagerGuard<'_> {
             || (active_console_mode == ConsoleMode::Graphics
                 && active_mode_type == VtModeType::Auto)
         {
-            return_errno_with_message!(Errno::EINVAL, "VT switching is rejected");
+            return Err(errno!(EINVAL, "VT switching is rejected"));
         }
 
         // Process-controlled VT: notify user space and do not complete switch here.

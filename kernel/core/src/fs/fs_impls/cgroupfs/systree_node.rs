@@ -525,19 +525,19 @@ impl CgroupNode {
     pub(super) fn mark_as_dead(&self) -> crate::prelude::Result<()> {
         let mut inner = self.inner.write();
         let Some(inner_ref) = inner.as_ref() else {
-            return_errno_with_message!(Errno::ENOENT, "the cgroup node is already dead");
+            return Err(errno!(ENOENT, "the cgroup node is already dead"));
         };
 
         if !inner_ref.processes.is_empty() {
-            return_errno_with_message!(Errno::EBUSY, "the cgroup hierarchy still has processes");
+            return Err(errno!(EBUSY, "the cgroup hierarchy still has processes"));
         }
 
         let children = self.fields.children_ref().read();
         if !children.is_empty() {
-            return_errno_with_message!(
-                Errno::ENOTEMPTY,
+            return Err(errno!(
+                ENOTEMPTY,
                 "only an empty cgroup hierarchy can be removed"
-            );
+            ));
         }
 
         *inner = None;

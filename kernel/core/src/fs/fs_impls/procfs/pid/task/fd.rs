@@ -54,11 +54,11 @@ impl<T: FdOps> ProcDirOps for FdDirOps<T> {
         {
             file_desc
         } else {
-            return_errno_with_message!(Errno::ENOENT, "the name is not a valid FD");
+            return Err(errno!(ENOENT, "the name is not a valid FD"));
         };
 
         let Some(thread) = self.dir.thread() else {
-            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+            return Err(errno!(ESRCH, "the thread does not exist"));
         };
         let posix_thread = thread.as_posix_thread().unwrap();
 
@@ -67,7 +67,7 @@ impl<T: FdOps> ProcDirOps for FdDirOps<T> {
         {
             file.access_mode()
         } else {
-            return_errno_with_message!(Errno::ENOENT, "the file does not exist");
+            return Err(errno!(ENOENT, "the file does not exist"));
         };
 
         Ok(T::new_inode(
@@ -83,7 +83,7 @@ impl<T: FdOps> ProcDirOps for FdDirOps<T> {
         F: FnMut(ReaddirEntry<'a>) -> Result<()>,
     {
         let Some(thread) = self.dir.thread() else {
-            return_errno_with_message!(Errno::ENOENT, "the thread does not exist");
+            return Err(errno!(ENOENT, "the thread does not exist"));
         };
         let posix_thread = thread.as_posix_thread().unwrap();
 
@@ -236,18 +236,18 @@ impl ProcSymOps for FileSymOps {
 
     fn read_link(&self) -> Result<SymbolicLink> {
         let Some(thread) = self.tid_dir_ops.thread() else {
-            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+            return Err(errno!(ESRCH, "the thread does not exist"));
         };
         let posix_thread = thread.as_posix_thread().unwrap();
 
         let file_table = posix_thread.file_table().lock();
         let Some(file_table) = file_table.as_ref() else {
-            return_errno_with_message!(Errno::ENOENT, "the thread has exited");
+            return Err(errno!(ENOENT, "the thread has exited"));
         };
         let file_table = file_table.read();
         let file = file_table
             .get_file(self.file_desc)
-            .map_err(|_| Error::with_message(Errno::ENOENT, "the file does not exist"))?;
+            .map_err(|_| errno!(ENOENT, "the file does not exist"))?;
 
         Ok(SymbolicLink::Path(file.path().clone()))
     }
@@ -303,7 +303,7 @@ impl ProcFileOps for FileInfoOps {
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let Some(thread) = self.tid_dir_ops.thread() else {
-            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+            return Err(errno!(ESRCH, "the thread does not exist"));
         };
         let posix_thread = thread.as_posix_thread().unwrap();
 
@@ -312,7 +312,7 @@ impl ProcFileOps for FileInfoOps {
         {
             entry.file().clone().dump_proc_fdinfo(entry.flags())
         } else {
-            return_errno_with_message!(Errno::ENOENT, "the file does not exist");
+            return Err(errno!(ENOENT, "the file does not exist"));
         };
 
         let mut printer = VmPrinter::new_skip(writer, offset);

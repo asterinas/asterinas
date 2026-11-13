@@ -49,7 +49,7 @@ impl<D: TtyDriver> FileOps for TtyFile<D> {
 
 impl<D: TtyDriver> PerOpenFileOps for TtyFile<D> {
     fn check_seekable(&self) -> Result<()> {
-        return_errno_with_message!(Errno::ESPIPE, "the inode is a TTY");
+        Err(errno!(ESPIPE, "the inode is a TTY"))
     }
 
     fn is_offset_aware(&self) -> bool {

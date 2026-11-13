@@ -57,10 +57,10 @@ impl JobControl {
         let mut inner = self.inner.lock();
 
         if inner.session.upgrade().is_some() {
-            return_errno_with_message!(
-                Errno::EPERM,
+            return Err(errno!(
+                EPERM,
                 "the terminal is already a controlling terminal of another session"
-            );
+            ));
         }
 
         *inner = Inner {

@@ -21,7 +21,7 @@ pub(super) fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<Syscall
         | StatusFlags::O_NONBLOCK.bits()
         | StatusFlags::O_DIRECT.bits();
     if flags & !VALID_FLAGS != 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid pipe flags");
+        return Err(errno!(EINVAL, "invalid pipe flags"));
     }
 
     let status_flags = StatusFlags::from_bits_truncate(flags);

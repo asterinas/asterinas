@@ -243,7 +243,7 @@ impl Device for Fb {
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         let Some(framebuffer) = FRAMEBUFFER.get() else {
-            return_errno_with_message!(Errno::ENODEV, "the framebuffer device is not present");
+            return Err(errno!(ENODEV, "the framebuffer device is not present"));
         };
         let framebuffer = framebuffer.clone();
         Ok(Box::new(FbHandle { framebuffer }))
@@ -329,9 +329,10 @@ impl FbHandle {
         let len = cmap_user.len as usize;
 
         // Get color map entries from framebuffer
-        let entries = self.framebuffer.get_color_map(start, len).ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "the color map index is out of bounds")
-        })?;
+        let entries = self
+            .framebuffer
+            .get_color_map(start, len)
+            .ok_or_else(|| errno!(EINVAL, "the color map index is out of bounds"))?;
 
         // Extract color channels and write to userspace
         let red: Vec<u16> = entries.iter().map(|e| e.red).collect();
@@ -364,10 +365,10 @@ impl FbHandle {
 
         // Check the size to prevent excessive memory allocation
         if start > MAX_CMAP_SIZE || len > MAX_CMAP_SIZE - start {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the color map range exceeds its maximum size"
-            );
+            ));
         }
 
         // Read color data from userspace
@@ -461,10 +462,10 @@ impl FileOps for FbHandle {
         let io_mem = self.framebuffer.io_mem();
         let size = io_mem.size();
         if offset >= size {
-            return_errno_with_message!(
-                Errno::ENOSPC,
+            return Err(errno!(
+                ENOSPC,
                 "the write offset is beyond the framebuffer size"
-            );
+            ));
         }
 
         let len = reader.remain().min(size - offset);
@@ -535,17 +536,17 @@ impl PerOpenFileOps for FbHandle {
             PanDisplay | Blank => {
                 // These commands are not supported by efifb.
                 // We return errors according to the Linux behavior.
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                Err(errno!(
+                    EINVAL,
                     "the ioctl command is not supported by efifb devices"
-                )
+                ))
             }
             _ => {
                 ostd::debug!(
                     "the ioctl command {:#x} is unknown for framebuffer devices",
                     raw_ioctl.cmd()
                 );
-                return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown");
+                Err(errno!(ENOTTY, "the ioctl command is unknown"))
             }
         })
     }

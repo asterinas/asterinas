@@ -55,7 +55,7 @@ impl RamXattr {
         match xattr.map.entry(RamXattrName::from(name)) {
             Entry::Occupied(mut entry) => {
                 if flags.contains(XattrSetFlags::CREATE_ONLY) {
-                    return_errno_with_message!(Errno::EEXIST, "the target xattr already exists");
+                    return Err(errno!(EEXIST, "the target xattr already exists"));
                 }
 
                 let value = {
@@ -67,7 +67,7 @@ impl RamXattr {
             }
             Entry::Vacant(entry) => {
                 if flags.contains(XattrSetFlags::REPLACE_ONLY) {
-                    return_errno_with_message!(Errno::ENODATA, "the target xattr does not exist");
+                    return Err(errno!(ENODATA, "the target xattr does not exist"));
                 }
 
                 let value = {
@@ -90,8 +90,7 @@ impl RamXattr {
     }
 
     pub(crate) fn get(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
-        let existence_error =
-            Error::with_message(Errno::ENODATA, "the target xattr does not exist");
+        let existence_error = errno!(ENODATA, "the target xattr does not exist");
         let inner = self.0.get().ok_or(existence_error)?;
 
         let xattr = inner.read();
@@ -107,7 +106,7 @@ impl RamXattr {
             return Ok(value_len);
         }
         if value_len > value_avail_len {
-            return_errno_with_message!(Errno::ERANGE, "the xattr value buffer is too small");
+            return Err(errno!(ERANGE, "the xattr value buffer is too small"));
         }
 
         value_writer.write_fallible(&mut VmReader::from(value.as_slice()))?;
@@ -135,7 +134,7 @@ impl RamXattr {
             return Ok(list_actual_len);
         }
         if list_actual_len > list_avail_len {
-            return_errno_with_message!(Errno::ERANGE, "the xattr list buffer is too small");
+            return Err(errno!(ERANGE, "the xattr list buffer is too small"));
         }
 
         for (name, _) in &xattr.map {
@@ -150,8 +149,7 @@ impl RamXattr {
     }
 
     pub(crate) fn remove(&self, name: XattrName) -> Result<()> {
-        let existence_error =
-            Error::with_message(Errno::ENODATA, "the target xattr does not exist");
+        let existence_error = errno!(ENODATA, "the target xattr does not exist");
         let inner = self.0.get().ok_or(existence_error)?;
 
         let mut xattr = inner.write();
@@ -176,10 +174,7 @@ impl RamXattr {
     pub(crate) fn check_file_type_for_xattr(file_type: InodeType) -> Result<()> {
         match file_type {
             InodeType::File | InodeType::Dir => Ok(()),
-            _ => Err(Error::with_message(
-                Errno::EPERM,
-                "xattr is not supported on the file type",
-            )),
+            _ => Err(errno!(EPERM, "xattr is not supported on the file type",)),
         }
     }
 }

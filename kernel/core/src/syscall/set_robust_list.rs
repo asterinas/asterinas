@@ -16,10 +16,10 @@ pub(super) fn sys_set_robust_list(
     );
 
     if len != size_of::<RobustListHead>() {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "the length is not equal to the size of the robust list head"
-        );
+        ));
     }
 
     let robust_list_head: RobustListHead = ctx.user_space().read_val(robust_list_head_ptr)?;

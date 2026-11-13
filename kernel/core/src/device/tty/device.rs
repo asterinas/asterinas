@@ -64,10 +64,10 @@ impl Device for TtyDevice {
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         let Some(terminal) = current!().terminal() else {
-            return_errno_with_message!(
-                Errno::ENOTTY,
+            return Err(errno!(
+                ENOTTY,
                 "the process does not have a controlling terminal"
-            );
+            ));
         };
 
         terminal.open()

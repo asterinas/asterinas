@@ -63,7 +63,7 @@ impl KernelEventFile {
     pub(crate) fn from_file(file: &dyn FileLike) -> Result<Arc<Self>> {
         let event_file = file
             .downcast_ref::<EventFile>()
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not an event file"))?;
+            .ok_or_else(|| errno!(EINVAL, "the file is not an event file"))?;
         Ok(event_file.kernel_event_file.clone())
     }
 
@@ -178,7 +178,7 @@ impl EventFile {
 
     fn try_read(&self, writer: &mut VmWriter) -> Result<()> {
         let Some(value) = self.kernel_event_file.consume() else {
-            return_errno_with_message!(Errno::EAGAIN, "the counter is zero");
+            return Err(errno!(EAGAIN, "the counter is zero"));
         };
 
         // Reference: <https://elixir.bootlin.com/linux/v7.0/source/fs/eventfd.c#L235>.
@@ -198,7 +198,7 @@ impl EventFile {
         {
             *counter = new_value;
         } else {
-            return_errno_with_message!(Errno::EAGAIN, "the new value exceeds MAX_COUNTER_VALUE");
+            return Err(errno!(EAGAIN, "the new value exceeds MAX_COUNTER_VALUE"));
         }
 
         drop(counter);
@@ -219,7 +219,7 @@ impl FileLike for EventFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let read_len = size_of::<u64>();
         if writer.avail() < read_len {
-            return_errno_with_message!(Errno::EINVAL, "the event buffer is too small");
+            return Err(errno!(EINVAL, "the event buffer is too small"));
         }
 
         if self.is_nonblocking() {
@@ -234,16 +234,16 @@ impl FileLike for EventFile {
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         let write_len = size_of::<u64>();
         if reader.remain() < write_len {
-            return_errno_with_message!(Errno::EINVAL, "the event buffer is too small");
+            return Err(errno!(EINVAL, "the event buffer is too small"));
         }
 
         let supplied_value = reader.read_val::<u64>()?;
 
         if supplied_value > KernelEventFile::MAX_COUNTER_VALUE {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the written value exceeds MAX_COUNTER_VALUE"
-            );
+            ));
         }
 
         if self.is_nonblocking() {

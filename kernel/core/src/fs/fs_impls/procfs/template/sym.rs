@@ -55,7 +55,7 @@ impl<S: ProcSymOps + 'static> FileOps for ProcSym<S> {
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn write_at(
@@ -64,7 +64,7 @@ impl<S: ProcSymOps + 'static> FileOps for ProcSym<S> {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 }
 
@@ -93,7 +93,7 @@ impl<S: ProcSymOps + 'static> Inode for ProcSym<S> {
     }
 
     fn resize(&self, _self_dentry: &Dentry, _new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn type_(&self) -> InodeType {
@@ -107,7 +107,7 @@ impl<S: ProcSymOps + 'static> Inode for ProcSym<S> {
         _target: &str,
         _mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EINVAL))
+        Err(errno!(EINVAL))
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {

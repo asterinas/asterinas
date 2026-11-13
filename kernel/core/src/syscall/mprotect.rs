@@ -24,7 +24,7 @@ pub(super) fn sys_mprotect(
     // <https://elixir.bootlin.com/linux/v6.0.9/source/mm/mprotect.c#L681>,
     // `addr` is checked even if `len` is 0.
     if !addr.is_multiple_of(PAGE_SIZE) {
-        return_errno_with_message!(Errno::EINVAL, "the mapping address is not aligned");
+        return Err(errno!(EINVAL, "the mapping address is not aligned"));
     }
     if len == 0 {
         return Ok(SyscallReturn::Return(0));
@@ -32,7 +32,7 @@ pub(super) fn sys_mprotect(
     if VMAR_CAP_ADDR.checked_sub(addr).is_none_or(|gap| gap < len) {
         // FIXME: Linux returns `ENOMEM` if `(addr + len).align_up(PAGE_SIZE)` overflows. Here, we
         // perform a stricter validation.
-        return_errno_with_message!(Errno::ENOMEM, "the mapping range is not in userspace");
+        return Err(errno!(ENOMEM, "the mapping range is not in userspace"));
     }
     let addr_range = addr..(addr + len).align_up(PAGE_SIZE);
 

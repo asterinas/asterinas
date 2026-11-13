@@ -66,7 +66,7 @@ impl DrmFile {
     pub(super) fn drm_get_cap(&self, cmd: ioctl_defs::GetCap) -> Result<i32> {
         let mut args: DrmGetCap = cmd.read()?;
         let Ok(cap) = DrmGetCapability::try_from(args.capability) else {
-            return_errno_with_message!(Errno::EINVAL, "the DRM device capability is unknown");
+            return Err(errno!(EINVAL, "the DRM device capability is unknown"));
         };
         let device = self.device();
 
@@ -93,9 +93,9 @@ impl DrmFile {
 
     fn kms_get_cap(&self, cap: DrmGetCapability) -> Result<u64> {
         let device = self.device();
-        let kms_ops = device.as_kms_ops().ok_or_else(|| {
-            Error::with_message(Errno::EOPNOTSUPP, "the DRM device lacks modesetting")
-        })?;
+        let kms_ops = device
+            .as_kms_ops()
+            .ok_or_else(|| errno!(EOPNOTSUPP, "the DRM device lacks modesetting"))?;
         let mode_config = kms_ops.mode_config();
 
         let result = match cap {

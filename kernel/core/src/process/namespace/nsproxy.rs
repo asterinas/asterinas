@@ -205,7 +205,7 @@ pub(crate) fn check_unsupported_ns_flags(flags: CloneFlags) -> Result<()> {
     }
 
     warn!("unsupported clone ns flags: {:?}", unsupported_flags);
-    return_errno_with_message!(Errno::EINVAL, "unsupported clone namespace flags");
+    Err(errno!(EINVAL, "unsupported clone namespace flags"))
 }
 
 /// Provides administrative APIs for switching to existing namespaces.

@@ -78,7 +78,7 @@ impl TryFrom<clockid_t> for DynamicClockIdInfo {
         const INVALID_MASK: i32 = CPU_CLOCK_TYPE_MASK | ID_TYPE_MASK;
 
         if (value & INVALID_MASK) == INVALID_MASK {
-            return_errno_with_message!(Errno::EINVAL, "invalid clock ID");
+            return Err(errno!(EINVAL, "invalid clock ID"));
         }
 
         let id = !(value >> 3);
@@ -122,7 +122,7 @@ pub(super) fn read_clock(clockid: clockid_t, ctx: &Context) -> Result<Duration> 
             DynamicClockIdInfo::Pid(pid, clock_type) => {
                 let process = pid_table::pid_table_mut()
                     .get_process(pid)
-                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
+                    .ok_or_else(|| errno!(EINVAL, "invalid clock ID"))?;
                 match clock_type {
                     DynamicClockType::Profiling => Ok(process.prof_clock().read_time()),
                     DynamicClockType::Virtual => Ok(process.prof_clock().user_clock().read_time()),
@@ -131,7 +131,7 @@ pub(super) fn read_clock(clockid: clockid_t, ctx: &Context) -> Result<Duration> 
             DynamicClockIdInfo::Tid(tid, clock_type) => {
                 let thread = pid_table::pid_table_mut()
                     .get_thread(tid)
-                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
+                    .ok_or_else(|| errno!(EINVAL, "invalid clock ID"))?;
                 let posix_thread = thread.as_posix_thread().unwrap();
                 match clock_type {
                     DynamicClockType::Profiling => Ok(posix_thread.prof_clock().read_time()),

@@ -13,7 +13,7 @@ pub(super) fn sys_getgroups(
     debug!("size = {}, group_list_addr = 0x{:x}", size, group_list_addr);
 
     if size < 0 {
-        return_errno_with_message!(Errno::EINVAL, "size cannot be negative");
+        return Err(errno!(EINVAL, "size cannot be negative"));
     }
 
     // Copy the supplementary groups out of the read guard before writing to user space, since the
@@ -27,10 +27,10 @@ pub(super) fn sys_getgroups(
         }
 
         if groups.len() > size as usize {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "size is less than the number of supplementary group IDs"
-            );
+            ));
         }
 
         groups.clone()

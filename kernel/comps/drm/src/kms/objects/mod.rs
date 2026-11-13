@@ -92,7 +92,7 @@ impl DrmKmsObjectStore {
         let id = self
             .id_allocator
             .alloc()
-            .ok_or_else(|| Error::with_message(Errno::ENOSPC, "all KMS object IDs are in use"))?;
+            .ok_or_else(|| errno!(ENOSPC, "all KMS object IDs are in use"))?;
 
         Ok(id)
     }
@@ -219,7 +219,7 @@ impl DrmKmsObjectStore {
         }
 
         if self.lookup_encoder_by_id(id).is_some() {
-            return_errno_with_message!(Errno::EINVAL, "the DRM encoder has no property table");
+            return Err(errno!(EINVAL, "the DRM encoder has no property table"));
         }
 
         Ok(None)

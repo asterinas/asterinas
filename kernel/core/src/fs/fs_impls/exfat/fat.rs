@@ -145,10 +145,10 @@ impl ExfatChain {
     // When the num_clusters is unknown, we need to count it from the begin.
     fn count_clusters(&self) -> Result<u32> {
         if !self.fat_in_use() {
-            return_errno_with_message!(
-                Errno::EIO,
+            Err(errno!(
+                EIO,
                 "Unable to count clusters when FAT table not in use."
-            )
+            ))
         } else {
             let mut cluster = self.current;
             let mut cnt = 1;
@@ -170,7 +170,7 @@ impl ExfatChain {
     // The destination cluster must be a valid cluster.
     pub(super) fn walk(&self, steps: u32) -> Result<ExfatChain> {
         if steps > self.num_clusters {
-            return_errno_with_message!(Errno::EINVAL, "invalid walking steps for FAT chain")
+            return Err(errno!(EINVAL, "invalid walking steps for FAT chain"));
         }
 
         let mut result_cluster = self.current;
@@ -181,7 +181,7 @@ impl ExfatChain {
                 let fat = self.fs().read_next_fat(result_cluster)?;
                 match fat {
                     FatValue::Next(next_fat) => result_cluster = next_fat,
-                    _ => return_errno_with_message!(Errno::EIO, "invalid access to FAT cluster"),
+                    _ => return Err(errno!(EIO, "invalid access to FAT cluster")),
                 }
             }
         }
@@ -264,15 +264,15 @@ impl ExfatChain {
                 FatValue::Next(data) => {
                     cur_cluster = data;
                     if i == drop_num - 1 {
-                        return_errno_with_message!(Errno::EINVAL, "invalid fat entry")
+                        return Err(errno!(EINVAL, "invalid fat entry"));
                     }
                 }
                 FatValue::EndOfChain => {
                     if i != drop_num - 1 {
-                        return_errno_with_message!(Errno::EINVAL, "invalid fat entry")
+                        return Err(errno!(EINVAL, "invalid fat entry"));
                     }
                 }
-                _ => return_errno_with_message!(Errno::EINVAL, "invalid fat entry"),
+                _ => return Err(errno!(EINVAL, "invalid fat entry")),
             }
         }
 
@@ -296,7 +296,7 @@ impl ClusterAllocator for ExfatChain {
         let mut bitmap = bitmap_binding.lock();
 
         if num_to_be_allocated > bitmap.num_free_clusters() {
-            return_errno!(Errno::ENOSPC)
+            return Err(errno!(ENOSPC));
         }
 
         if self.num_clusters == 0 {
@@ -352,7 +352,7 @@ impl ClusterAllocator for ExfatChain {
 
         let num_clusters = self.num_clusters;
         if drop_num > num_clusters {
-            return_errno_with_message!(Errno::EINVAL, "invalid free_num")
+            return Err(errno!(EINVAL, "invalid free_num"));
         }
 
         let trunc_start_cluster = self.walk(num_clusters - drop_num)?.cluster_id();

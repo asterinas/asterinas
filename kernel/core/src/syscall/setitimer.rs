@@ -32,7 +32,7 @@ pub(super) fn sys_setitimer(
     );
 
     if new_itimerval_addr == 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid pointer to new value");
+        return Err(errno!(EINVAL, "invalid pointer to new value"));
     }
     let user_space = ctx.user_space();
     let new_itimerval = user_space.read_val::<itimerval_t>(new_itimerval_addr)?;
@@ -83,7 +83,7 @@ pub(super) fn sys_getitimer(
     );
 
     if itimerval_addr == 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid pointer to itimerval");
+        return Err(errno!(EINVAL, "invalid pointer to itimerval"));
     }
 
     let process_timer_manager = ctx.process.timer_manager();

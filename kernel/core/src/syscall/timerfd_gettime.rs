@@ -18,7 +18,7 @@ pub(super) fn sys_timerfd_gettime(
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let timerfd_file = file
         .downcast_ref::<TimerfdFile>()
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the fd is not a timerfd"))?;
+        .ok_or_else(|| errno!(EINVAL, "the fd is not a timerfd"))?;
 
     let (interval, remain) = timerfd_file.get_time();
     let itimerspec = itimerspec_t {

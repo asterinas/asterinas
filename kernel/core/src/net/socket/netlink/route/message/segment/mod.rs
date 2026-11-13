@@ -91,7 +91,7 @@ impl ProtocolSegment for RtnlSegment {
     ) -> Result<ContinueRead<Self, ErrorSegment>> {
         let header = reader
             .read_val_opt::<CMsgSegHdr>()?
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the reader length is too small"))?;
+            .ok_or_else(|| errno!(EINVAL, "the reader length is too small"))?;
 
         let segment = match CSegmentType::try_from(header.type_) {
             Ok(CSegmentType::GETLINK) => {
@@ -103,10 +103,10 @@ impl ProtocolSegment for RtnlSegment {
             _ => {
                 let payload_len = header.calc_payload_len_with_padding(reader)?;
                 reader.skip_some(payload_len);
-                ContinueRead::skipped_invalid(
-                    Errno::EOPNOTSUPP,
+                ContinueRead::SkippedInvalid(errno!(
+                    EOPNOTSUPP,
                     "the segment type is not supported",
-                )
+                ))
             }
         };
 

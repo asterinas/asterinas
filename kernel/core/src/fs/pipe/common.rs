@@ -139,7 +139,7 @@ impl FileOps for PipeHandle {
 
 impl PerOpenFileOps for PipeHandle {
     fn check_seekable(&self) -> Result<()> {
-        return_errno_with_message!(Errno::ESPIPE, "the inode is a FIFO file")
+        Err(errno!(ESPIPE, "the inode is a FIFO file"))
     }
 
     fn is_offset_aware(&self) -> bool {
@@ -156,7 +156,7 @@ impl PerOpenFileOps for PipeHandle {
                 cmd.write(&bytes_to_read)?;
                 Ok(0)
             }
-            _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+            _ => Err(errno!(ENOTTY, "the ioctl command is unknown")),
         })
     }
 
@@ -267,7 +267,7 @@ impl Pipe {
                 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/fs/pipe.c#L1184-L1195>
                 if is_named_pipe && !has_reader {
                     if status_flags.contains(StatusFlags::O_NONBLOCK) {
-                        return_errno_with_message!(Errno::ENXIO, "no reader is present");
+                        return Err(errno!(ENXIO, "no reader is present"));
                     }
 
                     let old_read_count = pipe.read_count;
@@ -307,7 +307,7 @@ pub(in crate::fs) fn check_status_flags(status_flags: StatusFlags) -> Result<()>
         // EINVAL error."
         //
         // See <https://man7.org/linux/man-pages/man2/pipe.2.html>.
-        return_errno_with_message!(Errno::EINVAL, "the `O_DIRECT` flag is not supported");
+        return Err(errno!(EINVAL, "the `O_DIRECT` flag is not supported"));
     }
 
     // TODO: Setting most of the other flags will succeed on Linux, but their effects need to be

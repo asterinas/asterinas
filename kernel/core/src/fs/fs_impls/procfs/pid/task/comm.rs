@@ -29,7 +29,7 @@ impl ProcFileOps for CommFileOps {
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let Some(thread) = self.0.thread() else {
-            return_errno_with_message!(Errno::ESRCH, "the thread does not exist");
+            return Err(errno!(ESRCH, "the thread does not exist"));
         };
 
         let posix_thread = thread.as_posix_thread().unwrap();
@@ -44,9 +44,9 @@ impl ProcFileOps for CommFileOps {
 
     fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
         warn!("writing to `/proc/[pid]/comm` is not supported");
-        return_errno_with_message!(
-            Errno::EOPNOTSUPP,
+        Err(errno!(
+            EOPNOTSUPP,
             "writing to `/proc/[pid]/comm` is not supported"
-        );
+        ))
     }
 }

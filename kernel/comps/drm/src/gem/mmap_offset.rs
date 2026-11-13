@@ -100,7 +100,7 @@ impl DrmGemMmapOffsetSpace {
         let start_page = (offset / PAGE_SIZE) as u64;
         let page_count = (size / PAGE_SIZE) as u64;
         if page_count == 0 {
-            return_errno_with_message!(Errno::EINVAL, "the GEM mapping size must not be zero");
+            return Err(errno!(EINVAL, "the GEM mapping size must not be zero"));
         }
         let end_page = start_page + page_count;
 
@@ -110,24 +110,24 @@ impl DrmGemMmapOffsetSpace {
             .next_back()
             .map(|(start_page, range)| (*start_page, range))
         else {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the mmap range does not belong to a GEM object"
-            );
+            ));
         };
         let range_end_page = allocated_start_page + allocated_range.page_count;
         if end_page > range_end_page {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the mmap range does not belong to a GEM object"
-            );
+            ));
         }
 
         let Some(gem_object) = allocated_range.gem_object.upgrade() else {
-            return_errno_with_message!(Errno::EINVAL, "the GEM object no longer exists");
+            return Err(errno!(EINVAL, "the GEM object no longer exists"));
         };
         if !gem_object.is_mmap_allowed(client_id) {
-            return_errno_with_message!(Errno::EACCES, "the GEM object is not accessible");
+            return Err(errno!(EACCES, "the GEM object is not accessible"));
         }
 
         let object_page_offset = (start_page - allocated_start_page) as usize;

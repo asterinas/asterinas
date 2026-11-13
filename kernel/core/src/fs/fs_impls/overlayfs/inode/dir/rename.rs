@@ -101,7 +101,7 @@ impl OverlayInode {
 
         facts.promote_members()?;
         let Some(mut locks) = RenameLocks::acquire(&facts)? else {
-            return_errno!(Errno::ESTALE)
+            return Err(errno!(ESTALE));
         };
 
         facts.sweep_replaced_whiteouts_if_needed(&mut locks)?;
@@ -216,29 +216,29 @@ impl<'x> RenameFacts<'x> {
         if source_is_merged_dir
             || (request == RenameMode::Exchange && target_is_dir && target_is_merged_dir)
         {
-            return_errno_with_message!(
-                Errno::EXDEV,
+            return Err(errno!(
+                EXDEV,
                 "the overlay cross-directory rename of a lower-backed or merged directory \
                  requires the not-yet-implemented redirect_dir policy"
-            );
+            ));
         }
         if request != RenameMode::Exchange && source_is_dir && target_is_visible && !target_is_dir {
-            return_errno_with_message!(
-                Errno::ENOTDIR,
+            return Err(errno!(
+                ENOTDIR,
                 "a directory cannot be renamed onto a non-directory name"
-            );
+            ));
         }
         if request != RenameMode::Exchange && !source_is_dir && target_is_visible && target_is_dir {
-            return_errno_with_message!(
-                Errno::EISDIR,
+            return Err(errno!(
+                EISDIR,
                 "a non-directory cannot be renamed onto a directory name"
-            );
+            ));
         }
         if request == RenameMode::NoReplace && target_is_visible {
-            return_errno_with_message!(
-                Errno::EEXIST,
+            return Err(errno!(
+                EEXIST,
                 "the rename target already exists and is visible"
-            );
+            ));
         }
 
         let target_whiteout_is_swapped = matches!(target, RenameTarget::UpperWhiteout)
@@ -269,19 +269,19 @@ impl<'x> RenameFacts<'x> {
         };
 
         if whiteout == WhiteoutAction::Create && !policy.can_express_whiteout() {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
+            return Err(errno!(
+                EOPNOTSUPP,
                 "the upper filesystem supports no whiteout form; the rename cannot publish one"
-            );
+            ));
         }
         if source_is_dir
             && lower_layer_holds_new_name_as_directory
             && !policy.can_store_private_xattr()
         {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
+            return Err(errno!(
+                EOPNOTSUPP,
                 "the upper filesystem cannot store the opaque marker required for a rename"
-            );
+            ));
         }
         Ok((mode, whiteout))
     }
@@ -299,8 +299,8 @@ impl<'x> RenameFacts<'x> {
         if inode.is_empty_dir(&target_guard)? {
             return Ok(());
         }
-        Err(Error::with_message(
-            Errno::ENOTEMPTY,
+        Err(errno!(
+            ENOTEMPTY,
             "the overlay rename target directory is not empty",
         ))
     }
@@ -380,10 +380,10 @@ impl<'x> RenameFacts<'x> {
             return Ok(());
         }
         if !fs.policy().can_store_private_xattr() {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
+            return Err(errno!(
+                EOPNOTSUPP,
                 "the upper filesystem cannot store the impure marker required for a rename"
-            );
+            ));
         }
         let namespace = fs.policy().xattr_namespace();
         let new_parent_upper = self.new_parent.writable_upper().dentry();

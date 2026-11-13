@@ -88,7 +88,7 @@ impl TryFrom<RawFileDesc> for FileDesc {
 
     fn try_from(value: RawFileDesc) -> Result<Self> {
         if value < 0 {
-            return_errno_with_message!(Errno::EBADF, "negative FDs are not valid");
+            return Err(errno!(EBADF, "negative FDs are not valid"));
         }
         Ok(Self(RangedU32::new(value.cast_unsigned())))
     }
@@ -165,10 +165,7 @@ impl FileTable {
         let fd_range = if let Some(ceil_fd) = ceil_fd {
             let ceil_fd = usize::from(ceil_fd);
             if ceil_fd >= fd_limit {
-                return Err((
-                    Error::with_message(Errno::EINVAL, "the minimum FD reaches the FD limit"),
-                    file,
-                ));
+                return Err((errno!(EINVAL, "the minimum FD reaches the FD limit"), file));
             }
             ceil_fd..fd_limit
         } else {
@@ -178,10 +175,7 @@ impl FileTable {
         let entry = FileTableEntry::new(file, flags);
         let min_free_fd = self.table.try_put_in(entry, fd_range).map_err(|entry| {
             (
-                Error::with_message(
-                    Errno::EMFILE,
-                    "no file descriptor is available in the range",
-                ),
+                errno!(EMFILE, "no file descriptor is available in the range",),
                 entry.file,
             )
         })?;
@@ -202,14 +196,14 @@ impl FileTable {
             .get_rlimit(ResourceType::RLIMIT_NOFILE)
             .get_cur();
         if u64::from(new_fd) >= fd_limit {
-            return_errno_with_message!(Errno::EBADF, "the new FD reaches the FD limit");
+            return Err(errno!(EBADF, "the new FD reaches the FD limit"));
         }
 
         let file = self
             .table
             .get(fd.into())
             .map(|entry| entry.file.clone())
-            .ok_or_else(|| Error::with_message(Errno::EBADF, "the FD does not exist"))?;
+            .ok_or_else(|| errno!(EBADF, "the FD does not exist"))?;
         let entry = FileTableEntry::new(file, flags);
         let closed_file = self.close_file(new_fd);
         self.table.put_at(new_fd.into(), entry);
@@ -261,19 +255,19 @@ impl FileTable {
         self.table
             .get(fd.into())
             .map(|entry| entry.file())
-            .ok_or_else(|| Error::with_message(Errno::EBADF, "the FD does not exist"))
+            .ok_or_else(|| errno!(EBADF, "the FD does not exist"))
     }
 
     pub(crate) fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
         self.table
             .get(fd.into())
-            .ok_or_else(|| Error::with_message(Errno::EBADF, "the FD does not exist"))
+            .ok_or_else(|| errno!(EBADF, "the FD does not exist"))
     }
 
     pub(crate) fn get_entry_mut(&mut self, fd: FileDesc) -> Result<&mut FileTableEntry> {
         self.table
             .get_mut(fd.into())
-            .ok_or_else(|| Error::with_message(Errno::EBADF, "the FD does not exist"))
+            .ok_or_else(|| errno!(EBADF, "the FD does not exist"))
     }
 
     pub(crate) fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {

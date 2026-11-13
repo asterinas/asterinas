@@ -147,9 +147,7 @@ fn lookup_or_create_dir(parent_inode: &dyn Inode, name: &str) -> Result<Arc<dyn 
 
         match parent_inode.lookup(name) {
             Ok(inode) if inode.type_() == InodeType::Dir => return Ok(inode),
-            Ok(_) => {
-                return_errno_with_message!(Errno::ENOTDIR, "the parent path is not a directory")
-            }
+            Ok(_) => return Err(errno!(ENOTDIR, "the parent path is not a directory")),
             Err(error) if error.error() == Errno::ENOENT => continue,
             Err(error) => return Err(error),
         }

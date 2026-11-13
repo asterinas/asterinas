@@ -216,8 +216,8 @@ pub(super) fn lookup_local_iface(address: IpAddress) -> Result<Arc<Iface>> {
                 .unwrap()
                 .lookup_in_local_table(&RouteLookupKey::new(address))
                 .ok_or_else(|| {
-                    Error::with_message(
-                        Errno::EADDRNOTAVAIL,
+                    errno!(
+                        EADDRNOTAVAIL,
                         "the address is not available from the local machine",
                     )
                 })?;
@@ -229,8 +229,8 @@ pub(super) fn lookup_local_iface(address: IpAddress) -> Result<Arc<Iface>> {
                 .unwrap()
                 .lookup_in_local_table(&RouteLookupKey::new(address))
                 .ok_or_else(|| {
-                    Error::with_message(
-                        Errno::EADDRNOTAVAIL,
+                    errno!(
+                        EADDRNOTAVAIL,
                         "the address is not available from the local machine",
                     )
                 })?;
@@ -242,10 +242,10 @@ pub(super) fn lookup_local_iface(address: IpAddress) -> Result<Arc<Iface>> {
     // so we need to verify that the route type is local when an entry is found.
     // Reference: <https://elixir.bootlin.com/linux/v7.1/source/include/net/inet_sock.h#L441-L451>.
     if type_ != RouteType::Local && type_ != RouteType::Broadcast {
-        return_errno_with_message!(
-            Errno::EADDRNOTAVAIL,
+        return Err(errno!(
+            EADDRNOTAVAIL,
             "the address is not available from the local machine"
-        );
+        ));
     }
     Ok(iface)
 }

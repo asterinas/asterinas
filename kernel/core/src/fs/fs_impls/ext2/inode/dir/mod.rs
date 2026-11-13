@@ -76,10 +76,10 @@ impl Inode {
         let mut guards = MultiInodeInnerGuards::lock(&lock_targets);
         let child_inner = guards.inner_mut(child.ino());
         if child_inner.inode_type() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
+            return Err(errno!(ENOTDIR));
         }
         if !child_inner.empty_dir(child.ino()) {
-            return_errno!(Errno::ENOTEMPTY);
+            return Err(errno!(ENOTEMPTY));
         }
 
         child_inner.set_ctime(utils::now());
@@ -112,7 +112,7 @@ impl Inode {
         perm: FilePerm,
     ) -> Result<Arc<Inode>> {
         if matches!(type_, InodeType::Unknown | InodeType::SymLink) {
-            return_errno!(Errno::EINVAL);
+            return Err(errno!(EINVAL));
         }
 
         self.create_initialized_child(name, type_, perm, |fs, child| {
@@ -180,7 +180,7 @@ impl Inode {
         let mut guards = MultiInodeInnerGuards::lock(&lock_targets);
 
         if guards.inner(old.ino()).link_count() >= MAX_LINK_COUNT {
-            return_errno!(Errno::EOVERFLOW);
+            return Err(errno!(EOVERFLOW));
         }
 
         let dir_inner = guards.inner_mut(self.ino());
@@ -210,7 +210,7 @@ impl Inode {
 
         let child_inner = guards.inner_mut(child.ino());
         if child_inner.inode_type() == InodeType::Dir {
-            return_errno!(Errno::EISDIR);
+            return Err(errno!(EISDIR));
         }
 
         let parent_inner = guards.inner_mut(self.ino());
@@ -283,7 +283,7 @@ impl Inode {
             let old_inner = guards.inner(old_inode.ino());
             let parent_ino = old_inner.find_entry_info("..")?.ino;
             if parent_ino != self.ino {
-                return_errno_with_message!(Errno::EIO, "dotdot entry inconsistent with source dir");
+                return Err(errno!(EIO, "dotdot entry inconsistent with source dir"));
             }
         }
 
@@ -292,15 +292,15 @@ impl Inode {
             let replaced_is_dir = replaced.type_ == InodeType::Dir;
             let old_is_dir = old_inode.type_ == InodeType::Dir;
             if old_is_dir && !replaced_is_dir {
-                return_errno!(Errno::ENOTDIR);
+                return Err(errno!(ENOTDIR));
             }
             if !old_is_dir && replaced_is_dir {
-                return_errno!(Errno::EISDIR);
+                return Err(errno!(EISDIR));
             }
             if replaced_is_dir {
                 let replaced_inner = guards.inner(replaced.ino());
                 if !replaced_inner.empty_dir(replaced.ino()) {
-                    return_errno!(Errno::ENOTEMPTY);
+                    return Err(errno!(ENOTEMPTY));
                 }
             }
         }
@@ -502,7 +502,7 @@ impl InodeInner {
     /// Reads directory entries starting at byte offset and feeds visitor.
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         if self.inode_type() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
+            return Err(errno!(ENOTDIR));
         }
 
         let size = self.file_size();
@@ -541,7 +541,7 @@ impl InodeInner {
                 let ino = entry.header.ino;
                 if ino != 0 {
                     let name = core::str::from_utf8(entry.name)
-                        .map_err(|_| Error::with_message(Errno::EIO, "invalid dir entry name"))?;
+                        .map_err(|_| errno!(EIO, "invalid dir entry name"))?;
                     let dir_entry_file_type = DirEntryFileType::try_from(entry.header.file_type)
                         .unwrap_or(DirEntryFileType::Unknown);
                     let inode_type = InodeType::from(dir_entry_file_type);
@@ -569,7 +569,7 @@ impl InodeInner {
     /// returned slot may be a deleted entry or the spare tail of a live entry.
     fn find_dir_slot(&self, name_len: usize) -> Result<Option<DirSlotInfo>> {
         if self.inode_type() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
+            return Err(errno!(ENOTDIR));
         }
 
         let new_rec_len = DirEntryHeader::min_rec_len(name_len) as usize;
@@ -666,7 +666,7 @@ impl InodeInner {
     /// Locate a target entry by name for delete/set_entry_target operations.
     fn find_entry_info(&self, name: &str) -> Result<DirEntryInfo> {
         if self.inode_type() != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR);
+            return Err(errno!(ENOTDIR));
         }
 
         let file_size = self.file_size();
@@ -690,7 +690,7 @@ impl InodeInner {
             }
         }
 
-        return_errno!(Errno::ENOENT)
+        Err(errno!(ENOENT))
     }
 
     /// Deletes a located entry by zeroing inode and merging `rec_len`.

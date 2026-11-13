@@ -30,10 +30,10 @@ impl<Message: 'static> BoundNetlink<Message> {
 
     pub(in netlink) fn bind_common(&mut self, endpoint: &NetlinkSocketAddr) -> Result<()> {
         if endpoint.port() != self.handle.port() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the socket cannot be bound to a different port"
-            );
+            ));
         }
 
         let groups = endpoint.groups();

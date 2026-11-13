@@ -98,7 +98,7 @@ impl ExfatBitmap {
 
     pub(super) fn is_cluster_range_unused(&self, clusters: Range<ClusterID>) -> Result<bool> {
         if !self.fs().is_cluster_range_valid(clusters.clone()) {
-            return_errno_with_message!(Errno::EINVAL, "invalid cluster ranges.")
+            return Err(errno!(EINVAL, "invalid cluster ranges."));
         }
 
         for id in clusters {
@@ -125,7 +125,7 @@ impl ExfatBitmap {
             .fs()
             .is_cluster_range_valid(search_start_cluster..search_start_cluster + num_clusters)
         {
-            return_errno_with_message!(Errno::ENOSPC, "free contiguous clusters not available.")
+            return Err(errno!(ENOSPC, "free contiguous clusters not available."));
         }
 
         let mut cur_index = search_start_cluster - EXFAT_RESERVED_CLUSTERS;
@@ -151,7 +151,7 @@ impl ExfatBitmap {
             }
             cur_index += 1;
         }
-        return_errno!(Errno::ENOSPC)
+        Err(errno!(ENOSPC))
     }
 
     /// Make sure the bit at the range start position is 0.
@@ -237,7 +237,7 @@ impl ExfatBitmap {
             .fs()
             .is_cluster_range_valid(search_start_cluster..search_start_cluster + num_clusters)
         {
-            return_errno!(Errno::ENOSPC)
+            return Err(errno!(ENOSPC));
         }
 
         let bytes: &[BitStore] = self.bitvec.as_raw_slice();
@@ -304,7 +304,7 @@ impl ExfatBitmap {
             // If we reach here, it means we have found a result
             return Ok(self.make_range(cur_unit_index, cur_unit_offset, num_clusters));
         }
-        return_errno!(Errno::ENOSPC)
+        Err(errno!(ENOSPC))
     }
 
     pub(super) fn num_free_clusters(&self) -> u32 {
@@ -313,7 +313,7 @@ impl ExfatBitmap {
 
     fn set_range(&mut self, clusters: Range<ClusterID>, bit: bool, sync: bool) -> Result<()> {
         if !self.fs().is_cluster_range_valid(clusters.clone()) {
-            return_errno_with_message!(Errno::EINVAL, "invalid cluster ranges.")
+            return Err(errno!(EINVAL, "invalid cluster ranges."));
         }
 
         for cluster_id in clusters.clone() {

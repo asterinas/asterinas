@@ -40,7 +40,7 @@ pub(super) fn sys_clone3(
         clong_args_addr, size
     );
     if size != size_of::<Clone3Args>() {
-        return_errno_with_message!(Errno::EINVAL, "invalid size");
+        return Err(errno!(EINVAL, "invalid size"));
     }
 
     let clone_args = {
@@ -98,43 +98,42 @@ impl TryFrom<Clone3Args> for CloneArgs {
         // Reference: <https://elixir.bootlin.com/linux/v6.16.9/source/kernel/fork.c#L2843-L2869>.
 
         let flags = CloneFlags::from_bits(value.flags as u32)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clone flags"))?;
+            .ok_or_else(|| errno!(EINVAL, "invalid clone flags"))?;
         let exit_signal = if value.exit_signal == 0 {
             None
         } else {
             let exit_signal = u8::try_from(value.exit_signal)
                 .ok()
                 .and_then(|exit_signal| SigNum::try_from(exit_signal).ok())
-                .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid exit signal"))?;
+                .ok_or_else(|| errno!(EINVAL, "invalid exit signal"))?;
             Some(exit_signal)
         };
         if flags.intersects(CloneFlags::CLONE_PARENT | CloneFlags::CLONE_THREAD)
             && exit_signal.is_some()
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "`CLONE_PARENT` and  `CLONE_THREAD` cannot be used if the exit signal is specified"
-            )
+            ));
         }
 
         let (stack, stack_size) = match (
             NonZeroU64::new(value.stack),
             NonZeroU64::new(value.stack_size),
         ) {
-            (Some(_), None) | (None, Some(_)) => return_errno_with_message!(
-                Errno::EINVAL,
-                "the stack and the stack size must be specified together"
-            ),
+            (Some(_), None) | (None, Some(_)) => {
+                return Err(errno!(
+                    EINVAL,
+                    "the stack and the stack size must be specified together"
+                ));
+            }
             (Some(stack), Some(stack_size))
                 if !is_userspace_vaddr(stack.get() as Vaddr)
                     || stack
                         .checked_add(stack_size.get() - 1)
                         .is_none_or(|stack_end| !is_userspace_vaddr(stack_end.get() as Vaddr)) =>
             {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "the stack address is not in the userspace"
-                )
+                return Err(errno!(EINVAL, "the stack address is not in the userspace"));
             }
             vals => vals,
         };

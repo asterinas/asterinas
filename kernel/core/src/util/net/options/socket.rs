@@ -80,7 +80,7 @@ pub(crate) fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::SNDBUFFORCE => Ok(Box::new(SendBufForce::new())),
         CSocketOptionName::RCVBUFFORCE => Ok(Box::new(RecvBufForce::new())),
         CSocketOptionName::PEERGROUPS => Ok(Box::new(PeerGroups::new())),
-        _ => return_errno_with_message!(Errno::ENOPROTOOPT, "unsupported socket-level option"),
+        _ => Err(errno!(ENOPROTOOPT, "unsupported socket-level option")),
     }
 }
 
@@ -106,7 +106,7 @@ impl_raw_socket_option!(RecvBufForce);
 // instead of ENOPROTOOPT like other options. Therefore, we manually implement `RawSocketOption` for it.
 impl RawSocketOption for PeerGroups {
     fn read_from_user(&mut self, _addr: Vaddr, _max_len: u32) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "the option is getter-only");
+        Err(errno!(EINVAL, "the option is getter-only"))
     }
 
     fn write_to_user(&self, addr: Vaddr, buffer_len: &mut u32) -> Result<usize> {
@@ -115,7 +115,7 @@ impl RawSocketOption for PeerGroups {
         let old_len = *buffer_len;
         *buffer_len = (groups.len() * size_of::<Gid>()) as u32;
         if old_len < *buffer_len {
-            return_errno_with_message!(Errno::ERANGE, "the buffer is too small");
+            return Err(errno!(ERANGE, "the buffer is too small"));
         }
 
         for (i, gid) in groups.iter().enumerate() {

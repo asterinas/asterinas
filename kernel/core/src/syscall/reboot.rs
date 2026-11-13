@@ -40,14 +40,14 @@ pub(super) fn sys_reboot(
 
     // Verify magic numbers
     if magic1 != LINUX_REBOOT_MAGIC1 {
-        return_errno_with_message!(Errno::EINVAL, "the reboot magic is invalid");
+        return Err(errno!(EINVAL, "the reboot magic is invalid"));
     }
     if magic2 != LINUX_REBOOT_MAGIC2
         && magic2 != LINUX_REBOOT_MAGIC2A
         && magic2 != LINUX_REBOOT_MAGIC2B
         && magic2 != LINUX_REBOOT_MAGIC2C
     {
-        return_errno_with_message!(Errno::EINVAL, "the reboot magic is invalid");
+        return Err(errno!(EINVAL, "the reboot magic is invalid"));
     }
 
     lsm_hooks::on_capable(lsm_hooks::CapableContext::new(

@@ -106,7 +106,7 @@ impl FileOps for VtFile {
 
 impl PerOpenFileOps for VtFile {
     fn check_seekable(&self) -> Result<()> {
-        return_errno_with_message!(Errno::ESPIPE, "the inode is a TTY");
+        Err(errno!(ESPIPE, "the inode is a TTY"))
     }
 
     fn is_offset_aware(&self) -> bool {

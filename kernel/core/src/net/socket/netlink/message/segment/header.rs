@@ -32,12 +32,12 @@ impl CMsgSegHdr {
         // Validate `self.len`.
         let payload_len = (self.len as usize)
             .checked_sub(size_of::<Self>())
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the message length is too small"))?;
+            .ok_or_else(|| errno!(EINVAL, "the message length is too small"))?;
 
         // Validate `payload_len`.
         let reader_len = reader.sum_lens();
         if reader_len < payload_len {
-            return_errno_with_message!(Errno::EINVAL, "the reader length is too small");
+            return Err(errno!(EINVAL, "the reader length is too small"));
         }
 
         Ok(payload_len)

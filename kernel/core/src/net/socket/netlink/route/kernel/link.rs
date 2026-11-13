@@ -45,7 +45,7 @@ pub(super) fn do_get_link(
     };
 
     if response_mode == ResponseMode::Single && response_segments.is_empty() {
-        return_errno_with_message!(Errno::ENODEV, "no link found");
+        return Err(errno!(ENODEV, "no link found"));
     }
 
     util::finish_response(
@@ -91,10 +91,10 @@ impl<'a> FilterBy<'a> {
             return Ok(Self::Name(required_name));
         }
 
-        return_errno_with_message!(
-            Errno::EINVAL,
+        Err(errno!(
+            EINVAL,
             "either interface name or index should be specified for non-dump mode"
-        );
+        ))
     }
 }
 
@@ -107,10 +107,10 @@ fn validate_getlink_request(request_segment: &LinkSegment, strict_check: bool) -
     // GETLINK reserves these fields.
     // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/core/rtnetlink.c#L4141>.
     if body._pad != 0 || body.type_ != 0 || body.flags != 0 || body.change != 0 {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "the link request header contains nonzero padding, type, flags, or change"
-        );
+        ));
     }
 
     // Linux accepts different attributes for link dumps and single-link queries
@@ -118,10 +118,10 @@ fn validate_getlink_request(request_segment: &LinkSegment, strict_check: bool) -
     let flags = GetRequestFlags::from_bits_truncate(request_segment.header().flags);
     let allowed = if flags.contains(GetRequestFlags::DUMP) {
         if body.index != 0 {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "filtering by interface index is not supported for link dumps"
-            );
+            ));
         }
         // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/core/rtnetlink.c#L2495>.
         [
@@ -142,10 +142,10 @@ fn validate_getlink_request(request_segment: &LinkSegment, strict_check: bool) -
     };
     for attr in request_segment.attrs() {
         if !allowed.contains(&attr.class()) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the attribute is not allowed in this link request"
-            );
+            ));
         }
     }
     Ok(())

@@ -124,10 +124,10 @@ impl IpcNamespace {
                 ))
                 .is_err()
             {
-                return_errno_with_message!(
-                    Errno::EPERM,
+                return Err(errno!(
+                    EPERM,
                     "the process does not have permission to remove the semaphore set"
-                );
+                ));
             }
 
             Ok(())
@@ -159,29 +159,29 @@ impl IpcNamespace {
                 if sem_set.permission().key() != key {
                     if flags.contains(IpcFlags::IPC_CREAT) {
                         // TODO: Manage all keys in a data structure (e.g., a map)
-                        return_errno_with_message!(Errno::ENOSPC, "key hashes conflict");
+                        return Err(errno!(ENOSPC, "key hashes conflict"));
                     }
-                    return_errno_with_message!(Errno::ENOENT, "the key does not exist");
+                    return Err(errno!(ENOENT, "the key does not exist"));
                 }
 
                 Self::validate_sem_set(sem_set, PermissionMode::ALTER | PermissionMode::READ)?;
 
                 if flags.contains(IpcFlags::IPC_CREAT | IpcFlags::IPC_EXCL) {
-                    return_errno_with_message!(
-                        Errno::EEXIST,
+                    return Err(errno!(
+                        EEXIST,
                         "the semaphore set already exists with IPC_EXCL"
-                    );
+                    ));
                 }
 
                 if sem_set.num_sems() < num_sems {
-                    return_errno_with_message!(Errno::EINVAL, "the semaphore set is too small");
+                    return Err(errno!(EINVAL, "the semaphore set is too small"));
                 }
 
                 Ok(semid)
             }) {
                 Err(_id_not_exist) if flags.contains(IpcFlags::IPC_CREAT) => {}
                 Err(_id_not_exist) => {
-                    return_errno_with_message!(Errno::ENOENT, "the key does not exist");
+                    return Err(errno!(ENOENT, "the key does not exist"));
                 }
                 Ok(result) => return result,
             }
@@ -225,10 +225,10 @@ impl NsCommonOps for IpcNamespace {
     }
 
     fn parent(&self) -> Result<&Arc<Self>> {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        Err(errno!(
+            EINVAL,
             "an IPC namespace does not have a parent namespace"
-        );
+        ))
     }
 
     fn stashed_dentry(&self) -> &StashedDentry {

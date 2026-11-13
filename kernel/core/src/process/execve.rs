@@ -70,10 +70,10 @@ pub(crate) fn do_execve(
     // If such an operation is in progress, return EAGAIN.
     let mut task_set = ctx.process.tasks().lock();
     if task_set.has_exited_group() || task_set.in_execve() {
-        return_errno_with_message!(
-            Errno::EAGAIN,
+        return Err(errno!(
+            EAGAIN,
             "the process has exited or has already executed a new program"
-        );
+        ));
     }
     task_set.start_execve();
 
@@ -135,7 +135,7 @@ fn read_cstring_vec(
             .read_cstring(cstring_ptr, max_string_len)
             .map_err(|err| {
                 if err.error() == Errno::ENAMETOOLONG {
-                    Error::with_message(Errno::E2BIG, "there are too many bytes in the argument")
+                    errno!(E2BIG, "there are too many bytes in the argument")
                 } else {
                     err
                 }
@@ -143,7 +143,7 @@ fn read_cstring_vec(
         res.push(cstring);
     }
 
-    return_errno_with_message!(Errno::E2BIG, "there are too many arguments");
+    Err(errno!(E2BIG, "there are too many arguments"))
 }
 
 /// Prepares credential changes.
@@ -260,7 +260,7 @@ fn wait_other_threads_exit(ctx: &Context) -> Result<()> {
             .set_signalled_waker(waker.clone(), PauseReason::Sleep);
         if ctx.has_pending_sigkill() {
             ctx.posix_thread.clear_signalled_waker();
-            return_errno_with_message!(Errno::EAGAIN, "the current thread has received SIGKILL");
+            return Err(errno!(EAGAIN, "the current thread has received SIGKILL"));
         }
 
         tasks.set_execve_waker(waker);

@@ -76,7 +76,7 @@ impl Inode for PtySlaveInode {
     }
 
     fn resize(&self, _self_dentry: &Dentry, new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn metadata(&self) -> Result<Metadata> {

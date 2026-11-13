@@ -98,18 +98,14 @@ impl FileCapabilities {
         let revision = VfsCapRevision::try_from(revision_bits)?;
 
         let flags_bits = header & VfsCapFlags::MASK;
-        let flags = VfsCapFlags::from_bits(flags_bits).ok_or_else(|| {
-            Error::with_message(
-                Errno::EINVAL,
-                "file capabilities contain unsupported flag bits",
-            )
-        })?;
+        let flags = VfsCapFlags::from_bits(flags_bits)
+            .ok_or_else(|| errno!(EINVAL, "file capabilities contain unsupported flag bits",))?;
 
         if raw_value.len() != revision.xattr_size() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the length of file capabilities does not match its revision"
-            );
+            ));
         }
 
         Ok((revision, flags))
@@ -157,7 +153,7 @@ impl FileCapabilities {
         let start = word_index * size_of::<u32>();
         let end = start + size_of::<u32>();
         let Some(word_bytes) = bytes.get(start..end) else {
-            return_errno_with_message!(Errno::EINVAL, "file capabilities are truncated");
+            return Err(errno!(EINVAL, "file capabilities are truncated"));
         };
 
         let mut word = [0u8; size_of::<u32>()];

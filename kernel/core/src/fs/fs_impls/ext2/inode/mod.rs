@@ -195,7 +195,7 @@ impl Inode {
     pub(super) fn fs(&self) -> Result<Arc<Ext2>> {
         self.fs
             .upgrade()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "filesystem already dropped"))
+            .ok_or_else(|| errno!(EIO, "filesystem already dropped"))
     }
 
     /// Returns the logical file size in bytes.
@@ -292,7 +292,7 @@ impl TryFrom<&RawInode> for InodeDesc {
     type Error = Error;
     fn try_from(raw: &RawInode) -> Result<Self> {
         if raw.link_count == 0 {
-            return_errno_with_message!(Errno::ESTALE, "inode has been deleted");
+            return Err(errno!(ESTALE, "inode has been deleted"));
         }
 
         let mode = raw.mode;
@@ -311,14 +311,14 @@ impl TryFrom<&RawInode> for InodeDesc {
 
         // Linux stores the nul byte in symlink, so the maximum size is `BLOCK_SIZE - 1`.
         if type_ == InodeType::SymLink && size >= BLOCK_SIZE as u64 {
-            return_errno_with_message!(Errno::EUCLEAN, "corrupted symlink on disk");
+            return Err(errno!(EUCLEAN, "corrupted symlink on disk"));
         }
         if size > i64::MAX as u64 {
-            return_errno_with_message!(Errno::EUCLEAN, "corrupted inode on disk");
+            return Err(errno!(EUCLEAN, "corrupted inode on disk"));
         }
 
-        let flags = FileFlags::from_bits(raw.flags)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "invalid inode flags"))?;
+        let flags =
+            FileFlags::from_bits(raw.flags).ok_or_else(|| errno!(EIO, "invalid inode flags"))?;
         let raw_block_ptrs = RawBlockPtrs::new(raw.sector_count, raw.block);
 
         Ok(InodeDesc {
@@ -473,7 +473,7 @@ impl InodeInner {
             block_manager,
         } = &mut self.payload
         else {
-            return_errno_with_message!(Errno::EINVAL, "inode has no data page cache");
+            return Err(errno!(EINVAL, "inode has no data page cache"));
         };
         page_cache.resize(new_size_bytes, old_size_bytes)?;
         // Reset the npages to let the `PageCacheBackend` know the size of page cache.
@@ -655,10 +655,7 @@ impl InodePayload {
     fn block_manager(&self) -> Result<&Arc<InodeBlockManager>> {
         match self {
             Self::DataBacked { block_manager, .. } => Ok(block_manager),
-            _ => Err(Error::with_message(
-                Errno::EINVAL,
-                "inode payload has no block manager",
-            )),
+            _ => Err(errno!(EINVAL, "inode payload has no block manager",)),
         }
     }
 

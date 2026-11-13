@@ -86,16 +86,16 @@ impl InitStream {
         can_reuse: bool,
     ) -> Result<()> {
         if self.bound_port.is_some() {
-            return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
+            return Err(errno!(EINVAL, "the socket is already bound to an address"));
         }
 
         // When we support `IPV6_V6ONLY` and if it is set, we should also reject IPv4-mapped
         // IPv6 addresses.
         if IpAddressFamily::from(endpoint.addr) != family {
-            return_errno_with_message!(
-                Errno::EAFNOSUPPORT,
+            return Err(errno!(
+                EAFNOSUPPORT,
                 "the protocol family does not match the address family"
-            );
+            ));
         }
 
         self.bound_port = Some(bind_port(endpoint, can_reuse)?);
@@ -124,8 +124,8 @@ impl InitStream {
         // IPv6 addresses.
         if IpAddressFamily::from(remote_endpoint.addr) != family {
             return Err((
-                Error::with_message(
-                    Errno::EAFNOSUPPORT,
+                errno!(
+                    EAFNOSUPPORT,
                     "the protocol family does not match the address family",
                 ),
                 self,
@@ -149,8 +149,8 @@ impl InitStream {
         let remote_endpoint = map_unspecified_to_localhost(*remote_endpoint);
         if is_broadcast_endpoint(&remote_endpoint) {
             return Err((
-                Error::with_message(
-                    Errno::ENETUNREACH,
+                errno!(
+                    ENETUNREACH,
                     "TCP sockets cannot connect to broadcast addresses",
                 ),
                 self,
@@ -177,8 +177,8 @@ impl InitStream {
 
         if is_ipv4_mapped_localhost {
             return Err((
-                Error::with_message(
-                    Errno::ECONNREFUSED,
+                errno!(
+                    ECONNREFUSED,
                     "IPv4-mapped IPv6 connections are not supported",
                 ),
                 InitStream::new_refused(bound_port),
@@ -206,12 +206,12 @@ impl InitStream {
         let is_conn_refused = self.is_conn_refused.get_mut();
         if *is_conn_refused {
             *is_conn_refused = false;
-            return_errno_with_message!(Errno::ECONNREFUSED, "the connection is refused");
+            Err(errno!(ECONNREFUSED, "the connection is refused"))
         } else {
-            return_errno_with_message!(
-                Errno::ECONNABORTED,
+            Err(errno!(
+                ECONNABORTED,
                 "the error code for the connection failure is not available"
-            );
+            ))
         }
     }
 
@@ -225,8 +225,8 @@ impl InitStream {
             // See the comments of `is_connect_done`.
             // `listen()` is also not allowed until the second `connect()`.
             return Err((
-                Error::with_message(
-                    Errno::EINVAL,
+                errno!(
+                    EINVAL,
                     "the connection is refused, but the connecting phase is not done",
                 ),
                 self,
@@ -238,7 +238,7 @@ impl InitStream {
             // port. However, INADDR_ANY is not yet supported, so we need to return an error first.
             warn!("listen() without bind() is not implemented");
             return Err((
-                Error::with_message(Errno::EINVAL, "listen() without bind() is not implemented"),
+                errno!(EINVAL, "listen() without bind() is not implemented"),
                 self,
             ));
         };
@@ -258,7 +258,7 @@ impl InitStream {
         // Below are some magic checks to make our behavior identical to Linux.
 
         if self.is_connect_done {
-            return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+            return Err(errno!(ENOTCONN, "the socket is not connected"));
         }
 
         if let Some(err) = self.test_and_clear_error() {
@@ -273,7 +273,7 @@ impl InitStream {
             return Err(err);
         }
 
-        return_errno_with_message!(Errno::EPIPE, "the socket is not connected");
+        Err(errno!(EPIPE, "the socket is not connected"))
     }
 
     pub(super) fn local_endpoint(&self) -> Option<IpEndpoint> {
@@ -295,10 +295,7 @@ impl InitStream {
 
     pub(super) fn test_and_clear_error(&self) -> Option<Error> {
         if self.is_conn_refused.swap(false, Ordering::Relaxed) {
-            Some(Error::with_message(
-                Errno::ECONNREFUSED,
-                "the connection is refused",
-            ))
+            Some(errno!(ECONNREFUSED, "the connection is refused",))
         } else {
             None
         }

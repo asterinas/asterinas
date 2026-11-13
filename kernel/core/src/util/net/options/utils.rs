@@ -46,7 +46,7 @@ macro_rules! impl_read_write_for_32bit_type {
         impl ReadFromUser for $pod_ty {
             fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
                 if (max_len as usize) < size_of::<$pod_ty>() {
-                    return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+                    return Err(errno!(EINVAL, "max_len is too short"));
                 }
                 Ok($crate::context::current_userspace!().read_val::<$pod_ty>(addr)?)
             }
@@ -82,7 +82,7 @@ impl ReadFromUser for u8 {
         let val = i32::read_from_user(addr, max_len)?;
 
         if val < 0 || val > u8::MAX as i32 {
-            return_errno_with_message!(Errno::EINVAL, "invalid u8 value");
+            return Err(errno!(EINVAL, "invalid u8 value"));
         }
 
         Ok(val as u8)
@@ -115,7 +115,7 @@ impl WriteToUser for Option<Error> {
 impl ReadFromUser for LingerOption {
     fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
         if (max_len as usize) < size_of::<CLinger>() {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+            return Err(errno!(EINVAL, "max_len is too short"));
         }
 
         let c_linger = current_userspace!().read_val::<CLinger>(addr)?;
@@ -134,7 +134,7 @@ impl WriteToUser for LingerOption {
 impl ReadFromUser for SocketTimeout {
     fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
         if (max_len as usize) < size_of::<timeval_t>() {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+            return Err(errno!(EINVAL, "max_len is too short"));
         }
 
         let timeval = current_userspace!().read_val::<timeval_t>(addr)?;
@@ -144,7 +144,7 @@ impl ReadFromUser for SocketTimeout {
 
         let duration: Duration = timeval
             .try_into()
-            .map_err(|_| Error::with_message(Errno::EDOM, "usec is out of range"))?;
+            .map_err(|_| errno!(EDOM, "usec is out of range"))?;
         Ok(Self::new((!duration.is_zero()).then_some(duration)))
     }
 }
@@ -169,8 +169,8 @@ impl ReadFromUser for CongestionControl {
 
         current_userspace!().read_bytes(addr, dst.as_mut())?;
 
-        let name = core::str::from_utf8(dst)
-            .map_err(|_| Error::with_message(Errno::ENOENT, "non-UTF8 congestion name"))?;
+        let name =
+            core::str::from_utf8(dst).map_err(|_| errno!(ENOENT, "non-UTF8 congestion name"))?;
         CongestionControl::new(name)
     }
 }

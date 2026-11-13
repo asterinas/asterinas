@@ -45,39 +45,29 @@ impl DrmFramebuffer {
         gem_object: Arc<DrmGemObject>,
     ) -> Result<Self> {
         if size.is_empty() {
-            return_errno_with_message!(Errno::EINVAL, "the DRM framebuffer size must not be empty");
+            return Err(errno!(EINVAL, "the DRM framebuffer size must not be empty"));
         }
 
         // Calculate the minimum GEM object size needed to contain the framebuffer,
         // including its initial offset, row strides, and the last row of pixels.
         let row_size = (size.width() as usize)
             .checked_mul(pixel_format.bytes_per_pixel())
-            .ok_or_else(|| {
-                Error::with_message(
-                    Errno::EINVAL,
-                    "the DRM framebuffer row size overflows usize",
-                )
-            })?;
+            .ok_or_else(|| errno!(EINVAL, "the DRM framebuffer row size overflows usize",))?;
         if (pitch as usize) < row_size {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the DRM framebuffer pitch is smaller than one pixel row"
-            );
+            ));
         }
 
         let required_size = ((size.height() - 1) as usize)
             .checked_mul(pitch as usize)
             .and_then(|size| size.checked_add(offset as usize))
             .and_then(|size| size.checked_add(row_size))
-            .ok_or_else(|| {
-                Error::with_message(
-                    Errno::EINVAL,
-                    "the DRM framebuffer required size overflows usize",
-                )
-            })?;
+            .ok_or_else(|| errno!(EINVAL, "the DRM framebuffer required size overflows usize",))?;
 
         if required_size > gem_object.size() {
-            return_errno_with_message!(Errno::EINVAL, "the DRM framebuffer exceeds its GEM object");
+            return Err(errno!(EINVAL, "the DRM framebuffer exceeds its GEM object"));
         }
 
         Ok(Self {

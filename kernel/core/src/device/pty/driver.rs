@@ -77,9 +77,9 @@ impl PtyDriver {
         let mut output = self.output.lock();
         if output.is_empty() {
             if self.tty_flags.is_other_closed() {
-                return_errno_with_message!(Errno::EIO, "the pty slave has been closed");
+                return Err(errno!(EIO, "the pty slave has been closed"));
             }
-            return_errno_with_message!(Errno::EAGAIN, "the buffer is empty");
+            return Err(errno!(EAGAIN, "the buffer is empty"));
         }
 
         let read_len = output.len().min(buf.len());
@@ -133,7 +133,7 @@ impl TtyDriver for PtyDriver {
             } else if *ch != b'\n' && !output.is_full() {
                 output.push(*ch).unwrap();
             } else if len == 0 {
-                return_errno_with_message!(Errno::EAGAIN, "the output buffer is full");
+                return Err(errno!(EAGAIN, "the output buffer is full"));
             } else {
                 break;
             }

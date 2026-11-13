@@ -60,7 +60,7 @@ impl UmountFlags {
             | UmountFlags::UMOUNT_NOFOLLOW;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
-            return_errno_with_message!(Errno::EINVAL, "unsupported flags");
+            return Err(errno!(EINVAL, "unsupported flags"));
         }
         Ok(())
     }

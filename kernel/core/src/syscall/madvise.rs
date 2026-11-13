@@ -18,7 +18,7 @@ pub(super) fn sys_madvise(
     );
 
     if !addr.is_multiple_of(PAGE_SIZE) {
-        return_errno_with_message!(Errno::EINVAL, "the mapping address is not aligned");
+        return Err(errno!(EINVAL, "the mapping address is not aligned"));
     }
     if len == 0 {
         return Ok(SyscallReturn::Return(0));
@@ -26,7 +26,7 @@ pub(super) fn sys_madvise(
     if VMAR_CAP_ADDR.checked_sub(addr).is_none_or(|gap| gap < len) {
         // FIXME: Linux returns `EINVAL` if `(addr + len).align_up(PAGE_SIZE)` overflows. Here, we
         // perform a stricter validation.
-        return_errno_with_message!(Errno::EINVAL, "the mapping range is not in userspace");
+        return Err(errno!(EINVAL, "the mapping range is not in userspace"));
     }
     let addr_range = addr..(addr + len).align_up(PAGE_SIZE);
 
@@ -40,14 +40,14 @@ pub(super) fn sys_madvise(
         _ if DUMMY_MADVISE.contains(&behavior) => {
             let query_guard = vmar.query(addr_range);
             if !query_guard.is_fully_mapped() {
-                return_errno_with_message!(
-                    Errno::ENOMEM,
+                return Err(errno!(
+                    ENOMEM,
                     "the range contains pages that are not mapped"
-                );
+                ));
             }
             // For `DUMMY_MADVISE`, doing nothing is correct, though it may not be efficient.
         }
-        _ => return_errno_with_message!(Errno::EINVAL, "the madvise behavior is not supported yet"),
+        _ => return Err(errno!(EINVAL, "the madvise behavior is not supported yet")),
     }
 
     Ok(SyscallReturn::Return(0))

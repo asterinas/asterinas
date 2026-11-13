@@ -31,7 +31,7 @@ impl TryFrom<UserIoVec> for IoVec {
 
     fn try_from(value: UserIoVec) -> Result<Self> {
         if value.len < 0 {
-            return_errno_with_message!(Errno::EINVAL, "the I/O buffer length cannot be negative");
+            return Err(errno!(EINVAL, "the I/O buffer length cannot be negative"));
         }
 
         Ok(IoVec {
@@ -83,7 +83,7 @@ fn copy_iovs_and_convert<'a, T: 'a>(
     convert_iovec: impl Fn(&IoVec, &'a VmSpace) -> Result<T>,
 ) -> Result<Box<[T]>> {
     if count > MAX_IO_VECTOR_LENGTH {
-        return_errno_with_message!(Errno::EINVAL, "the I/O vector contains too many buffers");
+        return Err(errno!(EINVAL, "the I/O vector contains too many buffers"));
     }
 
     let vm_space = user_space.vmar().vm_space();
@@ -106,7 +106,7 @@ fn copy_iovs_and_convert<'a, T: 'a>(
         // buffer could bypass validation.
         // Reference: <https://elixir.bootlin.com/linux/v6.16/source/lib/iov_iter.c#L1475>.
         if !mm::is_in_user_space(iov.base, iov.len) {
-            return_errno_with_message!(Errno::EFAULT, "the I/O buffer range is outside user space");
+            return Err(errno!(EFAULT, "the I/O buffer range is outside user space"));
         }
 
         // Truncate the buffer if the number of bytes exceeds `MAX_TOTAL_IOV_BYTES`.

@@ -34,7 +34,7 @@ pub(super) fn sys_write(
         }
     }
     .map_err(|err| match err.error() {
-        Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+        Errno::EINTR => errno!(ERESTARTSYS),
         _ => err,
     })?;
 

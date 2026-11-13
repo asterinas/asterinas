@@ -181,12 +181,9 @@ impl SocketOptionSet {
                 socket_recvbuf_force.set(recv_buf);
             }
             _socket_peer_groups @ PeerGroups => {
-                return_errno_with_message!(Errno::ENODATA, "the socket does not have peer groups");
+                return Err(errno!(ENODATA, "the socket does not have peer groups"));
             }
-            _ => return_errno_with_message!(
-                Errno::ENOPROTOOPT,
-                "the socket option to get is unknown"
-            ),
+            _ => return Err(errno!(ENOPROTOOPT, "the socket option to get is unknown")),
         });
         Ok(())
     }
@@ -274,10 +271,11 @@ impl SocketOptionSet {
                     self.set_recv_buf(*recv_buf);
                 }
             }
-            _ => return_errno_with_message!(
-                Errno::ENOPROTOOPT,
-                "the socket option to be set is unknown"
-            ),
+            _ =>
+                return Err(errno!(
+                    ENOPROTOOPT,
+                    "the socket option to be set is unknown"
+                )),
         });
 
         Ok(NeedIfacePoll::FALSE)

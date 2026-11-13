@@ -45,7 +45,7 @@ impl ProcFileOps for OverflowUidFileOps {
 
         let (value, read_bytes) = read_u64_from(reader)?;
         if value > MAX_OLDUID {
-            return_errno_with_message!(Errno::EINVAL, "the value is not a valid overflow UID");
+            return Err(errno!(EINVAL, "the value is not a valid overflow UID"));
         }
 
         Uid::set_overflow(Uid::new(value as u32));

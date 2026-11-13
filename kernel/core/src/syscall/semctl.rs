@@ -20,7 +20,7 @@ pub(super) fn sys_semctl(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let Ok(semid) = IpcId::try_from(semid.cast_unsigned()) else {
-        return_errno_with_message!(Errno::EINVAL, "non-positive semaphore IDs are invalid");
+        return Err(errno!(EINVAL, "non-positive semaphore IDs are invalid"));
     };
     let cmd = IpcControlCmd::try_from(op)?;
 

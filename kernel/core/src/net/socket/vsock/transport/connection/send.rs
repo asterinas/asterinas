@@ -66,7 +66,7 @@ impl Connection {
         state.test_and_clear_error(&self.inner)?;
 
         if state.shutdown.local_write_closed || state.shutdown.peer_read_closed {
-            return_errno_with_message!(Errno::EPIPE, "the connection is closed for writing");
+            return Err(errno!(EPIPE, "the connection is closed for writing"));
         }
 
         if max_bytes == 0 {
@@ -76,7 +76,7 @@ impl Connection {
         let pending_queue_room =
             DEFAULT_TX_BUF_SIZE - self.inner.pending_tx_bytes.load(Ordering::Relaxed);
         if pending_queue_room == 0 {
-            return_errno_with_message!(Errno::EAGAIN, "the pending queue is full");
+            return Err(errno!(EAGAIN, "the pending queue is full"));
         }
 
         let credit_room = state.check_peer_credit(&self.inner)?;
@@ -127,7 +127,7 @@ impl Connection {
         let mut state = self.inner.state.lock();
 
         if state.shutdown.local_write_closed || state.shutdown.peer_read_closed {
-            return_errno_with_message!(Errno::EPIPE, "the connection is closed for writing");
+            return Err(errno!(EPIPE, "the connection is closed for writing"));
         }
 
         let vsock_space = self.inner.bound_port.vsock_space();
@@ -186,7 +186,7 @@ impl ConnectionState {
             self.credit.credit_request_pending = true;
         }
 
-        return_errno_with_message!(Errno::EAGAIN, "the peer has no receive credit");
+        Err(errno!(EAGAIN, "the peer has no receive credit"))
     }
 
     pub(super) fn peer_credit(&self) -> usize {
