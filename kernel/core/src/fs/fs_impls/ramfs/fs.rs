@@ -37,6 +37,7 @@ use crate::{
     prelude::*,
     process::{Gid, Uid},
     time::clocks::RealTimeCoarseClock,
+    util::ReadWithLen,
     vm::page_cache::{PageCache, Vmo},
 };
 
@@ -1033,13 +1034,15 @@ impl FileOps for RamInode {
     ) -> Result<usize> {
         let read_len = match &self.inner {
             Inner::File(page_cache) => {
+                // Lock before reading the size or the `resize` may shrink the cache.
+                let page_cache = page_cache.lock();
                 let (offset, read_len) = {
                     let file_size = self.size();
                     let start = file_size.min(offset);
                     let end = file_size.min(offset + writer.avail());
                     (start, end - start)
                 };
-                page_cache.lock().read(offset, writer)?;
+                page_cache.read_with_len(offset, writer, read_len)?;
                 read_len
             }
             _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),

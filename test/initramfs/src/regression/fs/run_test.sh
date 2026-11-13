@@ -94,6 +94,7 @@ test_ext2 "/ext2" "test_file.txt"
 ./ext2/open_dir
 ./ext2/open_unlink
 ./ext2/permissions
+./ext2/preadv_short_read
 ./ext2/readdir
 ./ext2/rename
 ./ext2/rmdir
@@ -119,6 +120,8 @@ TEST_TMPDIR=/exfat TEST_DIRECT=0 ./empty_write/empty_write
 TEST_TMPDIR=/exfat TEST_DIRECT=1 ./empty_write/empty_write
 TEST_TMPDIR=/ext2 TEST_DIRECT=0 ./empty_write/empty_write
 TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
+
+./exfat/read_eof
 
 ./getcwd/getcwd
 
@@ -165,6 +168,8 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 ./pseudofs/pseudo_inode
 ./pseudofs/pseudo_mount
 
+./ramfs/read_eof
+./ramfs/read_truncate_race
 ./ramfs/readdir
 
 ./rename/permission

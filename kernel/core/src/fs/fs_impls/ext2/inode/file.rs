@@ -12,9 +12,12 @@
 use ostd::mm::io::util::HasVmReaderWriter;
 
 use super::{super::Ext2, FileFlags, Inode, InodeInner, io_range::IoRange};
-use crate::fs::{
-    ext2::{prelude::*, utils},
-    vfs::inode::FallocMode,
+use crate::{
+    fs::{
+        ext2::{prelude::*, utils},
+        vfs::inode::FallocMode,
+    },
+    util::ReadWithLen,
 };
 
 impl Inode {
@@ -237,8 +240,7 @@ impl InodeInner {
         }
 
         let read_len = writer.avail().min(file_size - offset);
-        writer.limit(read_len);
-        self.page_cache().read(offset, writer)?;
+        self.page_cache().read_with_len(offset, writer, read_len)?;
         Ok(read_len)
     }
 
@@ -279,11 +281,13 @@ impl InodeInner {
         }
 
         let read_len = writer.avail().min(file_size - offset);
-        writer.limit(read_len);
         let end = offset + read_len;
 
         self.page_cache().flush_range(offset..end)?;
-        self.read_direct_blocks(fs, offset, end, writer)?;
+        let mut limited_writer = writer.clone_exclusive();
+        limited_writer.limit(read_len);
+        self.read_direct_blocks(fs, offset, end, &mut limited_writer)?;
+        writer.skip(read_len);
         Ok(read_len)
     }
 
