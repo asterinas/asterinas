@@ -7,18 +7,16 @@ mod driver;
 pub(crate) mod legacy;
 pub(super) mod msix;
 
-use alloc::sync::Arc;
+use alloc::boxed::Box;
 
 use aster_pci::PCI_BUS;
-use spin::Once;
 
 use self::driver::VirtioPciDriver;
 
-pub(crate) static VIRTIO_PCI_DRIVER: Once<Arc<VirtioPciDriver>> = Once::new();
-
 pub(super) fn virtio_pci_init() {
-    VIRTIO_PCI_DRIVER.call_once(|| Arc::new(VirtioPciDriver::new()));
     PCI_BUS
-        .lock()
-        .register_driver(VIRTIO_PCI_DRIVER.get().unwrap().clone());
+        .get()
+        .unwrap()
+        .register_driver(Box::new(VirtioPciDriver))
+        .unwrap();
 }

@@ -7,6 +7,7 @@
 
 mod config;
 pub mod device;
+pub(crate) mod driver;
 pub mod pool;
 
 /// The default virtio-fs device name used by the kernel filesystem.

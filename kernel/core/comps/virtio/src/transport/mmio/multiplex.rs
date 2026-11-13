@@ -73,6 +73,12 @@ impl MultiplexIrq {
         irq
     }
 
+    pub(super) fn take_callbacks(&mut self) -> Vec<Box<IrqCallbackFunction>> {
+        let mut callbacks = core::mem::take(&mut self.queue_callbacks);
+        callbacks.append(&mut self.cfg_callbacks);
+        callbacks
+    }
+
     pub(super) fn register_queue_callback(&mut self, func: Box<IrqCallbackFunction>) {
         self.queue_callbacks.push(func);
     }

@@ -66,7 +66,7 @@ pub trait Bus: Sized + Send + Sync + 'static {
     type Device: Send + Sync + 'static;
 
     /// What a driver declares to say which devices it accepts.
-    type MatchData: Send + Sync + 'static;
+    type MatchData: ?Sized + Send + Sync + 'static;
 
     /// Decides whether a driver's match data accepts a device.
     fn matches(&self, dev: &Self::Device, data: &Self::MatchData) -> bool;
@@ -130,7 +130,7 @@ impl<B: Bus> BusHandle<B> {
     /// # Panics
     ///
     /// Panics if the driver name is not a valid `SysTree` node name.
-    pub fn register_driver(&self, driver: Arc<dyn Driver<B>>) -> Result<Arc<DriverHandle<B>>> {
+    pub fn register_driver(&self, driver: Box<dyn Driver<B>>) -> Result<Arc<DriverHandle<B>>> {
         if self
             .drivers
             .lock()

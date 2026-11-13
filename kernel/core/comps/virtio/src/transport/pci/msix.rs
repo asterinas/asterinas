@@ -64,7 +64,21 @@ impl VirtioMsixManager {
         Some((vector, self.msix.irq_mut(vector as usize).unwrap()))
     }
 
-    /// Returns true if MSI-X is enabled.
+    /// Removes callbacks while retaining the IRQ allocations for reprobe.
+    ///
+    /// Drop the returned lines outside the transport configuration lock.
+    pub(super) fn take_callbacks(&mut self) -> Vec<IrqLine> {
+        self.unused_msix_vectors.append(&mut self.used_msix_vectors);
+        (0..self.msix.table_size())
+            .map(|index| {
+                let irq = self.msix.irq_mut(index as usize).unwrap();
+                let replacement = irq.clone();
+                core::mem::replace(irq, replacement)
+            })
+            .collect()
+    }
+
+    /// Returns whether MSI-X is enabled.
     pub(super) fn is_enabled(&self) -> bool {
         self.msix.is_enabled()
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub mod device;
+pub(crate) mod driver;
 
 use core::mem::offset_of;
 

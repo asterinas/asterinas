@@ -16,6 +16,7 @@
 mod buffer;
 mod config;
 pub mod device;
+pub(crate) mod driver;
 pub mod header;
 pub mod packet;
 pub mod queue;
@@ -49,7 +50,7 @@ struct Component {
 static COMPONENT: Once<Component> = Once::new();
 
 /// Initializes the global virtio-vsock component state.
-pub(crate) fn init() {
+fn init() {
     buffer::init();
     COMPONENT.call_once(|| Component {
         devices: SpinLock::new(BTreeMap::new()),
