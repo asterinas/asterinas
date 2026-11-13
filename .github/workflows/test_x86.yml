@@ -34,6 +34,9 @@ jobs:
         with:
           auto_test: 'general'
           runs_on: 'ubuntu-latest'
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' && matrix.id != 'usermode_test' }}
+          cache_kernel: ${{ vars.CI_CACHE_KERNEL != 'false' && matrix.id == 'compile' }}
+          cache_save: ${{ matrix.id == 'compile' }}
 
   osdk-test:
     runs-on: ubuntu-latest
@@ -85,6 +88,8 @@ jobs:
           smp: ${{ matrix.smp }}
           boot_protocol: ${{ matrix.boot_protocol }}
           rootfs_boot: ${{ matrix.rootfs_boot }}
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}
+          cache_kernel: ${{ vars.CI_CACHE_KERNEL != 'false' && matrix.variant == 'multiboot2-smp4' }}
 
   regression-test:
     runs-on: ubuntu-latest
@@ -116,6 +121,9 @@ jobs:
           release: ${{ !contains(matrix.release, 'false') }}
           smp: ${{ matrix.smp }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}
+          cache_kernel: ${{ vars.CI_CACHE_KERNEL != 'false' && matrix.variant == 'multiboot2-smp4' }}
+          cache_save: ${{ matrix.variant == 'multiboot2-smp4' }}
 
   conformance-test:
     runs-on: ubuntu-latest
@@ -163,6 +171,8 @@ jobs:
           conformance_test_workdir: ${{ matrix.conformance_test_workdir }}
           conformance_test_extra_blocklists: ${{ matrix.conformance_test_extra_blocklists }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}
+          cache_kernel: ${{ vars.CI_CACHE_KERNEL != 'false' && matrix.variant == 'multiboot2-smp4' }}
 
   cross-compile-test:
     timeout-minutes: 30
@@ -185,6 +195,7 @@ jobs:
         with:
           auto_test: ${{ matrix.auto_test }}
           enable_kvm: ${{ matrix.enable_kvm }}
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}
 
   xfstests:
     name: xfstests (${{ matrix.fs_type }})
@@ -227,6 +238,7 @@ jobs:
           xfstests_fs_type: ${{ matrix.fs_type }}
           xfstests_runlist: ${{ matrix.runlist }}
           xfstests_disk_size: ${{ matrix.disk_size }}
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}
 
   pjdfstest:
     name: pjdfstest (${{ matrix.fs_type }})
@@ -256,3 +268,4 @@ jobs:
           conformance_test_suite: 'pjdfstest'
           release: true
           pjdfstest_fs_type: ${{ matrix.fs_type }}
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}

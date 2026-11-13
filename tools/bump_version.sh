@@ -141,6 +141,9 @@ update_all_docker_version_refs() {
     update_image_versions ${BOOK_DIR}/src/kernel/README.md
     update_image_versions ${BOOK_DIR}/src/osdk/guide/intel-tdx.md
 
+    # Update Docker image versions in the shared test action
+    update_image_versions "${ASTER_SRC_DIR}/.github/actions/test/action.yml"
+
     # Update Docker image versions in workflows
     ALL_WORKFLOWS=$(find "${ASTER_SRC_DIR}/.github/workflows/" -type f -name "*.yml")
     EXCLUDED_WORKFLOWS=(
