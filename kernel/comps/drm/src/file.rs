@@ -32,9 +32,10 @@ use sparse_id_alloc::SparseIdAlloc;
 
 use crate::{
     device::{DrmDevice, DrmMaster},
+    event::DrmEventReceiver,
     gem::object::DrmGemObject,
     has_current_sys_admin,
-    kms::objects::{KmsObjectId, framebuffer::DrmFramebuffer},
+    kms::objects::{framebuffer::DrmFramebuffer, property::blob::DrmPropertyBlob},
     minor::{DrmMinor, DrmMinorType},
 };
 
@@ -55,6 +56,11 @@ pub(super) struct DrmFile {
     gem_handles: Mutex<DrmGemHandleTable>,
     /// Framebuffers created through this open file.
     framebuffers: Mutex<Vec<Arc<DrmFramebuffer>>>,
+    /// Property blobs created through this open file.
+    property_blobs: Mutex<Vec<Arc<DrmPropertyBlob>>>,
+
+    /// The per-file event receiver.
+    event_receiver: Arc<DrmEventReceiver>,
 }
 
 impl DrmFile {
@@ -94,6 +100,9 @@ impl DrmFile {
 
             gem_handles: Mutex::new(DrmGemHandleTable::new()),
             framebuffers: Mutex::new(Vec::new()),
+            property_blobs: Mutex::new(Vec::new()),
+
+            event_receiver: Arc::new(DrmEventReceiver::default()),
         }
     }
 
@@ -190,19 +199,10 @@ impl DrmFile {
     }
 
     pub(super) fn add_framebuffer(&self, framebuffer: Arc<DrmFramebuffer>) {
-        let mut framebuffers = self.framebuffers.lock();
-        framebuffers.push(framebuffer);
+        self.framebuffers.lock().push(framebuffer);
     }
 
-    pub(super) fn lookup_framebuffer(&self, id: KmsObjectId) -> Option<Arc<DrmFramebuffer>> {
-        self.framebuffers
-            .lock()
-            .iter()
-            .find(|framebuffer| framebuffer.id() == id)
-            .cloned()
-    }
-
-    pub(super) fn framebuffer_ids(&self) -> Vec<KmsObjectId> {
+    pub(super) fn framebuffer_ids(&self) -> Vec<u32> {
         self.framebuffers
             .lock()
             .iter()
@@ -210,12 +210,38 @@ impl DrmFile {
             .collect()
     }
 
-    pub(super) fn remove_framebuffer(&self, id: KmsObjectId) -> Option<Arc<DrmFramebuffer>> {
+    pub(super) fn remove_framebuffer(&self, id: u32) -> Result<Arc<DrmFramebuffer>> {
         let mut framebuffers = self.framebuffers.lock();
         let position = framebuffers
             .iter()
-            .position(|framebuffer| framebuffer.id() == id)?;
-        Some(framebuffers.swap_remove(position))
+            .position(|framebuffer| framebuffer.id() == id)
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::ENOENT,
+                    "the DRM framebuffer is not owned by this file",
+                )
+            })?;
+
+        Ok(framebuffers.swap_remove(position))
+    }
+
+    pub(super) fn add_property_blob(&self, blob: Arc<DrmPropertyBlob>) {
+        self.property_blobs.lock().push(blob);
+    }
+
+    pub(super) fn remove_property_blob(&self, id: u32) -> Result<Arc<DrmPropertyBlob>> {
+        let mut property_blobs = self.property_blobs.lock();
+        let position = property_blobs
+            .iter()
+            .position(|blob| blob.id() == id)
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::ENOENT,
+                    "the DRM framebuffer is not owned by this file",
+                )
+            })?;
+
+        Ok(property_blobs.swap_remove(position))
     }
 
     /// Keeps tracking the ioctl caller while this file has never been master,
@@ -270,6 +296,10 @@ impl DrmFile {
             )
         })
     }
+
+    pub(crate) fn event_receiver(&self) -> &Arc<DrmEventReceiver> {
+        &self.event_receiver
+    }
 }
 
 impl PerOpenFileOps for DrmFile {
@@ -278,7 +308,8 @@ impl PerOpenFileOps for DrmFile {
     }
 
     fn is_offset_aware(&self) -> bool {
-        true
+        // Reads events from the queue without using or advancing a file offset.
+        false
     }
 
     fn mappable(&self, request: FileMmapRequest) -> Result<MappableObject<'_>> {
@@ -316,10 +347,14 @@ impl FileOps for DrmFile {
     fn read_at(
         &self,
         _offset: usize,
-        _writer: &mut VmWriter,
-        _status_flags: StatusFlags,
+        writer: &mut VmWriter,
+        status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(Errno::EINVAL, "reading from a DRM file is not supported")
+        if status_flags.contains(StatusFlags::O_NONBLOCK) {
+            self.event_receiver.try_read(writer)
+        } else {
+            self.wait_events(IoEvents::IN, None, || self.event_receiver.try_read(writer))
+        }
     }
 
     fn write_at(
@@ -333,22 +368,13 @@ impl FileOps for DrmFile {
 }
 
 impl Pollable for DrmFile {
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+        self.event_receiver.poll(mask, poller)
     }
 }
 
 impl Drop for DrmFile {
     fn drop(&mut self) {
-        let device = self.minor.device().clone();
-        if let Some(kms_ops) = device.as_kms_ops() {
-            let mut object_store = kms_ops.mode_config().object_store().lock();
-            for framebuffer in self.framebuffers.get_mut().drain(..) {
-                object_store.free_object_id(framebuffer.id());
-            }
-        }
-
         for gem_object in self.gem_handles.get_mut().drain() {
             gem_object.revoke_mmap(self.client_id);
         }

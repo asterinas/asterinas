@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub(crate) mod exception;
-pub(crate) mod kernel_thread;
+pub mod kernel_thread;
 pub(crate) mod oops;
 mod softirqd;
 mod stats;
