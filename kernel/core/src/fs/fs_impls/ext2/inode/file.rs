@@ -12,14 +12,22 @@
 use ostd::mm::io::util::HasVmReaderWriter;
 
 use super::{super::Ext2, FileFlags, Inode, InodeInner, io_range::IoRange};
-use crate::fs::{
-    ext2::{prelude::*, utils},
-    vfs::inode::FallocMode,
+use crate::{
+    fs::{
+        ext2::{prelude::*, utils},
+        vfs::inode::FallocMode,
+    },
+    vm::page_cache::Readahead,
 };
 
 impl Inode {
     /// Reads file data at `offset` through the page cache.
-    pub(in ext2) fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    pub(in ext2) fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        readahead: Option<&Readahead>,
+    ) -> Result<usize> {
         if self.type_ == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
@@ -28,7 +36,7 @@ impl Inode {
             return Ok(0);
         }
 
-        let read_len = self.inner.read().read_at(offset, writer)?;
+        let read_len = self.inner.read().read_at(offset, writer, readahead)?;
         if read_len > 0 {
             self.inner.write().set_atime(utils::now());
         }
@@ -226,7 +234,12 @@ impl InodeInner {
     }
 
     /// Reads file data at `offset` through the inode page cache.
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        readahead: Option<&Readahead>,
+    ) -> Result<usize> {
         if writer.avail() == 0 {
             return Ok(0);
         }
@@ -238,7 +251,7 @@ impl InodeInner {
 
         let read_len = writer.avail().min(file_size - offset);
         writer.limit(read_len);
-        self.page_cache().read(offset, writer)?;
+        self.page_cache().read_buffered(offset, writer, readahead)?;
         Ok(read_len)
     }
 
@@ -316,10 +329,17 @@ impl InodeInner {
                 .invalidate_range(discard_start_bytes..discard_end_bytes)?;
         }
 
-        if let Err(err) = self.write_direct_blocks(fs, offset, reader) {
+        let write_result = self.write_direct_blocks(fs, offset, reader);
+
+        // Evict pages that may have been brought in by concurrent readahead.
+        // Even a failed write may have overwritten some blocks. Evict before
+        // rollback so shrinking the cache cannot dirty a stale partial page.
+        let evict_result = self.page_cache().evict_range(discard_start_bytes..end);
+        if let Err(err) = write_result {
             self.rollback_write(old_size, end);
             return Err(err);
         }
+        evict_result?;
 
         self.set_mtime_ctime(utils::now());
         if end > self.file_size() {
