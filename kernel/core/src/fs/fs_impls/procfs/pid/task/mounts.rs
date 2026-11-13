@@ -30,6 +30,8 @@ struct MountEntry<'a> {
     fs_type: &'a str,
     /// Per-mount flags.
     mount_flags: PerMountFlags,
+    /// Per-filesystem mount options.
+    fs_options: Option<String>,
     /// The dump field is used by the dump(8) program to determine which
     /// filesystems need to be dumped.
     dump: u32,
@@ -41,9 +43,17 @@ impl core::fmt::Display for MountEntry<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "{} {} {} {} {} {}",
-            self.source, self.mount_point, self.fs_type, self.mount_flags, self.dump, self.pass,
-        )
+            "{} {} {} {}",
+            self.source, self.mount_point, self.fs_type, self.mount_flags
+        )?;
+        if let Some(fs_options) = self
+            .fs_options
+            .as_deref()
+            .filter(|options| !options.is_empty())
+        {
+            write!(f, ",{}", fs_options)?;
+        }
+        write!(f, " {} {}", self.dump, self.pass)
     }
 }
 
@@ -78,6 +88,7 @@ impl MountsFileOps {
                 path_resolver,
             );
             let mount_flags = mount.flags();
+            let fs_options = mount.fs().options();
             let fs_type = mount.fs().name();
             let source = mount.source().unwrap_or("none");
 
@@ -94,6 +105,7 @@ impl MountsFileOps {
                 mount_point: &mount_point,
                 fs_type,
                 mount_flags,
+                fs_options,
                 dump,
                 pass,
             };

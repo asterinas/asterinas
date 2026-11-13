@@ -49,6 +49,13 @@ pub(crate) trait FileSystem: Any + Sync + Send {
         Ok(())
     }
 
+    /// Returns the filesystem-specific options for display.
+    ///
+    /// Returns `None` if there are no options to report.
+    fn options(&self) -> Option<String> {
+        None
+    }
+
     /// Returns the FS event subscriber stats of this file system.
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats;
 }

@@ -58,7 +58,6 @@ impl OverlayFs {
         let upper_workdir = roots.claim_upper_workdir(&options)?;
         let layer_stack = roots.into_layer_stack()?;
 
-        let xino_mode = options.xino_mode.unwrap_or(XinoMode::Auto);
         let xattr_namespace = options.xattr_namespace;
 
         let mut upper_workdir_inuse = None;
@@ -67,7 +66,6 @@ impl OverlayFs {
         let whiteout_cache;
 
         if let Some(mut inuse_pair) = upper_workdir {
-            let uuid_mode = options.uuid_mode.unwrap_or(UuidMode::Auto);
             if !is_effective_read_only {
                 inuse_pair.prepare_workdir()?;
 
@@ -80,14 +78,15 @@ impl OverlayFs {
                         "the upper filesystem cannot report directory entry types"
                     ));
                 }
-                let is_uuid_effective = capabilities.validate_uuid_support(uuid_mode)?;
+                let is_uuid_effective =
+                    capabilities.validate_uuid_support(options.requested_uuid_mode())?;
 
                 if is_uuid_effective {
                     match inuse_pair.persist_identity(xattr_namespace) {
                         Ok(persisted) => {
                             uuid = Some(persisted);
                         }
-                        Err(persist_err) => match uuid_mode {
+                        Err(persist_err) => match options.requested_uuid_mode() {
                             UuidMode::On => {
                                 return Err(errno!(
                                     EOPNOTSUPP,
@@ -121,12 +120,8 @@ impl OverlayFs {
             whiteout_cache = WhiteoutCache::new();
         }
 
-        let policy = MountPolicy::assemble(
-            is_effective_read_only,
-            xattr_namespace,
-            uuid,
-            upper_capabilities,
-        );
+        let policy =
+            MountPolicy::assemble(options, is_effective_read_only, uuid, upper_capabilities);
 
         let anon_device_id = AnonDeviceId::acquire().ok_or_else(|| {
             errno!(
@@ -138,7 +133,7 @@ impl OverlayFs {
         let identity = OverlayFs::new_identity_policy(
             anon_device_id,
             &layer_stack,
-            xino_mode,
+            policy.xino_mode(),
             is_effective_read_only,
             &policy,
         );
