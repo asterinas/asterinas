@@ -63,7 +63,7 @@ pub struct PosixThread {
     credentials: Credentials,
 
     /// The file system information of the thread.
-    fs: RwMutex<Arc<ThreadFsInfo>>,
+    fs: RwMutex<Option<Arc<ThreadFsInfo>>>,
 
     // Files
     /// File table
@@ -137,14 +137,14 @@ impl PosixThread {
     }
 
     /// Returns a read guard to the filesystem information of the thread.
-    pub(crate) fn read_fs(&self) -> RwMutexReadGuard<'_, Arc<ThreadFsInfo>> {
+    pub(crate) fn read_fs(&self) -> RwMutexReadGuard<'_, Option<Arc<ThreadFsInfo>>> {
         self.fs.read()
     }
 
     /// Sets the filesystem information of the thread.
     pub(in crate::process) fn set_fs(&self, new_fs: Arc<ThreadFsInfo>) {
         let mut fs_lock = self.fs.write();
-        *fs_lock = new_fs;
+        *fs_lock = Some(new_fs);
     }
 
     pub(crate) fn file_table(&self) -> &Mutex<Option<RoArc<FileTable>>> {
