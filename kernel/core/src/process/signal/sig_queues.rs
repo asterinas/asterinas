@@ -159,8 +159,10 @@ impl Queues {
 
         // FIXME: the gvisor pty_test JobControlTest::ReleaseTTY requires that
         // the SIGHUP signal should be handled before SIGCONT.
+        // Deliver SIGSEGV before catchable signals: their handlers could otherwise
+        // block or discard the SIGSEGV forced by a bad signal return.
         const ORDERED_STD_SIGS: [SigNum; COUNT_STD_SIGS] = [
-            SIGKILL, SIGTERM, SIGSTOP, SIGSEGV, SIGILL, SIGHUP, SIGCONT, SIGINT, SIGQUIT, SIGTRAP,
+            SIGKILL, SIGSEGV, SIGTERM, SIGSTOP, SIGILL, SIGHUP, SIGCONT, SIGINT, SIGQUIT, SIGTRAP,
             SIGABRT, SIGBUS, SIGFPE, SIGUSR1, SIGUSR2, SIGPIPE, SIGALRM, SIGSTKFLT, SIGCHLD,
             SIGTSTP, SIGTTIN, SIGTTOU, SIGURG, SIGXCPU, SIGXFSZ, SIGVTALRM, SIGPROF, SIGWINCH,
             SIGIO, SIGPWR, SIGSYS,

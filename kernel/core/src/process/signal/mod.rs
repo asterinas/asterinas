@@ -46,6 +46,32 @@ pub(crate) trait SignalContext {
     fn set_arguments(&mut self, sig_num: SigNum, siginfo_addr: usize, ucontext_addr: usize);
 }
 
+/// Forces `SIGSEGV` on the current thread after a bad signal frame.
+///
+/// If `SIGSEGV` is blocked or ignored, resets its disposition to the default
+/// and unblocks it. A handler explicitly blocked by user space must not run.
+/// Reference: <https://elixir.bootlin.com/linux/v6.17/source/kernel/signal.c#L1316>.
+/// As with Linux, the signal is thread-directed and an already pending instance
+/// keeps its original info.
+#[cfg(target_arch = "x86_64")]
+pub(crate) fn force_sigsegv(ctx: &Context) {
+    let sig_dispositions = ctx.process.sig_dispositions().lock();
+    let mut sig_dispositions = sig_dispositions.lock();
+    let mask = ctx.posix_thread.sig_mask();
+    let blocked = mask.contains(SIGSEGV);
+    let ignored = sig_dispositions.get(SIGSEGV) == SigAction::Ign;
+
+    if blocked || ignored {
+        sig_dispositions.set_default(SIGSEGV);
+        if blocked {
+            ctx.set_sig_mask(mask - SIGSEGV);
+        }
+    }
+
+    ctx.posix_thread
+        .enqueue_signal(Box::new(signals::kernel::KernelSignal::new(SIGSEGV)));
+}
+
 /// Handles a pending signal for the current process.
 pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
     // FIXME: This function may handle or suppress only one signal per trap, delaying
