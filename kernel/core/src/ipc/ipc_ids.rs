@@ -126,6 +126,7 @@ impl<T> IpcIds<T> {
 pub(super) struct IdNotExistError;
 
 impl From<IdNotExistError> for Error {
+    #[track_caller]
     fn from(_value: IdNotExistError) -> Self {
         Error::with_message(Errno::EINVAL, "the ID does not exist")
     }

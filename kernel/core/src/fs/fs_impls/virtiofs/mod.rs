@@ -22,6 +22,7 @@ pub(super) fn init() {
 }
 
 impl From<FuseError> for Error {
+    #[track_caller]
     fn from(error: FuseError) -> Self {
         match error {
             FuseError::ResourceAlloc(error) => Error::from(error),

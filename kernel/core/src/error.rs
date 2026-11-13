@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::panic::Location;
+
 use int_to_c_enum::TryFromInt;
 
 /// Error number.
@@ -154,32 +156,49 @@ pub enum Errno {
     ERESTARTSYS = 512, /* Restart of an interrupted system call. For kernel internal use only. */
 }
 
-/// error used in this crate
+/// An error with an error number and a source location.
+///
+/// The location identifies where this error was constructed,
+/// including where an external error was converted into this type.
+/// Propagating an existing error preserves its original location.
 #[derive(Clone, Copy, Debug)]
 pub struct Error {
     errno: Errno,
-    #[expect(dead_code)]
-    msg: Option<&'static str>,
+    location: &'static Location<'static>,
 }
 
 impl Error {
+    /// Creates an error with the given error number and the caller's source location.
+    #[track_caller]
     pub const fn new(errno: Errno) -> Self {
-        Error { errno, msg: None }
-    }
-
-    pub const fn with_message(errno: Errno, msg: &'static str) -> Self {
         Error {
             errno,
-            msg: Some(msg),
+            location: Location::caller(),
         }
     }
 
+    /// The message documents the error at the call site. Only the caller location
+    /// and error number are stored to keep the error compact.
+    #[track_caller]
+    pub const fn with_message(errno: Errno, _msg: &'static str) -> Self {
+        Self::new(errno)
+    }
+
+    /// Returns the location where this error was constructed.
+    ///
+    /// Propagating the error preserves this location.
+    pub const fn location(&self) -> &'static Location<'static> {
+        self.location
+    }
+
+    /// Returns the error number.
     pub const fn error(&self) -> Errno {
         self.errno
     }
 }
 
 impl From<Errno> for Error {
+    #[track_caller]
     fn from(errno: Errno) -> Self {
         Error::new(errno)
     }
@@ -192,6 +211,7 @@ impl AsRef<Error> for Error {
 }
 
 impl From<ostd::Error> for Error {
+    #[track_caller]
     fn from(ostd_error: ostd::Error) -> Self {
         match ostd_error {
             ostd::Error::AccessDenied => Error::new(Errno::EFAULT),
@@ -207,19 +227,22 @@ impl From<ostd::Error> for Error {
 
 impl From<(ostd::Error, usize)> for Error {
     // Used in fallible memory read/write API
+    #[track_caller]
     fn from(ostd_error: (ostd::Error, usize)) -> Self {
         Error::from(ostd_error.0)
     }
 }
 
 impl From<(Error, usize)> for Error {
-    // Used in fallible remote process memory read/write API
+    // Used in fallible remote process memory read/write API.
+    // No `#[track_caller]` is needed because this does not construct a new error.
     fn from(err: (Error, usize)) -> Self {
         err.0
     }
 }
 
 impl From<aster_block::bio::BioEnqueueError> for Error {
+    #[track_caller]
     fn from(error: aster_block::bio::BioEnqueueError) -> Self {
         match error {
             aster_block::bio::BioEnqueueError::IsFull => {
@@ -236,6 +259,7 @@ impl From<aster_block::bio::BioEnqueueError> for Error {
 }
 
 impl From<aster_block::bio::BioStatus> for Error {
+    #[track_caller]
     fn from(err_status: aster_block::bio::BioStatus) -> Self {
         match err_status {
             aster_block::bio::BioStatus::NotSupported => {
@@ -253,6 +277,7 @@ impl From<aster_block::bio::BioStatus> for Error {
 }
 
 impl From<io_util::IoError> for Error {
+    #[track_caller]
     fn from(error: io_util::IoError) -> Self {
         match error {
             io_util::IoError::Unsupported => {
@@ -267,36 +292,42 @@ impl From<io_util::IoError> for Error {
 }
 
 impl From<core::num::TryFromIntError> for Error {
+    #[track_caller]
     fn from(_: core::num::TryFromIntError) -> Self {
         Error::with_message(Errno::EINVAL, "Invalid integer")
     }
 }
 
 impl From<core::str::Utf8Error> for Error {
+    #[track_caller]
     fn from(_: core::str::Utf8Error) -> Self {
         Error::with_message(Errno::EINVAL, "Invalid utf-8 string")
     }
 }
 
 impl From<alloc::string::FromUtf8Error> for Error {
+    #[track_caller]
     fn from(_: alloc::string::FromUtf8Error) -> Self {
         Error::with_message(Errno::EINVAL, "Invalid utf-8 string")
     }
 }
 
 impl From<core::ffi::FromBytesUntilNulError> for Error {
+    #[track_caller]
     fn from(_: core::ffi::FromBytesUntilNulError) -> Self {
         Error::with_message(Errno::E2BIG, "Cannot find null in cstring")
     }
 }
 
 impl From<core::ffi::FromBytesWithNulError> for Error {
+    #[track_caller]
     fn from(_: core::ffi::FromBytesWithNulError) -> Self {
         Error::with_message(Errno::E2BIG, "Cannot find null in cstring")
     }
 }
 
 impl From<cpio_decoder::error::Error> for Error {
+    #[track_caller]
     fn from(cpio_error: cpio_decoder::error::Error) -> Self {
         match cpio_error {
             cpio_decoder::error::Error::MagicError => {
@@ -339,18 +370,21 @@ impl From<Error> for ostd::Error {
 }
 
 impl From<alloc::ffi::NulError> for Error {
+    #[track_caller]
     fn from(_: alloc::ffi::NulError) -> Self {
         Error::with_message(Errno::E2BIG, "Cannot find null in cstring")
     }
 }
 
 impl From<int_to_c_enum::TryFromIntError> for Error {
+    #[track_caller]
     fn from(_: int_to_c_enum::TryFromIntError) -> Self {
         Error::with_message(Errno::EINVAL, "Invalid enum value")
     }
 }
 
 impl From<aster_device::common::Error> for Error {
+    #[track_caller]
     fn from(err: aster_device::common::Error) -> Self {
         use aster_device::common::Error::*;
         match err {
@@ -371,6 +405,7 @@ impl From<aster_device::common::Error> for Error {
 }
 
 impl From<aster_systree::Error> for Error {
+    #[track_caller]
     fn from(err: aster_systree::Error) -> Self {
         use aster_systree::Error::*;
         match err {
@@ -390,6 +425,7 @@ impl From<aster_systree::Error> for Error {
 }
 
 impl From<aster_util::printer::VmPrinterError> for Error {
+    #[track_caller]
     fn from(value: aster_util::printer::VmPrinterError) -> Self {
         match value {
             aster_util::printer::VmPrinterError::PageFault => {
@@ -411,4 +447,78 @@ macro_rules! return_errno_with_message {
     ($errno: expr, $message: expr) => {
         return Err($crate::error::Error::with_message($errno, $message))
     };
+}
+
+#[cfg(ktest)]
+mod tests {
+    use ostd::prelude::*;
+
+    use super::*;
+
+    #[ktest]
+    fn construction_location() {
+        let line = line!() + 1;
+        let error = Error::new(Errno::EINVAL);
+        assert_eq!(error.location().file(), file!());
+        assert_eq!(error.location().line(), line);
+
+        let line = line!() + 1;
+        let error = Error::with_message(Errno::EINVAL, "invalid argument");
+        assert_eq!(error.location().line(), line);
+
+        let line = line!() + 1;
+        const ERROR: Error = Error::new(Errno::EINVAL);
+        assert_eq!(ERROR.location().line(), line);
+
+        let line = line!() + 2;
+        fn fail() -> Result<(), Error> {
+            return_errno!(Errno::EINVAL)
+        }
+        assert_eq!(fail().unwrap_err().location().line(), line);
+
+        let line = line!() + 2;
+        fn fail_with_message() -> Result<(), Error> {
+            return_errno_with_message!(Errno::EINVAL, "invalid argument")
+        }
+        assert_eq!(fail_with_message().unwrap_err().location().line(), line);
+    }
+
+    #[ktest]
+    fn conversion_location() {
+        let line = line!() + 1;
+        let error = Error::from(Errno::EINVAL);
+        assert_eq!(error.location().line(), line);
+
+        let line = line!() + 1;
+        let error: Error = ostd::Error::InvalidArgs.into();
+        assert_eq!(error.location().line(), line);
+
+        let line = line!() + 1;
+        let error = Error::from((ostd::Error::PageFault, 0));
+        assert_eq!(error.location().line(), line);
+
+        let line = line!() + 2;
+        fn convert() -> Result<(), Error> {
+            Err(ostd::Error::InvalidArgs)?;
+            Ok(())
+        }
+        let error = convert().unwrap_err();
+        assert_eq!(error.location().file(), file!());
+        assert_eq!(error.location().line(), line);
+    }
+
+    #[ktest]
+    fn propagation_preserves_location() {
+        fn propagate(error: Error) -> Result<(), Error> {
+            Err(error)?;
+            Ok(())
+        }
+
+        let original = Error::new(Errno::EINVAL);
+        let propagated = propagate(original).unwrap_err();
+        assert_eq!(propagated.location(), original.location());
+
+        let unpacked = Error::from((original, 0));
+        assert_eq!(unpacked.location(), original.location());
+    }
 }
