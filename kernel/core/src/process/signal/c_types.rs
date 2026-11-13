@@ -51,10 +51,6 @@ impl siginfo_t {
         }
     }
 
-    pub(crate) fn set_si_addr(&mut self, si_addr: Vaddr) {
-        self.siginfo_fields.sigfault_mut().addr = si_addr;
-    }
-
     pub(crate) fn set_pid_uid(&mut self, pid: Pid, uid: Uid) {
         let pid_uid = {
             let pid_uid = siginfo_piduid_t { pid, uid };
@@ -68,6 +64,21 @@ impl siginfo_t {
         self.set_pid_uid(ctx.process.pid(), ctx.posix_thread.credentials().ruid());
     }
 
+    pub(crate) fn set_timer(&mut self, timerid: i32, overrun: i32) {
+        let timer = {
+            let timer = siginfo_timer_t { timerid, overrun };
+            siginfo_common_first_t::new_timer(timer)
+        };
+
+        self.siginfo_fields.common_mut().first = timer
+    }
+
+    pub(crate) fn set_ptr(&mut self, ptr: Vaddr) {
+        let sigval = sigval_t::new_sigval_ptr(ptr);
+
+        *self.siginfo_fields.common_mut().second.value_mut() = sigval;
+    }
+
     pub(crate) fn set_status(&mut self, status: i32) {
         *self
             .siginfo_fields
@@ -75,6 +86,10 @@ impl siginfo_t {
             .second
             .sigchild_mut()
             .status_mut() = status;
+    }
+
+    pub(crate) fn set_si_addr(&mut self, si_addr: Vaddr) {
+        self.siginfo_fields.sigfault_mut().addr = si_addr;
     }
 
     pub(crate) fn si_addr(&self) -> Vaddr {

@@ -55,16 +55,16 @@ FN_SETUP(mount_fixtures)
 {
 	CHECK(unshare(CLONE_NEWNS));
 	CHECK(mount(NULL, "/", NULL, MS_PRIVATE | MS_REC, NULL));
+
 	CHECK_WITH(mkdir(NX_DIR, 0755), _ret == 0 || errno == EEXIST);
 	CHECK_WITH(mkdir(ND_DIR, 0755), _ret == 0 || errno == EEXIST);
 	CHECK_WITH(mkdir(NSF_DIR, 0755), _ret == 0 || errno == EEXIST);
-	CHECK_WITH(unlink(NX_DIR "/sh"), _ret == 0 || errno == ENOENT);
-	CHECK_WITH(unlink(ND_DIR "/null"), _ret == 0 || errno == ENOENT);
-	CHECK_WITH(unlink(NSF_DIR "/link"), _ret == 0 || errno == ENOENT);
-	CHECK_WITH(unlink("/tmp/mf_link_plain"), _ret == 0 || errno == ENOENT);
+
 	CHECK(mount("tmpfs", NX_DIR, "tmpfs", MS_NOEXEC, NULL));
 	CHECK(mount("tmpfs", ND_DIR, "tmpfs", MS_NODEV, NULL));
 	CHECK(mount("tmpfs", NSF_DIR, "tmpfs", MS_NOSYMFOLLOW, NULL));
+
+	CHECK_WITH(unlink("/tmp/mf_link_plain"), _ret == 0 || errno == ENOENT);
 }
 END_SETUP()
 
@@ -181,9 +181,11 @@ END_TEST()
 FN_SETUP(remove_fixtures)
 {
 	CHECK_WITH(unlink("/tmp/mf_link_plain"), _ret == 0 || errno == ENOENT);
+
 	CHECK_WITH(umount2(NX_DIR, MNT_DETACH), _ret == 0 || errno == EINVAL);
 	CHECK_WITH(umount2(ND_DIR, MNT_DETACH), _ret == 0 || errno == EINVAL);
 	CHECK_WITH(umount2(NSF_DIR, MNT_DETACH), _ret == 0 || errno == EINVAL);
+
 	CHECK_WITH(rmdir(NX_DIR), _ret == 0 || errno == ENOENT);
 	CHECK_WITH(rmdir(ND_DIR), _ret == 0 || errno == ENOENT);
 	CHECK_WITH(rmdir(NSF_DIR), _ret == 0 || errno == ENOENT);
