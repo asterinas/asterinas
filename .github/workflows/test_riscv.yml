@@ -34,6 +34,9 @@ jobs:
         with:
           auto_test: 'general'
           arch: 'riscv64'
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' && matrix.id != 'usermode_test' }}
+          cache_kernel: ${{ vars.CI_CACHE_KERNEL != 'false' && matrix.id == 'compile' }}
+          cache_save: ${{ matrix.id == 'compile' }}
 
   integration-test:
     runs-on: ubuntu-latest
@@ -75,3 +78,6 @@ jobs:
           release: ${{ !contains(matrix.release, 'false') }}
           arch: 'riscv64'
           conformance_test_suite: 'ltp'
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}
+          cache_kernel: ${{ vars.CI_CACHE_KERNEL != 'false' }}
+          cache_save: ${{ matrix.test_id == 'boot-release' }}

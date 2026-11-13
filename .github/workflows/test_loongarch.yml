@@ -25,3 +25,6 @@ jobs:
           auto_test: 'general'
           runs_on: 'ubuntu-latest'
           arch: 'loongarch64'
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}
+          cache_kernel: ${{ vars.CI_CACHE_KERNEL != 'false' && matrix.id == 'compile' }}
+          cache_save: ${{ matrix.id == 'compile' }}

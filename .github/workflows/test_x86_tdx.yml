@@ -46,6 +46,7 @@ jobs:
           boot_protocol: 'linux-efi-handover64'
           netdev: ${{ matrix.netdev || 'tap' }}
           smp: ${{ matrix.smp }}
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}
 
   regression-test:
     runs-on: self-hosted
@@ -69,6 +70,7 @@ jobs:
           boot_protocol: 'linux-efi-handover64'
           netdev: ${{ matrix.netdev || 'tap' }}
           smp: ${{ matrix.smp }}
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}
 
   conformance-test:
     runs-on: self-hosted
@@ -101,3 +103,4 @@ jobs:
           conformance_test_suite: ${{ matrix.suite }}
           conformance_test_workdir: ${{ matrix.conformance_test_workdir }}
           conformance_test_extra_blocklists: ${{ matrix.conformance_test_extra_blocklists }}
+          cache_osdk: ${{ vars.CI_CACHE_OSDK != 'false' }}

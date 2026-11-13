@@ -17,6 +17,15 @@ inputs:
   scheme:
     description: 'Test scheme (default/microvm/iommu)'
     required: false
+  cache_osdk:
+    description: 'Cache the dedicated Cargo target directory for installing OSDK'
+    default: 'false'
+  cache_kernel:
+    description: 'Cache ordinary kernel Cargo outputs for compile and integration jobs'
+    default: 'false'
+  cache_save:
+    description: 'Save build caches from a designated main-branch job'
+    default: 'false'
 
   # VM Setup
   boot_protocol:
@@ -83,10 +92,104 @@ runs:
         # directory there. Point rustup at the toolchain installed in the image
         # so that it is not downloaded again in every job.
         echo "RUSTUP_HOME=/root/.rustup" >> $GITHUB_ENV
+        if [[ "${{ inputs.cache_kernel }}" == "true" ]]; then
+          # Incremental state is large and has little reuse across fresh checkouts.
+          echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
+        fi
         if [[ "${{ inputs.intel_tdx }}" == "true" ]]; then
           echo "RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static" >> $GITHUB_ENV
           echo "RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup" >> $GITHUB_ENV
         fi
+
+    - name: Prepare Cargo build caches
+      if: ${{ inputs.cache_osdk == 'true' || inputs.cache_kernel == 'true' }}
+      id: cache-config
+      shell: bash
+      env:
+        CACHE_IMAGE: asterinas/kernel-dev:0.19.0-20261012
+        CACHE_ARCH: ${{ inputs.arch }}
+        CACHE_RELEASE: ${{ inputs.auto_test != 'general' && inputs.release || '' }}
+        CACHE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      run: |
+        toolchain=$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' rust-toolchain.toml)
+        environment="$CACHE_IMAGE-$toolchain-$(uname -m)"
+        arch=${CACHE_ARCH:-x86_64}
+        case "$arch" in
+          x86_64) triple=x86_64-unknown-none ;;
+          riscv64) triple=riscv64imac-unknown-none-elf ;;
+          loongarch64) triple=loongarch64-unknown-none-softfloat ;;
+          aarch64) triple=aarch64-unknown-none-softfloat ;;
+          *) echo "::error::Unsupported cache architecture: $arch"; exit 1 ;;
+        esac
+        profile=debug
+        if [[ "$CACHE_RELEASE" == true ]]; then
+          profile=release
+        fi
+        osdk_prefix="osdk-$environment-"
+        kernel_prefix="kernel-$environment-$arch-$profile-"
+        {
+          echo "osdk_prefix=$osdk_prefix"
+          echo "osdk_key=$osdk_prefix$CACHE_SHA"
+          echo "kernel_prefix=$kernel_prefix"
+          echo "kernel_key=$kernel_prefix$CACHE_SHA"
+          echo "kernel_target=target/$triple/$profile"
+          echo "host_target=target/$profile"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Restore OSDK build cache
+      if: ${{ inputs.cache_osdk == 'true' }}
+      id: osdk-cache
+      uses: actions/cache/restore@v6
+      continue-on-error: true
+      with:
+        path: /tmp/ci-osdk-target
+        key: ${{ steps.cache-config.outputs.osdk_key }}
+        restore-keys: ${{ steps.cache-config.outputs.osdk_prefix }}
+
+    - name: Install OSDK from current source
+      if: ${{ inputs.cache_osdk == 'true' }}
+      shell: bash
+      env:
+        CACHE_OUTCOME: ${{ steps.osdk-cache.outcome }}
+      run: |
+        # A failed extraction can leave an incomplete target directory.
+        if [[ "$CACHE_OUTCOME" != success ]]; then
+          rm -rf -- /tmp/ci-osdk-target
+        fi
+        OSDK_LOCAL_DEV=1 cargo install --locked --force --path osdk \
+          --target-dir /tmp/ci-osdk-target --root "$HOME/.cargo"
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+    - name: Save OSDK build cache
+      if: >-
+        ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+            inputs.cache_save == 'true' && inputs.cache_osdk == 'true' &&
+            steps.osdk-cache.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@v6
+      continue-on-error: true
+      with:
+        path: /tmp/ci-osdk-target
+        key: ${{ steps.cache-config.outputs.osdk_key }}
+
+    - name: Restore kernel build cache
+      if: ${{ inputs.cache_kernel == 'true' }}
+      id: kernel-cache
+      uses: actions/cache/restore@v6
+      continue-on-error: true
+      with:
+        path: |
+          ${{ steps.cache-config.outputs.kernel_target }}
+          ${{ steps.cache-config.outputs.host_target }}
+        key: ${{ steps.cache-config.outputs.kernel_key }}
+        restore-keys: ${{ steps.cache-config.outputs.kernel_prefix }}
+
+    - name: Clean up failed kernel cache restore
+      if: ${{ inputs.cache_kernel == 'true' && steps.kernel-cache.outcome != 'success' }}
+      shell: bash
+      env:
+        KERNEL_TARGET: ${{ steps.cache-config.outputs.kernel_target }}
+        HOST_TARGET: ${{ steps.cache-config.outputs.host_target }}
+      run: rm -rf -- "$KERNEL_TARGET" "$HOST_TARGET"
 
     - name: Run basic tests
       if: ${{ inputs.auto_test == 'general' }}
@@ -138,3 +241,16 @@ runs:
         else
           make test_osdk
         fi
+
+    - name: Save kernel build cache
+      if: >-
+        ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+            inputs.cache_save == 'true' && inputs.cache_kernel == 'true' &&
+            steps.kernel-cache.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@v6
+      continue-on-error: true
+      with:
+        path: |
+          ${{ steps.cache-config.outputs.kernel_target }}
+          ${{ steps.cache-config.outputs.host_target }}
+        key: ${{ steps.cache-config.outputs.kernel_key }}
