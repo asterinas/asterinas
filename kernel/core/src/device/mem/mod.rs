@@ -83,6 +83,14 @@ impl Class for MemClass {
     fn dev_attrs(&self) -> &'static [Attr<ClassDevice<Self>>] {
         &[]
     }
+
+    fn append_uevent_vars(
+        &self,
+        _dev: &ClassDevice<Self>,
+        _vars: &mut aster_device::uevent::UeventVars,
+    ) -> aster_device::common::Result<()> {
+        Ok(())
+    }
 }
 
 /// A memory device, as seen by the char registry.
