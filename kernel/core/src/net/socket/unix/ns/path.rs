@@ -24,14 +24,14 @@ pub(crate) fn lookup_socket_file(path: &str) -> Result<Path> {
         .check_permission(Permission::MAY_READ | Permission::MAY_WRITE)
         .is_err()
     {
-        return_errno_with_message!(Errno::EACCES, "the socket file cannot be read or written")
+        return Err(errno!(EACCES, "the socket file cannot be read or written"));
     }
 
     if path.type_() != InodeType::Socket {
-        return_errno_with_message!(
-            Errno::ECONNREFUSED,
+        return Err(errno!(
+            ECONNREFUSED,
             "the specified file is not a socket file"
-        )
+        ));
     }
 
     Ok(path)
@@ -53,7 +53,7 @@ pub(crate) fn create_socket_file(path_name: &str) -> Result<Path> {
 
     result.map_err(|err| {
         if err.error() == Errno::EEXIST {
-            Error::with_message(Errno::EADDRINUSE, "the socket file already exists")
+            errno!(EADDRINUSE, "the socket file already exists")
         } else {
             err
         }

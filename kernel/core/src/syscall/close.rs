@@ -54,11 +54,11 @@ pub(super) fn sys_close_range(
     debug!("first = {}, last = {}, flags = {}", first, last, raw_flags);
 
     if last < first {
-        return_errno_with_message!(Errno::EINVAL, "the range to close is invalid");
+        return Err(errno!(EINVAL, "the range to close is invalid"));
     }
 
     let flags = CloseRangeFlags::from_bits(raw_flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid close_range flags"))?;
+        .ok_or_else(|| errno!(EINVAL, "invalid close_range flags"))?;
 
     if flags.contains(CloseRangeFlags::UNSHARE) {
         // FIXME: While directly invoking `unshare_files` is logically correct,

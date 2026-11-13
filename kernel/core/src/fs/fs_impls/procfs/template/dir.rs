@@ -102,7 +102,7 @@ impl<D: ProcDirOps + 'static> FileOps for ProcDir<D> {
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
+        Err(errno!(EISDIR))
     }
 
     fn write_at(
@@ -111,7 +111,7 @@ impl<D: ProcDirOps + 'static> FileOps for ProcDir<D> {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
+        Err(errno!(EISDIR))
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -180,7 +180,7 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
     }
 
     fn resize(&self, _self_dentry: &Dentry, _new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
+        Err(errno!(EISDIR))
     }
 
     fn type_(&self) -> InodeType {
@@ -194,7 +194,7 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
         _type_: InodeType,
         _mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn mknod(
@@ -204,19 +204,19 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
         _mode: InodeMode,
         _type_: MknodType,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn link(&self, _self_dentry: &Dentry, _old_dentry: &Dentry, _name: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn unlink(&self, _child_dentry: &Dentry) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn rmdir(&self, _child_dentry: &Dentry) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
@@ -238,7 +238,7 @@ impl<D: ProcDirOps + 'static> Inode for ProcDir<D> {
         _replaced_inode: Option<&Arc<dyn Inode>>,
         _mode: RenameMode,
     ) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn revalidation_policy(&self) -> RevalidationPolicy {

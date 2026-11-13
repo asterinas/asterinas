@@ -63,9 +63,9 @@ impl LayerStack {
     }
 
     pub(super) fn upper_layer(&self) -> Result<&Layer> {
-        self.upper.as_ref().ok_or_else(|| {
-            Error::with_message(Errno::EROFS, "the overlay mount has no upper layer")
-        })
+        self.upper
+            .as_ref()
+            .ok_or_else(|| errno!(EROFS, "the overlay mount has no upper layer"))
     }
 
     pub(super) fn lower_layers(&self) -> &[Layer] {
@@ -78,10 +78,10 @@ pub(super) fn ensure_distinct_non_overlapping(a: &Arc<Dentry>, b: &Arc<Dentry>) 
         || a.is_equal_or_descendant_of(b)
         || b.is_equal_or_descendant_of(a)
     {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "overlay roots must be distinct and must not be nested"
-        );
+        ));
     }
     Ok(())
 }

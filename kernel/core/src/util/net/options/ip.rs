@@ -75,7 +75,7 @@ pub(crate) fn new_ip_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CIpOptionName::TTL => Ok(Box::new(Ttl::new())),
         CIpOptionName::HDRINCL => Ok(Box::new(Hdrincl::new())),
         CIpOptionName::RECVERR => Ok(Box::new(Recverr::new())),
-        _ => return_errno_with_message!(Errno::ENOPROTOOPT, "unsupported ip level option"),
+        _ => Err(errno!(ENOPROTOOPT, "unsupported ip level option")),
     }
 }
 
@@ -134,7 +134,7 @@ impl ReadIpOption for IpTtl {
         let ttl_value = match val {
             -1 => None,
             1..=255 => Some(NonZeroU8::new(val as u8).unwrap()),
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid ttl value"),
+            _ => return Err(errno!(EINVAL, "invalid ttl value")),
         };
 
         Ok(IpTtl::new(ttl_value))

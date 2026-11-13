@@ -41,11 +41,11 @@ pub(super) fn sys_ioprio_set(
         }
         IoPrioWho::ProcessGroup(_) => {
             // TODO: Implement process group support
-            return_errno!(Errno::EINVAL);
+            Err(errno!(EINVAL))
         }
         IoPrioWho::User(_) => {
             // TODO: Implement user support
-            return_errno!(Errno::EINVAL);
+            Err(errno!(EINVAL))
         }
     }
 }
@@ -75,7 +75,7 @@ fn check_ioprio_class(ioprio: u32, ctx: &Context) -> Result<()> {
         IoPrioClass::BestEffort | IoPrioClass::Idle => {}
         IoPrioClass::None => {
             if ioprio & IOPRIO_LEVEL_MASK != 0 {
-                return_errno_with_message!(Errno::EINVAL, "invalid I/O priority");
+                return Err(errno!(EINVAL, "invalid I/O priority"));
             }
         }
     }

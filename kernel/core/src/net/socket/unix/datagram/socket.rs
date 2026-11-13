@@ -98,7 +98,7 @@ impl UnixDatagramSocket {
         timeout: Option<Duration>,
     ) -> Result<usize> {
         if self.is_write_shutdown.load(Ordering::Relaxed) {
-            return_errno_with_message!(Errno::EPIPE, "the socket is shut down for writing");
+            return Err(errno!(EPIPE, "the socket is shut down for writing"));
         }
 
         let queue = if let Some(remote_addr) = remote.as_ref() {
@@ -106,9 +106,9 @@ impl UnixDatagramSocket {
             MessageQueue::lookup_bound(&connected_addr)?
         } else {
             let remote_queue = self.remote_queue.read();
-            remote_queue.clone().ok_or_else(|| {
-                Error::with_message(Errno::ENOTCONN, "the socket is not connected")
-            })?
+            remote_queue
+                .clone()
+                .ok_or_else(|| errno!(ENOTCONN, "the socket is not connected"))?
         };
 
         let res = if self.is_nonblocking() {
@@ -208,7 +208,7 @@ impl Socket for UnixDatagramSocket {
         let remote_queue = self.remote_queue.read();
         match remote_queue.as_ref() {
             Some(queue) => Ok(queue.addr().into()),
-            None => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
+            None => Err(errno!(ENOTCONN, "the socket is not connected")),
         }
     }
 
@@ -242,7 +242,7 @@ impl Socket for UnixDatagramSocket {
         // TODO: Deal with socket options from other levels
         warn!("only socket-level options are supported");
 
-        return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
+        Err(errno!(ENOPROTOOPT, "the socket option to get is unknown"))
     }
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
@@ -255,10 +255,7 @@ impl Socket for UnixDatagramSocket {
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // TODO: Deal with socket options from other levels
                 warn!("only socket-level options are supported");
-                return_errno_with_message!(
-                    Errno::ENOPROTOOPT,
-                    "the socket option to get is unknown"
-                )
+                Err(errno!(ENOPROTOOPT, "the socket option to get is unknown"))
             }
             res => res.map(|_need_iface_poll| ()),
         }
@@ -331,10 +328,11 @@ fn do_unix_getsockopt(option: &mut dyn SocketOption, socket: &UnixDatagramSocket
                 .unwrap_or_else(CUserCred::new_invalid);
             socket_peer_cred.set(peer_cred);
         }
-        _ => return_errno_with_message!(
-            Errno::ENOPROTOOPT,
-            "the socket option to get is not UNIX-socket-specific"
-        ),
+        _ =>
+            return Err(errno!(
+                ENOPROTOOPT,
+                "the socket option to get is not UNIX-socket-specific"
+            )),
     });
 
     Ok(())

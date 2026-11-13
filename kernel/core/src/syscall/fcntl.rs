@@ -35,7 +35,7 @@ pub(super) fn sys_fcntl(
         FcntlCmd::F_GETLK => handle_getlk(fd, arg, ctx),
         FcntlCmd::F_SETLK => handle_setlk(fd, arg, true, ctx),
         FcntlCmd::F_SETLKW => handle_setlk(fd, arg, false, ctx).map_err(|err| match err.error() {
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            Errno::EINTR => errno!(ERESTARTSYS),
             _ => err,
         }),
         FcntlCmd::F_GETOWN => handle_getown(fd, ctx),
@@ -52,7 +52,7 @@ fn handle_dupfd(fd: FileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result
 
     let ceil_fd: FileDesc = (arg as RawFileDesc)
         .try_into()
-        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid fd"))?;
+        .map_err(|_| errno!(EINVAL, "invalid fd"))?;
 
     let new_fd = match file_table.insert_ceil(file, Some(ceil_fd), flags) {
         Ok(fd) => fd,
@@ -75,10 +75,9 @@ fn handle_getfd(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
 
 fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
     let flags = if arg > u64::from(u8::MAX) {
-        return_errno_with_message!(Errno::EINVAL, "invalid fd flags");
+        return Err(errno!(EINVAL, "invalid fd flags"));
     } else {
-        FdFlags::from_bits(arg as u8)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid fd flags"))?
+        FdFlags::from_bits(arg as u8).ok_or_else(|| errno!(EINVAL, "invalid fd flags"))?
     };
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
@@ -118,7 +117,7 @@ fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
     let mut lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
     if lock_type == RangeLockType::Unlock {
-        return_errno_with_message!(Errno::EINVAL, "invalid flock type for getlk");
+        return Err(errno!(EINVAL, "invalid flock type for getlk"));
     }
     let lock = RangeLockItem::new(
         owner,
@@ -171,10 +170,10 @@ fn handle_setlk(
     });
     if !file_is_still_open {
         inode_file.release_range_locks(owner);
-        return_errno_with_message!(
-            Errno::EBADF,
+        return Err(errno!(
+            EBADF,
             "the file descriptor was closed while setting a range lock"
-        );
+        ));
     }
 
     Ok(SyscallReturn::Return(0))
@@ -193,18 +192,17 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
     // TODO: Support process groups instead of falling back to processes.
     let pid = (arg as i32).unsigned_abs();
     if pid.cast_signed() < 0 {
-        return_errno_with_message!(Errno::EINVAL, "negative PIDs are not valid");
+        return Err(errno!(EINVAL, "negative PIDs are not valid"));
     }
 
     let owner_process = if pid == 0 {
         None
     } else {
-        Some(pid_table::pid_table_mut().get_process(pid).ok_or_else(|| {
-            Error::with_message(
-                Errno::ESRCH,
-                "the process to be a file owner does not exist",
-            )
-        })?)
+        Some(
+            pid_table::pid_table_mut()
+                .get_process(pid)
+                .ok_or_else(|| errno!(ESRCH, "the process to be a file owner does not exist",))?,
+        )
     };
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
@@ -215,8 +213,8 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
 }
 
 fn handle_addseal(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let new_seals = FileSeals::from_bits(arg as u32)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid seals"))?;
+    let new_seals =
+        FileSeals::from_bits(arg as u32).ok_or_else(|| errno!(EINVAL, "invalid seals"))?;
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
@@ -306,23 +304,23 @@ fn from_c_flock_and_file(lock: &c_flock, file: &dyn FileLike) -> Result<FileRang
             RangeLockWhence::SEEK_SET => lock.l_start,
             RangeLockWhence::SEEK_CUR => (file.as_inode_handle_or_err()?.offset() as off_t)
                 .checked_add(lock.l_start)
-                .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "start overflow"))?,
+                .ok_or_else(|| errno!(EOVERFLOW, "start overflow"))?,
 
             RangeLockWhence::SEEK_END => (file.path().inode().metadata()?.size as off_t)
                 .checked_add(lock.l_start)
-                .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "start overflow"))?,
+                .ok_or_else(|| errno!(EOVERFLOW, "start overflow"))?,
         }
     };
 
     if start < 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid start");
+        return Err(errno!(EINVAL, "invalid start"));
     }
 
     let (start, end) = match lock.l_len {
         len if len > 0 => {
             let end = start
                 .checked_add(len)
-                .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "end overflow"))?;
+                .ok_or_else(|| errno!(EOVERFLOW, "end overflow"))?;
             (start as usize, end as usize)
         }
         0 => (start as usize, OFFSET_MAX),
@@ -331,7 +329,7 @@ fn from_c_flock_and_file(lock: &c_flock, file: &dyn FileLike) -> Result<FileRang
             // `start + len` won't overflow because `start >= 0` and `len < 0`.
             let new_start = start + len;
             if new_start < 0 {
-                return_errno_with_message!(Errno::EINVAL, "invalid len");
+                return Err(errno!(EINVAL, "invalid len"));
             }
             (new_start as usize, end as usize)
         }

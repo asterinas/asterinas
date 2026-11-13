@@ -217,8 +217,8 @@ impl OverlayInode {
                 .map(|lower| lower.dentry())
         };
         layer_dentry.ok_or_else(|| {
-            Error::with_message(
-                Errno::EIO,
+            errno!(
+                EIO,
                 "the merged entry names a layer this directory does not have",
             )
         })

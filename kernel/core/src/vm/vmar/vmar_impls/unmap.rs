@@ -75,7 +75,7 @@ impl Vmar {
         let mut last_mapping_end = range.start;
         for vm_mapping in inner.vm_mappings.find(&range) {
             if !vm_mapping.can_expand() {
-                return_errno_with_message!(Errno::EINVAL, "device mappings cannot be discarded");
+                return Err(errno!(EINVAL, "device mappings cannot be discarded"));
             }
 
             // The range may contain pages that are not mapped. According to Linux behavior, this
@@ -102,10 +102,10 @@ impl Vmar {
         }
 
         if last_mapping_end < range.end {
-            return_errno_with_message!(
-                Errno::ENOMEM,
+            return Err(errno!(
+                ENOMEM,
                 "the range contains pages that are not mapped"
-            )
+            ));
         }
 
         Ok(())

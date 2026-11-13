@@ -15,11 +15,9 @@ pub(super) fn sys_timerfd_create(
     flags: i32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = TFDFlags::from_bits(flags as u32)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;
+    let flags = TFDFlags::from_bits(flags as u32).ok_or_else(|| errno!(EINVAL, "unknown flags"))?;
 
-    let clock_id = ClockId::try_from(clockid)
-        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
+    let clock_id = ClockId::try_from(clockid).map_err(|_| errno!(EINVAL, "invalid clock ID"))?;
 
     let timerfd_file = TimerfdFile::new(clock_id, flags, ctx)?;
 

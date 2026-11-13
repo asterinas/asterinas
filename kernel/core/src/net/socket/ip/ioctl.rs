@@ -24,7 +24,7 @@ pub(super) fn ipv4_ioctl(raw_ioctl: RawIoctl) -> Result<i32> {
             let iface = ifreq.get_iface_by_name()?;
             let ipv4_addr = iface
                 .ipv4_cidr()
-                .ok_or_else(|| Error::with_message(Errno::EADDRNOTAVAIL, "no IPv4 address found"))?
+                .ok_or_else(|| errno!(EADDRNOTAVAIL, "no IPv4 address found"))?
                 .address();
             ifreq.set_sockaddr_ipv4(ipv4_addr);
             cmd.write(&ifreq)?;
@@ -37,7 +37,7 @@ pub(super) fn ipv4_ioctl(raw_ioctl: RawIoctl) -> Result<i32> {
             // so we report the local IPv4 address instead, consistent with Linux's behavior.
             let ipv4_addr = iface
                 .ipv4_cidr()
-                .ok_or_else(|| Error::with_message(Errno::EADDRNOTAVAIL, "no IPv4 address found"))?
+                .ok_or_else(|| errno!(EADDRNOTAVAIL, "no IPv4 address found"))?
                 .address();
             ifreq.set_sockaddr_ipv4(ipv4_addr);
             cmd.write(&ifreq)?;
@@ -62,12 +62,12 @@ pub(super) fn ipv4_ioctl(raw_ioctl: RawIoctl) -> Result<i32> {
             let iface = ifreq.get_iface_by_name()?;
             let netmask = iface
                 .ipv4_cidr()
-                .ok_or_else(|| Error::with_message(Errno::EADDRNOTAVAIL, "no IPv4 address found"))?
+                .ok_or_else(|| errno!(EADDRNOTAVAIL, "no IPv4 address found"))?
                 .netmask();
             ifreq.set_sockaddr_ipv4(netmask);
             cmd.write(&ifreq)?;
             Ok(0)
         }
-        _ => return_errno_with_message!(Errno::ENOTTY, "the socket ioctl command is unknown"),
+        _ => Err(errno!(ENOTTY, "the socket ioctl command is unknown")),
     })
 }

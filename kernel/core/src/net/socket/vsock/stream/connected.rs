@@ -54,7 +54,7 @@ impl ConnectedStream {
 
     pub(super) fn finish_last_connect(&mut self) -> Result<()> {
         if !self.is_new_connection {
-            return_errno_with_message!(Errno::EISCONN, "the socket is already connected");
+            return Err(errno!(EISCONN, "the socket is already connected"));
         }
 
         self.is_new_connection = false;

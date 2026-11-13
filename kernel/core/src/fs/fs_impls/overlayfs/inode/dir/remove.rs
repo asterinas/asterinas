@@ -111,15 +111,15 @@ impl OverlayInode {
         let lookup = self.fs_arc().lookup(self, &name)?;
         let inode = match lookup {
             Lookup::Positive(inode) => inode,
-            Lookup::Negative(_) => return_errno!(Errno::ENOENT),
+            Lookup::Negative(_) => return Err(errno!(ENOENT)),
         };
         // The caller's dentry and the fresh projection disagree on the name's upper entry, so the
         // caller's view of the name is stale and the removal stops here instead of acting on it.
         if inode.is_stale_upper_target(child_dentry) {
-            return_errno_with_message!(
-                Errno::ESTALE,
+            return Err(errno!(
+                ESTALE,
                 "the upper object at the target name became stale"
-            );
+            ));
         }
         Ok(RemoveTarget { inode, name })
     }
@@ -159,31 +159,28 @@ impl OverlayInode {
         // The target's own lock covers the gate and removal, so a promotion round sees it.
         if kind == RemoveKind::Rmdir {
             if !target.inode.type_().is_directory() {
-                return_errno_with_message!(
-                    Errno::ENOTDIR,
+                return Err(errno!(
+                    ENOTDIR,
                     "a non-directory cannot be removed as a directory"
-                );
+                ));
             }
             if lower_positive || !is_pure_upper {
                 // The merged view's emptiness, whiteouts excluded, decides `ENOTEMPTY`.
                 // The guard is already held, so the emptiness answer takes and releases no lock.
                 if !target.inode.is_empty_dir(target_guard)? {
-                    return_errno_with_message!(
-                        Errno::ENOTEMPTY,
-                        "the overlay directory is not empty"
-                    );
+                    return Err(errno!(ENOTEMPTY, "the overlay directory is not empty"));
                 }
             }
         } else if target.inode.type_().is_directory() {
-            return_errno_with_message!(Errno::EISDIR, "a directory cannot be unlinked");
+            return Err(errno!(EISDIR, "a directory cannot be unlinked"));
         }
 
         if !is_pure_upper && !fs.policy().can_express_whiteout() {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
+            return Err(errno!(
+                EOPNOTSUPP,
                 "the upper filesystem supports no whiteout form; the removal \
                  cannot publish one"
-            );
+            ));
         }
         Ok(if is_pure_upper {
             RemoveAction::DeletePureUpper
@@ -207,8 +204,8 @@ impl OverlayInode {
         // The real layer counts whiteouts, so the residue they leave is swept before the rmdir.
         if kind == RemoveKind::Rmdir {
             let target_upper_dir = target_upper.ok_or_else(|| {
-                Error::with_message(
-                    Errno::EIO,
+                errno!(
+                    EIO,
                     "the pure-upper rmdir target has no upper real directory",
                 )
             })?;
@@ -320,11 +317,11 @@ impl OverlayInode {
         let namespace = fs.policy().xattr_namespace();
         // The opaque marker is written before the exchange so the name stays a search barrier.
         if !fs.policy().can_store_private_xattr() {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
+            return Err(errno!(
+                EOPNOTSUPP,
                 "the upper filesystem cannot store the opaque marker \
                  required for the clear-empty directory exchange"
-            );
+            ));
         }
         OverlayXattrType::Opaque.set_value_on(empty_copy.dentry(), namespace, None)?;
         // Xattrs are copied before owner/group/mode, so a non-owner rmdir cannot fail `EACCES`.
@@ -340,10 +337,7 @@ impl OverlayInode {
 
 fn translate_stale_upper_enoent(err: Error) -> Error {
     if err.error() == Errno::ENOENT {
-        Error::with_message(
-            Errno::ESTALE,
-            "the upper object at the target name became stale",
-        )
+        errno!(ESTALE, "the upper object at the target name became stale",)
     } else {
         err
     }

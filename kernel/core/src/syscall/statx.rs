@@ -26,8 +26,8 @@ pub(super) fn sys_statx(
 ) -> Result<SyscallReturn> {
     let user_space = ctx.user_space();
     let filename = user_space.read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
-    let flags = StatxFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid statx flags"))?;
+    let flags =
+        StatxFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid statx flags"))?;
     let mask = StatxMask::from_bits_truncate(mask);
     debug!(
         "dirfd = {}, filename = {:?}, flags = {:?}, mask = {:?}, statx_buf_ptr = 0x{:x}",
@@ -37,14 +37,14 @@ pub(super) fn sys_statx(
     if flags.contains(StatxFlags::AT_STATX_FORCE_SYNC)
         && flags.contains(StatxFlags::AT_STATX_DONT_SYNC)
     {
-        return_errno_with_message!(Errno::EINVAL, "invalid statx flags");
+        return Err(errno!(EINVAL, "invalid statx flags"));
     }
 
     if mask.contains(StatxMask::STATX_RESERVED) {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "mask reserved for future struct statx expansion"
-        );
+        ));
     }
 
     let path = {

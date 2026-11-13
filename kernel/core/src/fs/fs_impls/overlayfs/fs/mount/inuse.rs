@@ -45,7 +45,7 @@ pub(in super::super) struct Uuid(u64);
 impl Uuid {
     fn try_new(value: u64) -> Result<Self> {
         if value == 0 {
-            return_errno_with_message!(Errno::EINVAL, "the overlay uuid must be non-zero");
+            return Err(errno!(EINVAL, "the overlay uuid must be non-zero"));
         }
         Ok(Self(value))
     }
@@ -81,11 +81,11 @@ impl OverlayInuseSlot {
     /// Claims this slot for a non-zero owner token.
     fn try_claim(&self, token: u64) -> Result<()> {
         if token == 0 {
-            return_errno_with_message!(Errno::EINVAL, "the overlay inuse token must be non-zero");
+            return Err(errno!(EINVAL, "the overlay inuse token must be non-zero"));
         }
         self.owner_token
             .compare_exchange(0, token, Ordering::Acquire, Ordering::Relaxed)
-            .map_err(|_| Error::with_message(Errno::EBUSY, "the inode is already in use"))?;
+            .map_err(|_| errno!(EBUSY, "the inode is already in use"))?;
         Ok(())
     }
 
@@ -149,16 +149,16 @@ impl UpperWorkdirInuse {
     /// Validates the workdir/upper pair: one underlying filesystem, one mount, distinct roots.
     pub(super) fn validate_pair(upper: &Path, workdir: &Path) -> Result<()> {
         if upper.metadata()?.container_dev_id != workdir.metadata()?.container_dev_id {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "workdir and upperdir must be on the same underlying filesystem"
-            );
+            ));
         }
         if !Arc::ptr_eq(upper.mount_node(), workdir.mount_node()) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "workdir and upperdir must reside under the same mount"
-            );
+            ));
         }
         ensure_distinct_non_overlapping(upper.dentry(), workdir.dentry())
     }
@@ -274,12 +274,9 @@ impl UpperWorkdirInuse {
     }
 
     pub(in overlayfs) fn workdir_workspace(&self) -> Result<&Arc<Dentry>> {
-        self.workspace.as_ref().ok_or_else(|| {
-            Error::with_message(
-                Errno::EROFS,
-                "the overlay workdir workspace is not prepared",
-            )
-        })
+        self.workspace
+            .as_ref()
+            .ok_or_else(|| errno!(EROFS, "the overlay workdir workspace is not prepared",))
     }
 
     fn remove_work_entries(&self, dir_dentry: &Arc<Dentry>, level: usize) -> Result<()> {
@@ -310,10 +307,10 @@ impl UpperWorkdirInuse {
             Ok(written) if written == OVERLAY_UUID_SIZE => {
                 Ok(Some(Uuid::try_new(u64::from_le_bytes(value))?))
             }
-            Ok(_) => return_errno_with_message!(
-                Errno::EINVAL,
+            Ok(_) => Err(errno!(
+                EINVAL,
                 "the persisted overlay uuid must be 8 bytes long"
-            ),
+            )),
             Err(err) if err.error() == Errno::ENODATA => Ok(None),
             Err(err) => Err(err),
         }

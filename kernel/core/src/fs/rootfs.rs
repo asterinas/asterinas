@@ -58,9 +58,9 @@ pub(crate) static SUPPORTED_ROOTFS_TYPES: &[&dyn DynFsType] = &[&ext2::EXT2_TYPE
 ///
 /// Returns an error if `root` is not provided or the root filesystem cannot be opened or mounted.
 pub(crate) fn switch_to_rootfs(path_resolver: &mut PathResolver) -> Result<()> {
-    let root = ROOT_PATH.get().ok_or_else(|| {
-        Error::with_message(Errno::EINVAL, "the `root` parameter was not provided")
-    })?;
+    let root = ROOT_PATH
+        .get()
+        .ok_or_else(|| errno!(EINVAL, "the `root` parameter was not provided"))?;
     let (fs_flags, mount_flags) = rootfs_flags();
     let fs_and_root = open_rootfs(root, fs_flags)?;
     let rootfs_mount = Mount::new_detached(
@@ -94,9 +94,9 @@ fn open_rootfs(root: &str, fs_flags: FsFlags) -> Result<FsAndRoot> {
     // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/base/devtmpfs.c#L358-L359>.
     let device_name = root
         .strip_prefix("/dev/")
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "root must name a /dev block device"))?;
+        .ok_or_else(|| errno!(EINVAL, "root must name a /dev block device"))?;
     let device = aster_block::lookup_by_name(device_name)
-        .ok_or_else(|| Error::with_message(Errno::ENODEV, "root block device not found"))?;
+        .ok_or_else(|| errno!(ENODEV, "root block device not found"))?;
     open_rootfs_from_candidates(device, rootfs_types(), fs_flags)
 }
 
@@ -114,7 +114,7 @@ fn open_rootfs_from_candidates(
         }
     }
 
-    return_errno_with_message!(Errno::ENODEV, "no root filesystem type could mount root")
+    Err(errno!(ENODEV, "no root filesystem type could mount root"))
 }
 
 fn rootfs_flags() -> (FsFlags, PerMountFlags) {

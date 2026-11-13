@@ -53,7 +53,7 @@ impl LsmAlienAccessHook for YamaLsm {
         };
 
         if is_denied {
-            return_errno_with_message!(Errno::EPERM, "alien access is denied due to Yama scope");
+            return Err(errno!(EPERM, "alien access is denied due to Yama scope"));
         }
 
         Ok(())
@@ -91,12 +91,7 @@ pub(crate) fn set_scope(new_scope: YamaScope) -> Result<()> {
                 current_scope == YamaScope::NoAttach && new_scope != YamaScope::NoAttach;
             (!is_downgrading_from_no_attach).then_some(new_scope)
         })
-        .map_err(|_| {
-            Error::with_message(
-                Errno::EINVAL,
-                "`YamaScope::NoAttach` cannot be changed once set",
-            )
-        })?;
+        .map_err(|_| errno!(EINVAL, "`YamaScope::NoAttach` cannot be changed once set",))?;
 
     Ok(())
 }

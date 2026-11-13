@@ -125,7 +125,7 @@ impl SemaphoreSet {
     /// zero.
     pub(crate) fn pending_zero_count(&self, sem_num: usize) -> Result<usize> {
         if sem_num >= self.num_sems {
-            return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
+            return Err(errno!(EINVAL, "the semaphore number is out of bounds"));
         }
 
         let inner = self.inner.lock();
@@ -146,7 +146,7 @@ impl SemaphoreSet {
     /// decrease by a certain amount.
     pub(crate) fn pending_decrease_count(&self, sem_num: usize) -> Result<usize> {
         if sem_num >= self.num_sems {
-            return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
+            return Err(errno!(EINVAL, "the semaphore number is out of bounds"));
         }
 
         let inner = self.inner.lock();
@@ -164,13 +164,13 @@ impl SemaphoreSet {
 
     pub(crate) fn setval(&self, sem_num: usize, val: i32, pid: Pid) -> Result<()> {
         if !(0..=SEMVMX).contains(&val) {
-            return_errno_with_message!(Errno::ERANGE, "the semaphore value exceeds SEMVMX");
+            return Err(errno!(ERANGE, "the semaphore value exceeds SEMVMX"));
         }
 
         let mut inner = self.inner();
         let (sems, pending_alter, pending_const) = inner.field_mut();
         let Some(sem) = sems.get_mut(sem_num) else {
-            return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
+            return Err(errno!(EINVAL, "the semaphore number is out of bounds"));
         };
 
         sem.set_val(val);
@@ -201,7 +201,7 @@ impl SemaphoreSet {
     pub(crate) fn get<T>(&self, sem_num: usize, func: fn(&Semaphore) -> T) -> Result<T> {
         let inner = self.inner();
         let Some(sem) = inner.sems.get(sem_num) else {
-            return_errno_with_message!(Errno::EINVAL, "the semaphore number is out of bounds");
+            return Err(errno!(EINVAL, "the semaphore number is out of bounds"));
         };
 
         let result = func(sem);
@@ -237,10 +237,10 @@ impl SemaphoreSet {
         credentials: &Credentials<ReadOp>,
     ) -> Result<Self> {
         if num_sems == 0 {
-            return_errno_with_message!(Errno::EINVAL, "the number of semaphores is zero")
+            return Err(errno!(EINVAL, "the number of semaphores is zero"));
         }
         if num_sems > SEMMSL {
-            return_errno_with_message!(Errno::EINVAL, "the number of semaphores exceeds SEMMSL");
+            return Err(errno!(EINVAL, "the number of semaphores exceeds SEMMSL"));
         }
 
         let mut sems = Vec::with_capacity(num_sems);

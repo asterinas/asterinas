@@ -39,12 +39,12 @@ impl CopyCompat for CurrentUserSpace<'_> {
 
         while reader.remain() > size_of::<u64>() {
             if reader.read_val::<u64>()? != 0 {
-                return_errno_with_message!(Errno::E2BIG, "the user structure is not compatible");
+                return Err(errno!(E2BIG, "the user structure is not compatible"));
             }
         }
         while reader.has_remain() {
             if reader.read_val::<u8>()? != 0 {
-                return_errno_with_message!(Errno::E2BIG, "the user structure is not compatible");
+                return Err(errno!(E2BIG, "the user structure is not compatible"));
             }
         }
 

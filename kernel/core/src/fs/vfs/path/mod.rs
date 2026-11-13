@@ -176,20 +176,20 @@ impl Path {
         if creation_flags.contains(CreationFlags::O_CREAT)
             && creation_flags.contains(CreationFlags::O_EXCL)
         {
-            return_errno_with_message!(Errno::EEXIST, "the file already exists");
+            return Err(errno!(EEXIST, "the file already exists"));
         }
         if creation_flags.contains(CreationFlags::O_CREAT) && inode_type == InodeType::Dir {
-            return_errno_with_message!(
-                Errno::EISDIR,
+            return Err(errno!(
+                EISDIR,
                 "O_CREAT is specified but the file is a directory"
-            );
+            ));
         }
 
         if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
-            return_errno_with_message!(
-                Errno::ENOTDIR,
+            return Err(errno!(
+                ENOTDIR,
                 "O_DIRECTORY is specified but the file is not a directory"
-            );
+            ));
         }
 
         if status_flags.contains(StatusFlags::O_PATH) {
@@ -197,7 +197,7 @@ impl Path {
         }
 
         if inode_type == InodeType::SymLink && creation_flags.contains(CreationFlags::O_NOFOLLOW) {
-            return_errno_with_message!(Errno::ELOOP, "the file is a symlink");
+            return Err(errno!(ELOOP, "the file is a symlink"));
         }
 
         if inode_type.is_regular_file() {
@@ -314,7 +314,7 @@ impl Path {
                 ))
                 .is_ok();
             if !may_change_mode {
-                return_errno_with_message!(Errno::EPERM, "the file mode cannot be changed");
+                return Err(errno!(EPERM, "the file mode cannot be changed"));
             }
             self.set_mode(mode)?;
         }
@@ -357,10 +357,7 @@ impl Path {
                 if matches!(update, TimestampUpdate::Touch(_)) {
                     self.inode().check_permission(Permission::MAY_WRITE)?;
                 } else {
-                    return_errno_with_message!(
-                        Errno::EPERM,
-                        "only the owner may set explicit timestamps"
-                    );
+                    return Err(errno!(EPERM, "only the owner may set explicit timestamps"));
                 }
             }
         }
@@ -471,7 +468,7 @@ impl Path {
     /// Checks whether this path is a searchable directory.
     fn check_dir_search_permission(&self) -> Result<()> {
         if self.type_() != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "only directories are searchable");
+            return Err(errno!(ENOTDIR, "only directories are searchable"));
         }
 
         self.inode()
@@ -483,7 +480,7 @@ impl Path {
         if self.mount.flags().contains(PerMountFlags::RDONLY)
             || self.fs().flags().contains(FsFlags::RDONLY)
         {
-            return_errno_with_message!(Errno::EROFS, "the mount or filesystem is read-only");
+            return Err(errno!(EROFS, "the mount or filesystem is read-only"));
         }
 
         Ok(())
@@ -517,18 +514,18 @@ impl Path {
             .check_permission(Permission::MAY_READ | Permission::MAY_WRITE)
             .is_err()
         {
-            return_errno_with_message!(
-                Errno::EPERM,
+            return Err(errno!(
+                EPERM,
                 "the source is not permitted to be hard-linked"
-            );
+            ));
         }
 
         // Non-owners may only hard-link regular files.
         if self.type_() != InodeType::File {
-            return_errno_with_message!(
-                Errno::EPERM,
+            return Err(errno!(
+                EPERM,
                 "the source is not permitted to be hard-linked"
-            );
+            ));
         }
 
         // Hardlinking to setuid or executable setgid files requires CAP_FOWNER.
@@ -541,10 +538,10 @@ impl Path {
             ))
             .is_err()
         {
-            return_errno_with_message!(
-                Errno::EPERM,
+            return Err(errno!(
+                EPERM,
                 "the source is not permitted to be hard-linked"
-            );
+            ));
         }
 
         Ok(())
@@ -592,20 +589,20 @@ impl Path {
         ctx: &Context,
     ) -> Result<Arc<Mount>> {
         if self.type_() != InodeType::Dir {
-            return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
+            return Err(errno!(ENOTDIR, "the path is not a directory"));
         }
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();
 
         if path_resolver.root() == self {
-            return_errno_with_message!(Errno::EINVAL, "the root cannot be mounted on");
+            return Err(errno!(EINVAL, "the root cannot be mounted on"));
         }
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
-            return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
+            return Err(errno!(EINVAL, "the path is not in this mount namespace"));
         }
 
         let mut topology_guard = MountTopology::write_lock();
@@ -630,24 +627,24 @@ impl Path {
     /// - The current path is not in the current mount namespace.
     pub(crate) fn unmount(&self, ctx: &Context) -> Result<Arc<Mount>> {
         if !self.is_mount_root() {
-            return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
+            return Err(errno!(EINVAL, "the path is not a mount root"));
         }
 
         let Some(_mountpoint) = self.mount.mountpoint() else {
-            return_errno_with_message!(Errno::EINVAL, "the root mount cannot be unmounted");
+            return Err(errno!(EINVAL, "the root mount cannot be unmounted"));
         };
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
-            return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
+            return Err(errno!(EINVAL, "the path is not in this mount namespace"));
         }
 
         self.mount.sync()?;
 
         let mut topology_guard = MountTopology::write_lock();
         let Some(mountpoint) = self.mount.mountpoint() else {
-            return_errno_with_message!(Errno::EINVAL, "the mount has been detached");
+            return Err(errno!(EINVAL, "the mount has been detached"));
         };
         let parent_mount = self.mount.parent().unwrap().upgrade().unwrap();
         let child_mount = parent_mount.do_unmount(&mountpoint, &mut topology_guard)?;
@@ -673,13 +670,13 @@ impl Path {
         ctx: &Context,
     ) -> Result<()> {
         if !self.is_mount_root() {
-            return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
+            return Err(errno!(EINVAL, "the path is not a mount root"));
         };
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
-            return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
+            return Err(errno!(EINVAL, "the path is not in this mount namespace"));
         }
 
         let mut topology_guard = MountTopology::write_lock();
@@ -717,10 +714,10 @@ impl Path {
             (src_is_dir && dst_is_dir) || (!src_is_dir && !dst_is_dir)
         };
         if !can_bind {
-            return_errno_with_message!(
-                Errno::ENOTDIR,
+            return Err(errno!(
+                ENOTDIR,
                 "the source and destination must both be directories or both be non-directories"
-            );
+            ));
         }
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
@@ -730,16 +727,16 @@ impl Path {
         // mount namespace, but still rejects source mount namespace files that
         // would form loops.
         if !current_mnt_ns.owns(&dst_path.mount) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the destination path is not in this mount namespace"
-            );
+            ));
         }
         if current_mnt_ns.would_form_mnt_ns_loop(&self.dentry) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the source is a mount namespace file that would create a namespace loop"
-            );
+            ));
         }
 
         let mut topology_guard = MountTopology::write_lock();
@@ -782,25 +779,25 @@ impl Path {
     /// - The mount tree contains a mount namespace file that would create a namespace loop.
     pub(crate) fn move_mount_to(&self, dst_path: Self, ctx: &Context) -> Result<()> {
         if !self.is_mount_root() {
-            return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
+            return Err(errno!(EINVAL, "the path is not a mount root"));
         };
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.mnt_ns();
         if self.mount.id() == current_mnt_ns.root().id() {
-            return_errno_with_message!(Errno::EINVAL, "the root mount can not be moved");
+            return Err(errno!(EINVAL, "the root mount can not be moved"));
         }
         if !current_mnt_ns.owns(&self.mount) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the source path is not in this mount namespace"
-            );
+            ));
         }
         if !current_mnt_ns.owns(&dst_path.mount) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the destination path is not in this mount namespace"
-            );
+            ));
         }
 
         let mut topology_guard = MountTopology::write_lock();
@@ -818,30 +815,30 @@ impl Path {
         // detachedness from the mount namespace directly instead of inferring it
         // from whether the mount tree root is the current namespace root.
         if source_is_detached && self.mount.id() != source_tree_root.id() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "only a detached mount tree root can be moved out of the detached tree"
-            );
+            ));
         }
         if !source_is_detached && target_is_detached {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the destination path is in a detached mount tree"
-            );
+            ));
         }
         if source_is_detached && source_tree_root.id() == target_tree_root.id() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the source and destination are in the same detached mount tree"
-            );
+            ));
         }
         let source_is_dir = self.type_() == InodeType::Dir;
         let target_is_dir = dst_path.type_() == InodeType::Dir;
         if source_is_dir != target_is_dir {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the source and destination must both be directories or both be non-directories"
-            );
+            ));
         }
 
         current_mnt_ns.check_no_mnt_ns_loop_in_tree(self.mount_node(), &topology_guard)?;
@@ -851,10 +848,10 @@ impl Path {
         {
             // Reject moves that would place a mount beneath itself, because the mount tree
             // must remain acyclic.
-            return_errno_with_message!(
-                Errno::ELOOP,
+            return Err(errno!(
+                ELOOP,
                 "the destination path is inside the mount subtree being moved"
-            );
+            ));
         }
         if self
             .mount
@@ -862,18 +859,18 @@ impl Path {
             .and_then(|parent| parent.upgrade())
             .is_some_and(|parent| parent.is_shared())
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "moving a mount under a shared parent is not supported"
-            );
+            ));
         }
         if dst_path.mount_node().is_shared() {
             self.mount.try_walk_tree(|mount| {
                 if mount.is_unbindable() {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
+                    return Err(errno!(
+                        EINVAL,
                         "an unbindable mount tree cannot be moved under a shared mount"
-                    );
+                    ));
                 }
                 Ok(())
             })?;
@@ -907,13 +904,13 @@ impl Path {
         ctx: &Context,
     ) -> Result<()> {
         if !self.is_mount_root() {
-            return_errno_with_message!(Errno::EINVAL, "the path is not a mount root");
+            return Err(errno!(EINVAL, "the path is not a mount root"));
         };
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
         let current_mnt_ns = current_ns_proxy.mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
-            return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
+            return Err(errno!(EINVAL, "the path is not in this mount namespace"));
         }
 
         let mut topology_guard = MountTopology::write_lock();
@@ -956,7 +953,7 @@ impl Path {
     /// Links a new name for the `Path`.
     pub(crate) fn link(&self, old: &Self, name: &str) -> Result<()> {
         if !Arc::ptr_eq(&old.mount, &self.mount) {
-            return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
+            return Err(errno!(EXDEV, "the operation cannot cross mounts"));
         }
 
         let dir_dentry = self.dentry.as_dir_dentry_or_err()?;
@@ -988,7 +985,7 @@ impl Path {
         mode: RenameMode,
     ) -> Result<()> {
         if !Arc::ptr_eq(&self.mount, &new_dir.mount) {
-            return_errno_with_message!(Errno::EXDEV, "the operation cannot cross mounts");
+            return Err(errno!(EXDEV, "the operation cannot cross mounts"));
         }
 
         let old_dir_dentry = self.dentry.as_dir_dentry_or_err()?;
@@ -1136,10 +1133,10 @@ fn capable_modify_file_cap(inode: &dyn Inode, ctx: &Context) -> Result<()> {
     // unmapped. Replace this with mount-idmap-aware namespace mapping checks when supported.
     let metadata = inode.metadata()?;
     if metadata.uid == Uid::INVALID || metadata.gid == Gid::INVALID {
-        return_errno_with_message!(
-            Errno::EPERM,
+        return Err(errno!(
+            EPERM,
             "the inode owner or group is not mapped in the current user namespace"
-        );
+        ));
     }
 
     Ok(())

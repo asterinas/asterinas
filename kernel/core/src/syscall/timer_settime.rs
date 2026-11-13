@@ -18,7 +18,7 @@ pub(super) fn sys_timer_settime(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     if new_itimerspec_addr == 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid pointer to new value");
+        return Err(errno!(EINVAL, "invalid pointer to new value"));
     }
 
     let user_space = ctx.user_space();
@@ -27,7 +27,7 @@ pub(super) fn sys_timer_settime(
     let expire_time = Duration::try_from(new_itimerspec.it_value)?;
 
     let Some(timer) = ctx.process.timer_manager().find_posix_timer(timer_id) else {
-        return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
+        return Err(errno!(EINVAL, "invalid timer ID"));
     };
 
     let mut timer_guard = timer.lock();
@@ -67,7 +67,7 @@ pub(super) fn sys_timer_gettime(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let Some(timer) = ctx.process.timer_manager().find_posix_timer(timer_id) else {
-        return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
+        return Err(errno!(EINVAL, "invalid timer ID"));
     };
 
     let (interval, remain) = {

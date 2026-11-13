@@ -144,21 +144,21 @@ impl ExfatValidateDentryMode {
                 if matches!(dentry, ExfatDentry::File(_)) {
                     Ok(ExfatValidateDentryMode::GetFile)
                 } else {
-                    return_errno_with_message!(Errno::EINVAL, "invalid dentry state machine")
+                    Err(errno!(EINVAL, "invalid dentry state machine"))
                 }
             }
             ExfatValidateDentryMode::GetFile => {
                 if matches!(dentry, ExfatDentry::Stream(_)) {
                     Ok(ExfatValidateDentryMode::GetStream)
                 } else {
-                    return_errno_with_message!(Errno::EINVAL, "invalid dentry state machine")
+                    Err(errno!(EINVAL, "invalid dentry state machine"))
                 }
             }
             ExfatValidateDentryMode::GetStream => {
                 if matches!(dentry, ExfatDentry::Name(_)) {
                     Ok(ExfatValidateDentryMode::GetName(0))
                 } else {
-                    return_errno_with_message!(Errno::EINVAL, "invalid dentry state machine")
+                    Err(errno!(EINVAL, "invalid dentry state machine"))
                 }
             }
             ExfatValidateDentryMode::GetName(count) => {
@@ -170,7 +170,7 @@ impl ExfatValidateDentryMode {
                 {
                     Ok(ExfatValidateDentryMode::GetBenignSecondary)
                 } else {
-                    return_errno_with_message!(Errno::EINVAL, "invalid dentry state machine")
+                    Err(errno!(EINVAL, "invalid dentry state machine"))
                 }
             }
             ExfatValidateDentryMode::GetBenignSecondary => {
@@ -180,7 +180,7 @@ impl ExfatValidateDentryMode {
                 {
                     Ok(ExfatValidateDentryMode::GetBenignSecondary)
                 } else {
-                    return_errno_with_message!(Errno::EINVAL, "invalid dentry state machine")
+                    Err(errno!(EINVAL, "invalid dentry state machine"))
                 }
             }
         }
@@ -282,7 +282,7 @@ impl ExfatDentrySet {
         let primary_dentry_result = iter.next();
 
         if primary_dentry_result.is_none() {
-            return_errno!(Errno::ENOENT)
+            return Err(errno!(ENOENT));
         }
 
         let primary_dentry = primary_dentry_result.unwrap()?;
@@ -290,7 +290,7 @@ impl ExfatDentrySet {
         if let ExfatDentry::File(file_dentry) = primary_dentry {
             Self::read_from_iterator(&file_dentry, &mut iter)
         } else {
-            return_errno_with_message!(Errno::EIO, "invalid dentry type, file dentry expected")
+            Err(errno!(EIO, "invalid dentry type, file dentry expected"))
         }
     }
 
@@ -306,7 +306,7 @@ impl ExfatDentrySet {
         for _i in 0..num_secondary {
             let dentry_result = iter.next();
             if dentry_result.is_none() {
-                return_errno!(Errno::ENOENT);
+                return Err(errno!(ENOENT));
             }
             let dentry = dentry_result.unwrap()?;
             dentries.push(dentry);
@@ -337,7 +337,7 @@ impl ExfatDentrySet {
 
         // Maximum dentries = 255 + 1(File dentry)
         if self.dentries.len() > u8::MAX as usize + 1 {
-            return_errno_with_message!(Errno::EINVAL, "too many dentries")
+            return Err(errno!(EINVAL, "too many dentries"));
         }
 
         for dentry in &self.dentries {
@@ -347,11 +347,11 @@ impl ExfatDentrySet {
         if !matches!(status, ExfatValidateDentryMode::GetName(_))
             && !matches!(status, ExfatValidateDentryMode::GetBenignSecondary)
         {
-            return_errno_with_message!(Errno::EINVAL, "dentries not enough")
+            return Err(errno!(EINVAL, "dentries not enough"));
         }
 
         if !self.verify_checksum() {
-            return_errno_with_message!(Errno::EINVAL, "checksum mismatched")
+            return Err(errno!(EINVAL, "checksum mismatched"));
         }
 
         Ok(())
@@ -399,7 +399,7 @@ impl ExfatDentrySet {
 
         let name = ExfatName::from_name_dentries(&name_dentries, upcase_table)?;
         if name.checksum() != self.get_stream_dentry().name_hash {
-            return_errno_with_message!(Errno::EINVAL, "name hash mismatched")
+            return Err(errno!(EINVAL, "name hash mismatched"));
         }
         Ok(name)
     }
@@ -453,11 +453,11 @@ impl<'a> ExfatDentryIterator<'a> {
         size: Option<usize>,
     ) -> Result<Self> {
         if size.is_some() && !size.unwrap().is_multiple_of(DENTRY_SIZE) {
-            return_errno_with_message!(Errno::EINVAL, "remaining size unaligned to dentry size")
+            return Err(errno!(EINVAL, "remaining size unaligned to dentry size"));
         }
 
         if !offset.is_multiple_of(DENTRY_SIZE) {
-            return_errno_with_message!(Errno::EINVAL, "dentry offset unaligned to dentry size")
+            return Err(errno!(EINVAL, "dentry offset unaligned to dentry size"));
         }
 
         Ok(Self {
@@ -486,10 +486,7 @@ impl Iterator for ExfatDentryIterator<'_> {
         let read_result = self.page_cache.read_bytes(byte_start, &mut dentry_buf);
 
         if let Err(_e) = read_result {
-            return Some(Err(Error::with_message(
-                Errno::EIO,
-                "Unable to read dentry from page cache.",
-            )));
+            return Some(Err(errno!(EIO, "Unable to read dentry from page cache.",)));
         }
 
         // The result is always OK.
@@ -666,7 +663,7 @@ impl ExfatName {
         _upcase_table: Arc<SpinLock<ExfatUpcaseTable>>,
     ) -> Result<()> {
         if !Self::is_valid_char(value) {
-            return_errno_with_message!(Errno::EINVAL, "not a valid char")
+            return Err(errno!(EINVAL, "not a valid char"));
         }
         self.0.push(value);
         // self.0.push(upcase_table.lock().transform_char_to_upcase(value)?);
@@ -736,7 +733,7 @@ impl ExfatName {
             .iter()
             .any(|&uni_char| !Self::is_valid_char(uni_char))
         {
-            return_errno_with_message!(Errno::EINVAL, "invalid file name.")
+            return Err(errno!(EINVAL, "invalid file name."));
         }
         // TODO:verify dots
         Ok(())

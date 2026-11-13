@@ -74,11 +74,11 @@ where
 /// [`CSocketAddrUnix`] itself, for ease of operation.
 pub(super) fn from_c_bytes(bytes: &[u8]) -> Result<UnixSocketAddr> {
     if bytes.len() < CSocketAddrUnix::MIN_LEN {
-        return_errno_with_message!(Errno::EINVAL, "the socket address length is too small");
+        return Err(errno!(EINVAL, "the socket address length is too small"));
     }
 
     if bytes.len() > CSocketAddrUnix::MAX_LEN {
-        return_errno_with_message!(Errno::EINVAL, "the socket address length is too large");
+        return Err(errno!(EINVAL, "the socket address length is too large"));
     }
 
     let sun_path = &bytes[CSocketAddrUnix::PATH_OFFSET..];

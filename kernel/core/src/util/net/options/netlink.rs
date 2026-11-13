@@ -29,7 +29,7 @@ pub(crate) fn new_netlink_option(name: i32) -> Result<Box<dyn RawSocketOption>> 
         CNetlinkOptionName::ADD_MEMBERSHIP => Ok(Box::new(AddMembership::new())),
         CNetlinkOptionName::DROP_MEMBERSHIP => Ok(Box::new(DropMembership::new())),
         CNetlinkOptionName::GET_STRICT_CHK => Ok(Box::new(StrictCheck::new())),
-        _ => return_errno_with_message!(Errno::ENOPROTOOPT, "unsupported netlink option"),
+        _ => Err(errno!(ENOPROTOOPT, "unsupported netlink option")),
     }
 }
 
@@ -52,7 +52,7 @@ macro_rules! impl_raw_netlink_socket_option {
 
                 // Reference: <https://elixir.bootlin.com/linux/v7.1/source/net/netlink/af_netlink.c#L1786-L1787>.
                 if *max_len < size_of::<u32>() as u32 {
-                    return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+                    return Err(errno!(EINVAL, "max_len is too short"));
                 }
 
                 let output = self.get().unwrap();
@@ -80,7 +80,7 @@ macro_rules! impl_raw_netlink_sock_option_set_only {
             }
 
             fn write_to_user(&self, _addr: Vaddr, _max_len: &mut u32) -> Result<usize> {
-                return_errno_with_message!(Errno::ENOPROTOOPT, "the option is setter-only");
+                return Err(errno!(ENOPROTOOPT, "the option is setter-only"));
             }
 
             fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {

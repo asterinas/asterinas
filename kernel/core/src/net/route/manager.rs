@@ -46,25 +46,19 @@ impl<A: RouteAddressFamily> RouteManager<A> {
                         }
                     }
                     RuleAction::Unreachable => {
-                        return_errno_with_message!(
-                            Errno::ENETUNREACH,
-                            "the route rule rejects lookup"
-                        );
+                        return Err(errno!(ENETUNREACH, "the route rule rejects lookup"));
                     }
                     RuleAction::Prohibit => {
-                        return_errno_with_message!(
-                            Errno::EACCES,
-                            "the route rule prohibits lookup"
-                        );
+                        return Err(errno!(EACCES, "the route rule prohibits lookup"));
                     }
                     RuleAction::Blackhole => {
-                        return_errno_with_message!(Errno::EINVAL, "the route rule discards lookup");
+                        return Err(errno!(EINVAL, "the route rule discards lookup"));
                     }
                 }
             }
         }
 
-        return_errno_with_message!(Errno::ENETUNREACH, "no route to the destination")
+        Err(errno!(ENETUNREACH, "no route to the destination"))
     }
 
     pub(super) fn lookup_in_local_table(&self, key: &RouteLookupKey<A>) -> Option<RouteEntry<A>> {

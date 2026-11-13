@@ -122,7 +122,7 @@ impl Connected {
         let is_empty = writer.is_empty();
         if is_empty && !is_seqpacket {
             if self.inner.this_end().reader.lock().is_empty() {
-                return_errno_with_message!(Errno::EAGAIN, "the channel is empty");
+                return Err(errno!(EAGAIN, "the channel is empty"));
             }
             return Ok((RecvOutput::new_for_stream(0), Vec::new()));
         }
@@ -290,7 +290,7 @@ impl Connected {
         let is_empty = reader.is_empty();
         if is_empty {
             if self.inner.is_shutdown() {
-                return_errno_with_message!(Errno::EPIPE, "the channel is shut down");
+                return Err(errno!(EPIPE, "the channel is shut down"));
             }
             if !is_seqpacket {
                 return Ok(0);
@@ -298,7 +298,7 @@ impl Connected {
         }
 
         if is_seqpacket && reader.sum_lens() >= UNIX_STREAM_DEFAULT_BUF_SIZE {
-            return_errno_with_message!(Errno::EMSGSIZE, "the message is too large");
+            return Err(errno!(EMSGSIZE, "the message is too large"));
         }
 
         let this_end = self.inner.this_end();

@@ -131,20 +131,20 @@ impl SimpleDrmDevice {
 
     fn flush_framebuffer(&self, framebuffer: &DrmFramebuffer, source_rect: DrmRect) -> Result<()> {
         if framebuffer.pixel_format() != self.pixel_format {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the DRM framebuffer format is not supported by simpledrm"
-            );
+            ));
         }
 
         let framebuffer_size = framebuffer.size();
         let framebuffer_rect =
             DrmRect::new(0, 0, framebuffer_size.width(), framebuffer_size.height());
         if !framebuffer_rect.contains_rect(&source_rect) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the simpledrm scanout rectangle exceeds the DRM framebuffer"
-            );
+            ));
         }
 
         let output_width = self.boot_framebuffer.width();
@@ -152,10 +152,10 @@ impl SimpleDrmDevice {
         if source_rect.width() as usize != output_width
             || source_rect.height() as usize != output_height
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the simpledrm scanout size does not match the physical framebuffer"
-            );
+            ));
         }
 
         let bytes_per_pixel = framebuffer.pixel_format().bytes_per_pixel();
@@ -164,10 +164,10 @@ impl SimpleDrmDevice {
             .ok_or(Errno::EOVERFLOW)?;
         let destination_pitch = self.boot_framebuffer.line_size();
         if row_len > destination_pitch {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the simpledrm scanout row exceeds the physical framebuffer pitch"
-            );
+            ));
         }
 
         let source_pitch = framebuffer.pitch() as usize;

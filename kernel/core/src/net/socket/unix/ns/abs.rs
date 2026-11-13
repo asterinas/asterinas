@@ -104,19 +104,19 @@ impl HandleTable {
 }
 
 pub(crate) fn create_abstract_name(name: Arc<[u8]>) -> Result<Arc<AbstractHandle>> {
-    HANDLE_TABLE.create(name).ok_or_else(|| {
-        Error::with_message(Errno::EADDRINUSE, "the abstract name is already in use")
-    })
+    HANDLE_TABLE
+        .create(name)
+        .ok_or_else(|| errno!(EADDRINUSE, "the abstract name is already in use"))
 }
 
 pub(crate) fn alloc_ephemeral_abstract_name() -> Result<Arc<AbstractHandle>> {
-    HANDLE_TABLE.alloc_ephemeral().ok_or_else(|| {
-        Error::with_message(Errno::ENOSPC, "no ephemeral abstract name is available")
-    })
+    HANDLE_TABLE
+        .alloc_ephemeral()
+        .ok_or_else(|| errno!(ENOSPC, "no ephemeral abstract name is available"))
 }
 
 pub(crate) fn lookup_abstract_name(name: &[u8]) -> Result<Arc<AbstractHandle>> {
     HANDLE_TABLE
         .lookup(name)
-        .ok_or_else(|| Error::with_message(Errno::ECONNREFUSED, "the abstract name does not exist"))
+        .ok_or_else(|| errno!(ECONNREFUSED, "the abstract name does not exist"))
 }

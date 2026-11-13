@@ -32,24 +32,6 @@ pub(crate) enum ContinueAttrRead<T> {
     SkippedInvalid(Error),
 }
 
-impl<T> ContinueRead<T, Error> {
-    /// Creates a [`SkippedInvalid`] variant with the given error information.
-    ///
-    /// [`SkippedInvalid`]: Self::SkippedInvalid
-    pub(in netlink) fn skipped_invalid(errno: Errno, msg: &'static str) -> Self {
-        Self::SkippedInvalid(Error::with_message(errno, msg))
-    }
-}
-
-impl<T> ContinueAttrRead<T> {
-    /// Creates a [`SkippedInvalid`] variant with the given error information.
-    ///
-    /// [`SkippedInvalid`]: Self::SkippedInvalid
-    pub(in netlink) fn skipped_invalid(errno: Errno, msg: &'static str) -> Self {
-        Self::SkippedInvalid(Error::with_message(errno, msg))
-    }
-}
-
 impl<T, E> ContinueRead<T, E> {
     /// Maps the value in the [`Parsed`] variant with `f`.
     ///

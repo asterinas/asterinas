@@ -86,7 +86,7 @@ impl DosTimestamp {
         let date_time_result =
             OffsetDateTime::from_unix_timestamp_nanos(duration.as_nanos() as i128);
         if date_time_result.is_err() {
-            return_errno_with_message!(Errno::EINVAL, "failed to parse date time.")
+            return Err(errno!(EINVAL, "failed to parse date time."));
         }
 
         let date_time = date_time_result.unwrap();
@@ -115,7 +115,7 @@ impl DosTimestamp {
         let month_result =
             time::Month::try_from(get_value_from_range(self.date, MONTH_RANGE) as u8);
         if month_result.is_err() {
-            return_errno_with_message!(Errno::EINVAL, "invalid month")
+            return Err(errno!(EINVAL, "invalid month"));
         }
 
         let month = month_result.unwrap();
@@ -128,12 +128,12 @@ impl DosTimestamp {
 
         let day_result = time::Date::from_calendar_date(year as i32, month, day as u8);
         if day_result.is_err() {
-            return_errno_with_message!(Errno::EINVAL, "invalid day")
+            return Err(errno!(EINVAL, "invalid day"));
         }
 
         let time_result = Time::from_hms(hour as u8, minute as u8, second as u8);
         if time_result.is_err() {
-            return_errno_with_message!(Errno::EINVAL, "invalid time")
+            return Err(errno!(EINVAL, "invalid time"));
         }
 
         let date_time = PrimitiveDateTime::new(day_result.unwrap(), time_result.unwrap());

@@ -21,13 +21,9 @@ pub(super) fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Resu
         .read_cstring(fs_name_addr, MAX_FILENAME_LEN)?;
     let fs_name = fs_name
         .to_str()
-        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid filesystem name"))?;
-    let fs_type = look_up(fs_name).ok_or_else(|| {
-        Error::with_message(
-            Errno::ENODEV,
-            "the filesystem is not configured in the kernel",
-        )
-    })?;
+        .map_err(|_| errno!(EINVAL, "invalid filesystem name"))?;
+    let fs_type = look_up(fs_name)
+        .ok_or_else(|| errno!(ENODEV, "the filesystem is not configured in the kernel",))?;
 
     let file = Arc::new(FsConfigFile::new(fs_type)) as Arc<dyn FileLike>;
     let file_table = ctx.thread_local.borrow_file_table();
@@ -46,8 +42,7 @@ impl TryFrom<u32> for FsOpenFlags {
     type Error = Error;
 
     fn try_from(value: u32) -> Result<Self> {
-        Self::from_bits(value)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown fsopen flags"))
+        Self::from_bits(value).ok_or_else(|| errno!(EINVAL, "unknown fsopen flags"))
     }
 }
 

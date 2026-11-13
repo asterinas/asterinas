@@ -71,7 +71,7 @@ pub(crate) fn futex_wait_bitset(
     );
 
     if bitset == 0 {
-        return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
+        return Err(errno!(EINVAL, "at least one bit should be set"));
     }
 
     let user_space = ctx.user_space();
@@ -97,18 +97,18 @@ pub(crate) fn futex_wait_bitset(
             .vmar()
             .handle_page_fault(&PageFaultInfo::new(futex_addr, VmPerms::READ))
             .map_err(|_| {
-                Error::with_message(
-                    Errno::EFAULT,
+                errno!(
+                    EFAULT,
                     "the page fault of the futex word cannot be resolved",
                 )
             })?;
     };
 
     if val != futex_val.cast_unsigned() {
-        return_errno_with_message!(
-            Errno::EAGAIN,
+        return Err(errno!(
+            EAGAIN,
             "the futex word does not contain the expected value"
-        );
+        ));
     }
 
     futex_bucket.add_item(futex_item);
@@ -132,10 +132,10 @@ pub(crate) fn futex_wait_bitset(
         Err(err)
     } else {
         // Spurious wakeups. Return `EINTR` anyway.
-        return_errno_with_message!(
-            Errno::EINTR,
+        Err(errno!(
+            EINTR,
             "the current thread is interrupted by a signal"
-        );
+        ))
     }
 }
 
@@ -159,7 +159,7 @@ pub(crate) fn futex_wake_bitset(
     );
 
     if bitset == 0 {
-        return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
+        return Err(errno!(EINVAL, "at least one bit should be set"));
     }
 
     let futex_key = FutexKey::new(futex_addr, bitset, &current_userspace!(), visibility)?;
@@ -326,8 +326,8 @@ pub(crate) fn futex_wake_op(
                 VmPerms::READ | VmPerms::WRITE,
             ))
             .map_err(|_| {
-                Error::with_message(
-                    Errno::EFAULT,
+                errno!(
+                    EFAULT,
                     "the page fault of the futex word cannot be resolved",
                 )
             })?;
@@ -602,10 +602,10 @@ impl FutexKey {
         // boundary."
         // Reference: <https://man7.org/linux/man-pages/man2/futex.2.html>.
         if !addr.is_multiple_of(align_of::<u32>()) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the futex word is not aligned on a four-byte boundary"
-            );
+            ));
         }
 
         let identity = match visibility {
@@ -746,8 +746,7 @@ pub(crate) fn futex_op_and_flags_from_u32(bits: u32) -> Result<(FutexOp, FutexFl
 
     let flags = {
         let flags_bits = bits & FUTEX_FLAGS_MASK;
-        FutexFlags::from_bits(flags_bits)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid futex flags"))?
+        FutexFlags::from_bits(flags_bits).ok_or_else(|| errno!(EINVAL, "invalid futex flags"))?
     };
 
     Ok((op, flags))

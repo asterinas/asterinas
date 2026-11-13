@@ -60,7 +60,7 @@ impl BoundPort {
 
         let guest_cid = vsock_space.guest_cid();
         if addr.cid != VMADDR_CID_ANY && addr.cid as u64 != guest_cid {
-            return_errno_with_message!(Errno::EADDRNOTAVAIL, "the vsock CID is not local");
+            return Err(errno!(EADDRNOTAVAIL, "the vsock CID is not local"));
         }
 
         if addr.port == VMADDR_PORT_ANY {
@@ -70,7 +70,7 @@ impl BoundPort {
         let mut ports = vsock_space.lock_ports();
         let usage = ports.usage.entry(addr.port).or_insert(0);
         if *usage != 0 {
-            return_errno_with_message!(Errno::EADDRINUSE, "the vsock port is already in use");
+            return Err(errno!(EADDRINUSE, "the vsock port is already in use"));
         }
         *usage += 1;
         Ok(Self { port: addr.port })
@@ -94,10 +94,7 @@ impl BoundPort {
 
             current_port = PortTable::next_ephemeral_port_after(current_port);
             if current_port == start_port {
-                return_errno_with_message!(
-                    Errno::EADDRINUSE,
-                    "no ephemeral vsock ports are available"
-                );
+                return Err(errno!(EADDRINUSE, "no ephemeral vsock ports are available"));
             }
         }
     }

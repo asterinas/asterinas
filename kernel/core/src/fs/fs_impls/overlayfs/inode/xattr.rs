@@ -86,12 +86,9 @@ impl OverlayXattrType {
         namespace: XattrNamespace,
         value: Option<&[u8]>,
     ) -> Result<()> {
-        let value = value.or(self.default_value()).ok_or_else(|| {
-            Error::with_message(
-                Errno::EINVAL,
-                "the overlay xattr type has no value to write",
-            )
-        })?;
+        let value = value
+            .or(self.default_value())
+            .ok_or_else(|| errno!(EINVAL, "the overlay xattr type has no value to write",))?;
         let name = self.construct_xattr_name(namespace);
         let mut value_reader = VmReader::from(value).to_fallible();
         real_dentry.inode().set_xattr(
@@ -171,9 +168,8 @@ impl OverlayInode {
     ) -> Result<usize> {
         let used_name = self.xattr_name_for_real(&name)?;
         // The `EINVAL` arm is unreachable: the infix is inserted inside the selected namespace.
-        let used = XattrName::try_from_full_name(&used_name).ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "invalid escaped overlay xattr name")
-        })?;
+        let used = XattrName::try_from_full_name(&used_name)
+            .ok_or_else(|| errno!(EINVAL, "invalid escaped overlay xattr name"))?;
         self.real_object()
             .real_inode()
             .get_xattr(used, value_writer)
@@ -187,9 +183,8 @@ impl OverlayInode {
         flags: XattrSetFlags,
     ) -> Result<()> {
         let used_name = self.xattr_name_for_real(&name)?;
-        let used = XattrName::try_from_full_name(&used_name).ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "invalid escaped overlay xattr name")
-        })?;
+        let used = XattrName::try_from_full_name(&used_name)
+            .ok_or_else(|| errno!(EINVAL, "invalid escaped overlay xattr name"))?;
         let upper = self.writable_real_object(self_dentry)?;
         upper
             .real_inode()
@@ -198,9 +193,8 @@ impl OverlayInode {
 
     pub(super) fn remove_xattr_impl(&self, self_dentry: &Dentry, name: XattrName) -> Result<()> {
         let used_name = self.xattr_name_for_real(&name)?;
-        let used = XattrName::try_from_full_name(&used_name).ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "invalid escaped overlay xattr name")
-        })?;
+        let used = XattrName::try_from_full_name(&used_name)
+            .ok_or_else(|| errno!(EINVAL, "invalid escaped overlay xattr name"))?;
         let upper = self.writable_real_object(self_dentry)?;
         upper.real_inode().remove_xattr(upper.dentry(), used)
     }
@@ -239,10 +233,10 @@ impl OverlayInode {
             }
             // An entry that does not fit fails the call; earlier entries stay and none is split.
             if entry_len > list_writer.avail() {
-                return_errno_with_message!(
-                    Errno::ERANGE,
+                return Err(errno!(
+                    ERANGE,
                     "the xattr list buffer is too small for the presented list"
-                );
+                ));
             }
             list_writer.write_fallible(&mut VmReader::from(presented.as_slice()))?;
             list_writer.write_val(&0u8)?;
@@ -366,10 +360,10 @@ impl OverlayInode {
             return Ok(String::from(full_name));
         }
         if full_name.len() + ESCAPE_INFIX.len() > XATTR_NAME_MAX_LEN {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
+            return Err(errno!(
+                EOPNOTSUPP,
                 "the escaped overlay xattr name exceeds the xattr name length limit"
-            );
+            ));
         }
         let mut used_name = String::from(full_name);
         used_name.insert_str(selected_prefix.len(), ESCAPE_INFIX);
@@ -419,7 +413,7 @@ impl OverlayInode {
         name: &XattrName<'_>,
     ) -> Result<Vec<u8>> {
         let Some(reborrowed) = XattrName::try_from_full_name(name.full_name()) else {
-            return_errno_with_message!(Errno::EINVAL, "the xattr name is not a valid escaped name");
+            return Err(errno!(EINVAL, "the xattr name is not a valid escaped name"));
         };
         let mut probe = VmWriter::from(&mut [] as &mut [u8]).to_fallible();
         let value_len = source.get_xattr(reborrowed, &mut probe)?;

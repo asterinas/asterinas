@@ -114,9 +114,7 @@ impl State {
 
     pub(self) fn peer_groups(&self) -> Result<Arc<[Gid]>> {
         match self {
-            State::Init(_) => {
-                return_errno_with_message!(Errno::ENODATA, "the socket does not have peer groups")
-            }
+            State::Init(_) => Err(errno!(ENODATA, "the socket does not have peer groups")),
             State::Listen(listener) => Ok(listener.cred().groups()),
             State::Connected(connected) => Ok(connected.peer_cred().groups()),
         }
@@ -232,7 +230,7 @@ impl UnixStreamSocket {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_write(buf, aux_data, self.is_seqpacket()),
             State::Init(_) | State::Listen(_) => {
-                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
+                Err(errno!(ENOTCONN, "the socket is not connected"))
             }
         }
     }
@@ -244,9 +242,7 @@ impl UnixStreamSocket {
     ) -> Result<(RecvOutput, Vec<ControlMessage>)> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_read(buf, self.is_seqpacket(), flags),
-            State::Init(_) | State::Listen(_) => {
-                return_errno_with_message!(Errno::EINVAL, "the socket is not connected")
-            }
+            State::Init(_) | State::Listen(_) => Err(errno!(EINVAL, "the socket is not connected")),
         }
     }
 
@@ -259,19 +255,13 @@ impl UnixStreamSocket {
                 State::Listen(listener) => {
                     return (
                         State::Listen(listener),
-                        Err(Error::with_message(
-                            Errno::EINVAL,
-                            "the socket is listening",
-                        )),
+                        Err(errno!(EINVAL, "the socket is listening",)),
                     );
                 }
                 State::Connected(connected) => {
                     return (
                         State::Connected(connected),
-                        Err(Error::with_message(
-                            Errno::EISCONN,
-                            "the socket is connected",
-                        )),
+                        Err(errno!(EISCONN, "the socket is connected",)),
                     );
                 }
             };
@@ -294,7 +284,7 @@ impl UnixStreamSocket {
         match self.state.read().as_ref() {
             State::Listen(listen) => listen.try_accept(self.socket_type, is_nonblocking) as _,
             State::Init(_) | State::Connected(_) => {
-                return_errno_with_message!(Errno::EINVAL, "the socket is not listening")
+                Err(errno!(EINVAL, "the socket is not listening"))
             }
         }
     }
@@ -367,10 +357,7 @@ impl Socket for UnixStreamSocket {
                 State::Connected(connected) => {
                     return (
                         State::Connected(connected),
-                        Err(Error::with_message(
-                            Errno::EINVAL,
-                            "the socket is connected",
-                        )),
+                        Err(errno!(EINVAL, "the socket is connected",)),
                     );
                 }
             };
@@ -417,7 +404,7 @@ impl Socket for UnixStreamSocket {
         let peer_addr = match self.state.read().as_ref() {
             State::Connected(connected) => connected.peer_addr(),
             State::Init(_) | State::Listen(_) => {
-                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
+                return Err(errno!(ENOTCONN, "the socket is not connected"));
             }
         };
 
@@ -455,7 +442,7 @@ impl Socket for UnixStreamSocket {
         // TODO: Deal with socket options from other levels
         warn!("only socket-level options are supported");
 
-        return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
+        Err(errno!(ENOPROTOOPT, "the socket option to get is unknown"))
     }
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
@@ -468,10 +455,7 @@ impl Socket for UnixStreamSocket {
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // TODO: Deal with socket options from other levels
                 warn!("only socket-level options are supported");
-                return_errno_with_message!(
-                    Errno::ENOPROTOOPT,
-                    "the socket option to get is unknown"
-                )
+                Err(errno!(ENOPROTOOPT, "the socket option to get is unknown"))
             }
             res => res.map(|_need_iface_poll| ()),
         }
@@ -498,14 +482,18 @@ impl Socket for UnixStreamSocket {
         // sockets will fail due to that. We follow the same behavior as the Linux implementation.
         if !self.is_seqpacket() && addr.is_some() {
             match self.state.read().as_ref() {
-                State::Init(_) | State::Listen(_) => return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
-                    "sending to a specific address is not allowed on UNIX stream sockets"
-                ),
-                State::Connected(_) => return_errno_with_message!(
-                    Errno::EISCONN,
-                    "sending to a specific address is not allowed on UNIX stream sockets"
-                ),
+                State::Init(_) | State::Listen(_) => {
+                    return Err(errno!(
+                        EOPNOTSUPP,
+                        "sending to a specific address is not allowed on UNIX stream sockets"
+                    ));
+                }
+                State::Connected(_) => {
+                    return Err(errno!(
+                        EISCONN,
+                        "sending to a specific address is not allowed on UNIX stream sockets"
+                    ));
+                }
             }
         }
         let mut auxiliary_data = AuxiliaryData::from_control(control_messages)?;
@@ -550,10 +538,11 @@ fn do_unix_getsockopt(option: &mut dyn SocketOption, state: &State) -> Result<()
             let groups = state.peer_groups()?;
             socket_peer_groups.set(groups);
         }
-        _ => return_errno_with_message!(
-            Errno::ENOPROTOOPT,
-            "the socket option to get is not UNIX-socket-specific"
-        ),
+        _ =>
+            return Err(errno!(
+                ENOPROTOOPT,
+                "the socket option to get is not UNIX-socket-specific"
+            )),
     });
 
     Ok(())

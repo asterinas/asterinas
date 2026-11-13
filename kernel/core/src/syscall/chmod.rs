@@ -43,8 +43,8 @@ pub(super) fn sys_fchmodat2(
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = ChmodFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid chmod flags"))?;
+    let flags =
+        ChmodFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid chmod flags"))?;
 
     do_fchmodat(dirfd, path_ptr, mode, flags, ctx)
 }

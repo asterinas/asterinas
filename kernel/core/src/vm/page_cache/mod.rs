@@ -495,7 +495,7 @@ impl<'a> PageRun<'a> {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.len() < len {
-            return_errno_with_message!(Errno::EINVAL, "page run is shorter than len");
+            return Err(errno!(EINVAL, "page run is shorter than len"));
         }
 
         let max_segments = block_device.metadata().max_nr_segments_per_bio.max(1);
@@ -540,7 +540,7 @@ impl<'a> PageRun<'a> {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if self.len() < len {
-            return_errno_with_message!(Errno::EINVAL, "page run is shorter than len");
+            return Err(errno!(EINVAL, "page run is shorter than len"));
         }
 
         let max_segments = block_device.metadata().max_nr_segments_per_bio.max(1);

@@ -79,10 +79,10 @@ impl EpollFile {
         //
         // FIXME: A complete loop detection mechanism needs to be implemented here.
         if core::ptr::addr_eq(self, file.as_ref()) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the epoll file and the target cannot be the same"
-            );
+            ));
         }
 
         match *cmd {
@@ -110,10 +110,7 @@ impl EpollFile {
             let mut interest = self.interest.lock();
 
             if interest.contains(&EntryKey::from((fd, &file))) {
-                return_errno_with_message!(
-                    Errno::EEXIST,
-                    "the file is already in the interest list"
-                );
+                return Err(errno!(EEXIST, "the file is already in the interest list"));
             }
 
             let entry = Entry::new(fd, Arc::downgrade(&file).into(), self.ready.clone());
@@ -150,7 +147,7 @@ impl EpollFile {
         // will fail.
 
         if !self.interest.lock().remove(&EntryKey::from((fd, file))) {
-            return_errno_with_message!(Errno::ENOENT, "the file is not in the interest list");
+            return Err(errno!(ENOENT, "the file is not in the interest list"));
         }
 
         Ok(())
@@ -169,10 +166,9 @@ impl EpollFile {
         let ready_entry = {
             let interest = self.interest.lock();
 
-            let EntryHolder(entry) =
-                interest.get(&EntryKey::from((fd, &file))).ok_or_else(|| {
-                    Error::with_message(Errno::ENOENT, "the file is not in the interest list")
-                })?;
+            let EntryHolder(entry) = interest
+                .get(&EntryKey::from((fd, &file)))
+                .ok_or_else(|| errno!(ENOENT, "the file is not in the interest list"))?;
             let events = entry.update(new_ep_event, new_ep_flags);
 
             if !events.is_empty() {
@@ -211,7 +207,7 @@ impl EpollFile {
             self.pop_multi_ready(max_events, &mut ep_events);
 
             if ep_events.is_empty() {
-                return_errno_with_message!(Errno::EAGAIN, "there are no available events");
+                return Err(errno!(EAGAIN, "there are no available events"));
             }
 
             Ok(())
@@ -274,7 +270,7 @@ impl Pollable for EpollFile {
 // Implement the common methods required by FileHandle
 impl FileLike for EpollFile {
     fn ioctl(&self, _raw_ioctl: RawIoctl) -> Result<i32> {
-        return_errno_with_message!(Errno::ENOTTY, "epoll files do not support ioctl");
+        Err(errno!(ENOTTY, "epoll files do not support ioctl"))
     }
 
     fn common(&self) -> &FileCommon {

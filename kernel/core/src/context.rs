@@ -206,15 +206,15 @@ impl<'a> CurrentUserSpace<'a> {
         user_reader.read_cstring_until_nul(userspace_max_len)?
             .ok_or_else(|| if userspace_max_len == max_len {
                 // There may be more bytes in the userspace, but the length limit has been reached.
-                Error::with_message(
-                    Errno::ENAMETOOLONG,
+                errno!(
+                    ENAMETOOLONG,
                     "the C string does not end before reaching the maximum length"
                 )
             } else {
                 // There cannot be any bytes in the userspace, but the C string still does not end.
                 // This is the Linux behavior in its `do_strncpy_from_user` implementation.
-                Error::with_message(
-                    Errno::EFAULT,
+                errno!(
+                    EFAULT,
                     "the C string does not end before reaching the maximum userspace virtual address"
                 )
             })

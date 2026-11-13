@@ -131,7 +131,7 @@ impl Xattr {
         let (target_index, target_name) = Self::parse_target_name(name)?;
         let value_len = value_reader.remain();
         if value_len > BLOCK_SIZE {
-            return_errno_with_message!(Errno::ERANGE, "xattr value is too large");
+            return Err(errno!(ERANGE, "xattr value is too large"));
         }
 
         let mut value = vec![0u8; value_len];
@@ -190,7 +190,7 @@ impl Xattr {
         let name_index = XattrNameIndex::from(name.namespace());
         let stripped_name = name_index.strip_prefix(name.full_name())?;
         if stripped_name.len() > u8::MAX as usize {
-            return_errno_with_message!(Errno::ERANGE, "xattr name is too long");
+            return Err(errno!(ERANGE, "xattr name is too long"));
         }
         Ok((name_index, stripped_name.as_bytes().to_vec()))
     }
@@ -222,13 +222,13 @@ impl XattrCache {
     fn fs(&self) -> Result<Arc<Ext2>> {
         self.fs
             .upgrade()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "ext2 instance is unavailable"))
+            .ok_or_else(|| errno!(EIO, "ext2 instance is unavailable"))
     }
 
     fn inode(&self) -> Result<Arc<Inode>> {
         self.inode
             .upgrade()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "inode instance is unavailable"))
+            .ok_or_else(|| errno!(EIO, "inode instance is unavailable"))
     }
 
     fn set_entry(
@@ -245,10 +245,10 @@ impl XattrCache {
 
         if found_idx.is_some() {
             if flags.contains(XattrSetFlags::CREATE_ONLY) {
-                return_errno_with_message!(Errno::EEXIST, "the target xattr already exists");
+                return Err(errno!(EEXIST, "the target xattr already exists"));
             }
         } else if flags.contains(XattrSetFlags::REPLACE_ONLY) {
-            return_errno_with_message!(Errno::ENODATA, "the target xattr does not exist");
+            return Err(errno!(ENODATA, "the target xattr does not exist"));
         }
 
         if let Some(idx) = found_idx {
@@ -280,16 +280,14 @@ impl XattrCache {
         self.load()?;
 
         let (found_idx, _) = Self::find_entry_position(&self.entries, target_index, target_name);
-        let idx = found_idx.ok_or_else(|| {
-            Error::with_message(Errno::ENODATA, "the target xattr does not exist")
-        })?;
+        let idx = found_idx.ok_or_else(|| errno!(ENODATA, "the target xattr does not exist"))?;
         let value = self.entries[idx].value.as_slice();
 
         if vm_writer.avail() == 0 {
             return Ok(value.len());
         }
         if value.len() > vm_writer.avail() {
-            return_errno_with_message!(Errno::ERANGE, "the xattr value buffer is too small");
+            return Err(errno!(ERANGE, "the xattr value buffer is too small"));
         }
 
         vm_writer.write_fallible(&mut VmReader::from(value))?;
@@ -301,7 +299,7 @@ impl XattrCache {
 
         let (found_idx, _) = Self::find_entry_position(&self.entries, target_index, target_name);
         let Some(found_idx) = found_idx else {
-            return_errno_with_message!(Errno::ENODATA, "the target xattr does not exist");
+            return Err(errno!(ENODATA, "the target xattr does not exist"));
         };
         self.entries.remove(found_idx);
 
@@ -346,7 +344,7 @@ impl XattrCache {
 
             if buffer_size > 0 {
                 if list_entry_size > remaining_size {
-                    return_errno_with_message!(Errno::ERANGE, "the xattr list buffer is too small");
+                    return Err(errno!(ERANGE, "the xattr list buffer is too small"));
                 }
                 list_writer.write_fallible(&mut VmReader::from(prefix))?;
                 list_writer.write_fallible(&mut VmReader::from(entry.name.as_slice()))?;
@@ -493,12 +491,12 @@ impl XattrCache {
             let entry_padded_size = xattr_entry_len(entry.name.len());
             let value_padded_size = xattr_value_size(entry.value.len());
 
-            value_cursor = value_cursor.checked_sub(value_padded_size).ok_or_else(|| {
-                Error::with_message(Errno::ENOSPC, "insufficient xattr value space")
-            })?;
+            value_cursor = value_cursor
+                .checked_sub(value_padded_size)
+                .ok_or_else(|| errno!(ENOSPC, "insufficient xattr value space"))?;
 
             if entry_cursor + entry_padded_size + XATTR_ENTRY_VALUE_GAP > value_cursor {
-                return_errno_with_message!(Errno::ENOSPC, "xattr entry/value regions overlap");
+                return Err(errno!(ENOSPC, "xattr entry/value regions overlap"));
             }
 
             if !entry.value.is_empty() {
@@ -546,7 +544,7 @@ impl XattrCache {
     fn validate_header(block_buf: &USegment) -> Result<()> {
         let header = block_buf.read_val::<XattrHeader>(0)?;
         if header.magic != XATTR_MAGIC || header.nblocks != XATTR_NBLOCKS as u32 {
-            return_errno_with_message!(Errno::EIO, "invalid xattr header");
+            return Err(errno!(EIO, "invalid xattr header"));
         }
         Ok(())
     }
@@ -555,20 +553,20 @@ impl XattrCache {
         let entry_len = xattr_entry_len(entry.name_len as usize);
         let next_entry_offset = offset + entry_len;
         if next_entry_offset >= BLOCK_SIZE {
-            return_errno_with_message!(Errno::EIO, "xattr entry overflows block");
+            return Err(errno!(EIO, "xattr entry overflows block"));
         }
         if entry.value_block != 0 {
-            return_errno_with_message!(Errno::EIO, "xattr external value blocks are not supported");
+            return Err(errno!(EIO, "xattr external value blocks are not supported"));
         }
 
         let value_size = entry.value_len as usize;
         let value_offset = entry.value_offset as usize;
         if value_size > BLOCK_SIZE {
-            return_errno_with_message!(Errno::EIO, "xattr value range is out of block bounds");
+            return Err(errno!(EIO, "xattr value range is out of block bounds"));
         }
         let value_end = value_offset + value_size;
         if value_end > BLOCK_SIZE {
-            return_errno_with_message!(Errno::EIO, "xattr value range is out of block bounds");
+            return Err(errno!(EIO, "xattr value range is out of block bounds"));
         }
         Ok(())
     }
@@ -579,7 +577,7 @@ impl XattrCache {
         let mut offset = XATTR_HEADER_SIZE;
         loop {
             if offset + XATTR_TERMINATOR_SIZE > BLOCK_SIZE {
-                return_errno_with_message!(Errno::EIO, "xattr entry terminator is missing");
+                return Err(errno!(EIO, "xattr entry terminator is missing"));
             }
 
             let marker = block_buf.read_val::<u32>(offset)?;
@@ -589,7 +587,7 @@ impl XattrCache {
 
             let entry = block_buf.read_val::<XattrEntry>(offset)?;
             let _ = XattrNameIndex::try_from(entry.name_index)
-                .map_err(|_| Error::with_message(Errno::EIO, "invalid xattr name index on disk"))?;
+                .map_err(|_| errno!(EIO, "invalid xattr name index on disk"))?;
             Self::validate_entry(&entry, offset)?;
             offset += xattr_entry_len(entry.name_len as usize);
         }
@@ -600,7 +598,7 @@ impl XattrCache {
         let mut offset = XATTR_HEADER_SIZE;
         loop {
             if offset + XATTR_TERMINATOR_SIZE > BLOCK_SIZE {
-                return_errno_with_message!(Errno::EIO, "xattr entry terminator is missing");
+                return Err(errno!(EIO, "xattr entry terminator is missing"));
             }
 
             let marker = block_buf.read_val::<u32>(offset)?;
@@ -610,7 +608,7 @@ impl XattrCache {
 
             let entry = block_buf.read_val::<XattrEntry>(offset)?;
             let name_index = XattrNameIndex::try_from(entry.name_index)
-                .map_err(|_| Error::with_message(Errno::EIO, "invalid xattr name index on disk"))?;
+                .map_err(|_| errno!(EIO, "invalid xattr name index on disk"))?;
             Self::validate_entry(&entry, offset)?;
 
             let name_len = entry.name_len as usize;
@@ -622,7 +620,7 @@ impl XattrCache {
                 let ordering =
                     cmp_entry_key(prev_entry.name_index, &prev_entry.name, name_index, &name);
                 if ordering != Ordering::Less {
-                    return_errno_with_message!(Errno::EIO, "xattr entries are not strictly sorted");
+                    return Err(errno!(EIO, "xattr entries are not strictly sorted"));
                 }
             }
 
@@ -689,8 +687,8 @@ impl XattrNameIndex {
     /// Strips the namespace prefix from `full_name` and returns the remainder.
     pub(super) fn strip_prefix(self, full_name: &str) -> Result<&str> {
         full_name.strip_prefix(self.prefix()).ok_or_else(|| {
-            Error::with_message(
-                Errno::EINVAL,
+            errno!(
+                EINVAL,
                 "xattr name does not match namespace-specific prefix",
             )
         })

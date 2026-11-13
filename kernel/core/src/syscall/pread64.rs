@@ -20,14 +20,14 @@ pub(super) fn sys_pread64(
     );
 
     if offset < 0 {
-        return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
+        return Err(errno!(EINVAL, "offset cannot be negative"));
     }
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
 
     if offset.checked_add(user_buf_len as i64).is_none() {
-        return_errno_with_message!(Errno::EINVAL, "offset + user_buf_len overflow");
+        return Err(errno!(EINVAL, "offset + user_buf_len overflow"));
     }
 
     let read_len = {

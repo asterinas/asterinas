@@ -28,7 +28,7 @@ impl<A: RouteAddressFamily> RouteEntry<A> {
         type_: RouteType,
     ) -> Result<Self> {
         if dst != A::network(&dst) {
-            return_errno_with_message!(Errno::EINVAL, "the route destination is not canonical");
+            return Err(errno!(EINVAL, "the route destination is not canonical"));
         }
 
         Ok(Self {

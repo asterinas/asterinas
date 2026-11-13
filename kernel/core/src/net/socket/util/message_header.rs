@@ -53,10 +53,7 @@ impl ControlMessage {
         while reader.has_remain() && msgs.len() < MAX_NR_MSGS {
             let header = reader.read_val::<CControlHeader>()?;
             if header.len < size_of::<CControlHeader>() || header.payload_len() > reader.remain() {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "the size of the control message is invalid"
-                );
+                return Err(errno!(EINVAL, "the size of the control message is invalid"));
             }
 
             if let Some(msg) = Self::read_from(&header, reader)? {
@@ -69,10 +66,10 @@ impl ControlMessage {
 
         if reader.has_remain() {
             warn!("excessive control messages are currently not permitted");
-            return_errno_with_message!(
-                Errno::E2BIG,
+            return Err(errno!(
+                E2BIG,
                 "excessive control messages are currently not permitted"
-            );
+            ));
         }
 
         Ok(msgs)
@@ -167,9 +164,9 @@ impl CControlHeader {
 
     /// Computes the payload length from the total length.
     pub(crate) fn payload_len_from_total(total_len: usize) -> Result<usize> {
-        total_len.checked_sub(size_of::<Self>()).ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "the control message buffer is too small")
-        })
+        total_len
+            .checked_sub(size_of::<Self>())
+            .ok_or_else(|| errno!(EINVAL, "the control message buffer is too small"))
     }
 
     /// Returns the level of the control message.

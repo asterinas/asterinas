@@ -160,7 +160,7 @@ impl CUserMsgHdr {
         user_space: &'a CurrentUserSpace<'a>,
     ) -> Result<VmReaderArray<'a>> {
         if self.msg_iovlen > MAX_IO_VECTOR_LENGTH {
-            return_errno_with_message!(Errno::EMSGSIZE, "the I/O vector contains too many buffers");
+            return Err(errno!(EMSGSIZE, "the I/O vector contains too many buffers"));
         }
 
         VmReaderArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen)
@@ -171,7 +171,7 @@ impl CUserMsgHdr {
         user_space: &'a CurrentUserSpace<'a>,
     ) -> Result<VmWriterArray<'a>> {
         if self.msg_iovlen > MAX_IO_VECTOR_LENGTH {
-            return_errno_with_message!(Errno::EMSGSIZE, "the I/O vector contains too many buffers");
+            return Err(errno!(EMSGSIZE, "the I/O vector contains too many buffers"));
         }
 
         VmWriterArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen)

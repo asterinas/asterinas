@@ -12,7 +12,7 @@ pub(super) fn sys_sched_setscheduler(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     if addr == 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid user space address");
+        return Err(errno!(EINVAL, "invalid user space address"));
     }
 
     let prio = ctx.user_space().read_val(addr)?;

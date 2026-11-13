@@ -109,7 +109,7 @@ impl TryFrom<i32> for VtIndex {
         {
             Ok(index)
         } else {
-            return_errno_with_message!(Errno::ENXIO, "the VT index is out of range");
+            Err(errno!(ENXIO, "the VT index is out of range"))
         }
     }
 }

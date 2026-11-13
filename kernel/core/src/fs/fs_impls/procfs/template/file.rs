@@ -111,11 +111,11 @@ impl<F: ProcFileOps + 'static> Inode for ProcFile<F> {
         _target: &str,
         _mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EINVAL))
+        Err(errno!(EINVAL))
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {
-        Err(Error::new(Errno::EINVAL))
+        Err(errno!(EINVAL))
     }
 
     fn seek_end(&self) -> Option<usize> {
@@ -142,7 +142,7 @@ pub(in procfs) trait ProcFileOps: Sync + Send {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize>;
 
     fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
-        return_errno_with_message!(Errno::EPERM, "the file is not writable");
+        Err(errno!(EPERM, "the file is not writable"))
     }
 
     fn open(
@@ -203,7 +203,7 @@ pub(in procfs) fn read_i32_from(reader: &mut VmReader) -> Result<(i32, usize)> {
         .ok()
         .map(|str| str.trim())
         .and_then(|str| str.parse::<i32>().ok())
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the value is not a valid integer"))?;
+        .ok_or_else(|| errno!(EINVAL, "the value is not a valid integer"))?;
 
     Ok((val, read_bytes))
 }
@@ -222,7 +222,7 @@ pub(in procfs) fn read_u64_from(reader: &mut VmReader) -> Result<(u64, usize)> {
         .ok()
         .map(|str| str.trim())
         .and_then(|str| str.parse::<u64>().ok())
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the value is not a valid integer"))?;
+        .ok_or_else(|| errno!(EINVAL, "the value is not a valid integer"))?;
 
     Ok((val, read_bytes))
 }

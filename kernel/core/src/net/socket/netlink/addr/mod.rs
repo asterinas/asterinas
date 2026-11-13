@@ -59,10 +59,10 @@ impl TryFrom<SocketAddr> for NetlinkSocketAddr {
     fn try_from(value: SocketAddr) -> Result<Self> {
         match value {
             SocketAddr::Netlink(addr) => Ok(addr),
-            _ => return_errno_with_message!(
-                Errno::EAFNOSUPPORT,
+            _ => Err(errno!(
+                EAFNOSUPPORT,
                 "the address is in an unsupported address family"
-            ),
+            )),
         }
     }
 }

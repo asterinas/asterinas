@@ -23,7 +23,7 @@ pub(super) fn sys_setgroups(
     ))?;
 
     if size > NGROUPS_MAX {
-        return_errno_with_message!(Errno::EINVAL, "size cannot be greater than NGROUPS_MAX");
+        return Err(errno!(EINVAL, "size cannot be greater than NGROUPS_MAX"));
     }
 
     let mut new_groups = BTreeSet::new();

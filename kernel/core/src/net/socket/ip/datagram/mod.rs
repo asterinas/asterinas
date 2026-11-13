@@ -100,10 +100,7 @@ impl DatagramSocket {
             remote,
             || {
                 let remote_endpoint = remote.ok_or_else(|| {
-                    Error::with_message(
-                        Errno::EDESTADDRREQ,
-                        "the destination address is not specified",
-                    )
+                    errno!(EDESTADDRREQ, "the destination address is not specified",)
                 })?;
                 self.inner
                     .write()
@@ -158,10 +155,10 @@ impl Socket for DatagramSocket {
         let endpoint = map_unspecified_to_localhost(socket_addr.try_into()?);
         let can_broadcast = self.options.read().socket.broadcast();
         if !can_broadcast && is_broadcast_endpoint(&endpoint) {
-            return_errno_with_message!(
-                Errno::EACCES,
+            return Err(errno!(
+                EACCES,
                 "connecting to a broadcast address without SO_BROADCAST is not allowed"
-            );
+            ));
         }
 
         self.inner.write().connect(&endpoint, &self.pollee)
@@ -178,10 +175,11 @@ impl Socket for DatagramSocket {
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
-        let endpoint =
-            *self.inner.read().peer_addr().ok_or_else(|| {
-                Error::with_message(Errno::ENOTCONN, "the socket is not connected")
-            })?;
+        let endpoint = *self
+            .inner
+            .read()
+            .peer_addr()
+            .ok_or_else(|| errno!(ENOTCONN, "the socket is not connected"))?;
 
         Ok(endpoint.into())
     }
@@ -210,10 +208,10 @@ impl Socket for DatagramSocket {
         if let Some(endpoint) = endpoint.as_ref() {
             let can_broadcast = self.options.read().socket.broadcast();
             if !can_broadcast && is_broadcast_endpoint(endpoint) {
-                return_errno_with_message!(
-                    Errno::EACCES,
+                return Err(errno!(
+                    EACCES,
                     "sending to a broadcast address without SO_BROADCAST is not allowed"
-                );
+                ));
             }
         }
 
@@ -343,9 +341,9 @@ impl SetSocketLevelOption for (&Inner<UnboundDatagram, BoundDatagram>, &SocketTi
 
 impl SetIpLevelOption for Inner<UnboundDatagram, BoundDatagram> {
     fn set_hdrincl(&self, _hdrincl: bool) -> Result<()> {
-        return_errno_with_message!(
-            Errno::ENOPROTOOPT,
+        Err(errno!(
+            ENOPROTOOPT,
             "IP_HDRINCL cannot be set on UDP sockets"
-        );
+        ))
     }
 }

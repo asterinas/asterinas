@@ -122,14 +122,14 @@ impl DrmFile {
                     self.minor_type(),
                     raw_ioctl.cmd()
                 );
-                return_errno_with_message!(Errno::ENOTTY, "the DRM ioctl command is unknown")
+                Err(errno!(ENOTTY, "the DRM ioctl command is unknown"))
             }
         })
     }
 
     fn check_gem_ioctl_access(&self, required_access: DrmIoctlAccess) -> Result<()> {
         if self.device().as_gem_ops().is_none() {
-            return_errno_with_message!(Errno::EOPNOTSUPP, "the DRM device does not support GEM");
+            return Err(errno!(EOPNOTSUPP, "the DRM device does not support GEM"));
         }
 
         self.check_ioctl_access(required_access)
@@ -137,7 +137,7 @@ impl DrmFile {
 
     fn check_kms_ioctl_access(&self, required_access: DrmIoctlAccess) -> Result<()> {
         if self.device().as_kms_ops().is_none() {
-            return_errno_with_message!(Errno::EOPNOTSUPP, "the DRM device does not support KMS");
+            return Err(errno!(EOPNOTSUPP, "the DRM device does not support KMS"));
         }
 
         self.check_ioctl_access(required_access)
@@ -147,27 +147,27 @@ impl DrmFile {
         match self.minor_type() {
             DrmMinorType::Primary => {
                 if required_access.contains(DrmIoctlAccess::AUTH) && !self.is_authenticated() {
-                    return_errno_with_message!(
-                        Errno::EACCES,
+                    return Err(errno!(
+                        EACCES,
                         "the DRM ioctl requires an authenticated primary client"
-                    );
+                    ));
                 }
             }
             DrmMinorType::Render => {
                 if !required_access.contains(DrmIoctlAccess::RENDER_ALLOW) {
-                    return_errno_with_message!(
-                        Errno::EACCES,
+                    return Err(errno!(
+                        EACCES,
                         "the DRM ioctl is not allowed on a render node"
-                    );
+                    ));
                 }
             }
         }
 
         if required_access.contains(DrmIoctlAccess::ROOT_ONLY) && !has_current_sys_admin() {
-            return_errno_with_message!(Errno::EACCES, "the DRM ioctl requires CAP_SYS_ADMIN");
+            return Err(errno!(EACCES, "the DRM ioctl requires CAP_SYS_ADMIN"));
         }
         if required_access.contains(DrmIoctlAccess::MASTER) && !self.is_master() {
-            return_errno_with_message!(Errno::EACCES, "the DRM client is not the current master");
+            return Err(errno!(EACCES, "the DRM client is not the current master"));
         }
 
         Ok(())

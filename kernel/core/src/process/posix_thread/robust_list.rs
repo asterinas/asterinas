@@ -136,10 +136,10 @@ const FUTEX_TID_MASK: u32 = 0x3FFF_FFFF;
 /// If the futex is owned by another thread, the operation is canceled.
 pub(crate) fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
     if !futex_addr.is_multiple_of(align_of::<u32>()) {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "the futex word is not aligned on a four-byte boundary"
-        );
+        ));
     }
 
     let task = Task::current().unwrap();

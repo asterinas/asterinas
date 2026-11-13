@@ -33,9 +33,9 @@ impl ProcFileOps for NrOpenFileOps {
 
     fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
         warn!("writing to `/proc/sys/fs/nr_open` is not supported");
-        return_errno_with_message!(
-            Errno::EOPNOTSUPP,
+        Err(errno!(
+            EOPNOTSUPP,
             "writing to `/proc/sys/fs/nr_open` is not supported"
-        );
+        ))
     }
 }

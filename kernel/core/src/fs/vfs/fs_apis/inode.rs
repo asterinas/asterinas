@@ -357,7 +357,7 @@ pub trait FileOps {
 
     /// Reads directory entries from the given offset.
     fn readdir_at(&self, _offset: usize, _visitor: &mut dyn DirentVisitor) -> Result<usize> {
-        return_errno_with_message!(Errno::ENOTDIR, "readdir is not supported");
+        Err(errno!(ENOTDIR, "readdir is not supported"))
     }
 }
 
@@ -450,7 +450,7 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         type_: InodeType,
         mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::ENOTDIR))
+        Err(errno!(ENOTDIR))
     }
 
     /// Creates a symbolic-link child inode.
@@ -461,7 +461,7 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         target: &str,
         mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EOPNOTSUPP))
+        Err(errno!(EOPNOTSUPP))
     }
 
     /// Creates an unnamed temporary inode.
@@ -471,7 +471,7 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         mode: InodeMode,
         hard_linkability: HardLinkability,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EOPNOTSUPP))
+        Err(errno!(EOPNOTSUPP))
     }
 
     /// Creates a device or named-pipe inode.
@@ -482,7 +482,7 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         mode: InodeMode,
         type_: MknodType,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::ENOTDIR))
+        Err(errno!(ENOTDIR))
     }
 
     /// Opens a file for this inode if supported.
@@ -497,22 +497,22 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
 
     /// Creates a hard link to an existing inode.
     fn link(&self, self_dentry: &Dentry, old_dentry: &Dentry, name: &str) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
+        Err(errno!(ENOTDIR))
     }
 
     /// Removes the specified child directory entry from this directory.
     fn unlink(&self, child_dentry: &Dentry) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
+        Err(errno!(ENOTDIR))
     }
 
     /// Removes the specified child directory from this directory.
     fn rmdir(&self, child_dentry: &Dentry) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
+        Err(errno!(ENOTDIR))
     }
 
     /// Looks up a child inode by name.
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::ENOTDIR))
+        Err(errno!(ENOTDIR))
     }
 
     /// Renames or moves a child entry, optionally replacing an existing inode.
@@ -524,12 +524,12 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()> {
-        Err(Error::new(Errno::ENOTDIR))
+        Err(errno!(ENOTDIR))
     }
 
     /// Reads the target of a symbolic link.
     fn read_link(&self) -> Result<SymbolicLink> {
-        Err(Error::new(Errno::EISDIR))
+        Err(errno!(EISDIR))
     }
 
     /// Flushes inode data and metadata according to the requested synchronization mode.
@@ -540,7 +540,7 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
     /// Manipulates a range of space of the file according to the specified allocate mode,
     /// the manipulated range starts at `offset` and continues for `len` bytes.
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        return_errno!(Errno::EOPNOTSUPP);
+        Err(errno!(EOPNOTSUPP))
     }
 
     /// Returns the filesystem containing this inode.
@@ -617,22 +617,22 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
         value_reader: &mut VmReader,
         flags: XattrSetFlags,
     ) -> Result<()> {
-        Err(Error::new(Errno::EOPNOTSUPP))
+        Err(errno!(EOPNOTSUPP))
     }
 
     /// Reads an extended attribute value into the supplied writer.
     fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::new(Errno::EOPNOTSUPP))
+        Err(errno!(EOPNOTSUPP))
     }
 
     /// Lists the extended attributes in the specified namespace.
     fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::new(Errno::EOPNOTSUPP))
+        Err(errno!(EOPNOTSUPP))
     }
 
     /// Removes an extended attribute from this inode.
     fn remove_xattr(&self, self_dentry: &Dentry, _name: XattrName) -> Result<()> {
-        Err(Error::new(Errno::EOPNOTSUPP))
+        Err(errno!(EOPNOTSUPP))
     }
 
     /// Used to check for read/write/execute permissions on a file.
@@ -669,10 +669,10 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
                     {
                         perm -= Permission::MAY_EXEC;
                     } else {
-                        return_errno_with_message!(
-                            Errno::EACCES,
+                        return Err(errno!(
+                            EACCES,
                             "root execute permission denied: no execute bits set"
-                        );
+                        ));
                     }
                 }
             }
@@ -683,20 +683,20 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
                 || (perm.may_write() && !mode.is_owner_writable())
                 || (perm.may_exec() && !mode.is_owner_executable())
             {
-                return_errno_with_message!(Errno::EACCES, "owner permission check failed");
+                return Err(errno!(EACCES, "owner permission check failed"));
             }
         } else if creds.has_group_for_fs_access(metadata.gid) {
             if (perm.may_read() && !mode.is_group_readable())
                 || (perm.may_write() && !mode.is_group_writable())
                 || (perm.may_exec() && !mode.is_group_executable())
             {
-                return_errno_with_message!(Errno::EACCES, "group permission check failed");
+                return Err(errno!(EACCES, "group permission check failed"));
             }
         } else if (perm.may_read() && !mode.is_other_readable())
             || (perm.may_write() && !mode.is_other_writable())
             || (perm.may_exec() && !mode.is_other_executable())
         {
-            return_errno_with_message!(Errno::EACCES, "other permission check failed");
+            return Err(errno!(EACCES, "other permission check failed"));
         }
 
         Ok(())

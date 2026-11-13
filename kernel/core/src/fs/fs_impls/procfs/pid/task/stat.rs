@@ -123,7 +123,7 @@ impl ProcFileOps for StatFileOps {
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let Some((thread, process)) = self.dir.thread_and_process() else {
-            return_errno_with_message!(Errno::ESRCH, "the thread or the process does not exist");
+            return Err(errno!(ESRCH, "the thread or the process does not exist"));
         };
         let posix_thread = thread.as_posix_thread().unwrap();
 

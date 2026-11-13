@@ -19,7 +19,7 @@ pub(super) fn read_uts_field(addr: Vaddr, len: usize, ctx: &Context) -> Result<U
     // Therefore, the user-provided buffer length cannot exceed
     // `UtsField::MAX_BYTES` to ensure space for the terminating nul byte.
     if len > UtsField::MAX_BYTES {
-        return_errno_with_message!(Errno::EINVAL, "the UTS name is too long");
+        return Err(errno!(EINVAL, "the UTS name is too long"));
     }
 
     let user_space = ctx.user_space();

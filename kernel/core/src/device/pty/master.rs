@@ -142,7 +142,7 @@ impl FileOps for PtyMaster {
 
 impl PerOpenFileOps for PtyMaster {
     fn check_seekable(&self) -> Result<()> {
-        return_errno_with_message!(Errno::ESPIPE, "the inode is a pty");
+        Err(errno!(ESPIPE, "the inode is a pty"))
     }
 
     fn is_offset_aware(&self) -> bool {
@@ -231,7 +231,7 @@ impl PerOpenFileOps for PtyMaster {
                     return Ok(0);
                 }
 
-                return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown");
+                return Err(errno!(ENOTTY, "the ioctl command is unknown"));
             }
         });
 

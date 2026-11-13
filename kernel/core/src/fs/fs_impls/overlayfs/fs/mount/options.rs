@@ -97,10 +97,10 @@ enum FsyncMode {
 impl MountOptions {
     pub(super) fn parse(args: Option<&str>, fs_flags: FsFlags) -> Result<Self> {
         let Some(args) = args else {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the `lowerdir` mount option must be specified"
-            );
+            ));
         };
 
         let mut options = Self {
@@ -135,10 +135,10 @@ impl MountOptions {
         }
 
         if options.lower_dirs.is_empty() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the `lowerdir` mount option must be specified"
-            );
+            ));
         }
         options.verify()?;
         Ok(options)
@@ -150,12 +150,12 @@ impl MountOptions {
                 let value = Self::require_value(value)?;
                 if !self.lower_dirs.is_empty() {
                     if self.is_lowerdir_plus_seen {
-                        return_errno_with_message!(
-                            Errno::EINVAL,
+                        return Err(errno!(
+                            EINVAL,
                             "the `lowerdir+` mount option cannot be combined with `lowerdir`"
-                        );
+                        ));
                     }
-                    return_errno_with_message!(Errno::EINVAL, "duplicate overlay mount option");
+                    return Err(errno!(EINVAL, "duplicate overlay mount option"));
                 }
                 // The colon-separated layer list keeps the first entry topmost.
                 //
@@ -163,19 +163,19 @@ impl MountOptions {
                 // <https://elixir.bootlin.com/linux/v7.0/source/Documentation/filesystems/overlayfs.rst#L350-L364>
                 self.lower_dirs = value.split(':').map(str::to_string).collect();
                 if self.lower_dirs.iter().any(|lower_dir| lower_dir.is_empty()) {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
+                    return Err(errno!(
+                        EINVAL,
                         "the `lowerdir` value contains an empty layer path"
-                    );
+                    ));
                 }
             }
             "lowerdir+" => {
                 let value = Self::require_value(value)?;
                 if !self.lower_dirs.is_empty() && !self.is_lowerdir_plus_seen {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
+                    return Err(errno!(
+                        EINVAL,
                         "the `lowerdir+` mount option cannot be combined with `lowerdir`"
-                    );
+                    ));
                 }
                 self.is_lowerdir_plus_seen = true;
                 self.lower_dirs.push(value.to_string());
@@ -193,10 +193,7 @@ impl MountOptions {
                     "null" => UuidMode::Null,
                     "on" => UuidMode::On,
                     "auto" => UuidMode::Auto,
-                    _ => return_errno_with_message!(
-                        Errno::EINVAL,
-                        "invalid overlay mount option value"
-                    ),
+                    _ => return Err(errno!(EINVAL, "invalid overlay mount option value")),
                 },
             )?,
             "xino" => Self::set_once(
@@ -205,10 +202,7 @@ impl MountOptions {
                     "off" => XinoMode::Off,
                     "auto" => XinoMode::Auto,
                     "on" => XinoMode::On,
-                    _ => return_errno_with_message!(
-                        Errno::EINVAL,
-                        "invalid overlay mount option value"
-                    ),
+                    _ => return Err(errno!(EINVAL, "invalid overlay mount option value")),
                 },
             )?,
             "redirect_dir" => Self::set_once(
@@ -218,10 +212,7 @@ impl MountOptions {
                     "follow" => RedirectDirMode::Follow,
                     "nofollow" => RedirectDirMode::NoFollow,
                     "on" => RedirectDirMode::On,
-                    _ => return_errno_with_message!(
-                        Errno::EINVAL,
-                        "invalid overlay mount option value"
-                    ),
+                    _ => return Err(errno!(EINVAL, "invalid overlay mount option value")),
                 },
             )?,
             "index" => Self::set_once(
@@ -242,10 +233,7 @@ impl MountOptions {
                     "off" => VerityMode::Off,
                     "on" => VerityMode::On,
                     "require" => VerityMode::Require,
-                    _ => return_errno_with_message!(
-                        Errno::EINVAL,
-                        "invalid overlay mount option value"
-                    ),
+                    _ => return Err(errno!(EINVAL, "invalid overlay mount option value")),
                 },
             )?,
             "fsync" => Self::set_once(
@@ -254,10 +242,7 @@ impl MountOptions {
                     "volatile" => FsyncMode::Volatile,
                     "auto" => FsyncMode::Auto,
                     "strict" => FsyncMode::Strict,
-                    _ => return_errno_with_message!(
-                        Errno::EINVAL,
-                        "invalid overlay mount option value"
-                    ),
+                    _ => return Err(errno!(EINVAL, "invalid overlay mount option value")),
                 },
             )?,
             "default_permissions" => {
@@ -268,7 +253,7 @@ impl MountOptions {
             "userxattr" => {
                 Self::require_bare(value)?;
                 if self.xattr_namespace != XattrNamespace::Trusted {
-                    return_errno_with_message!(Errno::EINVAL, "duplicate overlay mount option");
+                    return Err(errno!(EINVAL, "duplicate overlay mount option"));
                 }
                 self.xattr_namespace = XattrNamespace::User;
             }
@@ -283,7 +268,7 @@ impl MountOptions {
                 Self::set_flag_once(&mut self.is_nooverride_creds_seen)?;
             }
             _ => {
-                return_errno_with_message!(Errno::EINVAL, "unknown overlay mount option");
+                return Err(errno!(EINVAL, "unknown overlay mount option"));
             }
         }
         Ok(())
@@ -292,13 +277,13 @@ impl MountOptions {
     /// Returns the non-empty value the entry carried for a key that takes one.
     fn require_value(value: Option<&str>) -> Result<&str> {
         let Some(value) = value else {
-            return_errno_with_message!(Errno::EINVAL, "the overlay mount option requires a value");
+            return Err(errno!(EINVAL, "the overlay mount option requires a value"));
         };
         if value.is_empty() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the overlay mount option requires a non-empty value"
-            );
+            ));
         }
         Ok(value)
     }
@@ -306,10 +291,10 @@ impl MountOptions {
     /// Rejects a value given to a key that takes none.
     fn require_bare(value: Option<&str>) -> Result<()> {
         if value.is_some() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the overlay mount option does not take a value"
-            );
+            ));
         }
         Ok(())
     }
@@ -319,14 +304,14 @@ impl MountOptions {
         match value {
             "on" => Ok(true),
             "off" => Ok(false),
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid overlay mount option value"),
+            _ => Err(errno!(EINVAL, "invalid overlay mount option value")),
         }
     }
 
     /// Stores a key's parsed value, rejecting a second spelling of the key.
     fn set_once<T>(slot: &mut Option<T>, value: T) -> Result<()> {
         if slot.is_some() {
-            return_errno_with_message!(Errno::EINVAL, "duplicate overlay mount option");
+            return Err(errno!(EINVAL, "duplicate overlay mount option"));
         }
         *slot = Some(value);
         Ok(())
@@ -335,7 +320,7 @@ impl MountOptions {
     /// Records a valueless key once.
     fn set_flag_once(flag: &mut bool) -> Result<()> {
         if *flag {
-            return_errno_with_message!(Errno::EINVAL, "duplicate overlay mount option");
+            return Err(errno!(EINVAL, "duplicate overlay mount option"));
         }
         *flag = true;
         Ok(())
@@ -343,48 +328,48 @@ impl MountOptions {
 
     fn verify(&self) -> Result<()> {
         if self.upper_dir.is_some() != self.work_dir.is_some() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the `workdir` mount option is required if and only if `upperdir` is specified"
-            );
+            ));
         }
         if self.xattr_namespace == XattrNamespace::User
             && self
                 .redirect_dir
                 .is_some_and(|mode| mode != RedirectDirMode::NoFollow)
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "conflicting overlay mount options: `userxattr` requires `redirect_dir=nofollow`"
-            );
+            ));
         }
         if self.xattr_namespace == XattrNamespace::User && self.metacopy == Some(true) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "conflicting overlay mount options: `userxattr` and `metacopy=on`"
-            );
+            ));
         }
         if self.metacopy == Some(true)
             && self
                 .redirect_dir
                 .is_some_and(|mode| mode != RedirectDirMode::On)
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "conflicting overlay mount options: `metacopy=on` requires `redirect_dir=on`"
-            );
+            ));
         }
         if self.nfs_export == Some(true) && self.index == Some(false) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "conflicting overlay mount options: `nfs_export=on` and `index=off`"
-            );
+            ));
         }
         if self.nfs_export == Some(true) && self.metacopy == Some(true) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "conflicting overlay mount options: `nfs_export=on` and `metacopy=on`"
-            );
+            ));
         }
 
         if let Some(mode) = self

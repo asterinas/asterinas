@@ -142,7 +142,7 @@ impl ProcDirOps for TidDirOps {
 
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if self.pid_entry().type_().is_none() {
-            return_errno_with_message!(Errno::ENOENT, "the thread or the process does not exist");
+            return Err(errno!(ENOENT, "the thread or the process does not exist"));
         };
 
         self.lookup_static_child(this_dir.this_weak().clone(), name)
@@ -153,7 +153,7 @@ impl ProcDirOps for TidDirOps {
         F: FnMut(ReaddirEntry<'a>) -> Result<()>,
     {
         if self.pid_entry().type_().is_none() {
-            return_errno_with_message!(Errno::ENOENT, "the thread or the process does not exist");
+            return Err(errno!(ENOENT, "the thread or the process does not exist"));
         };
 
         visit_listed_entries(offset, self.static_listed_entries(), visit_fn)
@@ -180,7 +180,7 @@ impl TidDirOps {
             return Ok(child);
         }
 
-        return_errno_with_message!(Errno::ENOENT, "the file does not exist");
+        Err(errno!(ENOENT, "the file does not exist"))
     }
 
     pub(super) fn static_listed_entries(&self) -> impl Iterator<Item = ListedEntry<'_>> + '_ {
@@ -195,7 +195,7 @@ impl ProcDirOps for TaskDirOps {
 
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         let Ok(tid) = name.parse::<Tid>() else {
-            return_errno_with_message!(Errno::ENOENT, "the name is not a valid TID");
+            return Err(errno!(ENOENT, "the name is not a valid TID"));
         };
 
         // Note: After a PID-number recycling mechanism is introduced, there may be a race here:
@@ -209,7 +209,7 @@ impl ProcDirOps for TaskDirOps {
         //
         // TODO: Revisit and handle this potential race as appropriate once PID-number recycling is implemented.
         let Some(process) = self.process() else {
-            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+            return Err(errno!(ESRCH, "the process does not exist"));
         };
 
         // Lock order: PID table -> tasks of process
@@ -223,11 +223,11 @@ impl ProcDirOps for TaskDirOps {
             .iter()
             .any(|task| task.as_posix_thread().unwrap().tid() == tid);
         if !contains_tid {
-            return_errno_with_message!(Errno::ENOENT, "the thread does not exist");
+            return Err(errno!(ENOENT, "the thread does not exist"));
         }
 
         let Some(pid_entry) = pid_table.get_entry(tid) else {
-            return_errno_with_message!(Errno::ENOENT, "the thread does not exist");
+            return Err(errno!(ENOENT, "the thread does not exist"));
         };
 
         Ok(TidDirOps::new_inode(
@@ -241,7 +241,7 @@ impl ProcDirOps for TaskDirOps {
         F: FnMut(ReaddirEntry<'a>) -> Result<()>,
     {
         let Some(process) = self.process() else {
-            return_errno_with_message!(Errno::ENOENT, "the process does not exist");
+            return Err(errno!(ENOENT, "the process does not exist"));
         };
 
         // Collect TIDs before visiting entries, as `visit_fn` may copy data to user memory.

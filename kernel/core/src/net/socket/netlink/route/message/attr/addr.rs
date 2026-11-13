@@ -121,10 +121,10 @@ impl Attribute for AddrAttr {
             }
             (AddrAttrClass::TARGET_NETNSID, _) => {
                 warn!("address attribute `{:?}` contains invalid payload", class);
-                Ok(ContinueAttrRead::skipped_invalid(
-                    Errno::ERANGE,
+                Ok(ContinueAttrRead::SkippedInvalid(errno!(
+                    ERANGE,
                     "the address attribute is invalid",
-                ))
+                )))
             }
             _ => {
                 warn!("address attribute `{:?}` is not supported", class);

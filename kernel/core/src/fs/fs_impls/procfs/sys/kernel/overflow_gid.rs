@@ -45,7 +45,7 @@ impl ProcFileOps for OverflowGidFileOps {
 
         let (value, read_bytes) = read_u64_from(reader)?;
         if value > MAX_OLDGID {
-            return_errno_with_message!(Errno::EINVAL, "the value is not a valid overflow GID");
+            return Err(errno!(EINVAL, "the value is not a valid overflow GID"));
         }
 
         Gid::set_overflow(Gid::new(value as u32));

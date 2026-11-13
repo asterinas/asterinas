@@ -33,7 +33,7 @@ impl AccessMode {
             0 => Ok(Self::O_RDONLY),
             1 => Ok(Self::O_WRONLY),
             2 => Ok(Self::O_RDWR),
-            _ => return_errno_with_message!(Errno::EINVAL, "the bits are not a valid access mode"),
+            _ => Err(errno!(EINVAL, "the bits are not a valid access mode")),
         }
     }
 }

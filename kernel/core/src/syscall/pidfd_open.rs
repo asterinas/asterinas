@@ -12,19 +12,18 @@ use crate::{
 
 pub(super) fn sys_pidfd_open(pid: Pid, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let is_nonblocking = {
-        let flags = PidfdFlags::from_bits(flags)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+        let flags = PidfdFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
         debug!("pid = {}, flags = {:?}", pid, flags);
         flags.contains(PidfdFlags::PIDFD_NONBLOCK)
     };
 
     if pid.cast_signed() <= 0 {
-        return_errno_with_message!(Errno::EINVAL, "non-positive PIDs are not valid");
+        return Err(errno!(EINVAL, "non-positive PIDs are not valid"));
     }
 
     let process = pid_table::pid_table_mut()
         .get_process(pid)
-        .ok_or_else(|| Error::with_message(Errno::ESRCH, "the process does not exist"))?;
+        .ok_or_else(|| errno!(ESRCH, "the process does not exist"))?;
 
     let pid_fd = {
         let pid_file = Arc::new(PidFile::new(process, is_nonblocking));

@@ -18,7 +18,7 @@ pub(super) fn sys_pidfd_getfd(
 ) -> Result<SyscallReturn> {
     // The `flags` argument is reserved for future use. Currently, it must be specified as 0.
     if flags != 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid flags");
+        return Err(errno!(EINVAL, "invalid flags"));
     }
     debug!(
         "pidfd_getfd: pidfd={}, targetfd={}, flags={}",
@@ -28,12 +28,12 @@ pub(super) fn sys_pidfd_getfd(
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, pidfd.try_into()?);
     let Some(pid_file) = file.downcast_ref::<PidFile>() else {
-        return_errno_with_message!(Errno::EBADF, "the file is not a PID file");
+        return Err(errno!(EBADF, "the file is not a PID file"));
     };
 
     let process = pid_file
         .process_opt()
-        .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process has been reaped"))?;
+        .ok_or_else(|| errno!(ESRCH, "the target process has been reaped"))?;
 
     process
         .main_thread()
@@ -49,7 +49,7 @@ pub(super) fn sys_pidfd_getfd(
     let target_file = target_file_table
         .lock()
         .as_ref()
-        .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process has exited"))?
+        .ok_or_else(|| errno!(ESRCH, "the target process has exited"))?
         .read()
         .get_file(targetfd.try_into()?)?
         .clone();

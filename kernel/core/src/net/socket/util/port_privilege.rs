@@ -30,8 +30,8 @@ pub(crate) fn check_port_privilege(port: u16) -> Result<()> {
         return Ok(());
     }
 
-    return_errno_with_message!(
-        Errno::EACCES,
+    Err(errno!(
+        EACCES,
         "only threads with CAP_NET_BIND_SERVICE can bind to privileged ports"
-    );
+    ))
 }

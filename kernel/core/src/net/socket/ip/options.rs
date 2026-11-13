@@ -63,7 +63,7 @@ impl IpOptionSet {
                 let recverr = self.recverr();
                 ip_recverr.set(recverr);
             }
-            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option is unknown"),
+            _ => return Err(errno!(ENOPROTOOPT, "the socket option is unknown")),
         });
 
         Ok(())
@@ -95,10 +95,11 @@ impl IpOptionSet {
                 let recverr = ip_recverr.get().unwrap();
                 self.set_recverr(*recverr);
             }
-            _ => return_errno_with_message!(
-                Errno::ENOPROTOOPT,
-                "the socket option to be set is unknown"
-            ),
+            _ =>
+                return Err(errno!(
+                    ENOPROTOOPT,
+                    "the socket option to be set is unknown"
+                )),
         });
 
         Ok(NeedIfacePoll::FALSE)

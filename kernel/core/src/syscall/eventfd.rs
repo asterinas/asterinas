@@ -20,8 +20,7 @@ pub(super) fn sys_eventfd(init_val: u32, ctx: &Context) -> Result<SyscallReturn>
 
 pub(super) fn sys_eventfd2(init_val: u32, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("raw flags = {}", flags);
-    let flags = EventFileFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;
+    let flags = EventFileFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "unknown flags"))?;
     debug!("init_val = 0x{:x}, flags = {:?}", init_val, flags);
 
     do_sys_eventfd2(init_val, flags, ctx)

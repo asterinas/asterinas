@@ -66,7 +66,7 @@ impl OverlayInode {
             Lookup::Negative(NegativeLookup::HiddenByWhiteout) => {
                 self.create_over_whiteout(fs, name, op, &mut dir_guard)
             }
-            Lookup::Positive(_) => return_errno!(Errno::ESTALE),
+            Lookup::Positive(_) => Err(errno!(ESTALE)),
         }
     }
 
@@ -112,11 +112,11 @@ impl OverlayInode {
         // The opaque marker is written before the swap, so the whiteout is not deleted first.
         if is_directory {
             if !fs.policy().can_store_private_xattr() {
-                return_errno_with_message!(
-                    Errno::EOPNOTSUPP,
+                return Err(errno!(
+                    EOPNOTSUPP,
                     "the upper filesystem cannot store the opaque marker \
                      required for a directory over a whiteout"
-                );
+                ));
             }
             OverlayXattrType::Opaque.set_value_on(
                 temp.dentry(),

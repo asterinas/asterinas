@@ -13,7 +13,7 @@ pub(super) fn sys_setpgid(pid: Pid, pgid: Pgid, ctx: &Context) -> Result<Syscall
     // <https://www.man7.org/linux/man-pages/man2/setpgid.2.html>.
 
     if pid.cast_signed() < 0 || pgid.cast_signed() < 0 {
-        return_errno_with_message!(Errno::EINVAL, "negative PIDs or PGIDs are not valid");
+        return Err(errno!(EINVAL, "negative PIDs or PGIDs are not valid"));
     }
 
     // "If `pid` is zero, then the process ID of the calling process is used."

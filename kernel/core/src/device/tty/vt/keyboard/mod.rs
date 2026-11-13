@@ -139,9 +139,7 @@ impl VtKeyboard {
     pub(super) fn set_mode(&mut self, mode: KeyboardMode) -> Result<()> {
         match mode {
             // TODO: Add support for Raw mode.
-            KeyboardMode::Raw => {
-                return_errno_with_message!(Errno::EINVAL, "the keyboard mode is not supported")
-            }
+            KeyboardMode::Raw => Err(errno!(EINVAL, "the keyboard mode is not supported")),
             KeyboardMode::Xlate
             | KeyboardMode::MediumRaw
             | KeyboardMode::Unicode

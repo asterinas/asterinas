@@ -78,10 +78,10 @@ impl OverlayFs {
         let mut parent_dentry = dentry.parent();
         let mut publication_parent = loop {
             let Some(parent) = parent_dentry else {
-                return_errno_with_message!(
-                    Errno::EIO,
+                return Err(errno!(
+                    EIO,
                     "the copy-up operation dentry has no overlay parent"
-                );
+                ));
             };
             let parent_object = Arc::downcast::<OverlayInode>(parent.inode().clone())
                 .expect("the copy-up publication parent is not an overlay inode");
@@ -112,7 +112,7 @@ impl OverlayFs {
         name: &str,
     ) -> Result<()> {
         if self.policy().is_effective_read_only() {
-            return_errno_with_message!(Errno::EROFS, "the overlay mount is read-only");
+            return Err(errno!(EROFS, "the overlay mount is read-only"));
         }
         self.promote_level(publication_parent, promoted_object, name)
     }
@@ -130,16 +130,16 @@ impl OverlayFs {
 
         // Both latches are read under both locks; a set latch fails the round before it stages.
         if promoted_object.is_name_taken() {
-            return_errno_with_message!(
-                Errno::ENOENT,
+            return Err(errno!(
+                ENOENT,
                 "the copy-up target name was taken away before the promotion round"
-            );
+            ));
         }
         if publication_parent.is_name_taken() {
-            return_errno_with_message!(
-                Errno::ENOENT,
+            return Err(errno!(
+                ENOENT,
                 "the copy-up publication parent is no longer reachable"
-            );
+            ));
         }
 
         // Resolved before staging so a failed probe can never leave a workdir temp behind.
@@ -159,10 +159,10 @@ impl OverlayFs {
             }
             (None, Some(_)) => return Ok(()),
             (Some(_), _) => {
-                return_errno_with_message!(
-                    Errno::ESTALE,
+                return Err(errno!(
+                    ESTALE,
                     "the promotion name is already held in the upper"
-                );
+                ));
             }
             (None, None) => {}
         }
@@ -252,10 +252,10 @@ impl OverlayInode {
                 let target = match source.real_inode().read_link()? {
                     SymbolicLink::Plain(target) => target,
                     SymbolicLink::Path(_) => {
-                        return_errno_with_message!(
-                            Errno::EOPNOTSUPP,
+                        return Err(errno!(
+                            EOPNOTSUPP,
                             "a path-style symlink target cannot be copied up"
-                        );
+                        ));
                     }
                 };
                 upper_workdir.create_workdir_temp(
@@ -278,10 +278,7 @@ impl OverlayInode {
                             .metadata()?
                             .self_dev_id
                             .ok_or_else(|| {
-                                Error::with_message(
-                                    Errno::EINVAL,
-                                    "the lower char device has no device ID",
-                                )
+                                errno!(EINVAL, "the lower char device has no device ID",)
                             })?
                             .as_encoded_u64();
                         MknodType::CharDevice(rdev)
@@ -292,19 +289,13 @@ impl OverlayInode {
                             .metadata()?
                             .self_dev_id
                             .ok_or_else(|| {
-                                Error::with_message(
-                                    Errno::EINVAL,
-                                    "the lower block device has no device ID",
-                                )
+                                errno!(EINVAL, "the lower block device has no device ID",)
                             })?
                             .as_encoded_u64();
                         MknodType::BlockDevice(rdev)
                     }
                     _ => {
-                        return_errno_with_message!(
-                            Errno::EOPNOTSUPP,
-                            "socket nodes cannot be copied up"
-                        );
+                        return Err(errno!(EOPNOTSUPP, "socket nodes cannot be copied up"));
                     }
                 };
                 let mode = source.real_inode().mode()?;
@@ -317,10 +308,10 @@ impl OverlayInode {
                 )?
             }
             InodeType::Unknown => {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "overlay objects of an unknown type cannot be promoted"
-                );
+                ));
             }
         };
         Ok(temp)

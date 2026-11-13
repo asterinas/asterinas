@@ -153,10 +153,10 @@ impl Pause for Waiter {
             };
 
             if has_pending {
-                return_errno_with_message!(
-                    Errno::EINTR,
+                return Err(errno!(
+                    EINTR,
                     "the current thread is interrupted by a signal"
-                );
+                ));
             }
             Ok(())
         };
@@ -186,10 +186,10 @@ impl Pause for Waiter {
             // Check `has_pending` after `set_signalled_waker` to avoid race conditions.
             if posix_thread.has_pending() {
                 posix_thread.clear_signalled_waker();
-                return_errno_with_message!(
-                    Errno::EINTR,
+                return Err(errno!(
+                    EINTR,
                     "the current thread is interrupted by a signal"
-                );
+                ));
             }
 
             self.wait();
@@ -202,7 +202,7 @@ impl Pause for Waiter {
         if let Some(timer) = timer {
             let mut timer_guard = timer.lock();
             if timer_guard.remain().is_zero() {
-                return_errno_with_message!(Errno::ETIME, "the time limit is reached");
+                return Err(errno!(ETIME, "the time limit is reached"));
             }
             // If the timeout is not expired, cancel the timer manually.
             timer_guard.cancel();
@@ -212,10 +212,10 @@ impl Pause for Waiter {
             .as_ref()
             .is_some_and(|posix_thread| posix_thread.has_pending())
         {
-            return_errno_with_message!(
-                Errno::EINTR,
+            return Err(errno!(
+                EINTR,
                 "the current thread is interrupted by a signal"
-            );
+            ));
         }
 
         Ok(())

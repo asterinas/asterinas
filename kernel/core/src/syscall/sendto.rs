@@ -40,7 +40,7 @@ pub(super) fn sys_sendto(
         .sendmsg(&mut reader, message_header, flags)
         .map_err(|err| match err.error() {
             // FIXME: `sendto` should not be restarted if a timeout has been set on the socket using `setsockopt`.
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            Errno::EINTR => errno!(ERESTARTSYS),
             _ => err,
         })?;
 

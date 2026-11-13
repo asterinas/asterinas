@@ -46,9 +46,9 @@ struct Message {
 impl MessageQueue {
     /// Looks up a message queue bound to the specific address in the global table.
     pub(super) fn lookup_bound(addr: &UnixSocketAddrKey) -> Result<Arc<MessageQueue>> {
-        QUEUE_TABLE.get_queue(addr).ok_or_else(|| {
-            Error::with_message(Errno::ECONNREFUSED, "the target socket does not exist")
-        })
+        QUEUE_TABLE
+            .get_queue(addr)
+            .ok_or_else(|| errno!(ECONNREFUSED, "the target socket does not exist"))
     }
 
     pub(super) fn try_send(
@@ -59,21 +59,21 @@ impl MessageQueue {
     ) -> Result<usize> {
         let mut inner = self.inner.lock();
         let Some(inner) = inner.as_mut() else {
-            return_errno_with_message!(Errno::ECONNREFUSED, "the target socket is closed");
+            return Err(errno!(ECONNREFUSED, "the target socket is closed"));
         };
         if inner.is_shutdown {
-            return_errno_with_message!(Errno::EPIPE, "the target socket is shut down");
+            return Err(errno!(EPIPE, "the target socket is shut down"));
         }
 
         let len = reader.sum_lens();
         if len > UNIX_DATAGRAM_DEFAULT_BUF_SIZE {
-            return_errno_with_message!(Errno::EMSGSIZE, "the message is too large");
+            return Err(errno!(EMSGSIZE, "the message is too large"));
         }
         if UNIX_DATAGRAM_DEFAULT_BUF_SIZE - inner.total_length < len {
-            return_errno_with_message!(
-                Errno::EAGAIN,
+            return Err(errno!(
+                EAGAIN,
                 "the receive buffer does not have enough space"
-            );
+            ));
         }
 
         let msg = {
@@ -118,7 +118,7 @@ impl MessageQueue {
                 timeout.as_ref(),
             )
             .map_err(|err| match err.error() {
-                Errno::ETIME => Error::with_message(Errno::EAGAIN, "the socket timeout expired"),
+                Errno::ETIME => errno!(EAGAIN, "the socket timeout expired"),
                 _ => err,
             })?
     }
@@ -183,7 +183,7 @@ impl MessageReceiver {
 
         let Some(msg) = inner.messages.front() else {
             if !inner.is_shutdown {
-                return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty");
+                return Err(errno!(EAGAIN, "the receive buffer is empty"));
             } else {
                 return Ok((
                     RecvOutput::new_for_packet(flags, 0, 0),

@@ -16,8 +16,7 @@ pub(super) fn sys_unlinkat(
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let flags = UnlinkFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let flags = UnlinkFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
     if flags.contains(UnlinkFlags::AT_REMOVEDIR) {
         return super::rmdir::do_rmdirat(dirfd, path_addr, ctx);
     }
@@ -42,12 +41,12 @@ pub(super) fn sys_unlinkat(
         if path_name.ends_with('/') {
             let target = path_resolver.lookup_at_path(&dir_path, target_name)?;
             if target.type_() == InodeType::Dir {
-                return_errno_with_message!(Errno::EISDIR, "a directory cannot be unlinked");
+                return Err(errno!(EISDIR, "a directory cannot be unlinked"));
             } else {
-                return_errno_with_message!(
-                    Errno::ENOTDIR,
+                return Err(errno!(
+                    ENOTDIR,
                     "the path ends with a slash but is not a directory"
-                );
+                ));
             }
         }
 

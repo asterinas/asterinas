@@ -18,7 +18,7 @@ pub(crate) fn parse_shebang_line(file_first_page: &[u8]) -> Result<Option<Vec<CS
     }
 
     let Some(first_line_len) = file_first_page.iter().position(|&c| c == b'\n') else {
-        return_errno_with_message!(Errno::ENOEXEC, "the shebang line is too long");
+        return Err(errno!(ENOEXEC, "the shebang line is too long"));
     };
 
     // Skip `#!`.
@@ -29,14 +29,13 @@ pub(crate) fn parse_shebang_line(file_first_page: &[u8]) -> Result<Option<Vec<CS
             continue;
         }
 
-        let arg = CString::new(arg).map_err(|_| {
-            Error::with_message(Errno::ENOEXEC, "unexpected nul terminator is found")
-        })?;
+        let arg =
+            CString::new(arg).map_err(|_| errno!(ENOEXEC, "unexpected nul terminator is found"))?;
         shebang_argv.push(arg);
     }
 
     if shebang_argv.is_empty() {
-        return_errno_with_message!(Errno::ENOEXEC, "no interpreter program is found");
+        return Err(errno!(ENOEXEC, "no interpreter program is found"));
     }
 
     Ok(Some(shebang_argv))

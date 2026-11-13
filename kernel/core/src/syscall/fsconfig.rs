@@ -19,16 +19,15 @@ pub(super) fn sys_fsconfig(
     aux: i32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let fs_fd = FileDesc::try_from(fs_fd)
-        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid fsconfig fd"))?;
+    let fs_fd = FileDesc::try_from(fs_fd).map_err(|_| errno!(EINVAL, "invalid fsconfig fd"))?;
     let cmd = FsConfigOps::try_from(cmd)
-        .map_err(|_| Error::with_message(Errno::EOPNOTSUPP, "unsupported fsconfig command"))?;
+        .map_err(|_| errno!(EOPNOTSUPP, "unsupported fsconfig command"))?;
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fs_fd);
     let fs_config = file
         .downcast_ref::<FsConfigFile>()
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not a fs context"))?;
+        .ok_or_else(|| errno!(EINVAL, "the file is not a fs context"))?;
 
     match cmd {
         FsConfigOps::SetFlag => {
@@ -46,15 +45,15 @@ pub(super) fn sys_fsconfig(
         }
         FsConfigOps::SetBinary => {
             ensure_valid_args(key_addr != 0 && value_addr != 0 && aux > 0)?;
-            return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported fsconfig command");
+            return Err(errno!(EOPNOTSUPP, "unsupported fsconfig command"));
         }
         FsConfigOps::SetPath | FsConfigOps::SetPathEmpty => {
             ensure_valid_args(key_addr != 0 && value_addr != 0 && aux >= 0)?;
-            return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported fsconfig command");
+            return Err(errno!(EOPNOTSUPP, "unsupported fsconfig command"));
         }
         FsConfigOps::SetFd => {
             ensure_valid_args(key_addr != 0 && value_addr == 0 && aux >= 0)?;
-            return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported fsconfig command");
+            return Err(errno!(EOPNOTSUPP, "unsupported fsconfig command"));
         }
         FsConfigOps::Create => {
             ensure_valid_args(key_addr == 0 && value_addr == 0 && aux == 0)?;
@@ -63,7 +62,7 @@ pub(super) fn sys_fsconfig(
         }
         FsConfigOps::CreateExcl => {
             ensure_valid_args(key_addr == 0 && value_addr == 0 && aux == 0)?;
-            return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported fsconfig command");
+            return Err(errno!(EOPNOTSUPP, "unsupported fsconfig command"));
         }
         FsConfigOps::Reconfigure => {
             ensure_valid_args(key_addr == 0 && value_addr == 0 && aux == 0)?;
@@ -77,7 +76,7 @@ pub(super) fn sys_fsconfig(
 
 fn ensure_valid_args(valid: bool) -> Result<()> {
     if !valid {
-        return_errno_with_message!(Errno::EINVAL, "invalid fsconfig arguments");
+        return Err(errno!(EINVAL, "invalid fsconfig arguments"));
     }
     Ok(())
 }

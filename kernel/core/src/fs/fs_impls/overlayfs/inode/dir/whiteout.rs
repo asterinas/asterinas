@@ -143,8 +143,8 @@ impl UpperWorkdirInuse {
                 OverlayXattrType::Whiteout.set_value_on(temp.dentry(), namespace, None)?;
                 Ok(temp.into_whiteout())
             }
-            WhiteoutCapability::Unsupported => Err(Error::with_message(
-                Errno::EOPNOTSUPP,
+            WhiteoutCapability::Unsupported => Err(errno!(
+                EOPNOTSUPP,
                 "the upper filesystem supports no whiteout form",
             )),
         }
@@ -247,10 +247,10 @@ impl OverlayFs {
             Err(err) => return Err(err),
         };
         if !holds_whiteout {
-            return_errno_with_message!(
-                Errno::EIO,
+            return Err(errno!(
+                EIO,
                 "the cleared name no longer holds the whiteout the exchange displaced"
-            );
+            ));
         }
         upper_dir.unlink(name)?;
         Ok(())
@@ -280,10 +280,10 @@ impl OverlayFs {
         for name in names {
             let child = dir.lookup_child(name)?;
             if !self.is_whiteout(&child)? {
-                return_errno_with_message!(
-                    Errno::ENOTEMPTY,
+                return Err(errno!(
+                    ENOTEMPTY,
                     "a hidden non-whiteout entry prevents the overlay directory removal"
-                );
+                ));
             }
         }
         Ok(())

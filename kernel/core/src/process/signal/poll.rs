@@ -369,7 +369,7 @@ pub trait Pollable {
 
         // Fast path: Return immediately if the timeout is zero.
         if timeout.is_some_and(|duration| duration.is_zero()) {
-            return_errno_with_message!(Errno::ETIME, "the timeout expired");
+            return Err(errno!(ETIME, "the timeout expired"));
         }
 
         // Create the poller and register to wait for the events.

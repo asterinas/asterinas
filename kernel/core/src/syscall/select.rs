@@ -52,7 +52,7 @@ pub(super) fn do_sys_select(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     if nfds < 0 || nfds as usize > FD_SETSIZE {
-        return_errno_with_message!(Errno::EINVAL, "nfds is negative or exceeds the FD_SETSIZE");
+        return Err(errno!(EINVAL, "nfds is negative or exceeds the FD_SETSIZE"));
     }
 
     let user_space = ctx.user_space();
@@ -201,7 +201,7 @@ fn convert_rwe_to_events(readable: bool, writable: bool, except: bool) -> IoEven
 /// according to Linux's behavior.
 fn convert_events_to_rwe(events: IoEvents) -> Result<(bool, bool, bool)> {
     if events.contains(IoEvents::NVAL) {
-        return_errno_with_message!(Errno::EBADF, "the file descriptor is invalid");
+        return Err(errno!(EBADF, "the file descriptor is invalid"));
     }
 
     let readable = events.intersects(IoEvents::IN | IoEvents::HUP | IoEvents::ERR);
@@ -224,7 +224,7 @@ impl FdSet {
     pub(crate) fn set(&mut self, fd: RawFileDesc) -> Result<()> {
         let fd = fd as usize;
         if fd >= FD_SETSIZE {
-            return_errno_with_message!(Errno::EINVAL, "fd exceeds FD_SETSIZE");
+            return Err(errno!(EINVAL, "fd exceeds FD_SETSIZE"));
         }
         self.fds_bits[fd / USIZE_BITS] |= 1 << (fd % USIZE_BITS);
         Ok(())
@@ -235,7 +235,7 @@ impl FdSet {
     pub(crate) fn unset(&mut self, fd: RawFileDesc) -> Result<()> {
         let fd = fd as usize;
         if fd >= FD_SETSIZE {
-            return_errno_with_message!(Errno::EINVAL, "fd exceeds FD_SETSIZE");
+            return Err(errno!(EINVAL, "fd exceeds FD_SETSIZE"));
         }
         self.fds_bits[fd / USIZE_BITS] &= !(1 << (fd % USIZE_BITS));
         Ok(())

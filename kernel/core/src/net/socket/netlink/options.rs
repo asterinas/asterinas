@@ -33,7 +33,7 @@ impl NetlinkOptionSet {
             strict @ StrictCheck => {
                 strict.set(self.strict_check);
             }
-            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option is unknown"),
+            _ => return Err(errno!(ENOPROTOOPT, "the socket option is unknown")),
         });
         Ok(())
     }

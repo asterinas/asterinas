@@ -351,10 +351,10 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
             }
             Some(MappableObject::Device(mappable)) => {
                 if !map_mode.is_shared() {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
+                    return Err(errno!(
+                        EINVAL,
                         "private device mappings are not yet supported"
-                    );
+                    ));
                 }
 
                 // Note that `MappedMemory::Anonymous` is temporary. This will
@@ -410,15 +410,15 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
         debug_assert!(self.align.is_multiple_of(PAGE_SIZE));
         debug_assert!(self.align.is_power_of_two());
         if !self.align.is_multiple_of(PAGE_SIZE) || !self.align.is_power_of_two() {
-            return_errno_with_message!(Errno::EINVAL, "invalid align");
+            return Err(errno!(EINVAL, "invalid align"));
         }
         debug_assert!(self.size.is_multiple_of(self.align));
         if !self.size.is_multiple_of(self.align) {
-            return_errno_with_message!(Errno::EINVAL, "invalid mapping size");
+            return Err(errno!(EINVAL, "invalid mapping size"));
         }
         debug_assert!(self.vmo_offset.is_multiple_of(self.align));
         if !self.vmo_offset.is_multiple_of(self.align) {
-            return_errno_with_message!(Errno::EINVAL, "invalid VMO offset");
+            return Err(errno!(EINVAL, "invalid VMO offset"));
         }
         match self.offset {
             VmarMapOffset::FixedReplace(offset)
@@ -426,7 +426,7 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
             | VmarMapOffset::Hint(offset) => {
                 debug_assert!(offset.is_multiple_of(self.align));
                 if !offset.is_multiple_of(self.align) {
-                    return_errno_with_message!(Errno::EINVAL, "invalid offset");
+                    return Err(errno!(EINVAL, "invalid offset"));
                 }
             }
             #[cfg(target_arch = "x86_64")]
@@ -435,7 +435,7 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
             VmarMapOffset::Map32Bit(Some(offset)) => {
                 debug_assert!(offset.is_multiple_of(self.align));
                 if !offset.is_multiple_of(self.align) {
-                    return_errno_with_message!(Errno::EINVAL, "invalid offset");
+                    return Err(errno!(EINVAL, "invalid offset"));
                 }
             }
             VmarMapOffset::Any => (),
@@ -448,7 +448,7 @@ impl<'a, 'b> VmarMapOptions<'a, 'b> {
         if !VmPerms::ALL_MAY_PERMS.contains(self.may_perms)
             || !VmPerms::ALL_PERMS.contains(self.perms)
         {
-            return_errno_with_message!(Errno::EACCES, "invalid perms");
+            return Err(errno!(EACCES, "invalid perms"));
         }
 
         let vm_perms = self.perms | self.may_perms;

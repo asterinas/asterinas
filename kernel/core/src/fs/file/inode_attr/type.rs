@@ -43,8 +43,7 @@ impl InodeType {
         if mode == 0 {
             return Ok(Self::File);
         }
-        Self::try_from(mode & TYPE_MASK)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "invalid file type"))
+        Self::try_from(mode & TYPE_MASK).map_err(|_| errno!(EINVAL, "invalid file type"))
     }
 
     pub(crate) fn device_type(&self) -> Option<DeviceType> {

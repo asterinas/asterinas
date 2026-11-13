@@ -311,7 +311,7 @@ impl Vmo {
     fn commit_on_anonymous(&self, page_idx: usize) -> Result<CachePage> {
         let mut locked_pages = self.pages.lock();
         if page_idx >= self.size().div_ceil(PAGE_SIZE) {
-            return_errno_with_message!(Errno::EINVAL, "the offset is outside the VMO");
+            return Err(errno!(EINVAL, "the offset is outside the VMO"));
         }
 
         let mut cursor = locked_pages.cursor_mut(page_idx as u64);
@@ -352,8 +352,8 @@ impl Vmo {
     ) -> Result<(CachePage, VmoMapMode), VmoCommitError> {
         let page_idx = offset / PAGE_SIZE;
         if offset >= self.size() {
-            return Err(VmoCommitError::Err(Error::with_message(
-                Errno::EINVAL,
+            return Err(VmoCommitError::Err(errno!(
+                EINVAL,
                 "the offset is outside the VMO",
             )));
         }
@@ -436,8 +436,8 @@ impl Vmo {
         ) -> Result<(), VmoCommitError>,
     {
         if range.end > self.size() {
-            return Err(VmoCommitError::Err(Error::with_message(
-                Errno::EINVAL,
+            return Err(VmoCommitError::Err(errno!(
+                EINVAL,
                 "the range to operate exceeds the VMO size",
             )));
         }
@@ -648,7 +648,7 @@ impl Vmo {
             return Ok(());
         }
         if range.end > self.size() {
-            return_errno_with_message!(Errno::EINVAL, "the range to fill exceeds the VMO size");
+            return Err(errno!(EINVAL, "the range to fill exceeds the VMO size"));
         }
 
         static ZERO_PAGE: [u8; PAGE_SIZE] = [0; PAGE_SIZE];
@@ -1043,7 +1043,7 @@ impl<'a> BackedVmo<'a> {
     fn commit_on_internal(&self, page_idx: usize, commit_mode: CommitMode) -> Result<CachePage> {
         let mut locked_pages = self.pages.lock();
         if page_idx >= self.size().div_ceil(PAGE_SIZE) {
-            return_errno_with_message!(Errno::EINVAL, "the offset is outside the VMO");
+            return Err(errno!(EINVAL, "the offset is outside the VMO"));
         }
 
         let mut cursor = locked_pages.cursor_mut(page_idx as u64);
@@ -1204,7 +1204,7 @@ impl WritableMappingStatus {
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
                 (v >= 0).then(|| v + 1)
             })
-            .map_err(|_| Error::with_message(Errno::EPERM, "writable mappings have been denied"))?;
+            .map_err(|_| errno!(EPERM, "writable mappings have been denied"))?;
         Ok(())
     }
 
@@ -1217,9 +1217,7 @@ impl WritableMappingStatus {
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
                 (v <= 0).then_some(-1)
             })
-            .map_err(|_| {
-                Error::with_message(Errno::EBUSY, "there are still active writable mappings")
-            })?;
+            .map_err(|_| errno!(EBUSY, "there are still active writable mappings"))?;
         Ok(())
     }
 

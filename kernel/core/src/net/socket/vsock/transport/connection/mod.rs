@@ -232,7 +232,7 @@ impl ConnectionInner {
 
         if state.phase != Phase::Connecting {
             state.active_rst(self);
-            return_errno_with_message!(Errno::EISCONN, "the connection is established");
+            return Err(errno!(EISCONN, "the connection is established"));
         }
 
         state.update_peer_credit(self, header);
@@ -304,13 +304,13 @@ impl ConnectionInner {
             // We don't check `local_read_closed` because the peer cannot immediately know this
             // information.
             state.active_rst(self);
-            return_errno_with_message!(Errno::ENOTCONN, "the connection is not established");
+            return Err(errno!(ENOTCONN, "the connection is not established"));
         }
 
         let len = packet.payload_len();
         if state.rx_queue.used_bytes + len > DEFAULT_RX_BUF_SIZE {
             state.active_rst(self);
-            return_errno_with_message!(Errno::ENOMEM, "the receive queue is full");
+            return Err(errno!(ENOMEM, "the receive queue is full"));
         }
 
         state.update_peer_credit(self, header);
@@ -334,7 +334,7 @@ impl ConnectionInner {
 
         if state.phase == Phase::Connecting {
             state.active_rst(self);
-            return_errno_with_message!(Errno::ENOTCONN, "the connection is not established");
+            return Err(errno!(ENOTCONN, "the connection is not established"));
         }
 
         state.update_peer_credit(self, header);
@@ -349,7 +349,7 @@ impl ConnectionInner {
 
         if state.phase == Phase::Connecting {
             state.active_rst(self);
-            return_errno_with_message!(Errno::ENOTCONN, "the connection is not established");
+            return Err(errno!(ENOTCONN, "the connection is not established"));
         }
 
         state.update_peer_credit(self, header);
@@ -374,10 +374,7 @@ impl ConnectionInner {
         // If the connection resets before this method is reached, the timer will already be set to
         // `None`, so we won't get here. Therefore, we know that the connection timed out.
         if state.phase == Phase::ConnectFailed {
-            state.error = Some(Error::with_message(
-                Errno::ETIMEDOUT,
-                "the connection timed out",
-            ));
+            state.error = Some(errno!(ETIMEDOUT, "the connection timed out",));
         }
 
         true
@@ -403,10 +400,7 @@ impl ConnectionState {
         match self.phase {
             Phase::Connecting => {
                 self.phase = Phase::ConnectFailed;
-                self.error = Some(Error::with_message(
-                    Errno::ECONNRESET,
-                    "the connection is refused",
-                ));
+                self.error = Some(errno!(ECONNRESET, "the connection is refused",));
                 self.timer = None;
 
                 true
@@ -423,10 +417,7 @@ impl ConnectionState {
                 // FIXME: Our approach is more aggressive because we report `ECONNRESET` for many
                 // protocol errors. In contrast, Linux only reports `EPROTO` in some cases and does
                 // not necessarily cause the connection to be reset.
-                self.error = is_active.then_some(Error::with_message(
-                    Errno::ECONNRESET,
-                    "the connection is reset",
-                ));
+                self.error = is_active.then_some(errno!(ECONNRESET, "the connection is reset",));
                 self.shutdown.peer_read_closed = true;
                 self.shutdown.peer_write_closed = true;
 

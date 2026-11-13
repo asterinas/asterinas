@@ -98,10 +98,8 @@ fn do_faccessat(
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let mode = AccessMode::from_bits(mode)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid mode"))?;
-    let flags = FaccessatFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let mode = AccessMode::from_bits(mode).ok_or_else(|| errno!(EINVAL, "invalid mode"))?;
+    let flags = FaccessatFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
 
     let path_name = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
     debug!(
@@ -132,10 +130,10 @@ fn do_faccessat(
         && inode.type_().is_regular_file()
         && path.mount_node().flags().contains(PerMountFlags::NOEXEC)
     {
-        return_errno_with_message!(
-            Errno::EACCES,
+        return Err(errno!(
+            EACCES,
             "execution is not allowed on a file system mounted with `noexec`"
-        );
+        ));
     }
 
     // `F_OK` is represented by `AccessMode::empty()`.

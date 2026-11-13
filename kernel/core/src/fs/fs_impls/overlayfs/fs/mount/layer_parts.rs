@@ -48,10 +48,10 @@ impl MountRoots {
         // The pair is all-or-nothing before `MountOptions` is usable, so this guard only keeps the
         // unreachable mixed shape from reaching the resolutions below.
         if options.upper_dir.is_some() != options.work_dir.is_some() {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the `workdir` mount option is required if and only if `upperdir` is specified"
-            );
+            ));
         }
 
         // Resolve original roots in option order: upperdir -> lowerdir -> workdir.
@@ -90,10 +90,10 @@ impl MountRoots {
                 .downcast_ref::<OverlayFs>()
                 .is_some()
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the overlay upperdir must not be on an overlayfs"
-            );
+            ));
         }
 
         let (Some(upper_root), Some(work_root)) = (&roots.upper, &roots.work) else {
@@ -178,7 +178,7 @@ fn upper_path_is_read_only(upper: &Path) -> bool {
 }
 
 /// Resolves one layer root path and rejects it when it is not a directory.
-fn resolve_root_dir(ctx: &Context, raw_path: &str, not_dir_msg: &'static str) -> Result<Path> {
+fn resolve_root_dir(ctx: &Context, raw_path: &str, _not_dir_msg: &'static str) -> Result<Path> {
     let fs_path = FsPath::from_fd_at(AT_FDCWD, raw_path, EmptyPathStr::Reject)?;
     let path = ctx
         .thread_local
@@ -187,7 +187,7 @@ fn resolve_root_dir(ctx: &Context, raw_path: &str, not_dir_msg: &'static str) ->
         .read()
         .lookup_no_follow(&fs_path)?;
     if !path.type_().is_directory() {
-        return_errno_with_message!(Errno::ENOTDIR, not_dir_msg);
+        return Err(errno!(ENOTDIR, _not_dir_msg));
     }
     Ok(path)
 }

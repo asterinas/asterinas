@@ -26,8 +26,8 @@ pub(super) fn sys_inotify_init1(flags: u32, ctx: &Context) -> Result<SyscallRetu
 
 fn do_inotify_init(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("inotify_init: flags = {}", flags);
-    let flags = InotifyFileFlags::from_bits(flags)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let flags =
+        InotifyFileFlags::from_bits(flags).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
 
     let is_nonblocking = flags.contains(InotifyFileFlags::NONBLOCK);
     let file = InotifyFile::new(is_nonblocking)?;
@@ -53,14 +53,14 @@ pub(super) fn sys_inotify_add_watch(
         raw_fd, path, flags
     );
     if flags == 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid flags");
+        return Err(errno!(EINVAL, "invalid flags"));
     }
     // Parse flags to `InotifyEvents`.
     let (interesting, options) = parse_inotify_watch_request(flags)?;
 
     if options.contains(InotifyControls::MASK_ADD) && options.contains(InotifyControls::MASK_CREATE)
     {
-        return_errno_with_message!(Errno::EINVAL, "invalid options");
+        return Err(errno!(EINVAL, "invalid options"));
     }
 
     let path = ctx.user_space().read_cstring(path, MAX_FILENAME_LEN)?;
@@ -70,7 +70,7 @@ pub(super) fn sys_inotify_add_watch(
     // Verify that the file is an inotify file.
     let inotify_file = match file.downcast_ref::<InotifyFile>() {
         Some(inotify_file) => inotify_file,
-        None => return_errno_with_message!(Errno::EINVAL, "the file is not an inotify file"),
+        None => return Err(errno!(EINVAL, "the file is not an inotify file")),
     };
 
     let path = {
@@ -97,7 +97,7 @@ pub(super) fn sys_inotify_add_watch(
     inode.check_permission(Permission::MAY_READ)?;
 
     if options.contains(InotifyControls::ONLYDIR) && inode.type_() != InodeType::Dir {
-        return_errno_with_message!(Errno::ENOTDIR, "the path is not a directory");
+        return Err(errno!(ENOTDIR, "the path is not a directory"));
     }
 
     let wd = inotify_file.add_watch(&path, interesting, options)?;
@@ -115,7 +115,7 @@ pub(super) fn sys_inotify_rm_watch(
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let inotify_file = match file.downcast_ref::<InotifyFile>() {
         Some(inotify_file) => inotify_file,
-        None => return_errno_with_message!(Errno::EINVAL, "the file is not an inotify file"),
+        None => return Err(errno!(EINVAL, "the file is not an inotify file")),
     };
     inotify_file.remove_watch(wd)?;
     Ok(SyscallReturn::Return(0))
@@ -127,7 +127,7 @@ fn parse_inotify_watch_request(flags: u32) -> Result<(InotifyEvents, InotifyCont
 
     let recognized_bits = interesting.bits() | options.bits();
     if flags & !recognized_bits != 0 {
-        return_errno_with_message!(Errno::EINVAL, "invalid flags");
+        return Err(errno!(EINVAL, "invalid flags"));
     }
 
     Ok((interesting, options))

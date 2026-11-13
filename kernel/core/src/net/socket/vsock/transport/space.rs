@@ -76,7 +76,7 @@ impl VsockSpace {
         let conn_id = ConnId::from_port_and_remote(&bound_port, remote_addr);
         let Entry::Vacant(entry) = sockets.connections.entry(conn_id) else {
             return Err((
-                Error::with_message(Errno::EADDRINUSE, "the vsock connection already exists"),
+                errno!(EADDRINUSE, "the vsock connection already exists"),
                 bound_port,
             ));
         };
@@ -123,7 +123,7 @@ impl VsockSpace {
         let port = bound_port.port();
         let Entry::Vacant(entry) = sockets.listeners.entry(port) else {
             return Err((
-                Error::with_message(Errno::EADDRINUSE, "the vsock listener already exists"),
+                errno!(EADDRINUSE, "the vsock listener already exists"),
                 bound_port,
             ));
         };
@@ -429,7 +429,7 @@ static VSOCK_SPACE: Once<VsockSpace> = Once::new();
 pub(super) fn vsock_space() -> Result<&'static VsockSpace> {
     VSOCK_SPACE
         .get()
-        .ok_or_else(|| Error::with_message(Errno::ENODEV, "no virtio-vsock device is available"))
+        .ok_or_else(|| errno!(ENODEV, "no virtio-vsock device is available"))
 }
 
 pub(super) fn init(device: Arc<SocketDevice>) {

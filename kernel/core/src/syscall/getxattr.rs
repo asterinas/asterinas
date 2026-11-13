@@ -95,7 +95,7 @@ fn getxattr(
     let name_cstr = read_xattr_name_cstr_from_user(name_ptr, user_space)?;
     let name_str = name_cstr.to_string_lossy();
     let xattr_name = parse_xattr_name(name_str.as_ref())?;
-    check_xattr_namespace(xattr_name.namespace(), ctx).map_err(|_| Error::new(Errno::ENODATA))?;
+    check_xattr_namespace(xattr_name.namespace(), ctx).map_err(|_| errno!(ENODATA))?;
 
     let path = lookup_path_for_xattr(&file_ctx, ctx)?;
     if xattr_name.full_name() == xattr::SECURITY_CAPABILITY_XATTR_NAME {
@@ -112,7 +112,7 @@ fn getxattr(
             return Ok(converted_len);
         }
         if value_len < converted_len {
-            return_errno_with_message!(Errno::ERANGE, "the xattr value buffer is too small");
+            return Err(errno!(ERANGE, "the xattr value buffer is too small"));
         }
 
         let mut value_writer = user_space.writer(value_ptr, converted_len)?;
@@ -135,17 +135,15 @@ fn convert_file_cap(raw_value: &mut [u8]) -> Result<usize> {
     let (revision, flags) = FileCapabilities::parse_header(raw_value)?;
 
     match revision {
-        VfsCapRevision::V1 => {
-            return_errno_with_message!(Errno::EINVAL, "v1 file capabilities cannot be read")
-        }
+        VfsCapRevision::V1 => Err(errno!(EINVAL, "v1 file capabilities cannot be read")),
         VfsCapRevision::V2 => Ok(raw_value.len()),
         VfsCapRevision::V3 => {
             let root_uid = FileCapabilities::read_v3_uid(raw_value)?;
             if root_uid == Uid::INVALID {
-                return_errno_with_message!(
-                    Errno::EOVERFLOW,
+                return Err(errno!(
+                    EOVERFLOW,
                     "v3 file capabilities contain an invalid root UID"
-                );
+                ));
             }
             if root_uid.is_root() {
                 let converted_header = VfsCapRevision::V2 as u32 | flags.bits();

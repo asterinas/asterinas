@@ -18,7 +18,7 @@ pub struct DrmDisplayInfo {
 impl DrmDisplayInfo {
     pub fn from_dpi(resolution: DrmSize, dpi: u32, subpixel_order: SubpixelOrder) -> Result<Self> {
         if dpi == 0 {
-            return_errno_with_message!(Errno::EINVAL, "the display DPI must be nonzero");
+            return Err(errno!(EINVAL, "the display DPI must be nonzero"));
         }
 
         fn pixels_to_mm(pixels: u32, dpi: u32) -> Result<u32> {
@@ -30,12 +30,8 @@ impl DrmDisplayInfo {
             let millimeters =
                 u64::from(pixels) * MILLIMETERS_PER_INCH_TIMES_TEN / (u64::from(dpi) * SCALE);
 
-            u32::try_from(millimeters).map_err(|_| {
-                Error::with_message(
-                    Errno::EOVERFLOW,
-                    "the calculated display dimension is too large",
-                )
-            })
+            u32::try_from(millimeters)
+                .map_err(|_| errno!(EOVERFLOW, "the calculated display dimension is too large",))
         }
 
         Ok(Self {

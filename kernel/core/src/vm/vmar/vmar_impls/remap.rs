@@ -51,7 +51,7 @@ impl Vmar {
         if check_single_mapping {
             inner.check_lies_in_single_mapping(map_addr, old_size)?;
         } else if inner.vm_mappings.find_one(&map_addr).is_none() {
-            return_errno_with_message!(Errno::EFAULT, "there is no mapping at the old address")
+            return Err(errno!(EFAULT, "there is no mapping at the old address"));
         }
         // FIXME: We should check whether all existing ranges in
         // `map_addr..map_addr + old_size` have a mapping. If not,
@@ -99,20 +99,20 @@ impl Vmar {
         if let Some(new_addr) = new_addr {
             if !new_addr.is_multiple_of(PAGE_SIZE) || !is_userspace_vaddr_range(new_addr, new_size)
             {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "remap: the new range is not aligned or not in userspace"
-                );
+                ));
             }
             // The new range must not overlap any part of the old range.
             if is_intersected(
                 &(old_addr..old_addr.saturating_add(old_size)),
                 &(new_addr..new_addr + new_size),
             ) {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "remap: the new range overlaps with the old one"
-                );
+                ));
             }
         }
 
@@ -120,30 +120,27 @@ impl Vmar {
         let mut rss_delta = RssDelta::new(self);
 
         let Some(old_mapping) = inner.vm_mappings.find_one(&old_addr) else {
-            return_errno_with_message!(
-                Errno::EFAULT,
+            return Err(errno!(
+                EFAULT,
                 "remap: there is no mapping at the old address"
-            )
+            ));
         };
         if new_size > old_size {
             if !old_mapping.can_expand() {
-                return_errno_with_message!(
-                    Errno::EFAULT,
-                    "remap: device mappings cannot be expanded"
-                );
+                return Err(errno!(EFAULT, "remap: device mappings cannot be expanded"));
             }
             if let Some(vmo) = old_mapping.vmo()
                 && let offset = vmo.offset() + (old_addr - old_mapping.map_to_addr())
                 && offset.checked_add(new_size).is_none()
             {
-                return_errno_with_message!(Errno::EINVAL, "remap: the file offset overflows");
+                return Err(errno!(EINVAL, "remap: the file offset overflows"));
             }
             inner.check_extra_size_fits_rlimit(new_size - old_size)?;
         }
 
         // Shrink the old mapping first.
         if old_addr.checked_add(old_size).is_none() {
-            return_errno_with_message!(Errno::EINVAL, "remap: the address range overflows");
+            return Err(errno!(EINVAL, "remap: the address range overflows"));
         }
         let (old_size, old_range) = if new_size < old_size {
             inner.alloc_free_region_exact_truncate(

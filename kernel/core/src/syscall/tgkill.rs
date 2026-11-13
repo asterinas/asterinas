@@ -36,7 +36,7 @@ fn do_sys_tgkill(tgid: Option<Pid>, tid: Tid, sig_num: u8, ctx: &Context) -> Res
     debug!("tgid = {:?}, tid = {}, sig_num = {:?}", tgid, tid, sig_num);
 
     if tgid.is_some_and(|tgid| tgid.cast_signed() <= 0) || tid.cast_signed() <= 0 {
-        return_errno_with_message!(Errno::EINVAL, "non-positive TGIDs or TIDs are not valid");
+        return Err(errno!(EINVAL, "non-positive TGIDs or TIDs are not valid"));
     }
 
     let signal = sig_num.map(|sig_num| {

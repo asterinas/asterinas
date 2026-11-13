@@ -38,7 +38,7 @@ pub(crate) fn kill(pid: Pid, signal: Option<Box<dyn Signal>>, ctx: &Context) -> 
     // Slow path
     let process = pid_table::pid_table_mut()
         .get_process(pid)
-        .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process does not exist"))?;
+        .ok_or_else(|| errno!(ESRCH, "the target process does not exist"))?;
 
     kill_process(&process, signal, ctx)
 }
@@ -58,7 +58,7 @@ pub(crate) fn kill_group<S: Signal + Clone>(
 ) -> Result<()> {
     let process_group = pid_table::pid_table_mut()
         .get_process_group(&pgid)
-        .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target group does not exist"))?;
+        .ok_or_else(|| errno!(ESRCH, "the target group does not exist"))?;
 
     let mut result = Ok(());
 
@@ -92,17 +92,17 @@ pub(crate) fn tgkill(
 ) -> Result<()> {
     let thread = pid_table::pid_table_mut()
         .get_thread(tid)
-        .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target thread does not exist"))?;
+        .ok_or_else(|| errno!(ESRCH, "the target thread does not exist"))?;
     let target_posix_thread = thread.as_posix_thread().unwrap();
 
     if let Some(tgid) = tgid {
         // Check the TGID
         let pid = target_posix_thread.process().pid();
         if pid != tgid {
-            return_errno_with_message!(
-                Errno::ESRCH,
+            return Err(errno!(
+                ESRCH,
                 "the combination of the TGID and the TID is not valid"
-            );
+            ));
         }
     }
 
@@ -199,8 +199,8 @@ fn check_signal_perm(target: &PosixThread, ctx: &Context, signum: Option<SigNum>
         }
     }
 
-    return_errno_with_message!(
-        Errno::EPERM,
+    Err(errno!(
+        EPERM,
         "sending signal to the target process or thread is not allowed"
-    )
+    ))
 }

@@ -44,7 +44,7 @@ impl FileOps for VirtioFsDir {
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
+        Err(errno!(EISDIR, "the inode is a directory"))
     }
 
     fn write_at(
@@ -53,7 +53,7 @@ impl FileOps for VirtioFsDir {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(Errno::EISDIR, "the inode is a directory");
+        Err(errno!(EISDIR, "the inode is a directory"))
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -76,7 +76,7 @@ impl PerOpenFileOps for VirtioFsDir {
             .open_flags()
             .intersects(FuseOpenFlags::FOPEN_STREAM | FuseOpenFlags::FOPEN_NONSEEKABLE)
         {
-            return_errno_with_message!(Errno::ESPIPE, "the directory is not seekable");
+            return Err(errno!(ESPIPE, "the directory is not seekable"));
         }
 
         Ok(())

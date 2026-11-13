@@ -22,7 +22,7 @@ pub(super) fn sys_getsockopt(
     let user_space = ctx.user_space();
     let optlen = user_space.read_val::<i32>(optlen_addr)?;
     if optlen < 0 {
-        return_errno_with_message!(Errno::EINVAL, "optlen is negative");
+        return Err(errno!(EINVAL, "optlen is negative"));
     }
     let optlen = optlen.cast_unsigned();
 

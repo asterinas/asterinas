@@ -28,7 +28,7 @@ pub(super) fn sys_sendfile(
     } else {
         let offset: isize = ctx.user_space().read_val(offset_ptr)?;
         if offset < 0 {
-            return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
+            return Err(errno!(EINVAL, "offset cannot be negative"));
         }
         Some(offset)
     };
@@ -39,11 +39,11 @@ pub(super) fn sys_sendfile(
     );
 
     if offset.is_some_and(|off| off.checked_add(count).is_none()) {
-        return_errno_with_message!(Errno::EINVAL, "offset + count overflows");
+        return Err(errno!(EINVAL, "offset + count overflows"));
     }
 
     let mut count = if count < 0 {
-        return_errno_with_message!(Errno::EINVAL, "count cannot be negative");
+        return Err(errno!(EINVAL, "count cannot be negative"));
     } else {
         count.cast_unsigned()
     };
@@ -86,7 +86,7 @@ pub(super) fn sys_sendfile(
             if outfile_is_pipe {
                 warn!("sendfile from a non-seekable in_file to a pipe is not yet supported");
             }
-            Error::with_message(Errno::EINVAL, "in_file is not seekable")
+            errno!(EINVAL, "in_file is not seekable")
         })?)
     } else {
         None
@@ -95,10 +95,10 @@ pub(super) fn sys_sendfile(
     // Verify that `in_file` is readable and `out_file` is writable upfront,
     // even if the total transfer count is zero.
     if !in_file.access_mode().is_readable() {
-        return_errno_with_message!(Errno::EBADF, "in_file is not readable");
+        return Err(errno!(EBADF, "in_file is not readable"));
     }
     if !out_file.access_mode().is_writable() {
-        return_errno_with_message!(Errno::EBADF, "out_file is not writable");
+        return Err(errno!(EBADF, "out_file is not writable"));
     }
 
     // Linux returns `EINVAL` when `in_file` is a directory,
@@ -109,12 +109,12 @@ pub(super) fn sys_sendfile(
         .downcast_ref::<InodeHandle>()
         .is_some_and(|inode_handle| inode_handle.path().inode().type_() == InodeType::Dir);
     if in_file_is_dir {
-        return_errno_with_message!(Errno::EINVAL, "in_file is a directory");
+        return Err(errno!(EINVAL, "in_file is a directory"));
     }
 
     // Sending to an append-only file is not allowed.
     if !outfile_is_pipe && out_file.status_flags().contains(StatusFlags::O_APPEND) {
-        return_errno_with_message!(Errno::EINVAL, "out_file is opened with O_APPEND");
+        return Err(errno!(EINVAL, "out_file is opened with O_APPEND"));
     }
 
     const BUFFER_SIZE: usize = PAGE_SIZE;

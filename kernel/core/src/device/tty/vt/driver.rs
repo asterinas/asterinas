@@ -56,7 +56,7 @@ impl VtDriver {
             CFontOp::OP_SET_DEFAULT => {
                 return self.console.set_font(BitmapFont::new_basic8x8());
             }
-            _ => return_errno_with_message!(Errno::EINVAL, "the font operation is invalid"),
+            _ => return Err(errno!(EINVAL, "the font operation is invalid")),
         };
 
         if *width == 0
@@ -66,7 +66,7 @@ impl VtDriver {
             || *charcount > CFontOp::MAX_CHARCOUNT
             || *height > vpitch
         {
-            return_errno_with_message!(Errno::EINVAL, "the font is invalid or too large");
+            return Err(errno!(EINVAL, "the font is invalid or too large"));
         }
 
         let font_size = width.div_ceil(u8::BITS) * vpitch * charcount;
@@ -164,7 +164,7 @@ impl TtyDriver for VtDriver {
 
                 if font_op.op == CFontOp::OP_GET {
                     // TODO: Add support for getting the font of the console device.
-                    return_errno_with_message!(Errno::EINVAL, "getting font data is not supported");
+                    return Err(errno!(EINVAL, "getting font data is not supported"));
                 }
 
                 check_vt_ioctl_perm(tty)?;

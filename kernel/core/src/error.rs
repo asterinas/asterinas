@@ -169,19 +169,15 @@ pub struct Error {
 
 impl Error {
     /// Creates an error with the given error number and the caller's source location.
+    ///
+    /// Use [`errno!`](crate::errno) when the error number is a known variant.
+    /// Call this method directly when the error number is computed at runtime.
     #[track_caller]
     pub const fn new(errno: Errno) -> Self {
         Error {
             errno,
             location: Location::caller(),
         }
-    }
-
-    /// The message documents the error at the call site. Only the caller location
-    /// and error number are stored to keep the error compact.
-    #[track_caller]
-    pub const fn with_message(errno: Errno, _msg: &'static str) -> Self {
-        Self::new(errno)
     }
 
     /// Returns the location where this error was constructed.
@@ -195,6 +191,17 @@ impl Error {
     pub const fn error(&self) -> Errno {
         self.errno
     }
+}
+
+/// Constructs a kernel error at the call site from an `Errno` variant name.
+///
+/// The optional message documents the error in the source; it is neither
+/// evaluated nor stored in the error.
+#[macro_export]
+macro_rules! errno {
+    ($errno:ident $(, $message:expr)? $(,)?) => {
+        $crate::error::Error::new($crate::error::Errno::$errno)
+    };
 }
 
 impl From<Errno> for Error {
@@ -214,13 +221,13 @@ impl From<ostd::Error> for Error {
     #[track_caller]
     fn from(ostd_error: ostd::Error) -> Self {
         match ostd_error {
-            ostd::Error::AccessDenied => Error::new(Errno::EFAULT),
-            ostd::Error::NoMemory => Error::new(Errno::ENOMEM),
-            ostd::Error::InvalidArgs => Error::new(Errno::EINVAL),
-            ostd::Error::IoError => Error::new(Errno::EIO),
-            ostd::Error::NotEnoughResources => Error::new(Errno::EBUSY),
-            ostd::Error::PageFault => Error::new(Errno::EFAULT),
-            ostd::Error::Overflow => Error::new(Errno::EOVERFLOW),
+            ostd::Error::AccessDenied => errno!(EFAULT),
+            ostd::Error::NoMemory => errno!(ENOMEM),
+            ostd::Error::InvalidArgs => errno!(EINVAL),
+            ostd::Error::IoError => errno!(EIO),
+            ostd::Error::NotEnoughResources => errno!(EBUSY),
+            ostd::Error::PageFault => errno!(EFAULT),
+            ostd::Error::Overflow => errno!(EOVERFLOW),
         }
     }
 }
@@ -246,13 +253,13 @@ impl From<aster_block::bio::BioEnqueueError> for Error {
     fn from(error: aster_block::bio::BioEnqueueError) -> Self {
         match error {
             aster_block::bio::BioEnqueueError::IsFull => {
-                Error::with_message(Errno::EBUSY, "The request queue is full")
+                errno!(EBUSY, "The request queue is full")
             }
             aster_block::bio::BioEnqueueError::Refused => {
-                Error::with_message(Errno::EBUSY, "Refuse to enqueue the bio")
+                errno!(EBUSY, "Refuse to enqueue the bio")
             }
             aster_block::bio::BioEnqueueError::TooBig => {
-                Error::with_message(Errno::EINVAL, "Bio is too big")
+                errno!(EINVAL, "Bio is too big")
             }
         }
     }
@@ -263,13 +270,13 @@ impl From<aster_block::bio::BioStatus> for Error {
     fn from(err_status: aster_block::bio::BioStatus) -> Self {
         match err_status {
             aster_block::bio::BioStatus::NotSupported => {
-                Error::with_message(Errno::EOPNOTSUPP, "I/O operation is not supported")
+                errno!(EOPNOTSUPP, "I/O operation is not supported")
             }
             aster_block::bio::BioStatus::NoSpace => {
-                Error::with_message(Errno::ENOSPC, "Insufficient space on device")
+                errno!(ENOSPC, "Insufficient space on device")
             }
             aster_block::bio::BioStatus::IoError => {
-                Error::with_message(Errno::EIO, "I/O operation fails")
+                errno!(EIO, "I/O operation fails")
             }
             status => panic!("Can not convert the status: {:?} to an error", status),
         }
@@ -281,12 +288,12 @@ impl From<io_util::IoError> for Error {
     fn from(error: io_util::IoError) -> Self {
         match error {
             io_util::IoError::Unsupported => {
-                Error::with_message(Errno::EOPNOTSUPP, "I/O operation is not supported")
+                errno!(EOPNOTSUPP, "I/O operation is not supported")
             }
             io_util::IoError::OutOfSpace => {
-                Error::with_message(Errno::ENOSPC, "Insufficient space on device")
+                errno!(ENOSPC, "Insufficient space on device")
             }
-            io_util::IoError::Failed => Error::with_message(Errno::EIO, "I/O operation fails"),
+            io_util::IoError::Failed => errno!(EIO, "I/O operation fails"),
         }
     }
 }
@@ -294,35 +301,35 @@ impl From<io_util::IoError> for Error {
 impl From<core::num::TryFromIntError> for Error {
     #[track_caller]
     fn from(_: core::num::TryFromIntError) -> Self {
-        Error::with_message(Errno::EINVAL, "Invalid integer")
+        errno!(EINVAL, "Invalid integer")
     }
 }
 
 impl From<core::str::Utf8Error> for Error {
     #[track_caller]
     fn from(_: core::str::Utf8Error) -> Self {
-        Error::with_message(Errno::EINVAL, "Invalid utf-8 string")
+        errno!(EINVAL, "Invalid utf-8 string")
     }
 }
 
 impl From<alloc::string::FromUtf8Error> for Error {
     #[track_caller]
     fn from(_: alloc::string::FromUtf8Error) -> Self {
-        Error::with_message(Errno::EINVAL, "Invalid utf-8 string")
+        errno!(EINVAL, "Invalid utf-8 string")
     }
 }
 
 impl From<core::ffi::FromBytesUntilNulError> for Error {
     #[track_caller]
     fn from(_: core::ffi::FromBytesUntilNulError) -> Self {
-        Error::with_message(Errno::E2BIG, "Cannot find null in cstring")
+        errno!(E2BIG, "Cannot find null in cstring")
     }
 }
 
 impl From<core::ffi::FromBytesWithNulError> for Error {
     #[track_caller]
     fn from(_: core::ffi::FromBytesWithNulError) -> Self {
-        Error::with_message(Errno::E2BIG, "Cannot find null in cstring")
+        errno!(E2BIG, "Cannot find null in cstring")
     }
 }
 
@@ -331,25 +338,25 @@ impl From<cpio_decoder::error::Error> for Error {
     fn from(cpio_error: cpio_decoder::error::Error) -> Self {
         match cpio_error {
             cpio_decoder::error::Error::MagicError => {
-                Error::with_message(Errno::EINVAL, "CPIO invalid magic number")
+                errno!(EINVAL, "CPIO invalid magic number")
             }
             cpio_decoder::error::Error::Utf8Error => {
-                Error::with_message(Errno::EINVAL, "CPIO invalid utf-8 string")
+                errno!(EINVAL, "CPIO invalid utf-8 string")
             }
             cpio_decoder::error::Error::ParseIntError => {
-                Error::with_message(Errno::EINVAL, "CPIO parse int error")
+                errno!(EINVAL, "CPIO parse int error")
             }
             cpio_decoder::error::Error::FileTypeError => {
-                Error::with_message(Errno::EINVAL, "CPIO invalid file type")
+                errno!(EINVAL, "CPIO invalid file type")
             }
             cpio_decoder::error::Error::FileNameError => {
-                Error::with_message(Errno::EINVAL, "CPIO invalid file name")
+                errno!(EINVAL, "CPIO invalid file name")
             }
             cpio_decoder::error::Error::BufferShortError => {
-                Error::with_message(Errno::EINVAL, "CPIO buffer is too short")
+                errno!(EINVAL, "CPIO buffer is too short")
             }
             cpio_decoder::error::Error::IoError => {
-                Error::with_message(Errno::EIO, "CPIO buffer I/O error")
+                errno!(EIO, "CPIO buffer I/O error")
             }
         }
     }
@@ -372,14 +379,14 @@ impl From<Error> for ostd::Error {
 impl From<alloc::ffi::NulError> for Error {
     #[track_caller]
     fn from(_: alloc::ffi::NulError) -> Self {
-        Error::with_message(Errno::E2BIG, "Cannot find null in cstring")
+        errno!(E2BIG, "Cannot find null in cstring")
     }
 }
 
 impl From<int_to_c_enum::TryFromIntError> for Error {
     #[track_caller]
     fn from(_: int_to_c_enum::TryFromIntError) -> Self {
-        Error::with_message(Errno::EINVAL, "Invalid enum value")
+        errno!(EINVAL, "Invalid enum value")
     }
 }
 
@@ -388,17 +395,17 @@ impl From<aster_device::common::Error> for Error {
     fn from(err: aster_device::common::Error) -> Self {
         use aster_device::common::Error::*;
         match err {
-            AlreadyAdded | AlreadyBound => Error::new(Errno::EBUSY),
+            AlreadyAdded | AlreadyBound => errno!(EBUSY),
             NotAdded | NotBound | ParentNotAdded | DriverUnregistered | NoDevNum => {
-                Error::new(Errno::ENODEV)
+                errno!(ENODEV)
             }
-            HasChildren => Error::new(Errno::ENOTEMPTY),
-            NameConflict => Error::new(Errno::EEXIST),
-            NotFound | NoDriver => Error::new(Errno::ENOENT),
-            InvalidName | InvalidValue => Error::new(Errno::EINVAL),
-            ProbeFailed | Attribute | Format | Hook => Error::new(Errno::EIO),
-            ResourceUnavailable => Error::new(Errno::ENOSPC),
-            MemoryBudgetExhausted => Error::new(Errno::ENOMEM),
+            HasChildren => errno!(ENOTEMPTY),
+            NameConflict => errno!(EEXIST),
+            NotFound | NoDriver => errno!(ENOENT),
+            InvalidName | InvalidValue => errno!(EINVAL),
+            ProbeFailed | Attribute | Format | Hook => errno!(EIO),
+            ResourceUnavailable => errno!(ENOSPC),
+            MemoryBudgetExhausted => errno!(ENOMEM),
             SysTree(inner) => inner.into(),
         }
     }
@@ -409,17 +416,17 @@ impl From<aster_systree::Error> for Error {
     fn from(err: aster_systree::Error) -> Self {
         use aster_systree::Error::*;
         match err {
-            NotFound => Error::new(Errno::ENOENT),
-            InvalidOperation | InvalidName => Error::new(Errno::EINVAL),
-            ResourceUnavailable => Error::new(Errno::EBUSY),
-            MemoryBudgetExhausted => Error::new(Errno::ENOMEM),
-            AttributeError => Error::new(Errno::EIO),
-            PermissionDenied => Error::new(Errno::EACCES),
-            InternalError(msg) => Error::with_message(Errno::EIO, msg),
-            AlreadyExists => Error::new(Errno::EEXIST),
-            Overflow => Error::new(Errno::EOVERFLOW),
-            PageFault => Error::new(Errno::EFAULT),
-            IsDead => Error::new(Errno::ENODEV),
+            NotFound => errno!(ENOENT),
+            InvalidOperation | InvalidName => errno!(EINVAL),
+            ResourceUnavailable => errno!(EBUSY),
+            MemoryBudgetExhausted => errno!(ENOMEM),
+            AttributeError => errno!(EIO),
+            PermissionDenied => errno!(EACCES),
+            InternalError(_msg) => errno!(EIO, _msg),
+            AlreadyExists => errno!(EEXIST),
+            Overflow => errno!(EOVERFLOW),
+            PageFault => errno!(EFAULT),
+            IsDead => errno!(ENODEV),
         }
     }
 }
@@ -429,24 +436,10 @@ impl From<aster_util::printer::VmPrinterError> for Error {
     fn from(value: aster_util::printer::VmPrinterError) -> Self {
         match value {
             aster_util::printer::VmPrinterError::PageFault => {
-                Error::with_message(Errno::EFAULT, "Page fault occurred during VmPrinter write")
+                errno!(EFAULT, "Page fault occurred during VmPrinter write")
             }
         }
     }
-}
-
-#[macro_export]
-macro_rules! return_errno {
-    ($errno: expr) => {
-        return Err($crate::error::Error::new($errno))
-    };
-}
-
-#[macro_export]
-macro_rules! return_errno_with_message {
-    ($errno: expr, $message: expr) => {
-        return Err($crate::error::Error::with_message($errno, $message))
-    };
 }
 
 #[cfg(ktest)]
@@ -463,24 +456,37 @@ mod tests {
         assert_eq!(error.location().line(), line);
 
         let line = line!() + 1;
-        let error = Error::with_message(Errno::EINVAL, "invalid argument");
+        let error = errno!(EINVAL, "invalid argument");
+        assert_eq!(error.error(), Errno::EINVAL);
         assert_eq!(error.location().line(), line);
 
         let line = line!() + 1;
-        const ERROR: Error = Error::new(Errno::EINVAL);
+        const ERROR: Error = errno!(EINVAL,);
+        assert_eq!(ERROR.error(), Errno::EINVAL);
         assert_eq!(ERROR.location().line(), line);
 
         let line = line!() + 2;
         fn fail() -> Result<(), Error> {
-            return_errno!(Errno::EINVAL)
+            Err(errno!(EINVAL))
         }
         assert_eq!(fail().unwrap_err().location().line(), line);
 
         let line = line!() + 2;
         fn fail_with_message() -> Result<(), Error> {
-            return_errno_with_message!(Errno::EINVAL, "invalid argument")
+            Err(errno!(EINVAL, "invalid argument"))
         }
         assert_eq!(fail_with_message().unwrap_err().location().line(), line);
+    }
+
+    #[ktest]
+    fn messages_are_not_evaluated() {
+        const ERROR: Error = errno!(EINVAL, panic!("message must not be evaluated"),);
+        assert_eq!(ERROR.error(), Errno::EINVAL);
+
+        fn fail() -> Result<(), Error> {
+            Err(errno!(EIO, panic!("message must not be evaluated"),))
+        }
+        assert_eq!(fail().unwrap_err().error(), Errno::EIO);
     }
 
     #[ktest]
@@ -514,7 +520,7 @@ mod tests {
             Ok(())
         }
 
-        let original = Error::new(Errno::EINVAL);
+        let original = errno!(EINVAL);
         let propagated = propagate(original).unwrap_err();
         assert_eq!(propagated.location(), original.location());
 

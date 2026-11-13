@@ -108,12 +108,9 @@ fn lookup_and_parse_ldso(
         };
 
         // Our FS requires the path to be valid UTF-8. This may be too restrictive.
-        let ldso_path = ldso_path.into_string().map_err(|_| {
-            Error::with_message(
-                Errno::ENOEXEC,
-                "the interpreter path is not a valid UTF-8 string",
-            )
-        })?;
+        let ldso_path = ldso_path
+            .into_string()
+            .map_err(|_| errno!(ENOEXEC, "the interpreter path is not a valid UTF-8 string",))?;
 
         let fs_path = FsPath::try_from(ldso_path.as_str())?;
         let ldso_path = path_resolver.lookup(&fs_path)?;
@@ -124,11 +121,11 @@ fn lookup_and_parse_ldso(
         let mut buf = Box::new([0u8; PAGE_SIZE]);
         let len = ldso_file.read_bytes_at(0, &mut *buf)?;
         if len < ElfHeaders::LEN {
-            return_errno_with_message!(Errno::EIO, "the interpreter format is invalid");
+            return Err(errno!(EIO, "the interpreter format is invalid"));
         }
 
         ElfHeaders::parse(&buf[..len])
-            .map_err(|_| Error::with_message(Errno::ELIBBAD, "the interpreter format is invalid"))?
+            .map_err(|_| errno!(ELIBBAD, "the interpreter format is invalid"))?
     };
 
     Ok(Some((ldso_file, ldso_elf)))
@@ -180,12 +177,7 @@ fn map_vmos_and_build_aux_vec(
         elf_mapped_info
             .full_range
             .relocated_addr_of(parsed_elf.entry_point())
-            .ok_or_else(|| {
-                Error::with_message(
-                    Errno::ENOEXEC,
-                    "the entry point is not located in any segments",
-                )
-            })?
+            .ok_or_else(|| errno!(ENOEXEC, "the entry point is not located in any segments",))?
     };
 
     Ok((elf_mapped_info, entry_point, aux_vec))
@@ -209,12 +201,7 @@ fn load_ldso(
     let range = elf_mapped_info.full_range;
     let entry_point = range
         .relocated_addr_of(ldso_elf.entry_point())
-        .ok_or_else(|| {
-            Error::with_message(
-                Errno::ENOEXEC,
-                "the entry point is not located in any segments",
-            )
-        })?;
+        .ok_or_else(|| errno!(ENOEXEC, "the entry point is not located in any segments",))?;
     Ok(LdsoLoadInfo { entry_point, range })
 }
 
@@ -284,10 +271,10 @@ fn map_segment_vmos(
             let offset = (PIE_BASE_ADDR + nr_pages_padding * PAGE_SIZE).align_down(align);
 
             if offset < VMAR_LOWEST_ADDR {
-                return_errno_with_message!(Errno::EPERM, "the mapping address is too small");
+                return Err(errno!(EPERM, "the mapping address is too small"));
             }
             if VMAR_CAP_ADDR - offset < map_size {
-                return_errno_with_message!(Errno::ENOMEM, "the mapping address is too large");
+                return Err(errno!(ENOMEM, "the mapping address is too large"));
             }
             vmar.new_map(map_size, VmPerms::empty())
                 .align(align)
@@ -320,7 +307,7 @@ fn map_segment_vmos(
         // Not relocatable object. Map as-is.
 
         if elf_va_range.start < VMAR_LOWEST_ADDR {
-            return_errno_with_message!(Errno::EPERM, "the mapping address is too small");
+            return Err(errno!(EPERM, "the mapping address is too small"));
         }
 
         // Allocate a continuous range of virtual memory for all segments in advance.
@@ -463,20 +450,20 @@ fn init_aux_vec(
     aux_vec.set(AuxKey::AT_PAGESZ, PAGE_SIZE as _);
 
     let Some(ph_vaddr) = elf_map_range.relocated_addr_of(elf.find_vaddr_of_phdrs()?) else {
-        return_errno_with_message!(
-            Errno::ENOEXEC,
+        return Err(errno!(
+            ENOEXEC,
             "the ELF program headers are not located in any segments"
-        );
+        ));
     };
     aux_vec.set(AuxKey::AT_PHDR, ph_vaddr as u64);
     aux_vec.set(AuxKey::AT_PHNUM, elf.ph_count() as u64);
     aux_vec.set(AuxKey::AT_PHENT, elf.ph_ent() as u64);
 
     let Some(entry_vaddr) = elf_map_range.relocated_addr_of(elf.entry_point()) else {
-        return_errno_with_message!(
-            Errno::ENOEXEC,
+        return Err(errno!(
+            ENOEXEC,
             "the entry point is not located in any segments"
-        );
+        ));
     };
     aux_vec.set(AuxKey::AT_ENTRY, entry_vaddr as u64);
 

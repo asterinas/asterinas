@@ -55,7 +55,7 @@ impl Inode {
     /// Reads symbolic link target bytes and decodes them as UTF-8.
     pub(in ext2) fn read_link(&self) -> Result<String> {
         if self.type_ != InodeType::SymLink {
-            return_errno!(Errno::EINVAL);
+            return Err(errno!(EINVAL));
         }
 
         let inner = self.inner.read();
@@ -70,7 +70,7 @@ impl Inode {
         perm: FilePerm,
     ) -> Result<Arc<Inode>> {
         if target.len() >= BLOCK_SIZE {
-            return_errno!(Errno::ENAMETOOLONG);
+            return Err(errno!(ENAMETOOLONG));
         }
 
         self.create_initialized_child(name, InodeType::SymLink, perm, |fs, child| {
@@ -131,15 +131,14 @@ impl InodeInner {
             let read_len = link_size.min(MAX_FAST_SYMLINK_LEN - 1);
             let target_bytes = target.read(read_len);
             return String::from_utf8(target_bytes)
-                .map_err(|_| Error::with_message(Errno::EIO, "symlink target is not valid UTF-8"));
+                .map_err(|_| errno!(EIO, "symlink target is not valid UTF-8"));
         }
 
         let mut target = vec![0u8; link_size];
-        self.page_cache().read_bytes(0, &mut target).map_err(|_| {
-            Error::with_message(Errno::EIO, "failed to read symlink target from page cache")
-        })?;
+        self.page_cache()
+            .read_bytes(0, &mut target)
+            .map_err(|_| errno!(EIO, "failed to read symlink target from page cache"))?;
 
-        String::from_utf8(target)
-            .map_err(|_| Error::with_message(Errno::EIO, "symlink target is not valid UTF-8"))
+        String::from_utf8(target).map_err(|_| errno!(EIO, "symlink target is not valid UTF-8"))
     }
 }

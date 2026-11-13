@@ -13,6 +13,7 @@ use core::time::Duration;
 use aster_fuse::FuseError;
 
 use crate::{
+    errno,
     prelude::{Errno, Error},
     time::{Clock, clocks::MonotonicCoarseClock},
 };
@@ -27,18 +28,19 @@ impl From<FuseError> for Error {
         match error {
             FuseError::ResourceAlloc(error) => Error::from(error),
             FuseError::MalformedResponse => {
-                Error::with_message(Errno::EIO, "malformed virtiofs response")
+                errno!(EIO, "malformed virtiofs response")
             }
-            FuseError::PageFault => Error::with_message(Errno::EFAULT, "page fault in virtiofs"),
+            FuseError::PageFault => errno!(EFAULT, "page fault in virtiofs"),
             FuseError::RemoteError(code) => {
                 let errno = code
                     .checked_neg()
                     .and_then(|code| Errno::try_from(code).ok())
                     .unwrap_or(Errno::EIO);
-                Error::with_message(errno, "filesystem request failed")
+                // The filesystem request failed.
+                Error::new(errno)
             }
             FuseError::BufferTooSmall | FuseError::LengthOverflow => {
-                Error::with_message(Errno::EIO, "FUSE protocol encoding error")
+                errno!(EIO, "FUSE protocol encoding error")
             }
         }
     }

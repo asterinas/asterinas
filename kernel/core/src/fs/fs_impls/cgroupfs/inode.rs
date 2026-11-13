@@ -91,11 +91,11 @@ impl Inode for CgroupInode {
     fn rmdir(&self, child_dentry: &Dentry) -> Result<()> {
         let name = child_dentry.name();
         let SysTreeNodeKind::Branch(branch_node) = self.node_kind() else {
-            return_errno_with_message!(Errno::ENOTDIR, "the current node is not a branch node");
+            return Err(errno!(ENOTDIR, "the current node is not a branch node"));
         };
 
         let Some(child) = branch_node.child(&name) else {
-            return_errno_with_message!(Errno::ENOENT, "the child node does not exist");
+            return Err(errno!(ENOENT, "the child node does not exist"));
         };
 
         let target_node = Arc::downcast::<CgroupNode>(child).unwrap();

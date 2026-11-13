@@ -30,7 +30,7 @@ impl CongestionControl {
         let congestion = match name {
             Self::RENO => Self::Reno,
             Self::CUBIC => Self::Cubic,
-            _ => return_errno_with_message!(Errno::ENOENT, "unsupported congestion name"),
+            _ => return Err(errno!(ENOENT, "unsupported congestion name")),
         };
 
         Ok(congestion)

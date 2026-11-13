@@ -32,7 +32,7 @@ impl DrmDisplayMode {
     /// Creates a simple fixed-refresh display mode.
     pub fn from_size(size: DrmSize, vrefresh_hz: u32) -> Result<Self> {
         if size.is_empty() {
-            return_errno_with_message!(Errno::EINVAL, "the display mode size must not be empty");
+            return Err(errno!(EINVAL, "the display mode size must not be empty"));
         }
 
         let mut name = [0u8; DRM_DISPLAY_MODE_NAME_LEN];
@@ -48,8 +48,8 @@ impl DrmDisplayMode {
             .map(|pixel_clock_hz| pixel_clock_hz / 1000)
             .and_then(|pixel_clock_khz| u32::try_from(pixel_clock_khz).ok())
             .ok_or_else(|| {
-                Error::with_message(
-                    Errno::EOVERFLOW,
+                errno!(
+                    EOVERFLOW,
                     "the calculated display mode clock exceeds the internal limit",
                 )
             })?;
@@ -88,8 +88,8 @@ impl DrmDisplayMode {
 
         let refresh_hz = (numerator * 1000 + denominator / 2) / denominator;
         u32::try_from(refresh_hz).map_err(|_| {
-            Error::with_message(
-                Errno::EOVERFLOW,
+            errno!(
+                EOVERFLOW,
                 "the calculated display mode refresh rate exceeds the DRM UAPI limit",
             )
         })
@@ -116,7 +116,7 @@ struct DrmModeTiming {
 impl DrmModeTiming {
     fn new(active: u32, sync_start: u32, sync_end: u32, total: u32) -> Result<Self> {
         if active == 0 || active > sync_start || sync_start > sync_end || sync_end > total {
-            return_errno_with_message!(Errno::EINVAL, "the display mode timing is invalid");
+            return Err(errno!(EINVAL, "the display mode timing is invalid"));
         }
 
         Ok(Self {
@@ -221,8 +221,8 @@ impl TryFrom<DrmDisplayMode> for DrmModeInfo {
     fn try_from(display_mode: DrmDisplayMode) -> Result<Self> {
         let to_uapi_timing = |value| {
             u16::try_from(value).map_err(|_| {
-                Error::with_message(
-                    Errno::EOVERFLOW,
+                errno!(
+                    EOVERFLOW,
                     "the display mode timing exceeds the DRM UAPI limit",
                 )
             })
@@ -264,12 +264,10 @@ impl TryFrom<DrmModeInfo> for DrmDisplayMode {
             u32::from(mode_info.vsync_end),
             u32::from(mode_info.vtotal),
         )?;
-        let flags = DrmModeFlag::from_bits(mode_info.flags).ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "the display mode has unknown flags")
-        })?;
-        let mode_type = DrmModeType::from_bits(mode_info.type_).ok_or_else(|| {
-            Error::with_message(Errno::EINVAL, "the display mode has an unknown type")
-        })?;
+        let flags = DrmModeFlag::from_bits(mode_info.flags)
+            .ok_or_else(|| errno!(EINVAL, "the display mode has unknown flags"))?;
+        let mode_type = DrmModeType::from_bits(mode_info.type_)
+            .ok_or_else(|| errno!(EINVAL, "the display mode has an unknown type"))?;
 
         Ok(Self {
             pixel_clock_khz: mode_info.clock,

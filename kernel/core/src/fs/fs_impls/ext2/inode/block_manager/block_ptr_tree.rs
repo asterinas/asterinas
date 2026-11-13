@@ -73,7 +73,7 @@ impl BlockPtrTree {
         max_blocks: u32,
     ) -> Result<Range<Ext2Bid>> {
         if max_blocks == 0 {
-            return_errno_with_message!(Errno::EINVAL, "zero block range requested");
+            return Err(errno!(EINVAL, "zero block range requested"));
         }
 
         let walk = self.walk_at(iblock)?;
@@ -114,7 +114,7 @@ impl BlockPtrTree {
         max_blocks: u32,
     ) -> Result<ResolvedBlockRange> {
         if max_blocks == 0 {
-            return_errno_with_message!(Errno::EINVAL, "zero block allocation requested");
+            return Err(errno!(EINVAL, "zero block allocation requested"));
         }
 
         let walk = self.walk_at(iblock)?;
@@ -467,7 +467,7 @@ impl BlockPtrTree {
         max_blocks: u32,
     ) -> Result<Range<Ext2Bid>> {
         if max_blocks == 0 {
-            return_errno_with_message!(Errno::EINVAL, "zero block range requested");
+            return Err(errno!(EINVAL, "zero block range requested"));
         }
         // A partial walk means the logical block lands in a hole, so there is
         // no existing physical range to report.
@@ -524,7 +524,7 @@ impl BlockPtrTree {
     /// current leaf without crossing its block-pointer boundary.
     fn planned_allocation(&self, walk: &BlockPointerWalk, max_blocks: u32) -> Result<(u32, u32)> {
         if max_blocks == 0 {
-            return_errno_with_message!(Errno::EINVAL, "zero block allocation requested");
+            return Err(errno!(EINVAL, "zero block allocation requested"));
         }
 
         // Missing child levels correspond to indirect metadata blocks that
@@ -714,7 +714,7 @@ impl BlockPtrTree {
             .raw_block_ptrs
             .sector_count
             .checked_add(added_sectors)
-            .ok_or_else(|| Error::with_message(Errno::EIO, "inode block count overflow"))?;
+            .ok_or_else(|| errno!(EIO, "inode block count overflow"))?;
 
         if indirect_blocks.is_empty() {
             // The path already exists; only fill data pointers into existing slots.
@@ -786,10 +786,7 @@ impl BlockPtrTree {
             if hole_level == 0 {
                 let slot = walk.root_slot() as usize;
                 if self.raw_block_ptrs.block_ptrs[slot] != 0 {
-                    return_errno_with_message!(
-                        Errno::EIO,
-                        "block pointer changed during allocation"
-                    );
+                    return Err(errno!(EIO, "block pointer changed during allocation"));
                 }
                 self.raw_block_ptrs.block_ptrs[slot] = chain_root_bid;
             } else {
@@ -797,10 +794,7 @@ impl BlockPtrTree {
                 let parent_block = indirect_blocks_manager.find_mut(parent_bid)?;
                 let slot = walk.slot_at(hole_level) as usize;
                 if parent_block.read_bid(slot)? != 0 {
-                    return_errno_with_message!(
-                        Errno::EIO,
-                        "block pointer changed during allocation"
-                    );
+                    return Err(errno!(EIO, "block pointer changed during allocation"));
                 }
                 parent_block.write_bid(slot, chain_root_bid)?;
             }
@@ -980,7 +974,7 @@ impl BlockPointerPath {
             ));
         }
 
-        return_errno_with_message!(Errno::EINVAL, "block number exceeds ext2 pointer tree");
+        Err(errno!(EINVAL, "block number exceeds ext2 pointer tree"))
     }
 
     fn from_slots(slots: [u32; MAX_BLOCK_POINTER_LEVELS], num_levels: usize) -> Self {

@@ -258,7 +258,7 @@ impl RangeLockList {
             if let Some(waker) = waker {
                 conflict_lock.waitqueue.enqueue(waker.clone());
             }
-            return_errno_with_message!(Errno::EAGAIN, "the file is locked");
+            Err(errno!(EAGAIN, "the file is locked"))
         } else {
             Self::insert_lock_into_list(&mut list, req_lock);
             Ok(())

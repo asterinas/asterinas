@@ -58,7 +58,7 @@ fn handle_get_ifconf(raw_ioctl: RawIoctl) -> Result<i32> {
             cmd.write(&ifconf)?;
             Ok(0)
         }
-        _ => return_errno_with_message!(Errno::ENOTTY, "the socket ioctl command is unknown"),
+        _ => Err(errno!(ENOTTY, "the socket ioctl command is unknown")),
     })
 }
 
@@ -118,7 +118,7 @@ fn network_device_ioctl(raw_ioctl: RawIoctl) -> Result<i32> {
             cmd.write(&ifreq)?;
             Ok(0)
         }
-        _ => return_errno_with_message!(Errno::ENOTTY, "the socket ioctl command is unknown"),
+        _ => Err(errno!(ENOTTY, "the socket ioctl command is unknown")),
     })
 }
 
@@ -268,13 +268,13 @@ impl CIfReq {
     pub(in crate::net::socket) fn get_iface_by_name(&mut self) -> Result<&'static Arc<Iface>> {
         iter_all_ifaces()
             .find(|iface| iface.name() == &self.name)
-            .ok_or_else(|| Error::with_message(Errno::ENODEV, "no interface found"))
+            .ok_or_else(|| errno!(ENODEV, "no interface found"))
     }
 
     fn get_iface_by_index(&self) -> Result<&'static Arc<Iface>> {
         let index = *self.data.value();
         iter_all_ifaces()
             .find(|iface| iface.index().cast_signed() == index)
-            .ok_or_else(|| Error::with_message(Errno::ENODEV, "no interface found"))
+            .ok_or_else(|| errno!(ENODEV, "no interface found"))
     }
 }

@@ -94,10 +94,10 @@ impl DrmModeConfig {
         object_store: DrmKmsObjectStore,
     ) -> Result<Self> {
         if !min_fb_size.is_within(0..=max_fb_size.width(), 0..=max_fb_size.height()) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the minimum framebuffer size exceeds the maximum framebuffer size"
-            );
+            ));
         }
 
         Ok(Self {
@@ -117,10 +117,10 @@ impl DrmModeConfig {
     /// The cursor dimensions must be nonzero and fit within the device's maximum framebuffer dimensions.
     pub fn set_cursor_size(mut self, cursor_size: DrmSize) -> Result<Self> {
         if !cursor_size.is_within(1..=self.max_fb_size.width(), 1..=self.max_fb_size.height()) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "the cursor size is empty or exceeds the maximum framebuffer size"
-            );
+            ));
         }
 
         self.cursor_size = Some(cursor_size);

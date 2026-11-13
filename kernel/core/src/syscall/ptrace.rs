@@ -25,8 +25,8 @@ pub(super) fn sys_ptrace(
     data: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let request = PtraceRequest::try_from(request)
-        .map_err(|_| Error::with_message(Errno::EIO, "invalid ptrace request"))?;
+    let request =
+        PtraceRequest::try_from(request).map_err(|_| errno!(EIO, "invalid ptrace request"))?;
     debug!(
         "ptrace: request = {:?}, tid = {}, addr = 0x{:x}, data = 0x{:x}",
         request, tid, addr, data
@@ -119,7 +119,7 @@ pub(super) fn sys_ptrace(
         }
         PtraceRequest::PTRACE_SETOPTIONS => {
             let options = PtraceOptions::from_bits(data)
-                .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid ptrace options"))?;
+                .ok_or_else(|| errno!(EINVAL, "invalid ptrace options"))?;
 
             let tracee = ctx.posix_thread.get_tracee(tid)?;
             let tracee = tracee.as_posix_thread().unwrap();
@@ -149,17 +149,17 @@ fn do_ptrace_attach(tracer_thread: &Arc<Thread>, tracee_thread: Arc<Thread>) -> 
     let tracer = tracer_thread.as_posix_thread().unwrap();
     let tracee = tracee_thread.as_posix_thread().unwrap();
     if !Arc::ptr_eq(&tracer.process().main_thread(), tracer_thread) {
-        return_errno_with_message!(
-            Errno::EOPNOTSUPP,
+        return Err(errno!(
+            EOPNOTSUPP,
             "using a non-main thread as a tracer is not supported currently"
-        );
+        ));
     }
 
     if Weak::ptr_eq(tracer.weak_process(), tracee.weak_process()) {
-        return_errno_with_message!(
-            Errno::EPERM,
+        return Err(errno!(
+            EPERM,
             "tracer and tracee must be in different processes"
-        );
+        ));
     }
 
     tracee.check_alien_access_from(tracer, AlienAccessMode::ATTACH_WITH_REAL_CREDS)?;
@@ -172,8 +172,7 @@ fn parse_ptrace_injected_signal(data: usize) -> Result<Option<SigNum>> {
         return Ok(None);
     }
 
-    let sig_num = u8::try_from(data)
-        .map_err(|_| Error::with_message(Errno::EINVAL, "invalid signal number"))?;
+    let sig_num = u8::try_from(data).map_err(|_| errno!(EINVAL, "invalid signal number"))?;
     let sig_num = SigNum::try_from(sig_num)?;
 
     Ok(Some(sig_num))

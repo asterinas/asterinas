@@ -79,7 +79,7 @@ impl ProcFileOps for StatusFileOps {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
         let Some((thread, process)) = self.0.thread_and_process() else {
-            return_errno_with_message!(Errno::ESRCH, "the thread or the process does not exist");
+            return Err(errno!(ESRCH, "the thread or the process does not exist"));
         };
         let posix_thread = thread.as_posix_thread().unwrap();
         let credentials = posix_thread.credentials();

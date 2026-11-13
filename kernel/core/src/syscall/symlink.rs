@@ -27,7 +27,7 @@ pub(super) fn sys_symlinkat(
 
     let target = target.to_string_lossy();
     if target.is_empty() {
-        return_errno_with_message!(Errno::ENOENT, "the symlink path is empty");
+        return Err(errno!(ENOENT, "the symlink path is empty"));
     }
 
     let (dir_path, link_name) = {

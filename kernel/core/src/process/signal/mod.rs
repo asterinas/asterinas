@@ -436,10 +436,10 @@ pub(crate) fn handle_user_signal(
             }
             _ => {
                 // Note that this should already be rejected at the `rt_sigaction` system call.
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "this architecture currently requires SA_RESTORER"
-                )
+                ));
             }
         }
     };

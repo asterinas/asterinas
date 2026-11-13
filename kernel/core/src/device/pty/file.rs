@@ -26,10 +26,10 @@ impl PtySlaveFile {
 
         let master_flags = slave.driver().tty_flags();
         if master_flags.is_pty_locked() || slave.tty_flags().is_other_closed() {
-            return_errno_with_message!(
-                Errno::EIO,
+            return Err(errno!(
+                EIO,
                 "a pty slave cannot be opened when the pty master is locked or closed"
-            );
+            ));
         }
         master_flags.clear_other_closed();
 
@@ -82,7 +82,7 @@ impl FileOps for PtySlaveFile {
 
 impl PerOpenFileOps for PtySlaveFile {
     fn check_seekable(&self) -> Result<()> {
-        return_errno_with_message!(Errno::ESPIPE, "the inode is a TTY");
+        Err(errno!(ESPIPE, "the inode is a TTY"))
     }
 
     fn is_offset_aware(&self) -> bool {

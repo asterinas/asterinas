@@ -41,7 +41,7 @@ impl ProcFileOpsByHandle for MapsFileOps {
         _status_flags: StatusFlags,
     ) -> Result<Box<dyn PerOpenFileOps>> {
         let Some(process) = self.0.process() else {
-            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+            return Err(errno!(ESRCH, "the process does not exist"));
         };
         // Hold the process VMAR lock while checking access permissions and
         // taking the VMAR identity snapshot to prevent race conditions.
@@ -55,7 +55,7 @@ impl ProcFileOpsByHandle for MapsFileOps {
                 current_thread!().as_posix_thread().unwrap(),
                 AlienAccessMode::READ_WITH_FS_CREDS,
             )
-            .map_err(|_| Error::with_message(Errno::EACCES, "alien access is denied"))?;
+            .map_err(|_| errno!(EACCES, "alien access is denied"))?;
 
         let vmar = vmar_guard.snapshot();
         Ok(Box::new(MapsFileHandle(self.0.clone(), vmar)))
@@ -82,7 +82,7 @@ impl FileOps for MapsFileHandle {
         let mut printer = VmPrinter::new_skip(writer, offset);
 
         let Some(process) = self.0.process() else {
-            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+            return Err(errno!(ESRCH, "the process does not exist"));
         };
         let vmar_guard = process.lock_vmar();
         if !vmar_guard.is_same_as(&self.1) {
@@ -115,7 +115,7 @@ impl FileOps for MapsFileHandle {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(Errno::EPERM, "`/proc/[pid]/maps` is not writable");
+        Err(errno!(EPERM, "`/proc/[pid]/maps` is not writable"))
     }
 }
 

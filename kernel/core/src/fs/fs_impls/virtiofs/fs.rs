@@ -53,11 +53,11 @@ impl FsType for VirtioFsType {
     fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
         let tag = fs_creation_ctx
             .source()
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "virtiofs source(tag) is required"))?
+            .ok_or_else(|| errno!(EINVAL, "virtiofs source(tag) is required"))?
             .to_string();
 
         let device = device::find_device_by_tag(&tag)
-            .ok_or_else(|| Error::with_message(Errno::ENODEV, "virtiofs device is not found"))?;
+            .ok_or_else(|| errno!(ENODEV, "virtiofs device is not found"))?;
 
         Ok(VirtioFs::new(device, tag)? as Arc<dyn FileSystem>)
     }
@@ -88,8 +88,8 @@ pub(super) struct VirtioFs {
 
 impl VirtioFs {
     fn new(device: Arc<FileSystemDevice>, tag: String) -> Result<Arc<Self>> {
-        let session = FuseSession::new(device)
-            .map_err(|_| Error::with_message(Errno::EIO, "virtiofs FUSE_INIT failed"))?;
+        let session =
+            FuseSession::new(device).map_err(|_| errno!(EIO, "virtiofs FUSE_INIT failed"))?;
 
         let anon_device_id =
             AnonDeviceId::acquire().expect("no device ID is available for virtiofs");

@@ -75,8 +75,7 @@ impl TryFrom<u16> for SecureBits {
     type Error = Error;
 
     fn try_from(value: u16) -> Result<Self> {
-        Self::from_bits(value)
-            .ok_or_else(|| Error::with_message(Errno::EPERM, "the bits are not valid secure bits"))
+        Self::from_bits(value).ok_or_else(|| errno!(EPERM, "the bits are not valid secure bits"))
     }
 }
 
@@ -127,11 +126,11 @@ impl AtomicSecureBits {
         let locked_bits = current.locked_bits();
 
         if locked_bits & current != locked_bits & bits {
-            return_errno_with_message!(Errno::EPERM, "one or more secure bits are locked");
+            return Err(errno!(EPERM, "one or more secure bits are locked"));
         }
 
         if SecureBits::LOCK_MASK & current.bits() & !bits.bits() != 0 {
-            return_errno_with_message!(Errno::EPERM, "locked secure bits cannot be unlocked");
+            return Err(errno!(EPERM, "locked secure bits cannot be unlocked"));
         }
 
         self.inner.store(bits, ordering);

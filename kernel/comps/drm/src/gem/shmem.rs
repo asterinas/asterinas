@@ -24,11 +24,11 @@ impl MappedObject for DrmGemShmemMappedObject {
 
     fn handle_page_fault(&self, offset: usize, mut handle: MapHandle) -> Result<()> {
         let Some(object_offset) = self.object_offset.checked_add(offset) else {
-            return_errno_with_message!(Errno::EFAULT, "the GEM page offset overflows");
+            return Err(errno!(EFAULT, "the GEM page offset overflows"));
         };
         let page_index = object_offset / PAGE_SIZE;
         let Some(page) = self.backend.pages.get(page_index) else {
-            return_errno_with_message!(Errno::EFAULT, "the GEM page offset is out of bounds");
+            return Err(errno!(EFAULT, "the GEM page offset is out of bounds"));
         };
 
         handle.map_frame(offset, page.clone());
@@ -73,9 +73,10 @@ impl DrmGemObjectBackend for DrmGemShmemBackend {
             let page_index = object_offset / PAGE_SIZE;
             let page_offset = object_offset % PAGE_SIZE;
             let copy_len = (PAGE_SIZE - page_offset).min(buf.len() - copied);
-            let page = self.pages.get(page_index).ok_or_else(|| {
-                Error::with_message(Errno::EINVAL, "the GEM read exceeds the shmem object")
-            })?;
+            let page = self
+                .pages
+                .get(page_index)
+                .ok_or_else(|| errno!(EINVAL, "the GEM read exceeds the shmem object"))?;
 
             page.read_bytes(page_offset, &mut buf[copied..copied + copy_len])?;
             object_offset += copy_len;

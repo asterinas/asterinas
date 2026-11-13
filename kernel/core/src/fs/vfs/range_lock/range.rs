@@ -23,7 +23,7 @@ pub(crate) struct FileRange {
 impl FileRange {
     pub(crate) fn new(start: usize, end: usize) -> Result<Self> {
         if start >= end {
-            return_errno_with_message!(Errno::EINVAL, "invalid parameters");
+            return Err(errno!(EINVAL, "invalid parameters"));
         }
         Ok(Self { start, end })
     }
@@ -42,7 +42,7 @@ impl FileRange {
 
     pub(crate) fn set_start(&mut self, new_start: usize) -> Result<FileRangeChange> {
         if new_start >= self.end {
-            return_errno_with_message!(Errno::EINVAL, "invalid new start");
+            return Err(errno!(EINVAL, "invalid new start"));
         }
         let old_start = self.start;
         self.start = new_start;
@@ -56,7 +56,7 @@ impl FileRange {
 
     pub(crate) fn set_end(&mut self, new_end: usize) -> Result<FileRangeChange> {
         if new_end <= self.start {
-            return_errno_with_message!(Errno::EINVAL, "invalid new end");
+            return Err(errno!(EINVAL, "invalid new end"));
         }
         let old_end = self.end;
         self.end = new_end;
@@ -87,7 +87,7 @@ impl FileRange {
 
     pub(crate) fn merge(&mut self, other: &Self) -> Result<FileRangeChange> {
         if self.end < other.start || other.end < self.start {
-            return_errno_with_message!(Errno::EINVAL, "can not merge separated ranges");
+            return Err(errno!(EINVAL, "can not merge separated ranges"));
         }
 
         let mut change = FileRangeChange::Same;

@@ -16,7 +16,7 @@ pub(super) fn sys_wait4(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let wait_options = WaitOptions::from_bits(wait_options)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown wait option"))?;
+        .ok_or_else(|| errno!(EINVAL, "unknown wait option"))?;
     debug!(
         "pid = {}, status_ptr = {}, wait_options: {:?}",
         wait_pid as i32, status_ptr, wait_options
@@ -27,15 +27,15 @@ pub(super) fn sys_wait4(
     if wait_options.intersects(WaitOptions::WSTOPPED | WaitOptions::WCONTINUED)
         && wait_options.contains(WaitOptions::WNOWAIT)
     {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        return Err(errno!(
+            EINVAL,
             "WNOWAIT cannot be used toghther with WSTOPPED or WCONTINUED"
-        );
+        ));
     }
 
     let wait_status =
         do_wait(process_filter, wait_options, ctx).map_err(|err| match err.error() {
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            Errno::EINTR => errno!(ERESTARTSYS),
             _ => err,
         })?;
     let Some(wait_status) = wait_status else {

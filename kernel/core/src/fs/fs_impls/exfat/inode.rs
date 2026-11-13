@@ -152,7 +152,7 @@ impl BlockAsPageCacheBackend for ExfatInode {
     ) -> Result<()> {
         let inner = self.inner.read();
         if inner.size_allocated <= idx * PAGE_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "invalid read size");
+            return Err(errno!(EINVAL, "invalid read size"));
         } else if inner.size <= idx * PAGE_SIZE {
             drop(inner);
             (complete_fn)(BioStatus::Zeros);
@@ -178,7 +178,7 @@ impl BlockAsPageCacheBackend for ExfatInode {
     ) -> Result<()> {
         let inner = self.inner.read();
         if inner.size_allocated <= idx * PAGE_SIZE {
-            return_errno_with_message!(Errno::EINVAL, "invalid write size");
+            return Err(errno!(EINVAL, "invalid write size"));
         }
         let fs = inner.fs();
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / fs.sector_size())?;
@@ -253,7 +253,7 @@ impl ExfatInodeInner {
     /// Only valid for directory, check if the dir is empty.
     fn is_empty_dir(&self) -> Result<bool> {
         if !self.inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
+            return Err(errno!(ENOTDIR));
         }
         Ok(self.num_sub_inodes == 0)
     }
@@ -392,7 +392,7 @@ impl ExfatInodeInner {
         fs_guard: &MutexGuard<()>,
     ) -> Result<(usize, usize)> {
         if !self.inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
+            return Err(errno!(ENOTDIR));
         }
         if dir_cnt == 0 {
             return Ok((offset, 0));
@@ -411,7 +411,7 @@ impl ExfatInodeInner {
             let dentry_result = iter.next();
 
             if dentry_result.is_none() {
-                return_errno_with_message!(Errno::ENOENT, "inode data not available")
+                return Err(errno!(ENOENT, "inode data not available"));
             }
 
             let dentry = dentry_result.unwrap()?;
@@ -444,7 +444,7 @@ impl ExfatInodeInner {
         fs_guard: &MutexGuard<()>,
     ) -> Result<usize> {
         if !self.inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
+            return Err(errno!(ENOTDIR));
         }
         let fs = self.fs();
         let cluster_size = fs.cluster_size();
@@ -461,7 +461,7 @@ impl ExfatInodeInner {
             for i in 0..(child_inner.dentry_set_size / DENTRY_SIZE - 1) {
                 let dentry_result = iter.next();
                 if dentry_result.is_none() {
-                    return_errno_with_message!(Errno::ENOENT, "inode data not available")
+                    return Err(errno!(ENOENT, "inode data not available"));
                 }
                 dentry_result.unwrap()?;
             }
@@ -553,7 +553,7 @@ impl ExfatInodeInner {
                 return Ok(inode.clone());
             }
         }
-        return_errno!(Errno::ENOENT)
+        Err(errno!(ENOENT))
     }
 
     fn delete_associated_secondary_clusters(
@@ -645,7 +645,7 @@ impl ExfatInode {
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let inner = self.inner.upread();
         if inner.inode_type.is_directory() {
-            return_errno!(Errno::EISDIR)
+            return Err(errno!(EISDIR));
         }
         let (read_off, read_len) = {
             let file_size = inner.size;
@@ -663,10 +663,10 @@ impl ExfatInode {
     fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let inner = self.inner.upread();
         if inner.inode_type.is_directory() {
-            return_errno!(Errno::EISDIR)
+            return Err(errno!(EISDIR));
         }
         if !is_block_aligned(offset) || !is_block_aligned(writer.avail()) {
-            return_errno_with_message!(Errno::EINVAL, "not block-aligned");
+            return Err(errno!(EINVAL, "not block-aligned"));
         }
 
         let sector_size = inner.fs().sector_size();
@@ -716,7 +716,7 @@ impl ExfatInode {
         let new_size = {
             let mut inner = self.inner.write();
             if inner.inode_type.is_directory() {
-                return_errno!(Errno::EISDIR)
+                return Err(errno!(EISDIR));
             }
 
             if write_len == 0 {
@@ -765,13 +765,13 @@ impl ExfatInode {
         let write_len = reader.remain();
         let inner = self.inner.upread();
         if inner.inode_type.is_directory() {
-            return_errno!(Errno::EISDIR)
+            return Err(errno!(EISDIR));
         }
         if write_len == 0 {
             return Ok(0);
         }
         if !is_block_aligned(offset) || !is_block_aligned(write_len) {
-            return_errno_with_message!(Errno::EINVAL, "not block-aligned");
+            return Err(errno!(EINVAL, "not block-aligned"));
         }
 
         let file_size = inner.size;
@@ -938,7 +938,7 @@ impl ExfatInode {
         let ino = fs.alloc_inode_number();
 
         if dentry_set.len() < EXFAT_MINIMUM_DENTRY {
-            return_errno_with_message!(Errno::EINVAL, "invalid dentry length")
+            return Err(errno!(EINVAL, "invalid dentry length"));
         }
 
         let dentry_set_size = dentry_set.len() * DENTRY_SIZE;
@@ -978,10 +978,10 @@ impl ExfatInode {
         let size_allocated = stream.size as usize;
 
         if attr.contains(FatAttr::DIRECTORY) && size != size_allocated {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "allocated_size and valid_size can only be different for files!"
-            )
+            ));
         }
 
         let chain_flag = FatChainFlags::from_bits_truncate(stream.flags);
@@ -1070,7 +1070,7 @@ impl ExfatInode {
             }
         }
 
-        return_errno_with_message!(Errno::EINVAL, "bitmap not found")
+        Err(errno!(EINVAL, "bitmap not found"))
     }
 
     pub(super) fn read_upcase_table(&self) -> Result<ExfatUpcaseTable> {
@@ -1084,7 +1084,7 @@ impl ExfatInode {
             }
         }
 
-        return_errno_with_message!(Errno::EINVAL, "upcase table not found")
+        Err(errno!(EINVAL, "upcase table not found"))
     }
 
     /// Find empty dentry. If not found, expand the cluster chain.
@@ -1115,7 +1115,7 @@ impl ExfatInode {
         // Empty entries not found, allocate new cluster.
 
         if inner.size >= EXFAT_MAX_DENTRIES as usize * DENTRY_SIZE {
-            return_errno!(Errno::ENOSPC)
+            return Err(errno!(ENOSPC));
         }
         let fs = inner.fs();
         let cluster_size = fs.cluster_size();
@@ -1337,11 +1337,11 @@ fn check_corner_cases_for_rename(
     let old_inode_is_dir = old_inode.inner.read().inode_type.is_directory();
     // If old_inode represents a directory, the exist 'new_name' must represents a empty directory.
     if old_inode_is_dir && !exist_inode.inner.read().is_empty_dir()? {
-        return_errno!(Errno::ENOTEMPTY)
+        return Err(errno!(ENOTEMPTY));
     }
     // If old_inode represents a file, the exist 'new_name' must also represents a file.
     if !old_inode_is_dir && exist_inode.inner.read().inode_type.is_directory() {
-        return_errno!(Errno::EISDIR)
+        return Err(errno!(EISDIR));
     }
     Ok(())
 }
@@ -1443,10 +1443,10 @@ impl Inode for ExfatInode {
         let inner = self.inner.upread();
 
         if inner.inode_type.is_directory() {
-            return_errno!(Errno::EISDIR)
+            return Err(errno!(EISDIR));
         }
         if !inner.inode_type.is_regular_file() {
-            return_errno!(Errno::EINVAL);
+            return Err(errno!(EINVAL));
         }
 
         let file_size = inner.size;
@@ -1577,11 +1577,11 @@ impl Inode for ExfatInode {
         {
             let inner = self.inner.read();
             if !inner.inode_type.is_directory() {
-                return_errno!(Errno::ENOTDIR)
+                return Err(errno!(ENOTDIR));
             }
 
             if inner.lookup_by_name(name, false, &fs_guard).is_ok() {
-                return_errno!(Errno::EEXIST)
+                return Err(errno!(EEXIST));
             }
         }
 
@@ -1606,7 +1606,7 @@ impl Inode for ExfatInode {
         _target: &str,
         _mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
+        Err(errno!(EINVAL, "unsupported operation"))
     }
 
     fn mknod(
@@ -1616,11 +1616,11 @@ impl Inode for ExfatInode {
         mode: InodeMode,
         type_: MknodType,
     ) -> Result<Arc<dyn Inode>> {
-        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
+        Err(errno!(EINVAL, "unsupported operation"))
     }
 
     fn link(&self, _self_dentry: &Dentry, _old_dentry: &Dentry, _name: &str) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
+        Err(errno!(EINVAL, "unsupported operation"))
     }
 
     fn unlink(&self, child_dentry: &Dentry) -> Result<()> {
@@ -1631,7 +1631,7 @@ impl Inode for ExfatInode {
 
         // FIXME: we need to step by following line to avoid deadlock.
         if inode.type_() != InodeType::File {
-            return_errno!(Errno::EISDIR)
+            return Err(errno!(EISDIR));
         }
         self.delete_inode(inode, true, &fs_guard)?;
         self.inner.write().update_atime_mtime_and_ctime()?;
@@ -1651,10 +1651,10 @@ impl Inode for ExfatInode {
         let inode = child_dentry.inode().downcast_ref::<ExfatInode>().unwrap();
 
         if inode.inner.read().inode_type != InodeType::Dir {
-            return_errno!(Errno::ENOTDIR)
+            return Err(errno!(ENOTDIR));
         } else if !inode.inner.read().is_empty_dir()? {
             // Check if directory to be deleted is empty.
-            return_errno!(Errno::ENOTEMPTY)
+            return Err(errno!(ENOTEMPTY));
         }
         self.delete_inode(inode, true, &fs_guard)?;
         self.inner.write().update_atime_mtime_and_ctime()?;
@@ -1672,7 +1672,7 @@ impl Inode for ExfatInode {
         // FIXME: Readdir should be immutable instead of mutable, but there will be no performance issues due to the global fs lock.
         let inner = self.inner.upread();
         if !inner.inode_type.is_directory() {
-            return_errno!(Errno::ENOTDIR)
+            return Err(errno!(ENOTDIR));
         }
 
         let inode = {
@@ -1695,7 +1695,7 @@ impl Inode for ExfatInode {
         mode: RenameMode,
     ) -> Result<()> {
         if mode == RenameMode::Exchange {
-            return_errno_with_message!(Errno::EINVAL, "RENAME_EXCHANGE is not supported on exfat");
+            return Err(errno!(EINVAL, "RENAME_EXCHANGE is not supported on exfat"));
         }
 
         let new_dir_inode = Arc::downcast::<ExfatInode>(new_dir_dentry.inode().clone()).unwrap();
@@ -1762,7 +1762,7 @@ impl Inode for ExfatInode {
     }
 
     fn read_link(&self) -> Result<SymbolicLink> {
-        return_errno_with_message!(Errno::EINVAL, "unsupported operation")
+        Err(errno!(EINVAL, "unsupported operation"))
     }
 
     fn sync(&self, mode: SyncMode) -> Result<()> {

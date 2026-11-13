@@ -151,7 +151,7 @@ impl RLimit64 {
     /// Only called when handling the `setrlimit` or `prlimit` syscall.
     pub(crate) fn set_raw_rlimit(&self, new: RawRLimit64, ctx: &Context) -> Result<RawRLimit64> {
         if new.cur > new.max {
-            return_errno_with_message!(Errno::EINVAL, "the current rlimit exceeds the max rlimit");
+            return Err(errno!(EINVAL, "the current rlimit exceeds the max rlimit"));
         }
         let _guard = self.lock.lock();
         if new.max > self.get_max() {

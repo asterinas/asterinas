@@ -69,7 +69,7 @@
 //!             cmd @ GetPtyLock => {
 //!                 cmd.write(if self.is_locked { &1 } else { &0 })?;
 //!             }
-//!             _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+//!             _ => return Err(errno!(ENOTTY, "the ioctl command is unknown")),
 //!         });
 //!         Ok(())
 //!     }

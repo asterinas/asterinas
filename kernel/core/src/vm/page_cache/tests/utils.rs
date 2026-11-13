@@ -208,7 +208,7 @@ impl MockPageCacheBackend {
         let mut state = self.state.lock();
         if state.should_fail_submit(kind, page_idx) {
             state.record_submission(kind, page_idx);
-            return_errno!(Errno::EIO);
+            return Err(errno!(EIO));
         }
 
         Ok(())
@@ -337,7 +337,7 @@ impl BlockAsPageCacheBackend for MockPageCacheBackend {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if page_idx >= self.num_pages {
-            return_errno!(Errno::EINVAL);
+            return Err(errno!(EINVAL));
         }
         self.submit_bio(IoKind::Read, page_idx, bio_segment, complete_fn, io_batch)
     }
@@ -350,7 +350,7 @@ impl BlockAsPageCacheBackend for MockPageCacheBackend {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if page_idx >= self.num_pages {
-            return_errno!(Errno::EINVAL);
+            return Err(errno!(EINVAL));
         }
         self.submit_bio(IoKind::Write, page_idx, bio_segment, complete_fn, io_batch)
     }

@@ -655,7 +655,7 @@ impl PeerGroup {
         let id = PEER_GROUP_ID_ALLOCATOR
             .lock()
             .alloc()
-            .ok_or_else(|| Error::with_message(Errno::ENOMEM, "peer group ID pool exhausted"))?;
+            .ok_or_else(|| errno!(ENOMEM, "peer group ID pool exhausted"))?;
 
         Ok(Self {
             id,

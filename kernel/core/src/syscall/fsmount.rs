@@ -27,12 +27,12 @@ pub(super) fn sys_fsmount(
         let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, fs_fd.try_into()?).into_owned();
         file.downcast_ref::<FsConfigFile>()
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not a fs context"))?;
+            .ok_or_else(|| errno!(EINVAL, "the file is not a fs context"))?;
         file
     };
     let fs_config = fs_config_file
         .downcast_ref::<FsConfigFile>()
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not a fs context"))?;
+        .ok_or_else(|| errno!(EINVAL, "the file is not a fs context"))?;
 
     let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
     let current_mnt_ns = current_ns_proxy.mnt_ns();
@@ -67,8 +67,7 @@ impl TryFrom<u32> for FsMountFlags {
     type Error = Error;
 
     fn try_from(value: u32) -> Result<Self> {
-        Self::from_bits(value)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown fsmount flags"))
+        Self::from_bits(value).ok_or_else(|| errno!(EINVAL, "unknown fsmount flags"))
     }
 }
 
@@ -86,8 +85,7 @@ impl TryFrom<u32> for MountAttrs {
     type Error = Error;
 
     fn try_from(value: u32) -> Result<Self> {
-        Self::from_bits(value)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "unsupported mount attributes"))
+        Self::from_bits(value).ok_or_else(|| errno!(EINVAL, "unsupported mount attributes"))
     }
 }
 
@@ -102,7 +100,7 @@ impl TryFrom<MountAttrs> for PerMountFlags {
 
         let atime_attrs = attrs & (MountAttrs::NOATIME | MountAttrs::STRICTATIME);
         if atime_attrs.bits().count_ones() > 1 {
-            return_errno_with_message!(Errno::EINVAL, "conflicting atime mount attributes");
+            return Err(errno!(EINVAL, "conflicting atime mount attributes"));
         }
 
         let mut flags = PerMountFlags::from_bits_truncate((attrs & SHARED_BITS).bits());

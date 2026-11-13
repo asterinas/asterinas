@@ -122,7 +122,7 @@ impl InotifyFile {
         if new_wd > MAX_VALID_WD {
             // Roll back the allocation if we exceed the limit.
             self.next_wd.fetch_sub(1, Ordering::Relaxed);
-            return_errno_with_message!(Errno::ENOSPC, "the inotify watch limit is reached");
+            return Err(errno!(ENOSPC, "the inotify watch limit is reached"));
         }
         Ok(new_wd)
     }
@@ -179,10 +179,10 @@ impl InotifyFile {
             // `inotify_add_watch("/proc/self/fd/[fd]")`, where `[fd]` is a file descriptor
             // pointing to a deleted file. Although Linux allows this, we don't support it, so an
             // error is returned here.
-            return_errno_with_message!(
-                Errno::ENOENT,
+            return Err(errno!(
+                ENOENT,
                 "adding an inotify watch to a deleted inode is not supported yet"
-            );
+            ));
         }
         inode.fs().fs_event_subscriber_stats().add_subscriber();
 
@@ -201,14 +201,14 @@ impl InotifyFile {
         let mut watch_map = self.watch_map.lock();
 
         let Some(entry) = watch_map.remove(&wd) else {
-            return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist");
+            return Err(errno!(EINVAL, "the inotify watch does not exist"));
         };
 
         let (inode, subscriber) = match (entry.inode.upgrade(), entry.subscriber.upgrade()) {
             (Some(inode), Some(subscriber)) => (inode, subscriber),
             // The subscriber is dead because it's a one-shot subscriber or the inode is dead.
             // The watch is considered removed.
-            _ => return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist"),
+            _ => return Err(errno!(EINVAL, "the inotify watch does not exist")),
         };
 
         if inode
@@ -303,7 +303,7 @@ impl InotifyFile {
         }
 
         if consumed_events == 0 {
-            return_errno_with_message!(Errno::EAGAIN, "no inotify events are available");
+            return Err(errno!(EAGAIN, "no inotify events are available"));
         }
 
         Ok(size)
@@ -348,12 +348,12 @@ impl FileLike for InotifyFile {
                 cmd.write(&size)?;
                 Ok(0)
             }
-            _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+            _ => Err(errno!(ENOTTY, "the ioctl command is unknown")),
         })
     }
 
     fn fallocate(&self, _mode: FallocMode, _offset: usize, _len: usize) -> Result<()> {
-        return_errno_with_message!(Errno::EBADF, "inotify file is not opened writable");
+        Err(errno!(EBADF, "inotify file is not opened writable"))
     }
 
     fn settable_status_flags(&self) -> SettableStatusFlags {
@@ -486,7 +486,7 @@ impl InotifySubscriber {
     /// Updates the interesting events and options atomically.
     fn update(&self, interesting: InotifyEvents, options: InotifyControls) -> Result<()> {
         if options.contains(InotifyControls::MASK_CREATE) {
-            return_errno_with_message!(Errno::EEXIST, "the inotify watch already exists");
+            return Err(errno!(EEXIST, "the inotify watch already exists"));
         }
 
         let mut merged_interesting = interesting;
@@ -611,7 +611,7 @@ impl InotifyEvent {
     fn copy_to_user(&self, writer: &mut VmWriter) -> Result<usize> {
         let total_size = self.total_size();
         if total_size > writer.avail() {
-            return_errno_with_message!(Errno::EINVAL, "the buffer is too small");
+            return Err(errno!(EINVAL, "the buffer is too small"));
         }
 
         // Write the header.

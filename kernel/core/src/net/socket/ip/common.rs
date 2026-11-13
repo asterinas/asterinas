@@ -29,10 +29,10 @@ impl From<BindError> for Error {
     fn from(value: BindError) -> Self {
         match value {
             BindError::Exhausted => {
-                Error::with_message(Errno::EAGAIN, "no ephemeral port is available")
+                errno!(EAGAIN, "no ephemeral port is available")
             }
             BindError::InUse => {
-                Error::with_message(Errno::EADDRINUSE, "the address is already in use")
+                errno!(EADDRINUSE, "the address is already in use")
             }
         }
     }
@@ -46,21 +46,11 @@ pub(super) fn get_ephemeral_endpoint(remote_endpoint: &IpEndpoint) -> Result<IpE
         IpAddress::Ipv4(_) => iface
             .ipv4_cidr()
             .map(|cidr| IpAddress::Ipv4(cidr.address()))
-            .ok_or_else(|| {
-                Error::with_message(
-                    Errno::EADDRNOTAVAIL,
-                    "the route output iface has no IPv4 address",
-                )
-            })?,
+            .ok_or_else(|| errno!(EADDRNOTAVAIL, "the route output iface has no IPv4 address",))?,
         IpAddress::Ipv6(_) => iface
             .ipv6_cidr()
             .map(|cidr| IpAddress::Ipv6(cidr.address()))
-            .ok_or_else(|| {
-                Error::with_message(
-                    Errno::EADDRNOTAVAIL,
-                    "the route output iface has no IPv6 address",
-                )
-            })?,
+            .ok_or_else(|| errno!(EADDRNOTAVAIL, "the route output iface has no IPv6 address",))?,
     };
 
     Ok(IpEndpoint::new(source, 0))

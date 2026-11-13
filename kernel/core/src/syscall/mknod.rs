@@ -59,7 +59,7 @@ pub(super) fn sys_mknodat(
         InodeType::Socket => {
             let _ = dir_path.new_child(&name, InodeType::Socket, inode_mode)?;
         }
-        _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),
+        _ => return Err(errno!(EPERM, "unimplemented file types")),
     }
     fs::vfs::notify::on_create(&dir_path, || name);
     Ok(SyscallReturn::Return(0))

@@ -62,7 +62,7 @@ pub(super) fn sys_timer_create(
                 let signum = u8::try_from(signo)
                     .ok()
                     .and_then(|signo| SigNum::try_from(signo).ok())
-                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid signal number"))?;
+                    .ok_or_else(|| errno!(EINVAL, "invalid signal number"))?;
                 Some(SignalMeta {
                     target: SignalTarget::Process(Arc::downgrade(&ctx.process)),
                     num: signum,
@@ -72,20 +72,20 @@ pub(super) fn sys_timer_create(
             // Send a signal to the specified thread when the timer is expired.
             SigNotify::SIGEV_THREAD_ID => {
                 let tid = sig_event.sigev_un.read_tid() as u32;
-                let thread = pid_table::pid_table_mut().get_thread(tid).ok_or_else(|| {
-                    Error::with_message(Errno::EINVAL, "the target thread does not exist")
-                })?;
+                let thread = pid_table::pid_table_mut()
+                    .get_thread(tid)
+                    .ok_or_else(|| errno!(EINVAL, "the target thread does not exist"))?;
                 let posix_thread = thread.as_posix_thread().unwrap();
                 if posix_thread.weak_process().as_ptr() != ctx.process.as_ref() {
-                    return_errno_with_message!(
-                        Errno::EINVAL,
+                    return Err(errno!(
+                        EINVAL,
                         "the target thread does not belong to the current process"
-                    );
+                    ));
                 }
                 let signum = u8::try_from(signo)
                     .ok()
                     .and_then(|signo| SigNum::try_from(signo).ok())
-                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid signal number"))?;
+                    .ok_or_else(|| errno!(EINVAL, "invalid signal number"))?;
                 Some(SignalMeta {
                     target: SignalTarget::Thread(Arc::downgrade(&thread)),
                     num: signum,
@@ -101,7 +101,7 @@ pub(super) fn sys_timer_create(
     let timer = create_timer(clockid, signal_fn, ctx)?;
 
     let Some(timer_id) = ctx.process.timer_manager().add_posix_timer(timer.clone()) else {
-        return_errno_with_message!(Errno::EAGAIN, "timer IDs are exhausted");
+        return Err(errno!(EAGAIN, "timer IDs are exhausted"));
     };
     if let Err(error) = ctx.user_space().write_val(timer_id_addr, &timer_id) {
         let _ = ctx.process.timer_manager().remove_posix_timer(timer_id);
@@ -120,7 +120,7 @@ pub(super) fn sys_timer_create(
 
 pub(super) fn sys_timer_delete(timer_id: timer_t, ctx: &Context) -> Result<SyscallReturn> {
     let Some(timer) = ctx.process.timer_manager().remove_posix_timer(timer_id) else {
-        return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
+        return Err(errno!(EINVAL, "invalid timer ID"));
     };
 
     timer.lock().cancel();
@@ -140,7 +140,7 @@ fn create_timer<F: TimerFn>(clockid: clockid_t, func: F, ctx: &Context) -> Resul
         DynamicClockIdInfo::Pid(pid, clock_type) => {
             let process = pid_table::pid_table_mut()
                 .get_process(pid)
-                .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
+                .ok_or_else(|| errno!(EINVAL, "invalid clock ID"))?;
             let process_timer_manager = process.timer_manager();
             match clock_type {
                 DynamicClockType::Profiling => process_timer_manager.create_prof_timer(func),
@@ -150,7 +150,7 @@ fn create_timer<F: TimerFn>(clockid: clockid_t, func: F, ctx: &Context) -> Resul
         DynamicClockIdInfo::Tid(tid, clock_type) => {
             let thread = pid_table::pid_table_mut()
                 .get_thread(tid)
-                .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
+                .ok_or_else(|| errno!(EINVAL, "invalid clock ID"))?;
             let posix_thread = thread.as_posix_thread().unwrap();
             match clock_type {
                 DynamicClockType::Profiling => posix_thread.create_prof_timer(func),
@@ -176,7 +176,7 @@ pub(crate) fn create_timer_for_clock<F: TimerFn>(
         ClockId::CLOCK_REALTIME => RealTimeClock::timer_manager().create_timer(func),
         ClockId::CLOCK_MONOTONIC => MonotonicClock::timer_manager().create_timer(func),
         ClockId::CLOCK_BOOTTIME => BootTimeClock::timer_manager().create_timer(func),
-        _ => return_errno_with_message!(Errno::EINVAL, "invalid clock ID"),
+        _ => return Err(errno!(EINVAL, "invalid clock ID")),
     };
     Ok(timer)
 }

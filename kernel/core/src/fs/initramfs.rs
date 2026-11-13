@@ -127,7 +127,7 @@ fn try_append_entry_to_rootfs<R: Read>(
     // Make sure the name is a relative path, and is not end with "/".
     let entry_name = entry.name().trim_start_matches('/').trim_end_matches('/');
     if entry_name.is_empty() {
-        return_errno_with_message!(Errno::EINVAL, "invalid entry name");
+        return Err(errno!(EINVAL, "invalid entry name"));
     }
     if is_dot(entry_name) {
         return Ok(());
@@ -180,7 +180,10 @@ fn try_append_entry_to_rootfs<R: Read>(
             parent.mknod(name, mode, MknodType::NamedPipe)?;
         }
         FileType::Socket => {
-            return_errno_with_message!(Errno::EINVAL, "socket files are not supported in initramfs")
+            return Err(errno!(
+                EINVAL,
+                "socket files are not supported in initramfs"
+            ));
         }
     }
 
@@ -297,10 +300,9 @@ impl io::Write for InodeWriter<'_> {
 fn try_device_id_from_metadata(metadata: &FileMetadata) -> Result<u64> {
     let major = {
         let dev_maj = u16::try_from(metadata.rdev_maj())?;
-        MajorId::try_from(dev_maj).map_err(|msg| Error::with_message(Errno::EINVAL, msg))?
+        MajorId::try_from(dev_maj).map_err(|_msg| errno!(EINVAL, _msg))?
     };
-    let minor = MinorId::try_from(metadata.rdev_min())
-        .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?;
+    let minor = MinorId::try_from(metadata.rdev_min()).map_err(|_msg| errno!(EINVAL, _msg))?;
     Ok(DeviceId::new(major, minor).as_encoded_u64())
 }
 

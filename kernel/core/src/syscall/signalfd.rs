@@ -67,8 +67,8 @@ pub(super) fn sys_signalfd4(
     mask -= SIGKILL;
     mask -= SIGSTOP;
 
-    let flags = SignalFileFlags::from_bits(flags as u32)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
+    let flags =
+        SignalFileFlags::from_bits(flags as u32).ok_or_else(|| errno!(EINVAL, "invalid flags"))?;
 
     let fd_flags = if flags.contains(SignalFileFlags::O_CLOEXEC) {
         FdFlags::CLOEXEC
@@ -113,7 +113,7 @@ fn update_existing_signalfd(
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let signal_file = file
         .downcast_ref::<SignalFile>()
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the file is not a signal file"))?;
+        .ok_or_else(|| errno!(EINVAL, "the file is not a signal file"))?;
 
     signal_file.update_signal_mask(new_mask);
     signal_file.set_non_blocking(non_blocking);
@@ -201,7 +201,7 @@ impl SignalFile {
         }
 
         if count == 0 {
-            return_errno_with_message!(Errno::EAGAIN, "no signals are pending");
+            return Err(errno!(EAGAIN, "no signals are pending"));
         }
         Ok(count * size_of::<SignalfdSiginfo>())
     }
@@ -223,7 +223,7 @@ impl Pollable for SignalFile {
 impl FileLike for SignalFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if writer.avail() < size_of::<SignalfdSiginfo>() {
-            return_errno_with_message!(Errno::EINVAL, "the signal buffer is too small");
+            return Err(errno!(EINVAL, "the signal buffer is too small"));
         }
 
         let thread = current_thread!();

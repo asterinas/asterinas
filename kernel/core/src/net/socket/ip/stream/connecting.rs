@@ -36,7 +36,7 @@ impl ConnectingStream {
                 Ok(tcp_conn) => tcp_conn,
                 Err((bound_port, ConnectError::AddressInUse)) => {
                     return Err((
-                        Error::with_message(Errno::EADDRNOTAVAIL, "connection key conflicts"),
+                        errno!(EADDRNOTAVAIL, "connection key conflicts"),
                         bound_port,
                     ));
                 }
@@ -49,8 +49,8 @@ impl ConnectingStream {
                     // We assume the remote will just refuse to connect,
                     // so we return `ECONNREFUSED`.
                     return Err((
-                        Error::with_message(
-                            Errno::ECONNREFUSED,
+                        errno!(
+                            ECONNREFUSED,
                             "connecting to an unspecified address is not supported",
                         ),
                         bound_port,

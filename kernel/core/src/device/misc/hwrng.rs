@@ -98,7 +98,7 @@ impl FileOps for HwRngFile {
             let res = if is_nonblocking {
                 match dev.try_read(&mut new_writer)? {
                     Some(copied) => Ok(copied),
-                    None => return_errno_with_message!(Errno::EAGAIN, "no entropy is available"),
+                    None => return Err(errno!(EAGAIN, "no entropy is available")),
                 }
             } else {
                 dev.wait_queue()
@@ -134,10 +134,10 @@ impl FileOps for HwRngFile {
     ) -> Result<usize> {
         // FIXME: Opening this device with `O_WRONLY` or `O_RDWR` fails on Linux. Therefore, the
         // write operation should never be reached. See the TODO in `HwRngDevice::open`.
-        return_errno_with_message!(
-            Errno::EBADF,
+        Err(errno!(
+            EBADF,
             "the hardware RNG device does not support writing"
-        );
+        ))
     }
 }
 
@@ -153,7 +153,7 @@ impl PerOpenFileOps for HwRngFile {
 
 fn current_device() -> Result<Arc<EntropyDevice>> {
     let Some(rng) = RNG_CURRENT.lock().clone() else {
-        return_errno_with_message!(Errno::ENODEV, "no current hardware RNG device is selected");
+        return Err(errno!(ENODEV, "no current hardware RNG device is selected"));
     };
     Ok(rng)
 }

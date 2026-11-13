@@ -173,10 +173,10 @@ impl FileOps for OpenBlockFile {
 
         let device_size = self.0.metadata().nr_sectors * SECTOR_SIZE;
         if offset >= device_size {
-            return_errno_with_message!(
-                Errno::ENOSPC,
+            return Err(errno!(
+                ENOSPC,
                 "the write offset is beyond the block device"
-            );
+            ));
         }
 
         let write_len = total.min(device_size - offset);
@@ -230,10 +230,10 @@ impl PerOpenFileOps for OpenBlockFile {
                 cmd.write(&size)?;
                 Ok(0)
             }
-            _ => return_errno_with_message!(
-                Errno::ENOTTY,
+            _ => Err(errno!(
+                ENOTTY,
                 "the ioctl command is not supported by block devices"
-            ),
+            )),
         })
     }
 
@@ -248,7 +248,7 @@ impl PerOpenFileOps for OpenBlockFile {
             BioStatus::Complete | BioStatus::NotSupported => Ok(()),
             status @ (BioStatus::NoSpace | BioStatus::IoError) => Err(status.into()),
             BioStatus::Init | BioStatus::Submit | BioStatus::Zeros => {
-                return_errno_with_message!(Errno::EIO, "invalid block device flush status")
+                Err(errno!(EIO, "invalid block device flush status"))
             }
         }
     }

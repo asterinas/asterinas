@@ -57,7 +57,7 @@ fn set_priority_one(new_nice: Nice, process: &Process, ctx: &Context) -> Result<
         && (20 - new_nice.value().get()) as u64 > limit
         && check_nice_capability(ctx).is_err()
     {
-        return_errno_with_message!(Errno::EACCES, "the nice value reaches the resource limit");
+        return Err(errno!(EACCES, "the nice value reaches the resource limit"));
     }
 
     // FIXME: `setpriority` updates only the per-process nice value. Fair

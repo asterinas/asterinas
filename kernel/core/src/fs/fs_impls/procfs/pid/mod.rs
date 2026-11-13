@@ -61,7 +61,7 @@ impl ProcDirOps for PidDirOps {
 
     fn lookup_child(&self, this_dir: &ProcDir<Self>, name: &str) -> Result<Arc<dyn Inode>> {
         if self.0.pid_entry().type_().is_none() {
-            return_errno_with_message!(Errno::ESRCH, "the process does not exist");
+            return Err(errno!(ESRCH, "the process does not exist"));
         }
 
         // Look up entries that either exist under `/proc/<pid>`
@@ -91,7 +91,7 @@ impl ProcDirOps for PidDirOps {
         F: FnMut(ReaddirEntry<'a>) -> Result<()>,
     {
         if self.0.pid_entry().type_().is_none() {
-            return_errno_with_message!(Errno::ENOENT, "the process does not exist");
+            return Err(errno!(ENOENT, "the process does not exist"));
         }
 
         const PROCESS_OVERRIDE_NAMES: &[&str] = &["stat"];

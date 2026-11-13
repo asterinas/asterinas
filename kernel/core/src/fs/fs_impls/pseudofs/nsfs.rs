@@ -134,10 +134,7 @@ impl<T: NsCommonOps> Inode for NsInode<T> {
         // CAP_DAC_OVERRIDE capability. It is hard to find a better place for it,
         // and an extra check here does no harm.
         if access_mode.is_writable() {
-            return Some(Err(Error::with_message(
-                Errno::EPERM,
-                "ns files cannot be opened as writable",
-            )));
+            return Some(Err(errno!(EPERM, "ns files cannot be opened as writable",)));
         }
 
         let ns_file = NsFile {
@@ -147,7 +144,7 @@ impl<T: NsCommonOps> Inode for NsInode<T> {
     }
 
     fn set_mode(&self, _self_dentry: &Dentry, _mode: InodeMode) -> Result<()> {
-        return_errno_with_message!(Errno::EPERM, "the mode of ns inodes cannot be changed");
+        Err(errno!(EPERM, "the mode of ns inodes cannot be changed"))
     }
 }
 
@@ -181,7 +178,7 @@ impl<T: NsCommonOps> NsFile<T> {
 
 impl<T: NsCommonOps> PerOpenFileOps for NsFile<T> {
     fn check_seekable(&self) -> Result<()> {
-        return_errno_with_message!(Errno::ESPIPE, "ns files are not seekable");
+        Err(errno!(ESPIPE, "ns files are not seekable"))
     }
 
     fn is_offset_aware(&self) -> bool {
@@ -199,19 +196,16 @@ impl<T: NsCommonOps> PerOpenFileOps for NsFile<T> {
         dispatch_ioctl!(match raw_ioctl {
             _cmd @ GetUserNs => {
                 let user_ns = self.ns.owner_user_ns().ok_or_else(|| {
-                    Error::with_message(
-                        Errno::EPERM,
-                        "the namespace does not have an owner user namespace",
-                    )
+                    errno!(EPERM, "the namespace does not have an owner user namespace",)
                 })?;
 
                 let current = current!();
                 let current_user_ns = current.user_ns().lock();
                 if !current_user_ns.is_same_or_ancestor_of(user_ns) {
-                    return_errno_with_message!(
-                        Errno::EPERM,
+                    return Err(errno!(
+                        EPERM,
                         "the current namespace is not an ancestor of the owner user namespace"
-                    );
+                    ));
                 }
 
                 open_ns_as_file(user_ns).map(|fd| fd.into())
@@ -227,8 +221,8 @@ impl<T: NsCommonOps> PerOpenFileOps for NsFile<T> {
             cmd @ GetOwnerUid => {
                 let ns = self.ns.as_ref() as &dyn Any;
                 let user_ns = ns.downcast_ref::<UserNamespace>().ok_or_else(|| {
-                    Error::with_message(
-                        Errno::EINVAL,
+                    errno!(
+                        EINVAL,
                         "the ns file does not correspond to a user namespace",
                     )
                 })?;
@@ -237,7 +231,7 @@ impl<T: NsCommonOps> PerOpenFileOps for NsFile<T> {
                 Ok(0)
             }
             // TODO: Support additional ioctl commands
-            _ => return_errno_with_message!(Errno::ENOTTY, "the ioctl command is unknown"),
+            _ => Err(errno!(ENOTTY, "the ioctl command is unknown")),
         })
     }
 }
@@ -255,10 +249,10 @@ impl<T: NsCommonOps> FileOps for NsFile<T> {
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        Err(errno!(
+            EINVAL,
             "ns files cannot be read at a specific offset"
-        );
+        ))
     }
 
     fn write_at(
@@ -267,10 +261,10 @@ impl<T: NsCommonOps> FileOps for NsFile<T> {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        Err(errno!(
+            EINVAL,
             "ns files cannot be written at a specific offset"
-        );
+        ))
     }
 }
 

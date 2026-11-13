@@ -34,14 +34,14 @@ fn do_arch_prctl(code: ArchPrctlCode, addr: usize, ctx: &Context) -> Result<u64>
     match code {
         ArchPrctlCode::ARCH_SET_GS => {
             if addr >= MAX_USERSPACE_VADDR {
-                return_errno_with_message!(Errno::EPERM, "gsbase must be a userspace address");
+                return Err(errno!(EPERM, "gsbase must be a userspace address"));
             }
             supp.gs_base().set(GsBase::new(addr));
             Ok(0)
         }
         ArchPrctlCode::ARCH_SET_FS => {
             if addr >= MAX_USERSPACE_VADDR {
-                return_errno_with_message!(Errno::EPERM, "fsbase must be a userspace address");
+                return Err(errno!(EPERM, "fsbase must be a userspace address"));
             }
             supp.fs_base().set(FsBase::new(addr));
             Ok(0)

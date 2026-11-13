@@ -23,12 +23,12 @@ pub(super) fn sys_timerfd_settime(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let flags = TFDSetTimeFlags::from_bits(flags as u32)
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags for timerfd_settime"))?;
+        .ok_or_else(|| errno!(EINVAL, "invalid flags for timerfd_settime"))?;
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, raw_fd.try_into()?);
     let timerfd_file = file
         .downcast_ref::<TimerfdFile>()
-        .ok_or_else(|| Error::with_message(Errno::EINVAL, "the fd is not a timerfd"))?;
+        .ok_or_else(|| errno!(EINVAL, "the fd is not a timerfd"))?;
 
     let user_space = ctx.user_space();
     let new_itimerspec = user_space.read_val::<itimerspec_t>(new_itimerspec_addr)?;

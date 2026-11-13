@@ -49,7 +49,7 @@ impl InodeBlockManager {
     pub(super) fn fs(&self) -> Result<Arc<Ext2>> {
         self.fs
             .upgrade()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "filesystem already dropped"))
+            .ok_or_else(|| errno!(EIO, "filesystem already dropped"))
     }
 
     /// Looks up a single logical block -> physical block.
@@ -108,9 +108,9 @@ impl InodeBlockManager {
         let mut current_block = start_block;
         while current_block < end_block {
             let iblock = Iblock::try_from(current_block)
-                .map_err(|_| Error::with_message(Errno::EINVAL, "logical block number overflow"))?;
+                .map_err(|_| errno!(EINVAL, "logical block number overflow"))?;
             let remaining = u32::try_from(end_block - current_block)
-                .map_err(|_| Error::with_message(Errno::EINVAL, "block range length overflow"))?;
+                .map_err(|_| errno!(EINVAL, "block range length overflow"))?;
 
             let block_range = tree.resolve_block_range(&fs, iblock, remaining)?;
             match block_range {
@@ -142,7 +142,7 @@ impl BlockAsPageCacheBackend for InodeBlockManager {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if idx >= self.npages.load(Ordering::Acquire) {
-            return_errno_with_message!(Errno::EINVAL, "invalid read size");
+            return Err(errno!(EINVAL, "invalid read size"));
         }
         let iblock = idx as Iblock;
         match self.lookup_block(iblock)? {
@@ -162,7 +162,7 @@ impl BlockAsPageCacheBackend for InodeBlockManager {
         let start_idx = pages.start_idx();
         let end_idx = start_idx + pages.len();
         if end_idx > self.npages.load(Ordering::Acquire) {
-            return_errno_with_message!(Errno::EINVAL, "invalid read size");
+            return Err(errno!(EINVAL, "invalid read size"));
         }
 
         let iblock_range = start_idx as Iblock..end_idx as Iblock;
@@ -201,7 +201,7 @@ impl BlockAsPageCacheBackend for InodeBlockManager {
         io_batch: &mut IoBatch,
     ) -> Result<()> {
         if idx >= self.npages.load(Ordering::Acquire) {
-            return_errno_with_message!(Errno::EINVAL, "invalid write size");
+            return Err(errno!(EINVAL, "invalid write size"));
         }
         let iblock = idx as Iblock;
         let fs = self.fs()?;
@@ -231,7 +231,7 @@ impl BlockAsPageCacheBackend for InodeBlockManager {
         let start_idx = pages.start_idx();
         let end_idx = start_idx + pages.len();
         if end_idx > self.npages.load(Ordering::Acquire) {
-            return_errno_with_message!(Errno::EINVAL, "invalid write size");
+            return Err(errno!(EINVAL, "invalid write size"));
         }
         self.allocate_range_blocks(start_idx, end_idx)?;
         let iblock_range = start_idx as Iblock..end_idx as Iblock;
@@ -250,10 +250,7 @@ impl BlockAsPageCacheBackend for InodeBlockManager {
                     )?;
                 }
                 IoRange::Hole(_) => {
-                    return_errno_with_message!(
-                        Errno::EIO,
-                        "unexpected hole after writeback allocation"
-                    );
+                    return Err(errno!(EIO, "unexpected hole after writeback allocation"));
                 }
             }
         }

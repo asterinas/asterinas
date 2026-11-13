@@ -143,10 +143,10 @@ impl CloneArgs {
             (true, false) => (Some(parent_tid), None),
             (false, true) => (None, Some(parent_tid)),
             (true, true) => {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "`CLONE_PIDFD` and `CLONE_PARENT_SETTID` cannot be specified together"
-                );
+                ));
             }
         };
 
@@ -188,43 +188,43 @@ impl CloneArgs {
         if clone_flags.contains(CloneFlags::CLONE_FS)
             && clone_flags.intersects(CloneFlags::CLONE_NEWNS | CloneFlags::CLONE_NEWUSER)
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "`CLONE_FS` cannot be used together with `CLONE_NEWNS` or `CLONE_NEWUSER`"
-            );
+            ));
         }
 
         // Reject invalid argument combinations related to the CLONE_PARENT flag.
         if clone_flags.contains(CloneFlags::CLONE_PARENT) {
             if clone_flags.intersects(CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWPID) {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "`CLONE_PARENT` cannot be used together with `CLONE_NEWUSER` or `CLONE_NEWPID`"
-                );
+                ));
             }
 
             if ctx.process.is_init_process() {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "`CLONE_PARENT` cannot be used if the process is the init process"
-                )
+                ));
             }
         }
 
         // Reject invalid argument combinations related to the CLONE_THREAD flag.
         if clone_flags.contains(CloneFlags::CLONE_THREAD) {
             if !clone_flags.contains(CloneFlags::CLONE_VM | CloneFlags::CLONE_SIGHAND) {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "`CLONE_THREAD` without `CLONE_VM` and `CLONE_SIGHAND` is not valid"
-                );
+                ));
             }
 
             if clone_flags.intersects(CloneFlags::CLONE_PIDFD | CloneFlags::CLONE_NEWUSER) {
-                return_errno_with_message!(
-                    Errno::EINVAL,
+                return Err(errno!(
+                    EINVAL,
                     "`CLONE_THREAD` cannot be used together with `CLONE_PIDFD` or `CLONE_NEWUSER`"
-                );
+                ));
             }
         }
 
@@ -232,20 +232,20 @@ impl CloneArgs {
         if clone_flags.contains(CloneFlags::CLONE_SIGHAND)
             && !clone_flags.contains(CloneFlags::CLONE_VM)
         {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "`CLONE_SIGHAND` without `CLONE_VM` is not valid"
-            );
+            ));
         }
 
         // TODO: Support clone-family ptrace events and remove this check.
         if !clone_flags.contains(CloneFlags::CLONE_UNTRACED)
             && ctx.posix_thread.needs_ptrace_clone_stop(self)
         {
-            return_errno_with_message!(
-                Errno::EOPNOTSUPP,
+            return Err(errno!(
+                EOPNOTSUPP,
                 "ptrace clone events are not supported currently"
-            );
+            ));
         }
 
         Ok(())
@@ -318,9 +318,7 @@ pub(crate) fn clone_child(
             let pids_charge = cgroup
                 .controller()
                 .pre_charge_pids(&cgroup_read_guard)
-                .map_err(|_| {
-                    Error::with_message(Errno::EAGAIN, "the pids sub-controller limit is reached")
-                })?;
+                .map_err(|_| errno!(EAGAIN, "the pids sub-controller limit is reached"))?;
             Some(pids_charge)
         } else {
             None
@@ -476,8 +474,8 @@ fn clone_child_task(
         .lock()
         .insert(child_task.clone())
         .map_err(|_| {
-            Error::with_message(
-                Errno::EINTR,
+            errno!(
+                EINTR,
                 "the process has exited or has already executed a new program",
             )
         })?;
@@ -810,10 +808,10 @@ fn clone_user_ns(
     thread_local: &ThreadLocal,
 ) -> Result<Arc<UserNamespace>> {
     if clone_flags.contains(CloneFlags::CLONE_NEWUSER) {
-        return_errno_with_message!(
-            Errno::EINVAL,
+        Err(errno!(
+            EINVAL,
             "cloning a new user namespace is not supported"
-        );
+        ))
     } else {
         Ok(thread_local.borrow_user_ns().clone())
     }

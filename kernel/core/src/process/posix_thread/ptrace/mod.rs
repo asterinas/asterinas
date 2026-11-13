@@ -247,7 +247,7 @@ impl PosixThread {
     fn get_tracee_status(&self) -> Result<&TraceeStatus> {
         self.tracee_status
             .get()
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "the thread has never been traced"))
+            .ok_or_else(|| errno!(ESRCH, "the thread has never been traced"))
     }
 }
 
@@ -303,7 +303,7 @@ impl PosixThread {
     pub(crate) fn get_tracee(&self, tid: Tid) -> Result<Arc<Thread>> {
         self.tracees()
             .and_then(|tracees| tracees.lock().get(&tid).cloned())
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "no such tracee"))
+            .ok_or_else(|| errno!(ESRCH, "no such tracee"))
     }
 
     /// Clears all tracees of this tracer on exit.
@@ -358,7 +358,7 @@ impl TraceeStatus {
     fn set_tracer(&self, tracer: Weak<Thread>) -> Result<()> {
         let mut state = self.state.lock();
         if state.tracer().is_some() {
-            return_errno_with_message!(Errno::EPERM, "the thread is already being traced");
+            return Err(errno!(EPERM, "the thread is already being traced"));
         }
         state.tracer = tracer;
 
@@ -565,7 +565,7 @@ impl TraceeStatus {
         if self.is_ptrace_stopped() {
             Ok(())
         } else {
-            return_errno_with_message!(Errno::ESRCH, "the thread is not ptrace-stopped");
+            Err(errno!(ESRCH, "the thread is not ptrace-stopped"))
         }
     }
 
@@ -652,14 +652,14 @@ impl TraceeStatus {
         let process = process.upgrade().unwrap();
         let vmar_guard = process.lock_vmar();
         let Some(vmar) = vmar_guard.as_ref() else {
-            return_errno_with_message!(Errno::EIO, "the process has exited");
+            return Err(errno!(EIO, "the process has exited"));
         };
 
         let mut value = [0u8; size_of::<usize>()];
         let mut writer = VmWriter::from(value.as_mut_slice()).to_fallible();
         match vmar.read_alien(addr, &mut writer) {
             Ok(bytes) if bytes == value.len() => Ok(usize::from_ne_bytes(value)),
-            _ => return_errno_with_message!(Errno::EIO, "failed to read tracee memory"),
+            _ => Err(errno!(EIO, "failed to read tracee memory")),
         }
     }
 
@@ -671,14 +671,14 @@ impl TraceeStatus {
         let process = process.upgrade().unwrap();
         let vmar_guard = process.lock_vmar();
         let Some(vmar) = vmar_guard.as_ref() else {
-            return_errno_with_message!(Errno::EIO, "the process has exited");
+            return Err(errno!(EIO, "the process has exited"));
         };
 
         let value = value.to_ne_bytes();
         let mut reader = VmReader::from(value.as_slice()).to_fallible();
         match vmar.write_alien(addr, &mut reader) {
             Ok(bytes) if bytes == value.len() => Ok(()),
-            _ => return_errno_with_message!(Errno::EIO, "failed to write tracee memory"),
+            _ => Err(errno!(EIO, "failed to write tracee memory")),
         }
     }
 

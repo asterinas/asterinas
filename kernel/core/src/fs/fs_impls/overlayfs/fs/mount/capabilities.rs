@@ -88,10 +88,10 @@ impl UpperFilesystemCapabilities {
         match uuid_mode {
             UuidMode::On => {
                 if !self.can_store_private_xattr() {
-                    return_errno_with_message!(
-                        Errno::EOPNOTSUPP,
+                    return Err(errno!(
+                        EOPNOTSUPP,
                         "the upper filesystem cannot persist the overlay uuid"
-                    );
+                    ));
                 }
                 Ok(true)
             }

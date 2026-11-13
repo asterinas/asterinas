@@ -31,17 +31,16 @@ impl ProcessFilter {
             P_PGID => Ok(ProcessFilter::WithPgid(id)),
             P_PIDFD => {
                 let fd = FileDesc::try_from(id.cast_signed())
-                    .map_err(|_| Error::with_message(Errno::EINVAL, "the pidfd is invalid"))?;
+                    .map_err(|_| errno!(EINVAL, "the pidfd is invalid"))?;
                 let file = {
                     let mut file_table = ctx.thread_local.borrow_file_table_mut();
                     get_file_fast!(&mut file_table, fd).into_owned()
                 };
-                let pid_file = Arc::downcast(file).map_err(|_| {
-                    Error::with_message(Errno::EINVAL, "the file is not a PID file")
-                })?;
+                let pid_file = Arc::downcast(file)
+                    .map_err(|_| errno!(EINVAL, "the file is not a PID file"))?;
                 Ok(ProcessFilter::WithPidfd(pid_file))
             }
-            _ => return_errno_with_message!(Errno::EINVAL, "the process filter is invalid"),
+            _ => Err(errno!(EINVAL, "the process filter is invalid")),
         }
     }
 
@@ -52,7 +51,7 @@ impl ProcessFilter {
         // <https://man7.org/linux/man-pages/man2/kill.2.html>
         if wait_pid == i32::MIN {
             // Note that performing `-wait_pid` will overflow, so we return an error directly.
-            return_errno_with_message!(Errno::ESRCH, "the target group does not exist");
+            Err(errno!(ESRCH, "the target group does not exist"))
         } else if wait_pid < -1 {
             // "wait for any child process whose process group ID is equal to the absolute value of
             // `pid`"

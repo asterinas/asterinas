@@ -22,7 +22,7 @@ pub(super) fn sys_memfd_create(
         .read_cstring(name_addr, MAX_MEMFD_NAME_LEN + 1)
         .map_err(|err| {
             if err.error() == Errno::ENAMETOOLONG {
-                Error::with_message(Errno::EINVAL, "the memfd name is too long")
+                errno!(EINVAL, "the memfd name is too long")
             } else {
                 err
             }
@@ -43,10 +43,10 @@ pub(super) fn sys_memfd_create(
         }
 
         if memfd_flags.contains(MemfdFlags::MFD_NOEXEC_SEAL | MemfdFlags::MFD_EXEC) {
-            return_errno_with_message!(
-                Errno::EINVAL,
+            return Err(errno!(
+                EINVAL,
                 "`MFD_EXEC` and `MFD_NOEXEC_SEAL` cannot be specified together"
-            );
+            ));
         }
 
         let memfd_file = InodeHandle::new_memfd(name.to_string_lossy().into_owned(), memfd_flags)?;
