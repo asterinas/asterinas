@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub mod lsm;
+pub mod securityfs;
 
 cfg_select! {
     all(target_arch = "x86_64", feature = "cvm_guest") => {
@@ -11,7 +12,7 @@ cfg_select! {
 }
 
 pub(super) fn init() {
-    lsm::init();
+    lsm::init().expect("selected LSM modules must initialize successfully");
 
     #[cfg(target_arch = "x86_64")]
     ostd::if_tdx_enabled!({

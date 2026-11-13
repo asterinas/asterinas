@@ -45,23 +45,83 @@ aster_cmdline::define_kv_param!("security", LEGACY_SECURITY_PARAM);
 /// LSM modules that are always enabled before boot-selected modules.
 static MANDATORY_MODULES: [&'static dyn LsmModule; 1] = [&capability::CAPABILITY_LSM];
 
-/// All LSM modules compiled into the kernel.
-static ALL_MODULES: [&'static dyn LsmModule; 2] = [&capability::CAPABILITY_LSM, &yama::YAMA_LSM];
+/// LSM modules provided by `aster-core`; components register separately.
+static ALL_BUILTIN_MODULES: [&'static dyn LsmModule; 2] =
+    [&capability::CAPABILITY_LSM, &yama::YAMA_LSM];
 
 /// The fallback optional LSM stack used when no boot-time selector is specified.
 pub(super) static DEFAULT_OPTIONAL_MODULES: [&'static dyn LsmModule; 1] = [&yama::YAMA_LSM];
 
 static ALL_MODULES_BY_NAME: Once<BTreeMap<&'static str, &'static dyn LsmModule>> = Once::new();
 static ACTIVE_MODULES: Once<Box<[&'static dyn LsmModule]>> = Once::new();
+static MODULE_REGISTRY: SpinLock<ModuleRegistry> = SpinLock::new(ModuleRegistry::new());
+
+struct ModuleRegistry {
+    sealed: bool,
+    modules: Vec<&'static dyn LsmModule>,
+}
+
+impl ModuleRegistry {
+    const fn new() -> Self {
+        Self {
+            sealed: false,
+            modules: Vec::new(),
+        }
+    }
+
+    fn register(&mut self, module: &'static dyn LsmModule) -> Result<()> {
+        if self.sealed {
+            return_errno_with_message!(Errno::EBUSY, "the LSM registry is sealed");
+        }
+
+        let name = module.name();
+        if name.is_empty() || name.contains(',') || name.chars().any(char::is_whitespace) {
+            return_errno_with_message!(Errno::EINVAL, "invalid LSM module name");
+        }
+
+        if ALL_BUILTIN_MODULES
+            .iter()
+            .chain(self.modules.iter())
+            .any(|registered| registered.name() == name)
+        {
+            return_errno_with_message!(Errno::EEXIST, "the LSM module is already registered");
+        }
+
+        self.modules
+            .try_reserve(1)
+            .map_err(|_| Error::new(Errno::ENOMEM))?;
+        self.modules.push(module);
+        Ok(())
+    }
+
+    fn seal(&mut self) -> Vec<&'static dyn LsmModule> {
+        debug_assert!(!self.sealed, "the LSM registry was sealed twice");
+        self.sealed = true;
+        core::mem::take(&mut self.modules)
+    }
+}
+
+pub(super) fn register(module: &'static dyn LsmModule) -> Result<()> {
+    MODULE_REGISTRY.lock().register(module)
+}
+
+fn build_modules_by_name(
+    extensions: Vec<&'static dyn LsmModule>,
+) -> BTreeMap<&'static str, &'static dyn LsmModule> {
+    let mut modules_by_name = BTreeMap::new();
+    for module in ALL_BUILTIN_MODULES.iter().copied().chain(extensions) {
+        let previous = modules_by_name.insert(module.name(), module);
+        debug_assert!(previous.is_none(), "duplicate LSM module name");
+    }
+    modules_by_name
+}
 
 pub(super) fn active_modules() -> &'static [&'static dyn LsmModule] {
     ACTIVE_MODULES
         .call_once(|| {
             let modules_by_name = ALL_MODULES_BY_NAME.call_once(|| {
-                ALL_MODULES
-                    .iter()
-                    .map(|module| (module.name(), *module))
-                    .collect()
+                let extensions = MODULE_REGISTRY.lock().seal();
+                build_modules_by_name(extensions)
             });
             ModuleSelection::select_from_boot_params(modules_by_name).into_modules()
         })
@@ -79,12 +139,24 @@ impl ModuleSelection {
     fn select_from_boot_params(
         modules_by_name: &BTreeMap<&'static str, &'static dyn LsmModule>,
     ) -> Self {
+        Self::select(
+            modules_by_name,
+            LSM_PARAM.get().map(String::as_str),
+            LEGACY_SECURITY_PARAM.get().map(String::as_str),
+        )
+    }
+
+    fn select(
+        modules_by_name: &BTreeMap<&'static str, &'static dyn LsmModule>,
+        lsm_param: Option<&str>,
+        security_param: Option<&str>,
+    ) -> Self {
         let mut selection = Self::default();
         for module in MANDATORY_MODULES {
             selection.push(module);
         }
 
-        match (LSM_PARAM.get(), LEGACY_SECURITY_PARAM.get()) {
+        match (lsm_param, security_param) {
             (Some(lsm_param), security_param) => {
                 if security_param.is_some() {
                     warn!("`security=` is ignored because `lsm=` is specified");

@@ -32,12 +32,13 @@ impl<S: ProcSymOps> ProcSym<S> {
         let common = {
             let fs = parent.upgrade().unwrap().fs();
             let procfs = fs.downcast_ref::<ProcFs>().unwrap();
-            let metadata = Metadata::new_symlink(
+            let mut metadata = Metadata::new_symlink(
                 procfs.alloc_id(),
                 mode,
                 BLOCK_SIZE,
                 procfs.sb().container_dev_id,
             );
+            metadata.size = sym.size();
             Common::new(metadata, Arc::downgrade(&fs))
         };
         Arc::new(Self { inner: sym, common })
@@ -116,6 +117,11 @@ impl<S: ProcSymOps + 'static> Inode for ProcSym<S> {
 }
 
 pub(crate) trait ProcSymOps: Sync + Send {
+    /// Returns the size reported by this symbolic link.
+    fn size(&self) -> usize {
+        0
+    }
+
     /// Returns the thread whose credentials own this procfs inode.
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         None
