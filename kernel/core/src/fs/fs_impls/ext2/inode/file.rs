@@ -9,6 +9,8 @@
 
 #![short_vis_path::add(ext2)]
 
+use core::mem::DropGuard;
+
 use ostd::mm::io::util::HasVmReaderWriter;
 
 use super::{super::Ext2, FileFlags, Inode, InodeInner, io_range::IoRange};
@@ -139,32 +141,25 @@ impl Inode {
             .checked_add(len)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "fallocate range overflow"))?;
         let fs = self.fs()?;
-        let mut inner = self.inner.write();
+        let inner = self.inner.write();
         let old_size = inner.file_size();
         if end > old_size {
             inner.ensure_size_within_limit(&fs, end)?;
         }
 
+        let mut inner = DropGuard::new(inner, |mut inner| inner.rollback_fallocate(old_size));
         match mode {
             FallocMode::Allocate => {
-                if let Err(err) = inner.allocate_range_blocks(offset, end) {
-                    inner.rollback_fallocate(old_size);
-                    return Err(err);
-                }
-                if end > old_size
-                    && let Err(err) = inner.expand(&fs, end)
-                {
-                    inner.rollback_fallocate(old_size);
-                    return Err(err);
+                inner.allocate_range_blocks(offset, end)?;
+                if end > old_size {
+                    inner.expand(&fs, end)?;
                 }
             }
             FallocMode::AllocateKeepSize => {
-                if let Err(err) = inner.allocate_range_blocks(offset, end) {
-                    inner.rollback_fallocate(old_size);
-                    return Err(err);
-                }
+                inner.allocate_range_blocks(offset, end)?;
             }
             _ => {
+                let _ = DropGuard::dismiss(inner);
                 return_errno_with_message!(
                     Errno::EOPNOTSUPP,
                     "fallocate with the specified flags is not supported"
@@ -172,6 +167,7 @@ impl Inode {
             }
         }
 
+        let mut inner = DropGuard::dismiss(inner);
         inner.set_mtime_ctime(utils::now());
         Ok(())
     }
@@ -253,19 +249,15 @@ impl InodeInner {
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
         let old_size = self.file_size();
 
-        if let Err(err) = self.prepare_write(fs, offset, end) {
-            self.rollback_write(old_size, end);
-            return Err(err);
-        }
+        let mut this = DropGuard::new(self, |this| this.rollback_write(old_size, end));
+        this.prepare_write(fs, offset, end)?;
 
-        if let Err(err) = self.page_cache().write(offset, reader) {
-            self.rollback_write(old_size, end);
-            return Err(err.into());
-        }
+        this.page_cache().write(offset, reader)?;
 
-        self.set_mtime_ctime(utils::now());
+        let this = DropGuard::dismiss(this);
+        this.set_mtime_ctime(utils::now());
         if end > old_size {
-            self.set_file_size(end);
+            this.set_file_size(end);
         }
         Ok(write_len)
     }
@@ -303,26 +295,22 @@ impl InodeInner {
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "write range overflow"))?;
         let old_size = self.file_size();
 
-        if let Err(err) = self.prepare_write(fs, offset, end) {
-            self.rollback_write(old_size, end);
-            return Err(err);
-        }
+        let mut this = DropGuard::new(self, |this| this.rollback_write(old_size, end));
+        this.prepare_write(fs, offset, end)?;
 
         let discard_start_bytes = offset.min(old_size);
         let discard_end_bytes = end.min(old_size);
         if discard_start_bytes < discard_end_bytes {
-            self.page_cache()
+            this.page_cache()
                 .invalidate_range(discard_start_bytes..discard_end_bytes)?;
         }
 
-        if let Err(err) = self.write_direct_blocks(fs, offset, reader) {
-            self.rollback_write(old_size, end);
-            return Err(err);
-        }
+        this.write_direct_blocks(fs, offset, reader)?;
 
-        self.set_mtime_ctime(utils::now());
-        if end > self.file_size() {
-            self.set_file_size(end);
+        let this = DropGuard::dismiss(this);
+        this.set_mtime_ctime(utils::now());
+        if end > this.file_size() {
+            this.set_file_size(end);
         }
         Ok(write_len)
     }

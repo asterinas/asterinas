@@ -11,6 +11,8 @@
 
 mod dir_entry;
 
+use core::mem::DropGuard;
+
 use self::dir_entry::{DOT_BYTE, DOT_DOT_BYTE, DirBlockView, DirEntryFileType, DirEntryHeader};
 use super::{super::Ext2, FileFlags, FilePerm, Inode, InodeInner, MAX_LINK_COUNT};
 use crate::fs::ext2::{prelude::*, utils};
@@ -397,37 +399,34 @@ impl InodeInner {
     fn make_empty(&mut self, fs: &Ext2, ino: Ext2Ino, parent_ino: Ext2Ino) -> Result<()> {
         // Allocate one block for the directory.
         self.prepare_write(fs, 0, BLOCK_SIZE)?;
+        let this = DropGuard::new(self, |this| this.rollback_write(0, BLOCK_SIZE));
 
-        let page_cache = self.page_cache();
+        let page_cache = this.page_cache();
+        page_cache.fill_zeros(0..BLOCK_SIZE)?;
+
         let block = DirBlockView::from_index(page_cache, 0, BLOCK_SIZE);
+
+        // Write the `.` entry.
+        let dot_header = DirEntryHeader {
+            ino: ino.to_le(),
+            rec_len: DirEntryHeader::min_rec_len(DOT_BYTE.len()).to_le(),
+            name_len: DOT_BYTE.len() as u8,
+            file_type: DirEntryFileType::Dir as u8,
+        };
+        block.write_entry(0, dot_header, DOT_BYTE)?;
+
+        // Write the `..` entry.
         let dot_len = DirEntryHeader::min_rec_len(DOT_BYTE.len()) as usize;
-        let write_result = (|| -> Result<()> {
-            page_cache.fill_zeros(0..BLOCK_SIZE)?;
+        let dot_dot_header = DirEntryHeader {
+            ino: parent_ino.to_le(),
+            rec_len: ((BLOCK_SIZE - dot_len) as u16).to_le(),
+            name_len: DOT_DOT_BYTE.len() as u8,
+            file_type: DirEntryFileType::Dir as u8,
+        };
+        block.write_entry(dot_len, dot_dot_header, DOT_DOT_BYTE)?;
 
-            let dot_header = DirEntryHeader {
-                ino: ino.to_le(),
-                rec_len: DirEntryHeader::min_rec_len(DOT_BYTE.len()).to_le(),
-                name_len: DOT_BYTE.len() as u8,
-                file_type: DirEntryFileType::Dir as u8,
-            };
-            block.write_entry(0, dot_header, DOT_BYTE)?;
-
-            let dot_dot_header = DirEntryHeader {
-                ino: parent_ino.to_le(),
-                rec_len: ((BLOCK_SIZE - dot_len) as u16).to_le(),
-                name_len: DOT_DOT_BYTE.len() as u8,
-                file_type: DirEntryFileType::Dir as u8,
-            };
-            block.write_entry(dot_len, dot_dot_header, DOT_DOT_BYTE)?;
-            Ok(())
-        })();
-
-        if let Err(err) = write_result {
-            self.rollback_write(0, BLOCK_SIZE);
-            return Err(err);
-        }
-
-        self.set_file_size(BLOCK_SIZE);
+        let this = DropGuard::dismiss(this);
+        this.set_file_size(BLOCK_SIZE);
 
         Ok(())
     }
