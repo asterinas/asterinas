@@ -84,7 +84,6 @@ impl Inode {
         if write_len == 0 {
             return Ok(0);
         }
-
         if !is_block_aligned(offset) || !is_block_aligned(write_len) {
             // TODO: Implement a fallback mechanism.
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
@@ -390,13 +389,11 @@ impl InodeInner {
                     fs.write_blocks_async(device_range.start, bio_segment, None, &mut io_batch)?;
                 }
                 IoRange::Hole(_) => {
-                    // TODO: Consider falling back to buffered write like Linux.
-                    // The upper layer should have performed allocation for the write
-                    // range. Linux does not allocate blocks in the direct write path;
-                    // when it encounters a hole it falls back to buffered write to
-                    // prevent stale data exposure. We pre-allocate in `prepare_write`
-                    // so holes here indicate a bug. Stale-read is not a concern
-                    // because our inode-level lock serializes reads after this write.
+                    // `prepare_write` preallocates all blocks in the write range.
+                    // Encountering a hole here therefore indicates a bug.
+                    //
+                    // TODO: Consider removing preallocation and falling back to
+                    // buffered I/O on holes, as Linux does.
                     return_errno_with_message!(Errno::EIO, "unexpected hole in direct write path");
                 }
             }
