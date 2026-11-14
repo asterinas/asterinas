@@ -10,12 +10,14 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -29,12 +31,12 @@
 #define HWRNG_PRIME_READ_SIZE 1
 #define HWRNG_SHORT_READ_SIZE 64
 #define HWRNG_LARGE_READ_SIZE (16 * 1024)
-#define HWRNG_NONBLOCK_MAX_ATTEMPTS 128
 #define HWRNG_SMOKE_READ_SIZE 4096
 #define HWRNG_POLL_TIMEOUT_MS 1000
 
 static void exit_if_hwrng_is_unavailable(void);
 static void run_concurrent_reader(int pipe_fd);
+static void handle_read_interrupt(int signum);
 static bool is_all_zero(const uint8_t *buf, size_t len);
 static bool is_all_ff(const uint8_t *buf, size_t len);
 static bool is_repeating_u32_pattern(const uint8_t *buf, size_t len);
@@ -42,6 +44,8 @@ static bool
 has_duplicate_buffer(const uint8_t bufs[][HWRNG_CONCURRENT_READ_SIZE],
 		     size_t buf_count);
 static size_t count_set_bits(const uint8_t *buf, size_t len);
+
+static volatile sig_atomic_t read_interrupted;
 
 FN_SETUP(check_hwrng_availability)
 {
@@ -149,6 +153,48 @@ FN_TEST(hwrng_large_read)
 }
 END_TEST()
 
+FN_TEST(hwrng_tpm_large_read_returns_partial_data_on_signal)
+{
+#ifdef __asterinas__
+	SKIP_TEST_IF(access("/dev/tpm0", F_OK) != 0);
+#else
+	char backend[32] = { 0 };
+	FILE *current = fopen("/sys/class/misc/hw_random/rng_current", "r");
+	if (current) {
+		CHECK_WITH(fgets(backend, sizeof(backend), current),
+			   _ret != NULL);
+		CHECK(fclose(current));
+	}
+	SKIP_TEST_IF(strncmp(backend, "tpm-rng-", 8) != 0);
+#endif
+	pid_t pid = CHECK(fork());
+	if (pid == 0) {
+		uint8_t buf[HWRNG_LARGE_READ_SIZE];
+		struct sigaction action = { .sa_handler =
+						    handle_read_interrupt };
+		struct itimerval timer = {
+			.it_value = { .tv_usec = 10000 },
+			.it_interval = { .tv_usec = 10000 },
+		};
+		int fd = CHECK(open(HWRNG_DEVICE, O_RDONLY));
+
+		CHECK(sigemptyset(&action.sa_mask));
+		CHECK(sigaction(SIGALRM, &action, NULL));
+		CHECK(setitimer(ITIMER_REAL, &timer, NULL));
+		CHECK_WITH(read(fd, buf, sizeof(buf)),
+			   _ret > 0 && _ret < (ssize_t)sizeof(buf));
+		CHECK_WITH(read_interrupted, _ret != 0);
+		CHECK(close(fd));
+		_exit(EXIT_SUCCESS);
+	}
+
+	int status;
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+}
+END_TEST()
+
 FN_TEST(hwrng_write_on_ro_ebadf)
 {
 	uint8_t buf[16] = { 0 };
@@ -233,46 +279,26 @@ FN_TEST(hwrng_lseek_is_noop_and_preserves_readability)
 }
 END_TEST()
 
-/*
- * `virtio-rng` cannot make the nonblocking outcome deterministic. Draining
- * the cache immediately submits the next request, and a following
- * nonblocking read races the completion IRQ. This test accepts either
- * immediate data or `EAGAIN`.
- */
-FN_TEST(hwrng_nonblock_eagain_or_immediate_data)
+/* The nonblocking result depends on the backend and available cached data. */
+FN_TEST(hwrng_nonblock_returns_data_or_eagain)
 {
 	uint8_t drain_buf[HWRNG_LARGE_READ_SIZE] = { 0 };
-	uint8_t nonblock_buf[HWRNG_LARGE_READ_SIZE] = { 0 };
-	bool saw_eagain = false;
-	bool saw_immediate_data = false;
+	uint8_t nonblock_buf[HWRNG_SHORT_READ_SIZE] = { 0 };
+	ssize_t ret;
+	int read_errno;
+	int fd = TEST_SUCC(open(HWRNG_DEVICE, O_RDONLY));
 
-	for (size_t attempt = 0; attempt < HWRNG_NONBLOCK_MAX_ATTEMPTS;
-	     ++attempt) {
-		ssize_t nonblock_ret;
-		int fd;
-
-		fd = TEST_SUCC(open(HWRNG_DEVICE, O_RDONLY));
-		TEST_RES(read(fd, drain_buf, sizeof(drain_buf)),
-			 _ret == sizeof(drain_buf));
-		TEST_SUCC(close(fd));
-
-		fd = TEST_SUCC(open(HWRNG_DEVICE, O_RDONLY | O_NONBLOCK));
-
-		errno = 0;
-		nonblock_ret = read(fd, nonblock_buf, sizeof(nonblock_buf));
-		if (nonblock_ret == -1 && errno == EAGAIN) {
-			saw_eagain = true;
-			TEST_SUCC(close(fd));
-			break;
-		}
-
-		TEST_RES(nonblock_ret, _ret > 0);
-		saw_immediate_data = true;
-
-		TEST_SUCC(close(fd));
-	}
-
-	TEST_RES(saw_eagain || saw_immediate_data, _ret);
+	TEST_RES(read(fd, drain_buf, sizeof(drain_buf)),
+		 _ret == sizeof(drain_buf));
+	TEST_SUCC(close(fd));
+	fd = TEST_SUCC(open(HWRNG_DEVICE, O_RDONLY | O_NONBLOCK));
+	errno = 0;
+	ret = read(fd, nonblock_buf, sizeof(nonblock_buf));
+	read_errno = errno;
+	TEST_RES(ret,
+		 (_ret == -1 && read_errno == EAGAIN) ||
+			 (_ret > 0 && _ret <= (ssize_t)sizeof(nonblock_buf)));
+	TEST_SUCC(close(fd));
 }
 END_TEST()
 
@@ -336,6 +362,12 @@ FN_TEST(hwrng_smoke_basic_content_checks)
 	TEST_SUCC(close(fd));
 }
 END_TEST()
+
+static void handle_read_interrupt(int signum)
+{
+	(void)signum;
+	read_interrupted = 1;
+}
 
 static void exit_if_hwrng_is_unavailable(void)
 {

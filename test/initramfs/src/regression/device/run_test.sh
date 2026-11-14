@@ -29,3 +29,8 @@ set -e
 ./hwrng
 ./nvme
 ./random
+
+./tpm/tpm
+./tpm/tpm_protocol
+./tpm/tpmrm
+./tpm/tpm_nonblock
