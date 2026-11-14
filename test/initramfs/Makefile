@@ -190,6 +190,7 @@ aarch64_pkgs:
 		--arg enableConformanceTest true \
 		--out-link $(PREBUILT_ROOT)/aarch64-pkgs \
 		-A busybox \
+		-A conformance.kselftest \
 		-A conformance.ltp \
 		-A regression.package
 
