@@ -148,7 +148,7 @@ impl Inode {
         // layer holds an `upread` guard on the children set, preventing
         // concurrent `create` / `lookup_via_fs` on this directory.
         // So the concurrent `lookup_via_fs` won't create a new `Arc<Inode>`
-        // from Inode desc and then insert it into inode cache.
+        // from `InodeDesc` and then insert it into inode cache.
         let child = fs.create_inode(self.ino, type_, perm)?;
         let child_ino = child.ino();
         let result = init_child_fn(&fs, &child)

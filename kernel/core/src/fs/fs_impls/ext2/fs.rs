@@ -149,10 +149,7 @@ impl Ext2 {
             )? {
                 BioStatus::Complete => {}
                 err_status => {
-                    error!(
-                        "Ext2: Failed to read group descriptor table: {:?}",
-                        err_status
-                    );
+                    error!("failed to read group descriptor table: {:?}", err_status);
                     return Err(Error::from(err_status));
                 }
             }
