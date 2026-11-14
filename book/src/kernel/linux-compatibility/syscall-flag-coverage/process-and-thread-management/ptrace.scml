@@ -34,6 +34,12 @@ ptrace(request = PTRACE_GETREGS, tid, addr, data);
 // Set tracee general-purpose registers
 ptrace(request = PTRACE_SETREGS, tid, addr, data);
 
+// Get tracee general-purpose or floating-point registers
+ptrace(request = PTRACE_GETREGSET, tid, addr = NT_PRSTATUS | NT_PRFPREG, data);
+
+// Set tracee general-purpose or floating-point registers
+ptrace(request = PTRACE_SETREGSET, tid, addr = NT_PRSTATUS | NT_PRFPREG, data);
+
 // Resume a ptrace-stopped tracee and stop it again at syscall entry/exit,
 // optionally injecting a signal
 ptrace(request = PTRACE_SYSCALL, tid, addr, data);
