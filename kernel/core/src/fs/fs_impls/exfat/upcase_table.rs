@@ -34,7 +34,7 @@ impl ExfatUpcaseTable {
         dentry: &ExfatUpcaseDentry,
     ) -> Result<Self> {
         if (dentry.size as usize) < UPCASE_MANDATORY_SIZE * UNICODE_SIZE {
-            return Err(errno!(EINVAL, "Upcase table too small"));
+            return Err(errno!(EINVAL, "upcase table too small"));
         }
 
         let fs = fs_weak.upgrade().unwrap();

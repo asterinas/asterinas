@@ -387,7 +387,7 @@ fn refresh_tdx_report_locked(
 ) -> Result<()> {
     if let Some(inblob) = inblob {
         if inblob.len() != size_of::<ReportData>() {
-            return Err(errno!(EINVAL, "Invalid inblob length"));
+            return Err(errno!(EINVAL, "invalid inblob length"));
         }
 
         // Use `inblob` as the data associated with the report.

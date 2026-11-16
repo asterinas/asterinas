@@ -147,7 +147,7 @@ impl ExfatChain {
         if !self.fat_in_use() {
             Err(errno!(
                 EIO,
-                "Unable to count clusters when FAT table not in use."
+                "unable to count clusters when FAT table not in use"
             ))
         } else {
             let mut cluster = self.current;
