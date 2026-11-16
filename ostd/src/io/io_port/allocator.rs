@@ -29,10 +29,21 @@ impl IoPortAllocator {
     /// this one. If it is true, only the first port in the PIO range will be marked as occupied;
     /// otherwise, all ports in the PIO range will be marked as occupied.
     pub(super) fn acquire<T, A>(&self, port: u16, is_overlapping: bool) -> Option<IoPort<T, A>> {
+        let max_io_port_for_t = const {
+            // In practice, the only valid types for the `T` parameter are
+            // `u8`, `u16`, and `u32`.
+            assert!(1 <= size_of::<T>() && size_of::<T>() <= 4);
+            // Compile-time calculation. No worry about integer overflow at runtime.
+            crate::arch::io::MAX_IO_PORT - (size_of::<T>() as u16)
+        };
+        if port > max_io_port_for_t {
+            return None;
+        }
+
         let range = if !is_overlapping {
-            port..port.checked_add(size_of::<T>().try_into().ok()?)?
+            port..port + (size_of::<T>() as u16)
         } else {
-            port..port.checked_add(1)?
+            port..port + 1
         };
         debug!("Try to acquire PIO range: {:#x?}", range);
 
@@ -121,9 +132,8 @@ mod test {
         let io_port_a = IoPort::acquire(0xffff);
         assert!(io_port_a.is_err());
 
-        type IllegalIoPort = crate::io::IoPort<[u8; 0x10008], ReadWriteAccess>;
-        let io_port_b = IllegalIoPort::acquire(0);
-        assert!(io_port_b.is_err());
+        let io_port_overlapping = IoPort::acquire_overlapping(0xfffe);
+        assert!(io_port_overlapping.is_err());
     }
 
     #[ktest]
