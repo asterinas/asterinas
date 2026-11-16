@@ -1,3 +1,4 @@
+/* Regression test for asterinas/asterinas#4223: report the correct CPU. */
 // SPDX-License-Identifier: MPL-2.0
 
 #define _GNU_SOURCE

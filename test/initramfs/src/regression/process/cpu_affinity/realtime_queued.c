@@ -1,3 +1,4 @@
+/* Regression test for asterinas/asterinas#4222: migrate tasks to allowed CPUs. */
 // SPDX-License-Identifier: MPL-2.0
 
 #define _GNU_SOURCE

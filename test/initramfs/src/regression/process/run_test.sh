@@ -16,6 +16,10 @@ fi
 ./clone3/clone_process
 
 ./cpu_affinity/cpu_affinity
+./cpu_affinity/migration
+./cpu_affinity/concurrent
+./cpu_affinity/realtime
+./cpu_affinity/realtime_queued
 
 ./execve/execve
 ./execve/execve_comm
