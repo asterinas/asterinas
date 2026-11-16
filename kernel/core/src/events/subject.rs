@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::collections::btree_map::Entry;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use keyable_arc::KeyableWeak;
@@ -81,22 +82,22 @@ impl<E: Events, F: EventsFilter<E>> SyncSubject<E, F> {
         }
     }
 
-    /// Registers an observer.
+    /// Registers an observer with the given event filter.
     ///
     /// A registered observer will get notified through its `on_events` method.
-    /// If events `filter` is provided, only filtered events will notify the observer.
+    /// Only filtered events will notify the observer.
     ///
-    /// If the given observer has already been registered, then its registered events
-    /// filter will be updated.
+    /// If the observer is already registered, the two filters will be merged with
+    /// [`EventsFilter::merge`].
     pub(crate) fn register_observer(&self, observer: Weak<dyn Observer<E>>, filter: F) {
         let mut observers = self.observers.lock();
-        let is_new = {
-            let observer: KeyableWeak<dyn Observer<E>> = observer.into();
-            observers.insert(observer, filter).is_none()
-        };
-        if is_new {
-            // This `Acquire` pairs with the `Release` in `notify_observers`.
-            self.num_observers.fetch_add(1, Ordering::Acquire);
+        match observers.entry(observer.into()) {
+            Entry::Occupied(mut entry) => entry.get_mut().merge(filter),
+            Entry::Vacant(entry) => {
+                entry.insert(filter);
+                // This `Acquire` pairs with the `Release` in `notify_observers`.
+                self.num_observers.fetch_add(1, Ordering::Acquire);
+            }
         }
     }
 

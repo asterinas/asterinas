@@ -25,4 +25,8 @@ impl EventsFilter<IoEvents> for IoEvents {
     fn filter(&self, events: &IoEvents) -> bool {
         self.intersects(*events)
     }
+
+    fn merge(&mut self, other: Self) {
+        *self |= other;
+    }
 }

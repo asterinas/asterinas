@@ -29,16 +29,30 @@ impl Events for () {}
 /// if an observer needs an event filter.
 pub(crate) trait EventsFilter<E: Events>: Send + Sync + 'static {
     fn filter(&self, event: &E) -> bool;
+
+    fn merge(&mut self, other: Self)
+    where
+        Self: Sized;
 }
 
 impl<E: Events> EventsFilter<E> for () {
     fn filter(&self, _events: &E) -> bool {
         true
     }
+
+    fn merge(&mut self, _other: Self) {}
 }
 
 impl<E: Events, F: EventsFilter<E>> EventsFilter<E> for Option<F> {
     fn filter(&self, events: &E) -> bool {
         self.as_ref().is_none_or(|f| f.filter(events))
+    }
+
+    fn merge(&mut self, other: Self) {
+        match (self, other) {
+            (Some(current), Some(other)) => current.merge(other),
+            (current, None) => *current = None,
+            (None, Some(_)) => (),
+        }
     }
 }
