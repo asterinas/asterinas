@@ -2,7 +2,7 @@
 
 use ostd::mm::VmIo;
 
-use super::{SyscallReturn, sched_getattr::access_sched_attr_with};
+use super::{SyscallReturn, sched_setattr::update_sched_attr_with};
 use crate::{prelude::*, sched::SchedPolicy, thread::Tid};
 
 pub(super) fn sys_sched_setparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
@@ -29,7 +29,7 @@ pub(super) fn sys_sched_setparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result
         }
         Ok(())
     };
-    access_sched_attr_with(tid, ctx, |attr| attr.update_policy(update))?;
+    update_sched_attr_with(tid, ctx, |attr| attr.update_policy(update))?;
 
     Ok(SyscallReturn::Return(0))
 }
