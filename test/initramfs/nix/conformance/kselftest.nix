@@ -34,6 +34,8 @@ stdenv.mkDerivation rec {
     hash = "sha256-7Ie6f1aNvBo6ipoS/no+IkVhQ/C9bedzQCUoYwM4ED4=";
   };
 
+  patches = [ ./kselftest-proc-pidns-include-fcntl.patch ];
+
   # Explicit allowlist of selftest subsystems Asterinas exercises today.
   # Keeping this small (rather than building "all") means
   # a regression in an unlisted subsystem upstream cannot silently change our conformance surface.
@@ -50,17 +52,24 @@ stdenv.mkDerivation rec {
   ];
 
   kselftestTargets = lib.concatStringsSep " " (
-    baseKselftestTargets ++ lib.optionals stdenv.hostPlatform.isx86_64 [ "x86" ]
+    baseKselftestTargets
+    ++ lib.optionals stdenv.hostPlatform.isx86_64 [
+      "x86"
+    ]
   );
 
   enableParallelBuilding = true;
 
   nativeBuildInputs = with pkgsBuildBuild; [ rsync ];
 
-  buildInputs = with pkgs; [
-    glibc_multi.static
-    libcap.dev
-  ];
+  buildInputs =
+    with pkgs;
+    [ libcap.dev ]
+    ++ lib.optionals stdenv.hostPlatform.isx86_64 [ glibc_multi.static ]
+    ++ lib.optionals (!stdenv.hostPlatform.isx86_64) [
+      glibc
+      glibc.static
+    ];
 
   buildPhase = ''
     runHook preBuild
@@ -78,6 +87,13 @@ stdenv.mkDerivation rec {
     make -C tools/testing/selftests ARCH=${stdenv.hostPlatform.linuxArch} \
          CROSS_COMPILE=${crossCompilePrefix} HOSTCC=${hostCc} \
          -j$NIX_BUILD_CORES TARGETS="$kselftestTargets" KSFT_INSTALL_PATH=$out install
+
+    for target in $kselftestTargets; do
+      if [ ! -d "$out/$target" ] || ! grep -q "^$target:" "$out/kselftest-list.txt"; then
+        echo "kselftest target was not installed completely: $target" >&2
+        exit 1
+      fi
+    done
     runHook postInstall
   '';
 
