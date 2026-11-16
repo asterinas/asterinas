@@ -59,6 +59,12 @@ impl<E: Ext> UdpSocketBg<E> {
 
         let mut socket = self.inner.socket.lock();
 
+        // The socket can close concurrently. If this happens, skip it because
+        // `RawUdpSocket::process` requires the socket to be open.
+        if !socket.is_open() {
+            return false;
+        }
+
         socket.process(
             cx,
             smoltcp::phy::PacketMeta::default(),
