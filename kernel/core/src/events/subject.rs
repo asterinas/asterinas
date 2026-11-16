@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::collections::btree_map::Entry;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use keyable_arc::KeyableWeak;
@@ -81,22 +82,24 @@ impl<E: Events, F: EventsFilter<E>> SyncSubject<E, F> {
         }
     }
 
-    /// Registers an observer.
+    /// Registers an observer with the given event filter.
     ///
-    /// A registered observer will get notified through its `on_events` method.
-    /// If events `filter` is provided, only filtered events will notify the observer.
-    ///
-    /// If the given observer has already been registered, then its registered events
-    /// filter will be updated.
-    pub(crate) fn register_observer(&self, observer: Weak<dyn Observer<E>>, filter: F) {
+    /// If the observer is already registered, `update_fn` updates its existing filter using the
+    /// supplied filter. It runs with the observers lock held and local interrupts disabled.
+    pub(crate) fn register_observer_with(
+        &self,
+        observer: Weak<dyn Observer<E>>,
+        filter: F,
+        update_fn: impl FnOnce(&mut F, F),
+    ) {
         let mut observers = self.observers.lock();
-        let is_new = {
-            let observer: KeyableWeak<dyn Observer<E>> = observer.into();
-            observers.insert(observer, filter).is_none()
-        };
-        if is_new {
-            // This `Acquire` pairs with the `Release` in `notify_observers`.
-            self.num_observers.fetch_add(1, Ordering::Acquire);
+        match observers.entry(observer.into()) {
+            Entry::Occupied(mut entry) => update_fn(entry.get_mut(), filter),
+            Entry::Vacant(entry) => {
+                entry.insert(filter);
+                // This `Acquire` pairs with the `Release` in `notify_observers`.
+                self.num_observers.fetch_add(1, Ordering::Acquire);
+            }
         }
     }
 
@@ -126,7 +129,7 @@ impl<E: Events, F: EventsFilter<E>> SyncSubject<E, F> {
     pub(crate) fn notify_observers(&self, events: &E) {
         // Fast path.
         //
-        // Note: This must use `Release`, which pairs with `Acquire` in `register_observer`, to
+        // Note: This must use `Release`, which pairs with `Acquire` in `register_observer_with`, to
         // ensure that even if this fast path is used, a concurrently registered observer will see
         // the event we want to notify.
         if self.num_observers.fetch_add(0, Ordering::Release) == 0 {

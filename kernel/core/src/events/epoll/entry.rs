@@ -160,6 +160,8 @@ impl Entry {
         inner.event = event;
         inner.flags = flags;
 
+        // A handle accumulates event masks, so discard the previous subscriptions on updates.
+        inner.poller.reset();
         self.observer.set_enabled(&inner);
 
         file.poll(event.events, Some(&mut inner.poller))

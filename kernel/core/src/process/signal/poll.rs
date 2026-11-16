@@ -156,10 +156,15 @@ impl Pollee {
     /// The functionality of this method is a subset of calling [`Self::poll_with`] and providing
     /// the same poller. Unlike [`Self::poll_with`], this method performs poller registration
     /// without checking (and perhaps caching) the current events.
+    ///
+    /// Repeated registrations with the same handle accumulate event masks until the handle is
+    /// reset or dropped.
     pub(crate) fn register_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
-        self.inner
-            .subject
-            .register_observer(poller.observer.clone(), mask);
+        self.inner.subject.register_observer_with(
+            poller.observer.clone(),
+            mask,
+            |registered, requested| *registered |= requested,
+        );
 
         poller.pollees.push(Arc::downgrade(&self.inner));
     }
@@ -194,6 +199,8 @@ impl Pollee {
 /// This type can represent an entity of [`PollAdaptor`] or [`Poller`], which is done via the
 /// [`PollAdaptor::as_handle_mut`] and [`Poller::as_handle_mut`] methods.
 ///
+/// Registrations with the same pollee accumulate event masks until the handle is reset or dropped.
+///
 /// When this handle is dropped or reset (via [`PollHandle::reset`]), the entity will no longer be
 /// notified of the events from the pollee.
 pub struct PollHandle {
@@ -223,8 +230,8 @@ impl PollHandle {
         let observer = &self.observer;
 
         self.pollees
-            .iter()
-            .filter_map(Weak::upgrade)
+            .drain(..)
+            .filter_map(|pollee| pollee.upgrade())
             .for_each(|pollee| {
                 pollee.subject.unregister_observer(observer);
             });
@@ -261,7 +268,10 @@ impl<O: Observer<IoEvents> + 'static> PollAdaptor<O> {
 
 impl<O> PollAdaptor<O> {
     /// Gets a reference to the observer.
-    #[expect(dead_code, reason = "Keep this `Arc` to avoid dropping the observer")]
+    #[cfg_attr(
+        not(ktest),
+        expect(dead_code, reason = "Keep this `Arc` to avoid dropping the observer")
+    )]
     pub(crate) fn observer(&self) -> &Arc<O> {
         &self.observer
     }
@@ -393,9 +403,78 @@ pub trait Pollable {
 
 #[cfg(ktest)]
 mod test {
+    use core::sync::atomic::AtomicUsize;
+
     use ostd::prelude::*;
 
     use super::*;
+
+    struct EventCounter(AtomicUsize);
+
+    impl Observer<IoEvents> for EventCounter {
+        fn on_events(&self, _events: &IoEvents) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[ktest]
+    fn repeated_registration_preserves_events() {
+        for masks in [
+            [IoEvents::IN, IoEvents::empty()],
+            [IoEvents::empty(), IoEvents::IN],
+            [IoEvents::IN, IoEvents::OUT],
+            [IoEvents::OUT, IoEvents::IN],
+        ] {
+            let pollee = Pollee::new();
+            let mut adaptor = PollAdaptor::with_observer(EventCounter(AtomicUsize::new(0)));
+
+            for mask in masks {
+                assert!(
+                    pollee
+                        .poll_with(mask, Some(adaptor.as_handle_mut()), IoEvents::empty)
+                        .is_empty()
+                );
+            }
+
+            pollee.notify(IoEvents::IN);
+            assert_eq!(adaptor.observer().0.load(Ordering::Relaxed), 1);
+
+            pollee.notify(IoEvents::OUT);
+            let num_events = if masks.contains(&IoEvents::OUT) { 2 } else { 1 };
+            assert_eq!(adaptor.observer().0.load(Ordering::Relaxed), num_events);
+
+            pollee.notify(IoEvents::PRI);
+            assert_eq!(adaptor.observer().0.load(Ordering::Relaxed), num_events);
+
+            pollee.notify(IoEvents::HUP);
+            assert_eq!(adaptor.observer().0.load(Ordering::Relaxed), num_events + 1);
+        }
+    }
+
+    #[ktest]
+    fn reset_clears_registered_events() {
+        let pollee = Pollee::new();
+        let mut adaptor = PollAdaptor::with_observer(EventCounter(AtomicUsize::new(0)));
+        let observer = adaptor.observer().clone();
+
+        pollee.register_poller(adaptor.as_handle_mut(), IoEvents::IN);
+        pollee.register_poller(adaptor.as_handle_mut(), IoEvents::OUT);
+        adaptor.as_handle_mut().reset();
+
+        pollee.notify(IoEvents::IN | IoEvents::OUT);
+        assert_eq!(observer.0.load(Ordering::Relaxed), 0);
+
+        pollee.register_poller(adaptor.as_handle_mut(), IoEvents::OUT);
+        pollee.notify(IoEvents::IN);
+        assert_eq!(observer.0.load(Ordering::Relaxed), 0);
+
+        pollee.notify(IoEvents::OUT);
+        assert_eq!(observer.0.load(Ordering::Relaxed), 1);
+
+        drop(adaptor);
+        pollee.notify(IoEvents::OUT);
+        assert_eq!(observer.0.load(Ordering::Relaxed), 1);
+    }
 
     #[ktest]
     fn notify_before() {
