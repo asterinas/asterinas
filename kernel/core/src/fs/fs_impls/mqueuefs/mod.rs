@@ -9,6 +9,7 @@
 #![allow(dead_code)]
 
 mod fs;
+mod inode;
 mod queue;
 
 /// Magic number of `mqueuefs`.
@@ -21,6 +22,5 @@ pub(super) const NAME_MAX: usize = 255;
 pub(super) const ROOT_INO: u64 = 1;
 
 pub(super) fn init() {
-    // TODO: Register `MqueueFsType` with `vfs::registry::register` once the
-    // file system and inode implementations are in place.
+    crate::fs::vfs::registry::register(&fs::MqueueFsType).unwrap();
 }
