@@ -110,6 +110,25 @@ fn ncdu_export_usage(nixos_shell: &mut Session) -> Result<(), Error> {
 }
 
 #[nixos_test]
+fn procfs_list_registered_devices(nixos_shell: &mut Session) -> Result<(), Error> {
+    nixos_shell.run_cmd_and_expect("cat /proc/devices", "Character devices:")?;
+    nixos_shell.run_cmd_and_expect("cat /proc/devices", "Block devices:")?;
+    nixos_shell.run_cmd_and_expect(
+        "sed -n '/^Character devices:$/,/^Block devices:$/p' /proc/devices | grep -w mem",
+        "1 mem",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "sed -n '/^Character devices:$/,/^Block devices:$/p' /proc/devices | grep -w misc",
+        "10 misc",
+    )?;
+    nixos_shell.run_cmd_and_expect(
+        "sed -n '/^Block devices:$/,$p' /proc/devices | grep -w virtblk",
+        "virtblk",
+    )?;
+    Ok(())
+}
+
+#[nixos_test]
 fn procps_free(nixos_shell: &mut Session) -> Result<(), Error> {
     nixos_shell.run_cmd_and_expect("free -h", "Mem")?;
     Ok(())

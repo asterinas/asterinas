@@ -8,7 +8,7 @@ mod ioctl_defs;
 mod master;
 mod packet;
 
-pub(crate) use driver::PtySlave;
+pub(crate) use driver::{PtyDriver, PtySlave};
 pub(crate) use master::PtyMaster;
 
 pub(crate) fn new_pty_pair(index: u32, ptmx: Arc<Ptmx>) -> Result<(Box<PtyMaster>, Arc<PtySlave>)> {

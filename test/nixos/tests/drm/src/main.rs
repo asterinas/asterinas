@@ -23,6 +23,10 @@ fn drm_xorg_mesa_smoke(nixos_shell: &mut Session) -> Result<(), Error> {
     // An empty pattern checks only the command's exit status.
     nixos_shell.run_cmd_and_expect_regex("test -c /dev/dri/card0", &Regex::new("").unwrap())?;
     nixos_shell.run_cmd_and_expect_regex(
+        "test \"$(grep -cx '226 drm' /proc/devices)\" -eq 1",
+        &Regex::new("").unwrap(),
+    )?;
+    nixos_shell.run_cmd_and_expect_regex(
         "grep -Fx 'direct rendering: Yes' /tmp/drm-glxinfo.txt",
         &Regex::new("direct rendering: Yes").unwrap(),
     )?;
