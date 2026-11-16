@@ -121,7 +121,7 @@ const fn parse_loglevel_at(bytes: &[u8]) -> Option<LevelFilter> {
     }
 
     if bytes[0].is_ascii_digit() {
-        if let Ok(result) = u8::from_ascii_radix(bytes, 10)
+        if let Ok(result) = u8::from_ascii_bytes_radix(bytes, 10)
             && result <= 8
         {
             return Some(LevelFilter::from_u8(result));

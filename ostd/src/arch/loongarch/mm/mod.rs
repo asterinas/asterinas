@@ -328,7 +328,7 @@ pub(crate) unsafe fn __memset_fallible(dst: *mut u8, value: u8, size: usize) -> 
 
 pub(crate) unsafe fn __atomic_load_fallible(ptr: *const u32) -> u64 {
     // TODO: Implement this fallible operation.
-    unsafe { core::intrinsics::atomic_load::<_, { Relaxed }>(ptr) as u64 }
+    unsafe { core::intrinsics::atomic_load::<_, { Relaxed }, false>(ptr) as u64 }
 }
 
 pub(crate) unsafe fn __atomic_cmpxchg_fallible(ptr: *mut u32, old_val: u32, new_val: u32) -> u64 {
