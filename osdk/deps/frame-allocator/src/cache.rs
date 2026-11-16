@@ -58,7 +58,10 @@ impl<const NR_CONT_FRAMES: usize, const COUNT: usize> CacheArray<NR_CONT_FRAMES,
             Layout::from_size_align(nr_to_alloc * Self::segment_size(), PAGE_SIZE).unwrap(),
         )?;
 
-        for i in 1..nr_to_alloc {
+        // `rev()` keeps future allocations contiguous from lower to higher
+        // addresses. This increases the likelihood that they can be merged,
+        // for example, when performing device operations.
+        for i in (1..nr_to_alloc).rev() {
             self.push_front(allocated + i * Self::segment_size());
         }
 
