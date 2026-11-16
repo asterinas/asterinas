@@ -108,7 +108,12 @@ impl<E: Ext> PollContext<'_, E> {
         let can_process = {
             let cx = self.iface.context();
             let dst_addr = ip_repr.inner.dst_addr();
-            cx.is_broadcast(&dst_addr) || cx.is_unicast_local(dst_addr)
+            cx.is_broadcast(&dst_addr)
+                || cx.is_unicast_local(dst_addr)
+                // Without an address yet, a DHCP OFFER/ACK may be unicast to the
+                // address we are about to be given. Let UDP processing sort it out.
+                || (self.iface.is_dhcp_pending()
+                    && ip_repr.inner.next_header() == IpProtocol::Udp)
         };
         if !can_process {
             return self.generate_icmp_unreachable(
@@ -297,6 +302,17 @@ impl<E: Ext> PollContext<'_, E> {
         udp_repr: &UdpRepr,
         udp_payload: PacketSlice<'_>,
     ) -> bool {
+        if let IpRepr::Ipv4(ipv4_repr) = ip_repr
+            && udp_repr.src_port == 67
+            && udp_repr.dst_port == 68
+        {
+            let mut buf = alloc::vec![0u8; udp_payload.len()];
+            udp_payload.copy_to_slice(&mut buf);
+            if self.iface.process_dhcp(ipv4_repr, udp_repr, &buf) {
+                return true;
+            }
+        }
+
         let mut processed = false;
         let is_unicast = self.iface.context().is_unicast(ip_repr.dst_addr());
 
@@ -466,6 +482,12 @@ impl<E: Ext> PollContext<'_, E> {
     }
 
     fn dispatch_ip(&mut self, phy: &dyn PollPhy) -> (bool, Option<TxPacketWithDst>) {
+        if let Some((ipv4_repr, udp_repr, payload)) = self.iface.dispatch_dhcp() {
+            let ip_repr = IpRepr::Ipv4(ipv4_repr);
+            let tx_packet = self.emit_udp(phy, &ip_repr, &udp_repr, &payload);
+            return (true, tx_packet);
+        }
+
         let (did_something_tcp, tx_packet) = self.dispatch_tcp(phy);
 
         if tx_packet.is_some() {
