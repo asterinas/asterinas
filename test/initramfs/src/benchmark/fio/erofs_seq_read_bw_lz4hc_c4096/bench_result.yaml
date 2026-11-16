@@ -1,0 +1,16 @@
+runtime_config:
+  smp: 1
+  mem: 8G
+  aster_scheme: 'null'
+  filesystem: erofs
+  image_profile: lz4hc_c4096
+chart:
+  description: fio --rw=read --size=full-file --io_size=full --bs=4096 --direct=0
+  legend: EROFS sequential read bandwidth (LZ4HC C4096, fresh guest) on {system}
+  title: '[EROFS] Sequential read (LZ4HC C4096, buffered I/O, fresh guest)'
+  unit: MB/s
+result_extraction:
+  parser: fio_json
+  direction: read
+  workload: read
+  io_bytes: full

@@ -1,0 +1,1009 @@
+--- a/tests/common/rc
++++ b/tests/common/rc
+@@ -1,7 +1,7 @@
+ #!/bin/sh
+ # SPDX-License-Identifier: GPL-2.0+
+ 
+-tmp=/tmp/$$
++tmp=${EROFS_TEST_TMP:-/tmp/$$}
+ mkdir -p $tmp 1>/dev/null 2>&1
+ 
+ if [ ! -z $srcdir ]; then
+@@ -27,7 +27,7 @@
+ # make sure we have a standard umask
+ umask 022
+ 
+-tmp=/tmp/$$
++tmp=${EROFS_TEST_TMP:-/tmp/$$}
+ mkdir -p $tmp 1>/dev/null 2>&1
+ 
+ _cleanup()
+@@ -94,6 +94,9 @@
+ 
+ _require_xattr()
+ {
++	command -v getfattr >/dev/null 2>&1 ||
++		_notrun "attr isn't installed, skipped."
++	[ "${_erofs_phase:-}" = check ] && return 0
+ 	command -v setfattr >/dev/null 2>&1 ||
+ 		_notrun "attr isn't installed, skipped."
+ }
+@@ -117,8 +120,9 @@
+ 		return
+ 	fi
+ 
++	[ "${_erofs_phase:-}" = prepare ] && return 0
+ 	_require_root
+-	modprobe erofs >/dev/null 2>&1
++	[ "${_erofs_phase:-}" = check ] || modprobe erofs >/dev/null 2>&1
+ 	grep -q erofs /proc/filesystems ||
+ 		_notrun "this test requires EROFS kernel support"
+ }
+@@ -157,6 +161,15 @@
+ _require_erofs_compression()
+ {
+ 	local opt="$*"
++	if [ "${_erofs_phase:-}" = check ]; then
++		[ -b "$SCRATCH2_DEV" ] || _fail "scratch2 block device missing"
++		dd if="$materials/probe" of="$SCRATCH2_DEV" bs=1M >>"$seqres.full" 2>&1 ||
++			_fail "failed to load compression probe"
++		_try_scratch2_mount >>"$seqres.full" 2>&1 ||
++			_notrun "fail to mount filesystem in _require_erofs_compression"
++		_scratch2_unmount
++		return 0
++	fi
+ 	local random_dir="$tmp/$(date +%Y%m%d)_$RANDOM"
+ 
+ 	mkdir -p $random_dir/test $random_dir/mnt > /dev/null 2>&1
+@@ -164,6 +177,11 @@
+ 
+ 	eval "$MKFS_EROFS_PROG $opt $SCRATCH2_DEV $random_dir/test" >> /dev/null 2>&1 || \
+ 		_fail "failed to mkfs in _require_erofs_compression"
++	if [ "${_erofs_phase:-}" = prepare ]; then
++		cp "$SCRATCH2_DEV" "$materials/probe" || _fail "failed to save compression probe"
++		rm -rf "$random_dir"
++		return 0
++	fi
+ 	_try_scratch2_mount || \
+ 		_notrun "fail to mount filesystem in _require_erofs_compression"
+ 	_scratch2_unmount
+@@ -309,6 +327,9 @@
+ _do_unmount()
+ {
+ 	local mnt_path=$1
++	if [ -n "${_erofs_phase:-}" ] && ! mountpoint -q "$mnt_path"; then
++		return 0
++	fi
+ 
+ 	if [ "$FSTYP" = "erofsfuse" ] && command -v fusermount > /dev/null 2>&1; then
+ 		fusermount -u $mnt_path
+@@ -373,6 +394,17 @@
+ # check xattrs of same files under two directories
+ _check_xattrs()
+ {
++	if [ -n "${_erofs_phase:-}" ]; then
++		if _erofs_is_prepare; then
++			find "$1" -mindepth 1 -type f -printf '%P\n' >"$materials/files" ||
++				_fail "failed to collect xattr files"
++			_erofs_collect_xattrs "$1" >"$materials/xattrs" || _fail "source xattrs failed"
++		else
++			_erofs_collect_xattrs "$2" >"$tmp/xattrs" || _fail "image xattrs failed"
++			cmp "$materials/xattrs" "$tmp/xattrs" || _fail "-->check xattrs FAILED"
++		fi
++		return 0
++	fi
+ 	local dir1="$1"
+ 	local dir2="$2"
+ 	local entries="`find $dir1 -mindepth 1 -type f -printf '%P\n'`"
+@@ -449,3 +481,7 @@
+ 	_do_unmount $random_dir/mnt
+ 	rm -rf $random_dir
+ }
++
++if [ -n "${EROFS_PHASE_HELPER:-}" ]; then
++	. "$EROFS_PHASE_HELPER" || _fail "failed to load phase helper"
++fi
+--- a/tests/erofs/002
++++ b/tests/erofs/002
+@@ -15,20 +15,20 @@
+ 	rm -rf $tmp.*
+ }
+ 
+-_require_erofs
++_erofs_phase_init "$@"
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
++_require_erofs
+ 
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -37,6 +37,10 @@
+ ln -s $FNAME $localdir/symlink
+ 
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+ MD5='0b0cfc07fca81c956ab9181d8576f4a8'
+--- a/tests/erofs/003
++++ b/tests/erofs/003
+@@ -15,20 +15,20 @@
+ 	rm -rf $tmp.*
+ }
+ 
+-_require_erofs
++_erofs_phase_init "$@"
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
++_require_erofs
+ 
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -46,6 +46,12 @@
+ fi
+ 
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++printf '%s\n' "$MD5" >"$materials/md5" || _fail "failed to save symlink branch"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
++MD5=$(cat "$materials/md5") || _fail "missing symlink branch"
+ _scratch_mount 2>>$seqres.full
+ 
+ realmd5=$(readlink $SCRATCH_MNT/symlink | tr -d '\n' | md5sum | cut -d' ' -f1)
+--- a/tests/erofs/004
++++ b/tests/erofs/004
+@@ -15,21 +15,21 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_root
+ _require_erofs
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -40,6 +40,10 @@
+ mknod $localdir/loopdev b 7 123
+ 
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+ case "$(uname -s)" in
+--- a/tests/erofs/005
++++ b/tests/erofs/005
+@@ -15,20 +15,20 @@
+ 	rm -rf $tmp.*
+ }
+ 
+-_require_erofs
++_erofs_phase_init "$@"
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
++_require_erofs
+ 
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -36,6 +36,10 @@
+ mkfifo $localdir/pipefile
+ 
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+ case "$(uname -s)" in
+--- a/tests/erofs/006
++++ b/tests/erofs/006
+@@ -15,21 +15,24 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_erofs
+ _require_fssum
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++FSSUM_OPTS="-MAC"
++[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
++
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -45,14 +48,18 @@
+ unset IFS
+ 
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir` || _fail "source checksum failed"
++echo "$localdir checksum is $sum1" >>$seqres.full
++printf '%s\n' "$sum1" >"$materials/sum" || _fail "failed to save checksum"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+-FSSUM_OPTS="-MAC"
+-[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
+ 
+-sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+-echo "$localdir checksum is $sum1" >>$seqres.full
+-sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
++sum1=$(cat "$materials/sum") || _fail "missing source checksum"
++sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT` || _fail "image checksum failed"
+ echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+ 
+ [ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+--- a/tests/erofs/008
++++ b/tests/erofs/008
+@@ -15,12 +15,11 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_erofs
+ _require_fssum
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
+@@ -29,12 +28,16 @@
+ 
+ _require_erofs_compression "-zlz4"
+ 
++FSSUM_OPTS="-MAC"
++[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
++
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -51,14 +54,18 @@
+ 
+ MKFS_OPTIONS="${MKFS_OPTIONS} -zlz4"
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir` || _fail "source checksum failed"
++echo "$localdir checksum is $sum1" >>$seqres.full
++printf '%s\n' "$sum1" >"$materials/sum" || _fail "failed to save checksum"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+-FSSUM_OPTS="-MAC"
+-[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
+ 
+-sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+-echo "$localdir checksum is $sum1" >>$seqres.full
+-sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
++sum1=$(cat "$materials/sum") || _fail "missing source checksum"
++sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT` || _fail "image checksum failed"
+ echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+ 
+ [ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+--- a/tests/erofs/009
++++ b/tests/erofs/009
+@@ -15,12 +15,11 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_erofs
+ _require_fssum
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
+@@ -29,12 +28,16 @@
+ 
+ _require_erofs_compression "-zlz4hc"
+ 
++FSSUM_OPTS="-MAC"
++[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
++
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -51,14 +54,18 @@
+ 
+ MKFS_OPTIONS="${MKFS_OPTIONS} -zlz4hc"
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir` || _fail "source checksum failed"
++echo "$localdir checksum is $sum1" >>$seqres.full
++printf '%s\n' "$sum1" >"$materials/sum" || _fail "failed to save checksum"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+-FSSUM_OPTS="-MAC"
+-[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
+ 
+-sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+-echo "$localdir checksum is $sum1" >>$seqres.full
+-sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
++sum1=$(cat "$materials/sum") || _fail "missing source checksum"
++sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT` || _fail "image checksum failed"
+ echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+ 
+ [ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+--- a/tests/erofs/010
++++ b/tests/erofs/010
+@@ -15,12 +15,11 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_erofs
+ _require_fssum
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
+@@ -29,12 +28,16 @@
+ 
+ _require_erofs_compression "-zlz4"
+ 
++FSSUM_OPTS="-MAC"
++[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
++
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -51,14 +54,18 @@
+ 
+ MKFS_OPTIONS="${MKFS_OPTIONS} -E legacy-compress -zlz4"
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir` || _fail "source checksum failed"
++echo "$localdir checksum is $sum1" >>$seqres.full
++printf '%s\n' "$sum1" >"$materials/sum" || _fail "failed to save checksum"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+-FSSUM_OPTS="-MAC"
+-[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
+ 
+-sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+-echo "$localdir checksum is $sum1" >>$seqres.full
+-sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
++sum1=$(cat "$materials/sum") || _fail "missing source checksum"
++sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT` || _fail "image checksum failed"
+ echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+ 
+ [ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+--- a/tests/erofs/011
++++ b/tests/erofs/011
+@@ -15,12 +15,11 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_erofs
+ _require_fssum
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
+@@ -29,12 +28,16 @@
+ 
+ _require_erofs_compression "-zlz4hc"
+ 
++FSSUM_OPTS="-MAC"
++[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
++
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -51,14 +54,18 @@
+ 
+ MKFS_OPTIONS="${MKFS_OPTIONS} -E legacy-compress -zlz4hc"
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir` || _fail "source checksum failed"
++echo "$localdir checksum is $sum1" >>$seqres.full
++printf '%s\n' "$sum1" >"$materials/sum" || _fail "failed to save checksum"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+-FSSUM_OPTS="-MAC"
+-[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
+ 
+-sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+-echo "$localdir checksum is $sum1" >>$seqres.full
+-sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
++sum1=$(cat "$materials/sum") || _fail "missing source checksum"
++sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT` || _fail "image checksum failed"
+ echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+ 
+ [ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+--- a/tests/erofs/012
++++ b/tests/erofs/012
+@@ -29,21 +29,21 @@
+ 	esac
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_root
+ _require_erofs
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ 
+ mkdir -p $localdir/d1
+@@ -53,6 +53,10 @@
+ ln $localdir/d1/a $localdir/d2/d3/a
+ 
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+ # check i_nlink count is expected
+--- a/tests/erofs/013
++++ b/tests/erofs/013
+@@ -11,25 +11,28 @@
+ 
+ cleanup()
+ {
++	if [ -n "$localdir" ] && mountpoint -q "$localdir/d2"; then
++		$UMOUNT_PROG "$localdir/d2" || return 1
++	fi
+ 	cd /
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_root
+ _require_erofs
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ 
+ mkdir -p $localdir/d1
+@@ -47,10 +50,16 @@
+ 
+ $UMOUNT_PROG $localdir/d2
+ 
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+ # check if it's a hardlinked directory
+-[ "x`_get_inode_number $SCRATCH_MNT/d1`" = "x`_get_inode_number $SCRATCH_MNT/d2`" ] && \
++inode1=$(_get_inode_number "$SCRATCH_MNT/d1") || _fail "image inode query failed"
++inode2=$(_get_inode_number "$SCRATCH_MNT/d2") || _fail "image inode query failed"
++[ "x$inode1" = "x$inode2" ] && \
+ 	_fail "-> hardlinked directory detected"
+ 
+ _scratch_unmount
+--- a/tests/erofs/014
++++ b/tests/erofs/014
+@@ -26,21 +26,21 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_root
+ _require_erofs
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ 
+ tds="$localdir/s"
+@@ -67,9 +67,15 @@
+ _scratch_mkfs $localdir/d >> $seqres.full 2>&1 || _fail "failed to mkfs"
+ 
+ cleanup_source_mounts || _fail "failed to unmount source images"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+-[ "x`_get_inode_number $SCRATCH_MNT/d1/t`" = "x`_get_inode_number $SCRATCH_MNT/d2/t`" ] && \
++inode1=$(_get_inode_number "$SCRATCH_MNT/d1/t") || _fail "image inode query failed"
++inode2=$(_get_inode_number "$SCRATCH_MNT/d2/t") || _fail "image inode query failed"
++[ "x$inode1" = "x$inode2" ] && \
+ 	_fail "-> buggy cross-device sub-mount"
+ 
+ _scratch_unmount
+--- a/tests/erofs/015
++++ b/tests/erofs/015
+@@ -15,24 +15,29 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_erofs
+ _require_fssum
+ 
+-[ `id -u` -ge 65536 ] && _notrun "UID exceeds 16 bits"
+-[ `id -g` -ge 65536 ] && _notrun "GID exceeds 16 bits"
+-
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
++if _erofs_is_prepare; then
++	[ `id -u` -ge 65536 ] && _notrun "UID exceeds 16 bits"
++	[ `id -g` -ge 65536 ] && _notrun "GID exceeds 16 bits"
++fi
+ 
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++FSSUM_OPTS="-MAC"
++[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
++
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -43,15 +48,18 @@
+ 
+ _scratch_mkfs -Eforce-inode-compact --ignore-mtime $localdir >> $seqres.full 2>&1 \
+ 	|| _fail "failed to mkfs"
++sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir` || _fail "source checksum failed"
++echo "$localdir checksum is $sum1" >>$seqres.full
++printf '%s\n' "$sum1" >"$materials/sum" || _fail "failed to save checksum"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+ # verify the uncompressed image
+-FSSUM_OPTS="-MAC"
+-[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
+-
+-sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+-echo "$localdir checksum is $sum1" >>$seqres.full
+-sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
++sum1=$(cat "$materials/sum") || _fail "missing source checksum"
++sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT` || _fail "image checksum failed"
+ echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+ 
+ [ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+--- a/tests/erofs/016
++++ b/tests/erofs/016
+@@ -15,6 +15,8 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_erofs
+ _require_fssum
+ 
+@@ -23,18 +25,19 @@
+ 	awk -v min=$1 -v max=$2 'BEGIN{srand(); print int(min+rand()*(max-min+1))}'
+ }
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++FSSUM_OPTS="-MAC"
++[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
++
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p "$localdir/empty"
+ 
+@@ -45,22 +48,27 @@
+ 	mkdir -p "$localdir/$d1"
+ 	for j in `seq -s':' 0 $(_randnum 0 99)`; do
+ 		d2=`tr -dc A-Za-z0-9 </dev/urandom | head -c $(_randnum 1 150)`
++		block_size=$(_randnum 0 13314)
++		[ "$block_size" -ne 0 ] || continue
+ 		dd if=/dev/urandom of="$localdir/$d1/$d2" count=1 \
+-			bs=$(_randnum 0 13314) 2> /dev/null
++			bs=$block_size 2> /dev/null || _fail "failed to generate random file"
+ 	done
+ done
+ unset IFS
+ 
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir` || _fail "source checksum failed"
++echo "$localdir checksum is $sum1" >>$seqres.full
++printf '%s\n' "$sum1" >"$materials/sum" || _fail "failed to save checksum"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+ # verify the uncompressed image
+-FSSUM_OPTS="-MAC"
+-[ $FSTYP = "erofsfuse" ] && FSSUM_OPTS="${FSSUM_OPTS}T"
+-
+-sum1=`$FSSUM_PROG $FSSUM_OPTS $localdir`
+-echo "$localdir checksum is $sum1" >>$seqres.full
+-sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT`
++sum1=$(cat "$materials/sum") || _fail "missing source checksum"
++sum2=`$FSSUM_PROG $FSSUM_OPTS $SCRATCH_MNT` || _fail "image checksum failed"
+ echo "$SCRATCH_MNT checksum is $sum2" >>$seqres.full
+ 
+ [ "x$sum1" = "x$sum2" ] || _fail "-->checkMD5 FAILED"
+--- a/tests/erofs/019
++++ b/tests/erofs/019
+@@ -15,21 +15,21 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_erofs
+ _require_xattr
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -43,6 +43,11 @@
+ done
+ 
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++_check_xattrs "$localdir" "$SCRATCH_MNT"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+ # check xattrs
+--- a/tests/erofs/020
++++ b/tests/erofs/020
+@@ -15,21 +15,21 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_erofs
+ _require_xattr
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -65,6 +65,11 @@
+ 
+ MKFS_OPTIONS="$MKFS_OPTIONS -x1"
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
++_check_xattrs "$localdir" "$SCRATCH_MNT"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
+ _scratch_mount 2>>$seqres.full
+ 
+ # check xattrs
+--- a/tests/erofs/025
++++ b/tests/erofs/025
+@@ -16,21 +16,21 @@
+ 	rm -rf $tmp.*
+ }
+ 
++_erofs_phase_init "$@"
++
+ _require_root
+ _require_erofs
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
+-
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z $SCRATCH_DEV ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ 
+ mkdir -p $localdir/d1 $localdir/d2
+@@ -39,6 +39,12 @@
+ 
+ _scratch_mkfs $localdir >> $seqres.full 2>&1 || _fail "failed to mkfs"
+ 
++cp -a "$localdir" "$materials/source" || _fail "failed to save source files"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
++localdir="$materials/source"
+ _scratch_mount 2>>$seqres.full
+ 
+ # check if all files are accessible
+--- a/tests/erofs/029
++++ b/tests/erofs/029
+@@ -9,28 +9,30 @@
+ # get standard environment, filters and checks
+ . "${srcdir}/common/rc"
+ 
+-_cleanup()
++cleanup()
+ {
+ 	cd /
+ 	rm -rf $tmp.*
+ 	# Ensure we kill our background daemon if it's still alive
+-	[ -n "$fuse_pid" ] && kill -9 $fuse_pid 2>/dev/null
++	if [ -n "$fuse_pid" ]; then
++		kill -9 $fuse_pid 2>/dev/null || :
++	fi
+ }
+ 
+-_require_erofs
++_erofs_phase_init "$@"
+ 
+-# remove previous $seqres.full before test
+-rm -f $seqres.full
++_require_erofs
+ 
+ # real QA test starts here
+ echo "QA output created by $seq"
+ 
++localdir="$tmp/$seq"
++if _erofs_is_prepare; then
+ if [ -z "$SCRATCH_DEV" ]; then
+ 	SCRATCH_DEV=$tmp/erofs_$seq.img
+ 	rm -f $SCRATCH_DEV
+ fi
+ 
+-localdir="$tmp/$seq"
+ rm -rf $localdir
+ mkdir -p $localdir
+ 
+@@ -50,8 +52,15 @@
+ seeko=$((meta_blkaddr*blocksize+victim*32))
+ 
+ # Deterministically corrupt the root inode's layout by writing 32 bytes of 0xFF
++(set -o pipefail
+ awk 'BEGIN { for(i=0;i<32;i++) printf "\377" }' | \
+-	dd of=$SCRATCH_DEV bs=1 seek=$seeko count=32 conv=notrunc >> $seqres.full 2>&1
++	dd of=$SCRATCH_DEV bs=1 seek=$seeko count=32 conv=notrunc >> $seqres.full 2>&1) || _fail "failed to corrupt image"
++_erofs_prepare_done
++fi
++
++_erofs_load_image
++command -v timeout >/dev/null || _fail "timeout not found"
++command -v stat >/dev/null || _fail "stat not found"
+ 
+ if [ "$FSTYP" = "erofsfuse" ]; then
+ 	[ -z "$EROFSFUSE_PROG" ] && _notrun "erofsfuse is not available"
+@@ -67,8 +76,8 @@
+ fi
+ 
+ # Attempt to stat the root directory to directly trigger getattr without a lookup
+-timeout 5 stat $SCRATCH_MNT >> $seqres.full 2>&1
+-res=$?
++res=0
++timeout 5 stat $SCRATCH_MNT >> $seqres.full 2>&1 || res=$?
+ [ $res -eq 124 ] && _fail "stat command timed out (kernel hung?)"
+ [ $res -eq 0 ] && _fail "stat unexpectedly succeeded on a corrupted image"
+ 

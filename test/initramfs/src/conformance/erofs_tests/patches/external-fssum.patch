@@ -1,0 +1,11 @@
+--- a/tests/common/rc
++++ b/tests/common/rc
+@@ -353,7 +353,7 @@
+ 
+ _require_fssum()
+ {
+-	FSSUM_PROG=${PWD}/src/fssum
++	FSSUM_PROG=${FSSUM_PROG:-${PWD}/src/fssum}
+ 	[ -x $FSSUM_PROG ] || _notrun "fssum not built"
+ }
+ 

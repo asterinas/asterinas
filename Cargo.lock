@@ -175,6 +175,7 @@ dependencies = [
  "logo-ascii-art",
  "loongArch64",
  "lru",
+ "lz4_flex",
  "miniz_oxide",
  "osdk-frame-allocator",
  "osdk-heap-allocator",
@@ -1240,6 +1241,12 @@ checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
 dependencies = [
  "hashbrown 0.16.1",
 ]
+
+[[package]]
+name = "lz4_flex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226"
 
 [[package]]
 name = "macro_rules_attribute"

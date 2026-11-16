@@ -8,6 +8,19 @@
   benchmarkName ? "none",
 }:
 rec {
+  # Both the Linux image and its modules come from this native pinned package.
+  linux-kernel = pkgsBuildBuild.linuxPackages.kernel;
+  linux-modules = pkgsBuildBuild.makeModulesClosure {
+    kernel = linux-kernel.modules;
+    firmware = pkgsBuildBuild.emptyDirectory;
+    rootModules = [
+      "erofs"
+      "virtio_pci"
+      "virtio_blk"
+    ];
+  };
+  isErofsBenchmark = lib.hasPrefix "fio/erofs_" benchmarkName;
+
   # Use `--esx` flag to enable `CONFIG_NO_SHM` and disable `CONFIG_HAVE_TIMERFD_CREATE`.
   fio = pkgsHostTarget.fio.overrideAttrs (_: {
     configureFlags = [ "--esx" ];
@@ -54,7 +67,19 @@ rec {
           > $out/pad.bin
       ''
     );
-    fio = packWith fio (p: "cp -r ${p}/bin/fio $out/bin/");
+    fio = packWith fio (p: ''
+      cp -r ${p}/bin/fio $out/bin/
+      ${lib.optionalString isErofsBenchmark ''
+        mkdir -p $out/lib
+        cp -r ${linux-modules}/lib/modules $out/lib/
+        chmod -R u+w $out/lib/modules
+        # BusyBox can load plain modules regardless of its compressed-module settings.
+        find $out/lib/modules -name '*.ko.xz' -exec ${pkgsBuildBuild.xz}/bin/unxz {} \;
+        cp ${linux-kernel.modules}/lib/modules/${linux-kernel.modDirVersion}/modules.{order,builtin,builtin.modinfo} \
+          $out/lib/modules/${linux-kernel.modDirVersion}/
+        ${pkgsBuildBuild.kmod}/bin/depmod -b $out ${linux-kernel.modDirVersion}
+      ''}
+    '');
     hackbench = packWith hackbench (p: "cp -r ${p}/bin/hackbench $out/bin/");
     iperf3 = packWith iperf3 (p: "cp -r ${p}/bin/iperf3 $out/bin/");
     lmbench = packWith lmbench (p: ''

@@ -2,6 +2,7 @@
   lib,
   stdenvNoCC,
   callPackage,
+  buildPackages,
   hostPlatform,
   testSuite ? "ltp",
   workDir ? "/tmp",
@@ -24,6 +25,11 @@ rec {
   };
   pjdfstest = callPackage ./pjdfstest.nix { inherit conformanceSrc; };
   xfstests = callPackage ./xfstests.nix { inherit conformanceSrc; };
+  erofs = callPackage ./erofs.nix { inherit conformanceSrc; };
+  erofsHost = buildPackages.callPackage ./erofs.nix {
+    inherit conformanceSrc;
+    hostPreparation = true;
+  };
 
   package = stdenvNoCC.mkDerivation {
     pname = "conformance";
@@ -43,6 +49,7 @@ rec {
       ${lib.optionalString (testSuite == "kselftest") "export KSELFTEST_PREBUILT_DIR=${kselftest}"}
       ${lib.optionalString (testSuite == "pjdfstest") "export PJDFSTEST_PREBUILT_DIR=${pjdfstest}"}
       ${lib.optionalString (testSuite == "xfstests") "export XFSTESTS_PREBUILT_DIR=${xfstests}"}
+      ${lib.optionalString (testSuite == "erofs") "export EROFS_PREBUILT_DIR=${erofs}"}
       make
     '';
   };

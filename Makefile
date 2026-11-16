@@ -61,8 +61,8 @@ CONFORMANCE_TEST_EXTRA_BLOCKLISTS ?= ""
 # Comma-separated tests to run within the selected conformance suite.
 #
 # This variable allows one to select one or multiple tests to run.
-# When this environment variable is present,
-# the blocklist of a conformance test will be ignored.
+# Suites with blocklists ignore them when this variable is present.
+# EROFS instead restricts both its default run and explicit selectors to short.list.
 #
 # - gvisor:    a test *binary* name, e.g. `epoll_test` (narrow the cases inside
 #              it with `CONFORMANCE_TEST_GVISOR_FILTER`).
@@ -70,6 +70,7 @@ CONFORMANCE_TEST_EXTRA_BLOCKLISTS ?= ""
 # - ltp:       a syscall testcase id, e.g. `rename01`.
 # - pjdfstest: a test case path, e.g. `rename/24.t`.
 # - xfstests:  a test id, e.g. `generic/001`.
+# - erofs:     a test id, e.g. `erofs/002`.
 CONFORMANCE_TEST_SELECTOR ?= ""
 # gVisor-only positive gtest filter, applied inside one selected gVisor test
 # binary, e.g. `EpollTest.CloseFile:EpollTest.Oneshot`.
@@ -78,6 +79,8 @@ CONFORMANCE_TEST_GVISOR_FILTER ?= ""
 XFSTESTS_FS_TYPE ?= ext2
 XFSTESTS_RUNLIST ?= short.list
 XFSTESTS_DISK_SIZE ?= 12G
+# Parameters for erofs-utils tests.
+EROFS_DISK_SIZE ?= 1G
 
 # Parameters for pjdfstest. Supported value: 'ext2', 'ramfs'.
 PJDFSTEST_FS_TYPE ?= ext2
@@ -156,6 +159,22 @@ CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_FS_TYPE=$(XFSTESTS_FS_TYPE)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_RUNLIST=$(XFSTESTS_RUNLIST)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_TEST_DEV=$(XFSTESTS_TEST_DEV)"
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="XFSTESTS_SCRATCH_DEV=$(XFSTESTS_SCRATCH_DEV)"
+else ifeq ($(CONFORMANCE_TEST_SUITE), erofs)
+# Device paths are fixed in run_erofs.sh; reject overrides instead of ignoring them.
+ifneq ($(origin EROFS_SCRATCH_DEV), undefined)
+$(error EROFS_SCRATCH_DEV is fixed in run_erofs.sh and cannot be overridden)
+endif
+ifneq ($(origin EROFS_SCRATCH2_DEV), undefined)
+$(error EROFS_SCRATCH2_DEV is fixed in run_erofs.sh and cannot be overridden)
+endif
+ifneq ($(origin EROFS_MATERIALS_DEV), undefined)
+$(error EROFS_MATERIALS_DEV is fixed in run_erofs.sh and cannot be overridden)
+endif
+# With INITRAMFS=off, the rootfs disk shifts all three fixed EROFS device paths.
+ifneq ($(INITRAMFS), on)
+$(error EROFS conformance tests require INITRAMFS=on)
+endif
+include test/initramfs/src/conformance/erofs_tests/build_config.mk
 endif
 ifeq ($(CONFORMANCE_TEST_SUITE), pjdfstest)
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="PJDFSTEST_FS_TYPE=$(PJDFSTEST_FS_TYPE)"
@@ -190,7 +209,18 @@ endif
 
 # If the BENCHMARK is set, we will run the benchmark in the kernel mode.
 ifneq ($(BENCHMARK), none)
+ifneq ($(filter fio/erofs_%,$(BENCHMARK)),)
+EROFS_FIO_WORK_DIR ?= $(abspath test/initramfs/build/erofs-fio/work)
+EROFS_FIO_PROFILE ?= $(if $(filter %_plain,$(BENCHMARK)),plain,lz4hc_c4096)
+ifneq ($(filter %_$(EROFS_FIO_PROFILE),$(BENCHMARK)),$(BENCHMARK))
+$(error EROFS_FIO_PROFILE must match the selected benchmark)
+endif
+EROFS_FIO_IMAGE ?= $(EROFS_FIO_WORK_DIR)/$(EROFS_FIO_PROFILE).img
+# Read the size only when the command runs, after initramfs prepares the image.
+CARGO_OSDK_BUILD_ARGS += --init-args="/benchmark/common/bench_runner.sh $(BENCHMARK) asterinas /dev/vdd $${EROFS_FIO_FILE_BYTES:-$$(stat -c %s "$(EROFS_FIO_WORK_DIR)/root/silesia.tar")} $(EROFS_FIO_PROFILE)"
+else
 CARGO_OSDK_BUILD_ARGS += --init-args="/benchmark/common/bench_runner.sh $(BENCHMARK) asterinas"
+endif
 endif
 
 ifeq ($(INTEL_TDX), 1)
@@ -353,6 +383,12 @@ else
 run_kernel: rootfs
 endif
 run_kernel:
+# An appended log can retain an earlier success marker within the last 100 lines.
+ifneq ($(AUTO_TEST), none)
+ifeq ($(QEMU_LOG_APPEND), on)
+	@echo "QEMU_LOG_APPEND=on is incompatible with AUTO_TEST log result checks" >&2; exit 1
+endif
+endif
 	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), conformance)

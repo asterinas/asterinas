@@ -10,6 +10,7 @@ GVISOR_DIR=/opt/gvisor
 KSELFTEST_DIR=/opt/kselftest
 PJDFSTEST_DIR=/opt/pjdfstest
 XFSTESTS_DIR=/opt/xfstests
+EROFS_DIR=/opt/erofs
 
 if [ "${CONFORMANCE_TEST_SUITE}" = "ltp" ]; then
     echo "Running LTP syscall tests..."
@@ -44,6 +45,12 @@ elif [ "${CONFORMANCE_TEST_SUITE}" = "xfstests" ]; then
     fi
     if ! "${XFSTESTS_DIR}/run_xfstests.sh" "$@"; then
         echo "Error: xfstests failed." >&2
+        exit 5
+    fi
+elif [ "${CONFORMANCE_TEST_SUITE}" = "erofs" ]; then
+    echo "Running erofs-utils tests..."
+    if ! "${EROFS_DIR}/run_erofs.sh"; then
+        echo "Error: erofs-utils tests failed." >&2
         exit 5
     fi
 else

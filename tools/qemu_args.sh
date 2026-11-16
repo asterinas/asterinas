@@ -25,8 +25,12 @@
 #  - MEM: amount of memory, e.g. "8G";
 #  - VNC_PORT: VNC display number, default is "42" (TCP port 5942),
 #    ignored when QEMU_DISPLAY is set;
+#  - QEMU_LOG_APPEND: "on" or "off", append console output to qemu.log (default: "off");
 #  - XFSTESTS_NEEDS_BLOCK_DEVICES: "true" or "false", whether to attach
 #    xfstests images (xfstests_test.img and xfstests_scratch.img) to the VM.
+#  - EROFS_NEEDS_BLOCK_DEVICES: "true" or "false", whether to attach
+#    erofs-utils test images (erofs_materials.img, erofs_test.img and
+#    erofs_scratch.img) to the VM.
 
 OVMF=${OVMF:-"on"}
 # Directory holding OVMF.fd, OVMF_VARS.fd and microvm/MICROVM.fd. Defaults to the
@@ -38,12 +42,26 @@ VIRTIOFS=${VIRTIOFS:-"off"}
 VIRTIOFS_SCRATCH=${VIRTIOFS_SCRATCH:-"off"}
 NETDEV=${NETDEV:-"user"}
 QEMU_DISPLAY=${QEMU_DISPLAY:-"vnc=0.0.0.0:${VNC_PORT:-42}"}
+QEMU_LOG_APPEND=${QEMU_LOG_APPEND:-off}
 CONSOLE=${CONSOLE:-"hvc0"}
 XFSTESTS_NEEDS_BLOCK_DEVICES=${XFSTESTS_NEEDS_BLOCK_DEVICES:-false}
+EROFS_NEEDS_BLOCK_DEVICES=${EROFS_NEEDS_BLOCK_DEVICES:-false}
 
 if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" != "true" ] && \
    [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" != "false" ]; then
     echo "Invalid XFSTESTS_NEEDS_BLOCK_DEVICES=${XFSTESTS_NEEDS_BLOCK_DEVICES}" 1>&2
+    exit 1
+fi
+if [ "$EROFS_NEEDS_BLOCK_DEVICES" != "true" ] && \
+   [ "$EROFS_NEEDS_BLOCK_DEVICES" != "false" ]; then
+    echo "invalid EROFS_NEEDS_BLOCK_DEVICES=${EROFS_NEEDS_BLOCK_DEVICES}" 1>&2
+    exit 1
+fi
+# The rootfs disk uses a different position in the device order when
+# INITRAMFS=off. Refuse this configuration so it cannot be formatted as an
+# EROFS test disk.
+if [ "$INITRAMFS" = "off" ] && [ "$EROFS_NEEDS_BLOCK_DEVICES" = "true" ]; then
+    echo "EROFS conformance tests require INITRAMFS=on" >&2
     exit 1
 fi
 
@@ -230,7 +248,7 @@ COMMON_QEMU_ARGS="\
     -nographic \
     -display $QEMU_DISPLAY \
     -monitor chardev:mux \
-    -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
+    -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log,logappend=$QEMU_LOG_APPEND \
     $NETDEV_ARGS \
     $QEMU_OPT_ARG_DUMP_PACKETS \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
@@ -245,6 +263,15 @@ if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" = "true" ]; then
     COMMON_QEMU_ARGS="$COMMON_QEMU_ARGS \
     -drive if=none,format=raw,id=x3,file=./test/initramfs/build/xfstests_test.img \
     -drive if=none,format=raw,id=x4,file=./test/initramfs/build/xfstests_scratch.img \
+"
+fi
+
+# EROFS inputs are prepared on the host; the guest copies images to scratch disks.
+if [ "$EROFS_NEEDS_BLOCK_DEVICES" = "true" ]; then
+    COMMON_QEMU_ARGS="$COMMON_QEMU_ARGS \
+    -drive if=none,format=raw,id=x3,file=./test/initramfs/build/erofs_materials.img,readonly=on \
+    -drive if=none,format=raw,id=x4,file=./test/initramfs/build/erofs_test.img \
+    -drive if=none,format=raw,id=x5,file=./test/initramfs/build/erofs_scratch.img \
 "
 fi
 
@@ -306,6 +333,19 @@ else
     "
 fi
 
+# The fio benchmark uses one additional read-only disk after the three default disks.
+if [ -n "${EROFS_FIO_IMAGE:-}" ]; then
+    if [ "$1" != normal ] || [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" = true ] || \
+       [ "$EROFS_NEEDS_BLOCK_DEVICES" = true ]; then
+        echo "EROFS fio requires the normal x86_64 QEMU scheme" >&2
+        exit 1
+    fi
+    QEMU_ARGS="$QEMU_ARGS \
+        -drive if=none,format=raw,id=erofsfio,file=$EROFS_FIO_IMAGE,readonly=on,cache=none,aio=threads \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xa,drive=erofsfio,serial=erofs-fio,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
+    "
+fi
+
 # Add xfstests devices when the selected file system needs block devices.
 if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" = "true" ]; then
     if [ "$1" = "microvm" ]; then
@@ -317,6 +357,22 @@ if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" = "true" ]; then
         QEMU_ARGS="$QEMU_ARGS \
         -device virtio-blk-pci,bus=pcie.0,addr=0xa,drive=x3,serial=vxfstest,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
         -device virtio-blk-pci,bus=pcie.0,addr=0xb,drive=x4,serial=vxfsscratch,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+    "
+    fi
+fi
+
+if [ "$EROFS_NEEDS_BLOCK_DEVICES" = "true" ]; then
+    if [ "$1" = "microvm" ]; then
+        QEMU_ARGS="$QEMU_ARGS \
+        -device virtio-blk-device,drive=x3,serial=verofsmaterials \
+        -device virtio-blk-device,drive=x4,serial=verofsscratch \
+        -device virtio-blk-device,drive=x5,serial=verofsscratch2 \
+    "
+    else
+        QEMU_ARGS="$QEMU_ARGS \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xa,drive=x3,serial=verofsmaterials,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xb,drive=x4,serial=verofsscratch,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
+        -device virtio-blk-pci,bus=pcie.0,addr=0xd,drive=x5,serial=verofsscratch2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
     "
     fi
 fi

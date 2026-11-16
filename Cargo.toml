@@ -255,6 +255,7 @@ inventory = "0.3.24"
 itertools = "0.10.5"
 lending-iterator = "0.1.7"
 lru = "0.16.3"
+lz4_flex = { version = "=0.14.0", default-features = false, features = ["safe-encode", "safe-decode"] }
 owo-colors = "4.2.2"
 paste = "1.0.15"
 postcard = "1.0.6"
