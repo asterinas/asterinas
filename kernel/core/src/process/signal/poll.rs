@@ -156,6 +156,9 @@ impl Pollee {
     /// The functionality of this method is a subset of calling [`Self::poll_with`] and providing
     /// the same poller. Unlike [`Self::poll_with`], this method performs poller registration
     /// without checking (and perhaps caching) the current events.
+    ///
+    /// Repeated registrations with the same handle accumulate event masks until the handle is
+    /// reset or dropped.
     pub(crate) fn register_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
         self.inner
             .subject
@@ -194,6 +197,8 @@ impl Pollee {
 /// This type can represent an entity of [`PollAdaptor`] or [`Poller`], which is done via the
 /// [`PollAdaptor::as_handle_mut`] and [`Poller::as_handle_mut`] methods.
 ///
+/// Registrations with the same pollee accumulate event masks until the handle is reset or dropped.
+///
 /// When this handle is dropped or reset (via [`PollHandle::reset`]), the entity will no longer be
 /// notified of the events from the pollee.
 pub struct PollHandle {
@@ -223,8 +228,8 @@ impl PollHandle {
         let observer = &self.observer;
 
         self.pollees
-            .iter()
-            .filter_map(Weak::upgrade)
+            .drain(..)
+            .filter_map(|pollee| pollee.upgrade())
             .for_each(|pollee| {
                 pollee.subject.unregister_observer(observer);
             });
@@ -261,7 +266,10 @@ impl<O: Observer<IoEvents> + 'static> PollAdaptor<O> {
 
 impl<O> PollAdaptor<O> {
     /// Gets a reference to the observer.
-    #[expect(dead_code, reason = "Keep this `Arc` to avoid dropping the observer")]
+    #[cfg_attr(
+        not(ktest),
+        expect(dead_code, reason = "Keep this `Arc` to avoid dropping the observer")
+    )]
     pub(crate) fn observer(&self) -> &Arc<O> {
         &self.observer
     }
@@ -393,6 +401,8 @@ pub trait Pollable {
 
 #[cfg(ktest)]
 mod test {
+    use core::sync::atomic::AtomicUsize;
+
     use ostd::prelude::*;
 
     use super::*;
@@ -539,5 +549,75 @@ mod test {
             // Reusing the cached state is NOT allowed as we've been notified above.
             IoEvents::OUT,
         );
+    }
+
+    struct EventCounter(AtomicUsize);
+
+    impl Observer<IoEvents> for EventCounter {
+        fn on_events(&self, _events: &IoEvents) {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    #[ktest]
+    fn repeated_registration_preserves_events() {
+        for masks in [
+            [IoEvents::IN, IoEvents::empty()],
+            [IoEvents::empty(), IoEvents::IN],
+            [IoEvents::IN, IoEvents::OUT],
+            [IoEvents::OUT, IoEvents::IN],
+        ] {
+            let pollee = Pollee::new();
+            let mut adaptor = PollAdaptor::with_observer(EventCounter(AtomicUsize::new(0)));
+
+            // Register `adaptor` multiple times with different masks.
+            for mask in masks {
+                let events = pollee.poll_with(mask, Some(adaptor.as_handle_mut()), IoEvents::empty);
+                assert!(events.is_empty());
+            }
+
+            // Notification works with multiple masks.
+            for mask in [IoEvents::IN, IoEvents::OUT, IoEvents::PRI, IoEvents::HUP] {
+                let notified_count = {
+                    adaptor.observer().0.store(0, Ordering::Relaxed);
+                    pollee.notify(mask);
+                    adaptor.observer().0.load(Ordering::Relaxed)
+                };
+                let expected_count = usize::from(
+                    IoEvents::ALWAYS_POLL.contains(mask)
+                        || masks.iter().any(|registered| registered.contains(mask)),
+                );
+                assert_eq!(notified_count, expected_count);
+            }
+        }
+    }
+
+    #[ktest]
+    fn reset_clears_registered_events() {
+        let pollee = Pollee::new();
+        let mut adaptor = PollAdaptor::with_observer(EventCounter(AtomicUsize::new(0)));
+        let observer = adaptor.observer().clone();
+
+        pollee.register_poller(adaptor.as_handle_mut(), IoEvents::IN);
+        pollee.register_poller(adaptor.as_handle_mut(), IoEvents::OUT);
+        adaptor.as_handle_mut().reset();
+
+        // After reset, neither IN nor OUT notifies the observer.
+        pollee.notify(IoEvents::IN | IoEvents::OUT);
+        assert_eq!(observer.0.load(Ordering::Relaxed), 0);
+
+        pollee.register_poller(adaptor.as_handle_mut(), IoEvents::OUT);
+
+        // After re-registering for OUT, only OUT notifies the observer, not IN.
+        pollee.notify(IoEvents::IN);
+        assert_eq!(observer.0.load(Ordering::Relaxed), 0);
+        pollee.notify(IoEvents::OUT);
+        assert_eq!(observer.0.load(Ordering::Relaxed), 1);
+
+        drop(adaptor);
+
+        // After dropping the adaptor, OUT no longer notifies the observer.
+        pollee.notify(IoEvents::OUT);
+        assert_eq!(observer.0.load(Ordering::Relaxed), 1);
     }
 }

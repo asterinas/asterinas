@@ -6,6 +6,7 @@ set -e
 
 ./epoll/epoll_cycle
 ./epoll/epoll_err
+./epoll/poll_duplicate
 ./epoll/poll_err
 ./epoll/test_epoll_pwait.sh
 
