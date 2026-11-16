@@ -86,7 +86,7 @@ impl DosTimestamp {
         let date_time_result =
             OffsetDateTime::from_unix_timestamp_nanos(duration.as_nanos() as i128);
         if date_time_result.is_err() {
-            return Err(errno!(EINVAL, "failed to parse date time."));
+            return Err(errno!(EINVAL, "failed to parse date time"));
         }
 
         let date_time = date_time_result.unwrap();

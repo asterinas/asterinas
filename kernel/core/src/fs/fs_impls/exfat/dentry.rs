@@ -733,7 +733,7 @@ impl ExfatName {
             .iter()
             .any(|&uni_char| !Self::is_valid_char(uni_char))
         {
-            return Err(errno!(EINVAL, "invalid file name."));
+            return Err(errno!(EINVAL, "invalid file name"));
         }
         // TODO:verify dots
         Ok(())

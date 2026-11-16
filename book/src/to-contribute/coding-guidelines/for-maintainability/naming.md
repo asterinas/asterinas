@@ -146,6 +146,7 @@ PR [#1488](https://github.com/asterinas/asterinas/pull/1488#discussion_r18418270
 
 Start with a lowercase letter
 (unless the first word is a proper noun or identifier).
+Do not end the message with a period.
 Be specific:
 prefer "`len` is too large" over "the argument is invalid".
 

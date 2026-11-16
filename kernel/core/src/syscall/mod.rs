@@ -343,7 +343,7 @@ macro_rules! impl_syscall_nums_and_dispatch_fn {
                     ostd::warn!("Unimplemented syscall number: {}", syscall_number);
                     Err($crate::errno!(
                         ENOSYS,
-                        "Syscall was unimplemented"
+                        "syscall was unimplemented"
                     ))
                 }
             }

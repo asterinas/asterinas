@@ -135,7 +135,7 @@ impl TryFrom<RawFallocMode> for FallocMode {
         {
             return Err(errno!(
                 EINVAL,
-                "UNSHARE_RANGE can only be combined with KEEP_SIZE."
+                "UNSHARE_RANGE can only be combined with KEEP_SIZE"
             ));
         }
 
