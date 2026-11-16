@@ -141,6 +141,17 @@ make nixos NIXOS_TEST_SUITE=containerization-and-virtualization
 make run_nixos NIXOS_TEST_SUITE=containerization-and-virtualization NIXOS_TEST_CASE=podman_run_alpine_container NIXOS_TEST_TIMEOUT=10min
 ```
 
+## Device-Mapper Interface Tests
+
+The `device-mapper` suite currently verifies only `dmsetup version` against
+`/dev/mapper/control`. Its image configuration includes `lvm2`; no raw test disks
+are required. Target discovery and mapping operations are not supported yet.
+
+```bash
+make nixos NIXOS_TEST_SUITE=device-mapper
+make run_nixos NIXOS_TEST_SUITE=device-mapper NIXOS_TEST_CASE=dmsetup_version
+```
+
 ## Variables
 
 Make variables:
