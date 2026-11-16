@@ -48,7 +48,7 @@ use crate::{
 };
 
 pub(super) fn init_in_first_kthread() {
-    MEM_MAJOR.call_once(|| char::acquire_major(MajorId::new(1)).unwrap());
+    MEM_MAJOR.call_once(|| char::acquire_major(MajorId::new(1), "mem").unwrap());
     MEM_CLASS.call_once(|| class::register(MemClass).unwrap());
 
     add_device(MemFile::Full).unwrap();

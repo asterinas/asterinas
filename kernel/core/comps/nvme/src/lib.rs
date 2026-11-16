@@ -40,7 +40,8 @@ static NVME_BLOCK_MAJOR_ID: Once<MajorIdOwner> = Once::new();
 
 #[init_component]
 fn nvme_init() -> Result<(), ComponentInitError> {
-    let major = aster_block::allocate_major().map_err(|_| ComponentInitError::Unknown)?;
+    let major =
+        aster_block::allocate_major_with_name("nvme").map_err(|_| ComponentInitError::Unknown)?;
     NVME_BLOCK_MAJOR_ID.call_once(|| major);
 
     transport::init();

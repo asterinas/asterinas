@@ -56,7 +56,10 @@ use self::{
     prelude::*,
 };
 pub use self::{
-    device_id::{MAX_MAJOR, MajorIdOwner, acquire_major, allocate_major},
+    device_id::{
+        MAX_MAJOR, MajorIdOwner, acquire_major, acquire_major_with_name, allocate_major,
+        allocate_major_with_name, major_devices,
+    },
     partition::PartitionManager,
 };
 

@@ -133,9 +133,17 @@ impl Device for SystemConsole {
 }
 
 pub(super) fn init_in_first_process() -> Result<()> {
+    // These independently named ranges share majors with other TTY drivers.
+    static REGIONS: Once<[char::DeviceRegionOwner; 3]> = Once::new();
+    let regions = [
+        char::acquire_region(MajorId::new(4), 0..1, "/dev/vc/0")?,
+        char::acquire_region(MajorId::new(5), 0..1, "/dev/tty")?,
+        char::acquire_region(MajorId::new(5), 1..2, "/dev/console")?,
+    ];
     char::register(Arc::new(Tty0Device))?;
     char::register(Arc::new(TtyDevice))?;
     char::register(SystemConsole::singleton().clone())?;
+    REGIONS.call_once(|| regions);
 
     Ok(())
 }
