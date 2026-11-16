@@ -145,7 +145,7 @@ pub fn main() -> ExitCode {
             let mut args: Vec<String> = orig_args.clone();
             pass_sysroot_env_if_given(&mut args, sys_root_env);
 
-            rustc_driver_impl::run_compiler(&args, &mut DefaultCallbacks);
+            rustc_driver_impl::compiler_entrypoint(&args, &mut DefaultCallbacks);
             return;
         }
 
@@ -180,9 +180,9 @@ pub fn main() -> ExitCode {
 
         let component_enabled = !no_deps || in_primary_package;
         if component_enabled {
-            rustc_driver_impl::run_compiler(&args, &mut ComponentCallbacks);
+            rustc_driver_impl::compiler_entrypoint(&args, &mut ComponentCallbacks);
         } else {
-            rustc_driver_impl::run_compiler(&args, &mut DefaultCallbacks);
+            rustc_driver_impl::compiler_entrypoint(&args, &mut DefaultCallbacks);
         }
     })
 }

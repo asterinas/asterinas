@@ -236,7 +236,7 @@ fn def_path_if_not_in_whitelist(def_id: DefId, tcx: TyCtxt<'_>) -> Option<String
 
 /// if the def_id has attribute component_access_control::controlled, return true, else return false
 fn contains_controlled_attr(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
-    tcx.get_attrs_by_path(
+    tcx.tool_attrs(
         def_id,
         &[Symbol::intern(TOOL_NAME), Symbol::intern(CONTROLLED_ATTR)],
     )

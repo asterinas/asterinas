@@ -69,7 +69,7 @@ impl Plic {
         // specification and is guaranteed to be valid.
         // Reference: <https://github.com/riscv/riscv-plic-spec>.
         let mut value = unsafe { self.io_mem.read_once::<u32>(offset) };
-        value.set_bit(bit_index, enabled);
+        value.set_bit_to(bit_index, enabled);
         unsafe { self.io_mem.write_once(offset, &value) };
     }
 

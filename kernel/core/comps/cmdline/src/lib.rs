@@ -50,6 +50,8 @@
 #![no_std]
 #![deny(unsafe_code)]
 #![feature(int_from_ascii)]
+#![feature(const_convert)]
+#![feature(const_trait_impl)]
 
 extern crate alloc;
 
