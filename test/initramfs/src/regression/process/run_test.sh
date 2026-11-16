@@ -16,6 +16,7 @@ fi
 ./clone3/clone_process
 
 ./cpu_affinity/cpu_affinity
+./cpu_affinity/permission
 
 ./execve/execve
 ./execve/execve_comm
