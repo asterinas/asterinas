@@ -36,7 +36,7 @@ use ostd::{
 };
 
 use super::{
-    namespace::{LBA_SIZE, NvmeNamespace},
+    namespace::{LBA_SIZE, NamespaceInfo},
     stat::NvmeStats,
 };
 use crate::{
@@ -60,55 +60,52 @@ const IO_QID: usize = 1;
 // TODO: Support multiple I/O submission and completion queue pairs.
 ostd::const_assert!(IO_QID + 1 == QUEUE_NUM);
 
+/// An NVMe controller that owns the admin and I/O queues.
+pub(crate) struct NvmeController {
+    submission_queues: [SpinLock<NvmeSubmissionQueueWithRequests, LocalIrqDisabled>; QUEUE_NUM],
+    // We access completion queues only in IRQ handlers, where IRQs have already been disabled.
+    completion_queues: [SpinLock<NvmeCompletionQueue>; QUEUE_NUM],
+    completion_wait_queues: [WaitQueue; QUEUE_NUM],
+    transport: NvmePciTransportLock,
+    dstrd: u16,
+    max_io_bytes: NonZeroUsize,
+    stats: NvmeStats,
+}
+
+/// An NVMe namespace exposed as a block device.
 #[derive(Debug)]
-pub struct NvmeBlockDevice {
-    device: NvmeDeviceInner,
+pub struct NvmeNamespace {
+    controller: Arc<NvmeController>,
+    info: NamespaceInfo,
     queue: BioRequestSingleQueue,
     name: String,
     id: DeviceId,
 }
 
-static NR_NVME_DEVICE: AtomicU32 = AtomicU32::new(0);
+static NEXT_CONTROLLER_INDEX: AtomicU32 = AtomicU32::new(0);
 
-impl NvmeBlockDevice {
-    pub(crate) fn init(transport: NvmePciTransport) -> Result<(), NvmeDeviceError> {
-        let (device, io_msix_vectors) = NvmeDeviceInner::init(transport)?;
+/// Initializes a controller and registers its first namespace.
+pub(crate) fn init(transport: NvmePciTransport) -> Result<(), NvmeDeviceError> {
+    let mut init_ctx = ControllerInitContext::new(transport)?;
+    let namespace = init_ctx
+        .scan_namespaces()?
+        .ok_or(NvmeDeviceError::NoNamespace)?;
+    let io_msix_vectors = init_ctx.create_io_queues()?;
 
-        let index = NR_NVME_DEVICE.fetch_add(1, Ordering::Relaxed);
-        let name = formatted_device_name(index, device.namespace.id);
-        let id = {
-            // Use the allocated major ID for the NVMe device
-            let major_id = NVME_BLOCK_MAJOR_ID.get().unwrap().get();
-            DeviceId::new(major_id, MinorId::new(index * aster_block::DEVICE_MINORS))
-        };
+    let controller = NvmeController::new(init_ctx);
+    controller.setup_msix_handlers(io_msix_vectors);
 
-        let block_device = Arc::new(Self {
-            device,
-            queue: BioRequestSingleQueue::new(),
-            name,
-            id,
-        });
-
-        block_device
-            .device
-            .setup_msix_handlers(&block_device, io_msix_vectors);
-
-        aster_block::register(block_device)
-            .map_err(|_| NvmeDeviceError::BlockDeviceRegisterFailed)?;
-
-        bio_segment_pool_init();
-        Ok(())
-    }
+    controller.register_namespace(namespace)
 }
 
-impl aster_block::AnyBlockDevice for NvmeBlockDevice {
+impl aster_block::AnyBlockDevice for NvmeNamespace {
     fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
         self.queue.enqueue(bio)
     }
 
     fn metadata(&self) -> BlockDeviceMeta {
         const { assert!(LBA_SIZE == SECTOR_SIZE) };
-        let sectors = self.device.namespace.nsze;
+        let sectors = self.info.nsze;
 
         BlockDeviceMeta {
             max_nr_segments_per_bio: self.queue.max_nr_segments_per_bio(),
@@ -129,179 +126,53 @@ impl aster_block::AnyBlockDevice for NvmeBlockDevice {
     }
 }
 
-impl WholeDisk for NvmeBlockDevice {
+impl WholeDisk for NvmeNamespace {
     fn handle_requests(&self) -> Option<()> {
         let request = self.queue.dequeue();
         debug!("Handle Request: {:?}", request);
         match request.type_() {
-            BioType::Read => self.device.read(request),
-            BioType::Write => self.device.write(request),
-            BioType::Flush => self.device.flush(request),
+            BioType::Read => self.controller.read(self.info.id, request),
+            BioType::Write => self.controller.write(self.info.id, request),
+            BioType::Flush => self.controller.flush(self.info.id, request),
         }
         Some(())
     }
 }
 
-fn formatted_device_name(index: u32, nsid: u32) -> String {
-    format!("nvme{}n{}", index, nsid)
-}
-
-struct NvmeDeviceInner {
-    submission_queues: [SpinLock<NvmeSubmissionQueueWithRequests, LocalIrqDisabled>; QUEUE_NUM],
-    // We access completion queues only in IRQ handlers, where IRQs have already been disabled.
-    completion_queues: [SpinLock<NvmeCompletionQueue>; QUEUE_NUM],
-    completion_wait_queues: [WaitQueue; QUEUE_NUM],
-    transport: NvmePciTransportLock,
-    namespace: NvmeNamespace,
-    dstrd: u16,
-    max_io_bytes: NonZeroUsize,
-    stats: NvmeStats,
-}
-
-type NvmeSubmissionQueueWithRequests =
-    NvmeSubmissionQueue<crate::nvme_queue::Context<SubmittedRequest>>;
-
-#[derive(Clone, Copy)]
-enum IoOp {
-    Read,
-    Write,
-}
-
-/// Shared state for one outstanding [`BioRequest`] that may span multiple NVMe commands.
-///
-/// Large requests are split across several NVMe commands, so multiple
-/// [`SubmittedRequest`] entries share this state until `remaining` reaches zero.
-struct InFlightRequest {
-    // We access the BIO request only in IRQ handlers, where IRQs have already been disabled.
-    bio_request: SpinLock<Option<BioRequest>>,
-    remaining: AtomicUsize,
-    is_failed: AtomicBool,
-}
-
-impl InFlightRequest {
-    fn finish(self: Arc<Self>) {
-        let status = if self.is_failed.load(Ordering::Relaxed) {
-            BioStatus::IoError
-        } else {
-            BioStatus::Complete
-        };
-        let bio_request = {
-            let mut bio_request = self.bio_request.lock();
-            bio_request.take()
-        };
-        if let Some(bio_request) = bio_request {
-            bio_request.into_bios().for_each(|bio| {
-                bio.complete(status);
-            });
-        }
-    }
-}
-
-/// Per-command completion context stored until the matching CQE arrives.
-///
-/// The table key is the command's CID, and `_prp` keeps PRP list pages alive for
-/// the command lifetime.
-struct SubmittedRequest {
-    request: Arc<InFlightRequest>,
-    _prp: Option<PrpPointers>,
-}
-
-impl core::fmt::Debug for NvmeDeviceInner {
+impl core::fmt::Debug for NvmeController {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("NvmeDeviceInner")
-            .field("namespace", &self.namespace)
+        f.debug_struct("NvmeController")
             .field("dstrd", &self.dstrd)
             .field("stats", &self.stats)
             .finish_non_exhaustive()
     }
 }
 
-impl NvmeDeviceInner {
-    const CAP_TO_UNIT_MILLIS: u64 = 500;
-    const MPS_BASE_PAGE_SHIFT: u32 = 12;
-
-    fn init(mut transport: NvmePciTransport) -> Result<(Self, IoMsixVectors), NvmeDeviceError> {
-        let cap = transport.regs().read64(NvmeRegs64::Cap);
-
-        let dstrd = ((cap >> NvmeRegs64::CAP_DSTRD_SHIFT) & NvmeRegs64::CAP_DSTRD_MASK) as u16;
-
-        let cap_mpsmin =
-            ((cap >> NvmeRegs64::CAP_MPSMIN_SHIFT) & NvmeRegs64::CAP_MPSMIN_MASK) as u32;
-        let cap_mpsmax =
-            ((cap >> NvmeRegs64::CAP_MPSMAX_SHIFT) & NvmeRegs64::CAP_MPSMAX_MASK) as u32;
-        let cc_mps_value =
-            const { PAGE_SIZE.trailing_zeros() - NvmeDeviceInner::MPS_BASE_PAGE_SHIFT };
-        if cc_mps_value < cap_mpsmin || cc_mps_value > cap_mpsmax {
-            error!(
-                "Host page size not supported by controller: host MPS={}, CAP.MPSMIN={}, CAP.MPSMAX={}",
-                cc_mps_value, cap_mpsmin, cap_mpsmax
-            );
-            return Err(NvmeDeviceError::InvalidControllerConfig);
-        }
-
-        let timeout_units = (cap >> NvmeRegs64::CAP_TO_SHIFT) & NvmeRegs64::CAP_TO_MASK;
-        // CAP.TO is defined in 500 ms units; treat zero as one unit so we still
-        // have a bounded wait on devices that report 0.
-        let timeout_millis = timeout_units.max(1) * Self::CAP_TO_UNIT_MILLIS;
-        let controller_ready_timeout = Duration::from_millis(timeout_millis);
-
-        let mut init_ctx =
-            InitContext::new(transport, dstrd, cc_mps_value, controller_ready_timeout)?;
-
-        // NVMe controller initialization sequence.
-        //
-        // See NVMe Spec 2.0, Section 3.5 (Controller Initialization).
-        //   1. Wait for CSTS.RDY to become '0' (controller ready to be reset)
-        //   2. Configure Admin Queue by setting AQA, ASQ, and ACQ
-        //   3. Set I/O queue entry sizes (CC.IOSQES and CC.IOCQES)
-        //   4. Enable the controller by setting CC.EN to '1'
-        //   5. Wait for CSTS.RDY to become '1' (controller ready to process commands)
-        //   6. Configure MSI-X interrupts for the Admin Queue
-        init_ctx.reset_controller()?;
-        init_ctx.configure_admin_queue();
-        init_ctx.set_entry_size();
-        init_ctx.enable_controller()?;
-        init_ctx.identify_controller()?;
-
-        let nsids = init_ctx.identify_ns_list()?;
-        if nsids.is_empty() {
-            return Err(NvmeDeviceError::NoNamespace);
-        }
-
-        // TODO: Support exposing multiple namespaces per controller instead of only the first one.
-        let namespace = init_ctx.identify_ns(nsids[0])?;
-
-        let io_msix_vectors = init_ctx.create_io_queues()?;
-        let device = NvmeDeviceInner {
+impl NvmeController {
+    fn new(init_ctx: ControllerInitContext) -> Arc<Self> {
+        Arc::new(Self {
             submission_queues: init_ctx
                 .submission_queues
                 .map(|sq| SpinLock::new(sq.with_items())),
             completion_queues: init_ctx.completion_queues.map(SpinLock::new),
             completion_wait_queues: [WaitQueue::new(), WaitQueue::new()],
             transport: NvmePciTransportLock::new(init_ctx.transport),
-            namespace,
             dstrd: init_ctx.dstrd,
             max_io_bytes: init_ctx.max_io_bytes,
             stats: NvmeStats::new(),
-        };
-        Ok((device, io_msix_vectors))
+        })
     }
 
-    /// Registers MSI-X handlers that wake completion wait queues for admin and I/O queues.
-    fn setup_msix_handlers(
-        &self,
-        block_device: &Arc<NvmeBlockDevice>,
-        io_msix_vectors: IoMsixVectors,
-    ) {
+    fn setup_msix_handlers(self: &Arc<Self>, io_msix_vectors: IoMsixVectors) {
         let mut transport = self.transport.lock();
         let msix_manager = transport.msix_manager_mut();
 
         // Admin queue interrupt (vector 0)
         let (_admin_vec, admin_irq) = msix_manager.admin_irq();
-        let device_weak = Arc::downgrade(block_device);
+        let controller_weak = Arc::downgrade(self);
         admin_irq.on_active(move |_| {
-            if let Some(block_device) = device_weak.upgrade() {
-                block_device.device.completion_wait_queues[0].wake_all();
+            if let Some(controller) = controller_weak.upgrade() {
+                controller.completion_wait_queues[0].wake_all();
             }
         });
 
@@ -310,25 +181,51 @@ impl NvmeDeviceInner {
             let io_irq = msix_manager
                 .irq_for_vector_mut(io_msix_vectors.0[io_qid - 1])
                 .unwrap();
-            let device_weak = Arc::downgrade(block_device);
+            let controller_weak = Arc::downgrade(self);
             io_irq.on_active(move |_| {
-                if let Some(block_device) = device_weak.upgrade() {
-                    block_device.device.handle_io_completions();
+                if let Some(controller) = controller_weak.upgrade() {
+                    controller.handle_io_completions();
                 }
             });
         }
     }
 
-    fn read(&self, request: BioRequest) {
-        self.submit_request(request, IoOp::Read);
+    fn register_namespace(
+        self: &Arc<Self>,
+        info: NamespaceInfo,
+    ) -> Result<(), NvmeDeviceError> {
+        let index = NEXT_CONTROLLER_INDEX.fetch_add(1, Ordering::Relaxed);
+        let name = formatted_device_name(index, info.id);
+        let id = {
+            // Use the allocated major ID for the NVMe device
+            let major_id = NVME_BLOCK_MAJOR_ID.get().unwrap().get();
+            DeviceId::new(major_id, MinorId::new(index * aster_block::DEVICE_MINORS))
+        };
+
+        let block_device = Arc::new(NvmeNamespace {
+            controller: self.clone(),
+            info,
+            queue: BioRequestSingleQueue::new(),
+            name,
+            id,
+        });
+        aster_block::register(block_device)
+            .map_err(|_| NvmeDeviceError::BlockDeviceRegisterFailed)?;
+
+        bio_segment_pool_init();
+        Ok(())
     }
 
-    fn write(&self, request: BioRequest) {
-        self.submit_request(request, IoOp::Write);
+    fn read(&self, nsid: u32, request: BioRequest) {
+        self.submit_request(nsid, request, IoOp::Read);
     }
 
-    fn flush(&self, request: BioRequest) {
-        let entry = nvme_cmd::io_flush(self.namespace.id);
+    fn write(&self, nsid: u32, request: BioRequest) {
+        self.submit_request(nsid, request, IoOp::Write);
+    }
+
+    fn flush(&self, nsid: u32, request: BioRequest) {
+        let entry = nvme_cmd::io_flush(nsid);
         let inflight = Arc::new(InFlightRequest {
             bio_request: SpinLock::new(Some(request)),
             remaining: AtomicUsize::new(1),
@@ -338,7 +235,7 @@ impl NvmeDeviceInner {
     }
 
     /// Builds and submits all NVMe commands for `bio_request` without waiting for completion.
-    fn submit_request(&self, bio_request: BioRequest, io_op: IoOp) {
+    fn submit_request(&self, nsid: u32, bio_request: BioRequest, io_op: IoOp) {
         let mut prepared = Vec::new();
         let mut is_build_failed = false;
         let mut lba = bio_request.sid_range().start.to_raw();
@@ -358,7 +255,7 @@ impl NvmeDeviceInner {
                     let chunk_bytes = remaining.min(self.max_io_bytes);
                     debug_assert!(chunk_bytes.get().is_multiple_of(SECTOR_SIZE));
 
-                    match self.build_io_command(lba, dma_addr, chunk_bytes, io_op) {
+                    match Self::build_io_command(nsid, lba, dma_addr, chunk_bytes, io_op) {
                         Ok(cmd) => prepared.push(cmd),
                         Err(_) => {
                             is_build_failed = true;
@@ -394,13 +291,12 @@ impl NvmeDeviceInner {
     }
 
     fn build_io_command(
-        &self,
+        nsid: u32,
         lba: u64,
         dma_addr: u64,
         length: NonZeroUsize,
         io_op: IoOp,
     ) -> Result<(NvmeCommand, Option<PrpPointers>), NvmeDeviceError> {
-        let nsid = self.namespace.id;
         let prp = PrpPointers::build_prp(dma_addr, length)?;
         let nlb = (length.get() / SECTOR_SIZE - 1) as u16;
         let entry = match io_op {
@@ -536,7 +432,55 @@ impl NvmeDeviceInner {
     }
 }
 
-struct InitContext {
+type NvmeSubmissionQueueWithRequests =
+    NvmeSubmissionQueue<crate::nvme_queue::Context<SubmittedRequest>>;
+
+#[derive(Clone, Copy)]
+enum IoOp {
+    Read,
+    Write,
+}
+
+/// Per-command completion context stored until the matching CQE arrives.
+///
+/// The table key is the command's CID, and `_prp` keeps PRP list pages alive for
+/// the command lifetime.
+struct SubmittedRequest {
+    request: Arc<InFlightRequest>,
+    _prp: Option<PrpPointers>,
+}
+
+/// Shared state for one outstanding [`BioRequest`] that may span multiple NVMe commands.
+///
+/// Large requests are split across several NVMe commands, so multiple
+/// [`SubmittedRequest`] entries share this state until `remaining` reaches zero.
+struct InFlightRequest {
+    // We access the BIO request only in IRQ handlers, where IRQs have already been disabled.
+    bio_request: SpinLock<Option<BioRequest>>,
+    remaining: AtomicUsize,
+    is_failed: AtomicBool,
+}
+
+impl InFlightRequest {
+    fn finish(self: Arc<Self>) {
+        let status = if self.is_failed.load(Ordering::Relaxed) {
+            BioStatus::IoError
+        } else {
+            BioStatus::Complete
+        };
+        let bio_request = {
+            let mut bio_request = self.bio_request.lock();
+            bio_request.take()
+        };
+        if let Some(bio_request) = bio_request {
+            bio_request.into_bios().for_each(|bio| {
+                bio.complete(status);
+            });
+        }
+    }
+}
+
+struct ControllerInitContext {
     submission_queues: [NvmeSubmissionQueue; QUEUE_NUM],
     completion_queues: [NvmeCompletionQueue; QUEUE_NUM],
     transport: NvmePciTransport,
@@ -548,7 +492,10 @@ struct InitContext {
 
 struct IoMsixVectors([u16; QUEUE_NUM - 1]);
 
-impl InitContext {
+impl ControllerInitContext {
+    const CAP_TO_UNIT_MILLIS: u64 = 500;
+    const MPS_BASE_PAGE_SHIFT: u32 = 12;
+
     /// Controller Configuration Enable bit.
     const CC_ENABLE: u32 = 0x1;
     /// Controller Configuration I/O Submission Queue Entry Size shift.
@@ -580,17 +527,35 @@ impl InitContext {
     /// Controller Fatal Status bit.
     const CSTS_CFS: u32 = 0x2;
 
-    fn new(
-        transport: NvmePciTransport,
-        dstrd: u16,
-        cc_mps_value: u32,
-        controller_ready_timeout: Duration,
-    ) -> Result<Self, NvmeDeviceError> {
+    fn new(mut transport: NvmePciTransport) -> Result<Self, NvmeDeviceError> {
+        let cap = transport.regs().read64(NvmeRegs64::Cap);
+
+        let dstrd = ((cap >> NvmeRegs64::CAP_DSTRD_SHIFT) & NvmeRegs64::CAP_DSTRD_MASK) as u16;
+
+        let cap_mpsmin =
+            ((cap >> NvmeRegs64::CAP_MPSMIN_SHIFT) & NvmeRegs64::CAP_MPSMIN_MASK) as u32;
+        let cap_mpsmax =
+            ((cap >> NvmeRegs64::CAP_MPSMAX_SHIFT) & NvmeRegs64::CAP_MPSMAX_MASK) as u32;
+        let cc_mps_value = const { PAGE_SIZE.trailing_zeros() - Self::MPS_BASE_PAGE_SHIFT };
+        if cc_mps_value < cap_mpsmin || cc_mps_value > cap_mpsmax {
+            error!(
+                "Host page size not supported by controller: host MPS={}, CAP.MPSMIN={}, CAP.MPSMAX={}",
+                cc_mps_value, cap_mpsmin, cap_mpsmax
+            );
+            return Err(NvmeDeviceError::InvalidControllerConfig);
+        }
+
+        let timeout_units = (cap >> NvmeRegs64::CAP_TO_SHIFT) & NvmeRegs64::CAP_TO_MASK;
+        // CAP.TO is defined in 500 ms units; treat zero as one unit so we still
+        // have a bounded wait on devices that report 0.
+        let timeout_millis = timeout_units.max(1) * Self::CAP_TO_UNIT_MILLIS;
+        let controller_ready_timeout = Duration::from_millis(timeout_millis);
+
         let sq0 = NvmeSubmissionQueue::new().ok_or(NvmeDeviceError::QueueAllocationFailed)?;
         let sq1 = NvmeSubmissionQueue::new().ok_or(NvmeDeviceError::QueueAllocationFailed)?;
         let cq0 = NvmeCompletionQueue::new().ok_or(NvmeDeviceError::QueueAllocationFailed)?;
         let cq1 = NvmeCompletionQueue::new().ok_or(NvmeDeviceError::QueueAllocationFailed)?;
-        Ok(Self {
+        let mut init_ctx = Self {
             submission_queues: [sq0, sq1],
             completion_queues: [cq0, cq1],
             transport,
@@ -598,17 +563,34 @@ impl InitContext {
             cc_mps_value,
             controller_ready_timeout,
             max_io_bytes: MAX_BYTES_BY_NLB,
-        })
+        };
+
+        // NVMe controller initialization sequence.
+        //
+        // See NVMe Spec 2.0, Section 3.5 (Controller Initialization).
+        //   1. Wait for CSTS.RDY to become '0' (controller ready to be reset)
+        //   2. Configure Admin Queue by setting AQA, ASQ, and ACQ
+        //   3. Set I/O queue entry sizes (CC.IOSQES and CC.IOCQES)
+        //   4. Enable the controller by setting CC.EN to '1'
+        //   5. Wait for CSTS.RDY to become '1' (controller ready to process commands)
+        //   6. Identify the controller
+        init_ctx.reset_controller()?;
+        init_ctx.configure_admin_queue();
+        init_ctx.set_entry_size();
+        init_ctx.enable_controller()?;
+        init_ctx.identify_controller()?;
+
+        Ok(init_ctx)
     }
 
     fn reset_controller(&mut self) -> Result<(), NvmeDeviceError> {
         let mut cc = self.transport.regs().read32(NvmeRegs32::Cc);
         if (cc & Self::CC_ENABLE) != 0 {
-            self.wait_controller_ready(true)?;
+            self.wait_controller_ready(ControllerReadyState::Ready)?;
             cc &= !Self::CC_ENABLE;
             self.transport.regs().write32(NvmeRegs32::Cc, cc);
         }
-        self.wait_controller_ready(false)
+        self.wait_controller_ready(ControllerReadyState::NotReady)
     }
 
     fn configure_admin_queue(&mut self) {
@@ -644,7 +626,7 @@ impl InitContext {
         let mut cc = self.transport.regs().read32(NvmeRegs32::Cc);
         cc |= Self::CC_ENABLE;
         self.transport.regs().write32(NvmeRegs32::Cc, cc);
-        self.wait_controller_ready(true)
+        self.wait_controller_ready(ControllerReadyState::Ready)
     }
 
     fn identify_controller(&mut self) -> Result<(), NvmeDeviceError> {
@@ -674,6 +656,15 @@ impl InitContext {
         Ok(())
     }
 
+    fn scan_namespaces(&mut self) -> Result<Option<NamespaceInfo>, NvmeDeviceError> {
+        let nsids = self.identify_ns_list()?;
+        // TODO: Support exposing multiple namespaces per controller instead of only the first one.
+        let Some(&nsid) = nsids.first() else {
+            return Ok(None);
+        };
+        self.identify_ns(nsid).map(Some)
+    }
+
     fn identify_ns_list(&mut self) -> Result<Vec<u32>, NvmeDeviceError> {
         let stream =
             DmaStream::alloc(1, false).map_err(|_| NvmeDeviceError::DmaAllocationFailed)?;
@@ -693,7 +684,7 @@ impl InitContext {
         Ok(nsids)
     }
 
-    fn identify_ns(&mut self, nsid: u32) -> Result<NvmeNamespace, NvmeDeviceError> {
+    fn identify_ns(&mut self, nsid: u32) -> Result<NamespaceInfo, NvmeDeviceError> {
         let stream =
             DmaStream::alloc(1, false).map_err(|_| NvmeDeviceError::DmaAllocationFailed)?;
         let data: SafePtr<IdentifyNamespaceData, DmaStream> = SafePtr::new(stream, 0);
@@ -712,7 +703,7 @@ impl InitContext {
                 "Namespace {}: FLBAS uses an extended active format index (unsupported)",
                 nsid
             );
-            return Err(NvmeDeviceError::InvalidControllerConfig);
+            return Err(NvmeDeviceError::InvalidNamespaceConfig);
         }
         let fmt_idx = (result.flbas & 0x0f) as usize;
         let lbads = (result.lbaf[fmt_idx] >> 16) & 0xff;
@@ -722,14 +713,14 @@ impl InitContext {
                 "Namespace {}: LBA size is {} bytes (LBADS={}), but driver requires {}",
                 nsid, reported_lba_size, lbads, LBA_SIZE
             );
-            return Err(NvmeDeviceError::InvalidControllerConfig);
+            return Err(NvmeDeviceError::InvalidNamespaceConfig);
         }
 
         info!(
             "Namespace {}: NSZE={}, LBA size={} bytes",
             nsid, result.nsze, LBA_SIZE
         );
-        Ok(NvmeNamespace {
+        Ok(NamespaceInfo {
             id: nsid,
             nsze: result.nsze,
         })
@@ -822,7 +813,29 @@ impl InitContext {
         }
     }
 
-    fn wait_controller_ready(&mut self, expected_ready: bool) -> Result<(), NvmeDeviceError> {
+    fn sq_mut(&mut self, qid: usize) -> NvmeSubmissionQueueAccess<'_, &mut NvmeSubmissionQueue> {
+        NvmeSubmissionQueueAccess::new(
+            qid as u16,
+            self.dstrd,
+            &mut self.submission_queues[qid],
+            self.transport.dbregs(),
+        )
+    }
+
+    fn cq_mut(&mut self, qid: usize) -> NvmeCompletionQueueAccess<'_, &mut NvmeCompletionQueue> {
+        NvmeCompletionQueueAccess::new(
+            qid as u16,
+            self.dstrd,
+            &mut self.completion_queues[qid],
+            self.transport.dbregs(),
+        )
+    }
+
+    fn wait_controller_ready(
+        &mut self,
+        expected_state: ControllerReadyState,
+    ) -> Result<(), NvmeDeviceError> {
+        let expected_ready = matches!(expected_state, ControllerReadyState::Ready);
         let start = Jiffies::elapsed().as_duration();
         let deadline = start
             .checked_add(self.controller_ready_timeout)
@@ -851,24 +864,12 @@ impl InitContext {
             spin_loop();
         }
     }
+}
 
-    fn sq_mut(&mut self, qid: usize) -> NvmeSubmissionQueueAccess<'_, &mut NvmeSubmissionQueue> {
-        NvmeSubmissionQueueAccess::new(
-            qid as u16,
-            self.dstrd,
-            &mut self.submission_queues[qid],
-            self.transport.dbregs(),
-        )
-    }
-
-    fn cq_mut(&mut self, qid: usize) -> NvmeCompletionQueueAccess<'_, &mut NvmeCompletionQueue> {
-        NvmeCompletionQueueAccess::new(
-            qid as u16,
-            self.dstrd,
-            &mut self.completion_queues[qid],
-            self.transport.dbregs(),
-        )
-    }
+/// The target state of the controller's `CSTS.RDY` bit.
+enum ControllerReadyState {
+    Ready,
+    NotReady,
 }
 
 #[repr(C)]
@@ -916,6 +917,10 @@ struct IdentifyNamespaceData {
     /// Each entry is a u32: bits[23:16] = LBADS (LBA data-size exponent,
     /// so actual size = 2^LBADS bytes).
     lbaf: [u32; 16],
+}
+
+fn formatted_device_name(index: u32, nsid: u32) -> String {
+    format!("nvme{}n{}", index, nsid)
 }
 
 fn bytes_to_cstr_string(bytes: &[u8]) -> String {
@@ -977,7 +982,7 @@ mod test {
         prelude::ktest,
     };
 
-    use super::{BioType, IoOp, NvmeBlockDevice};
+    use super::{BioType, IoOp, NvmeNamespace};
 
     const TEST_CHAR: u8 = b'B';
     const TEST_BUF_LENGTH: usize = 8192;
@@ -1013,31 +1018,31 @@ mod test {
         };
         let device_arc = Arc::clone(&device);
 
-        let nvme_block_device = device_arc
-            .downcast_ref::<NvmeBlockDevice>()
+        let namespace_device = device_arc
+            .downcast_ref::<NvmeNamespace>()
             .expect("Failed to downcast device");
 
         let mut write_batch = IoBatch::with_capacity(1);
         create_and_submit_bio(
-            nvme_block_device,
+            namespace_device,
             &mut write_batch,
             IoOp::Write,
             &[TEST_BUF_LENGTH / BLOCK_SIZE],
             TEST_CHAR,
         );
-        nvme_block_device.handle_requests().unwrap();
+        namespace_device.handle_requests().unwrap();
         write_batch.wait_all().unwrap();
 
         let mut read_batch = IoBatch::with_capacity(1);
         let read_bio_segment = create_and_submit_bio(
-            nvme_block_device,
+            namespace_device,
             &mut read_batch,
             IoOp::Read,
             &[TEST_BUF_LENGTH / BLOCK_SIZE],
             TEST_CHAR,
         )[0]
         .clone();
-        nvme_block_device.handle_requests().unwrap();
+        namespace_device.handle_requests().unwrap();
         read_batch.wait_all().unwrap();
 
         let mut read_buf = [0u8; TEST_BUF_LENGTH];
@@ -1065,25 +1070,25 @@ mod test {
             }
         };
 
-        let nvme_block_device = device
-            .downcast_ref::<NvmeBlockDevice>()
+        let namespace_device = device
+            .downcast_ref::<NvmeNamespace>()
             .expect("Failed to downcast device");
-        nvme_block_device.device.stats.reset_stats();
+        namespace_device.controller.stats.reset_stats();
 
         const NR_SEGMENTS: usize = 16;
 
         let mut write_batch = IoBatch::with_capacity(1);
         create_and_submit_bio(
-            nvme_block_device,
+            namespace_device,
             &mut write_batch,
             IoOp::Write,
             &[1; NR_SEGMENTS],
             TEST_CHAR,
         );
-        nvme_block_device.handle_requests().unwrap();
+        namespace_device.handle_requests().unwrap();
         write_batch.wait_all().unwrap();
 
-        let peak = nvme_block_device.device.stats.max_in_flight();
+        let peak = namespace_device.controller.stats.max_in_flight();
         assert!(
             peak >= NR_SEGMENTS as u64,
             "expected at least {} in-flight commands at once, got peak {}",
@@ -1097,7 +1102,7 @@ mod test {
     /// - `&[n]`: one contiguous segment of `n` pages (basic R/W).
     /// - `&[1, 1, ...]`: many single-page segments (exercises multi-command depth).
     fn create_and_submit_bio(
-        device: &NvmeBlockDevice,
+        device: &NvmeNamespace,
         io_batch: &mut IoBatch,
         req_type: IoOp,
         segment_nblocks: &[usize],

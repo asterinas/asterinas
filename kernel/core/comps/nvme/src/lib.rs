@@ -24,7 +24,8 @@ use aster_block::MajorIdOwner;
 use component::{ComponentInitError, init_component};
 use spin::Once;
 
-pub use self::device::block_device::NvmeBlockDevice;
+use self::device::block_device;
+pub use self::device::block_device::NvmeNamespace;
 
 mod device;
 mod msix;
@@ -45,7 +46,7 @@ fn nvme_init() -> Result<(), ComponentInitError> {
     transport::init();
 
     while let Some(transport) = transport::pci::pop_device_transport() {
-        let res = NvmeBlockDevice::init(transport);
+        let res = block_device::init(transport);
         if res.is_err() {
             ostd::error!("Device initialization error: {:?}", res);
         }

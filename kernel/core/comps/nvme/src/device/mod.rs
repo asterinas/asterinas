@@ -12,6 +12,7 @@ pub(crate) enum NvmeDeviceError {
     CommandFailed,
     ControllerEnableTimeout,
     InvalidControllerConfig,
+    InvalidNamespaceConfig,
     MsixAllocationFailed,
     NoNamespace,
     QueueAllocationFailed,

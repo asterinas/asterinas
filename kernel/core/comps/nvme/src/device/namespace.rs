@@ -3,7 +3,7 @@
 use aster_block::SECTOR_SIZE;
 
 #[derive(Debug)]
-pub(super) struct NvmeNamespace {
+pub(super) struct NamespaceInfo {
     /// Namespace ID reported by the controller.
     pub id: u32,
     /// Total number of logical blocks (NSZE).
