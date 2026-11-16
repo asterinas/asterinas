@@ -122,7 +122,7 @@ impl CacheOfSizes {
 
 pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Paddr> {
     let nr_frames = layout.size() / PAGE_SIZE;
-    if layout.align() > layout.size() {
+    if layout.align() > PAGE_SIZE {
         return super::pools::alloc(guard, layout);
     }
 
