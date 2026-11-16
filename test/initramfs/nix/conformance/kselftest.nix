@@ -26,12 +26,14 @@ stdenv.mkDerivation rec {
       "tools/arch"
       "tools/include"
       "tools/scripts"
+      "tools/build"
+      "tools/lib"
       "arch"
       "include"
       "scripts"
       "samples/check-exec"
     ];
-    hash = "sha256-7Ie6f1aNvBo6ipoS/no+IkVhQ/C9bedzQCUoYwM4ED4=";
+    hash = "sha256-kL6i8EhUYE600eLZ9G2PbCHaD9GQJsYuRnvkq+N8FUA=";
   };
 
   # Explicit allowlist of selftest subsystems Asterinas exercises today.
@@ -50,7 +52,11 @@ stdenv.mkDerivation rec {
   ];
 
   kselftestTargets = lib.concatStringsSep " " (
-    baseKselftestTargets ++ lib.optionals stdenv.hostPlatform.isx86_64 [ "x86" ]
+    baseKselftestTargets
+    ++ lib.optionals stdenv.hostPlatform.isx86_64 [
+      "x86"
+      "kvm"
+    ]
   );
 
   enableParallelBuilding = true;
@@ -61,6 +67,11 @@ stdenv.mkDerivation rec {
     glibc_multi.static
     libcap.dev
   ];
+
+  postPatch = ''
+    substituteInPlace tools/testing/selftests/kvm/Makefile \
+      --replace-fail 'ARCH := x86' 'override ARCH := x86'
+  '';
 
   buildPhase = ''
     runHook preBuild
