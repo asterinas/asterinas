@@ -80,6 +80,12 @@ macro_rules! import_generic_syscall_entries {
             mount::sys_mount,
             move_mount::sys_move_mount,
             mprotect::sys_mprotect,
+            mqgetsetattr::sys_mqgetsetattr,
+            mqnotify::sys_mqnotify,
+            mqopen::sys_mqopen,
+            mqtimedreceive::sys_mqtimedreceive,
+            mqtimedsend::sys_mqtimedsend,
+            mqunlink::sys_mqunlink,
             mremap::sys_mremap,
             msync::sys_msync,
             munmap::sys_munmap,
@@ -359,6 +365,12 @@ macro_rules! define_syscalls_with_generic_syscall_table {
             SYS_GETEGID = 177                => sys_getegid(args[..0]);
             SYS_GETTID = 178                 => sys_gettid(args[..0]);
             SYS_SYSINFO = 179                => sys_sysinfo(args[..1]);
+            SYS_MQ_OPEN = 180                => sys_mqopen(args[..4]);
+            SYS_MQ_UNLINK = 181              => sys_mqunlink(args[..1]);
+            SYS_MQ_TIMEDSEND = 182           => sys_mqtimedsend(args[..5]);
+            SYS_MQ_TIMEDRECEIVE = 183        => sys_mqtimedreceive(args[..5]);
+            SYS_MQ_NOTIFY = 184              => sys_mqnotify(args[..2]);
+            SYS_MQ_GETSETATTR = 185          => sys_mqgetsetattr(args[..3]);
             SYS_SEMGET = 190                 => sys_semget(args[..3]);
             SYS_SEMCTL = 191                 => sys_semctl(args[..4]);
             SYS_SEMTIMEDOP = 192             => sys_semtimedop(args[..4]);
