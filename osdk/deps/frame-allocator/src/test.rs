@@ -25,6 +25,13 @@ fn frame_allocator_alloc_layout_match() {
     assert_allocation_well_formed(Layout::from_size_align(PAGE_SIZE * 4, PAGE_SIZE * 4).unwrap());
     assert_allocation_well_formed(Layout::from_size_align(PAGE_SIZE * 8, PAGE_SIZE * 8).unwrap());
     assert_allocation_well_formed(Layout::from_size_align(PAGE_SIZE * 16, PAGE_SIZE * 16).unwrap());
+
+    split_allocations();
+
+    assert_allocation_well_formed(Layout::from_size_align(PAGE_SIZE * 2, PAGE_SIZE * 2).unwrap());
+    assert_allocation_well_formed(Layout::from_size_align(PAGE_SIZE * 4, PAGE_SIZE * 4).unwrap());
+    assert_allocation_well_formed(Layout::from_size_align(PAGE_SIZE * 8, PAGE_SIZE * 8).unwrap());
+    assert_allocation_well_formed(Layout::from_size_align(PAGE_SIZE * 16, PAGE_SIZE * 16).unwrap());
 }
 
 #[track_caller]
@@ -42,7 +49,7 @@ fn assert_allocation_well_formed(layout: Layout) {
         let frame = allocated + offset;
         let frame = UniqueFrame::from_unused(frame, ()).unwrap_or_else(|e| {
             panic!(
-                "Metadata not well-formed after allocation at offset {:#x}: {:#?}",
+                "Metadata ill-formed after allocation at offset {:#x}: {:#?}",
                 offset, e
             )
         });
@@ -50,6 +57,23 @@ fn assert_allocation_well_formed(layout: Layout) {
     }
 
     instance.add_free_memory(allocated, layout.size());
+}
+
+fn split_allocations() {
+    let instance = FrameAllocator;
+
+    // Allocate 16 frames.
+    let layout = Layout::from_size_align(PAGE_SIZE * 16, PAGE_SIZE).unwrap();
+    let allocated = instance.alloc(layout).unwrap();
+
+    // Deallocate 16 frames.
+    // |-|--|----|--------|-|
+    //  1 2   4      8     1
+    instance.dealloc(allocated, PAGE_SIZE);
+    instance.dealloc(allocated + PAGE_SIZE, PAGE_SIZE * 2);
+    instance.dealloc(allocated + PAGE_SIZE * 3, PAGE_SIZE * 4);
+    instance.dealloc(allocated + PAGE_SIZE * 7, PAGE_SIZE * 8);
+    instance.dealloc(allocated + PAGE_SIZE * 15, PAGE_SIZE);
 }
 
 /// A mocked memory region for testing.
