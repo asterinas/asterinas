@@ -41,6 +41,7 @@ use super::{
 };
 use crate::{
     NVME_BLOCK_MAJOR_ID,
+    class::{self, NvmeControllerDevice},
     device::{MAX_NS_NUM, NvmeDeviceError},
     nvme_cmd,
     nvme_queue::{
@@ -69,13 +70,14 @@ pub(crate) struct NvmeController {
     transport: NvmePciTransportLock,
     dstrd: u16,
     max_io_bytes: NonZeroUsize,
+    controller_ready_timeout: Duration,
     stats: NvmeStats,
 }
 
 /// An NVMe namespace exposed as a block device.
 #[derive(Debug)]
 pub struct NvmeNamespace {
-    controller: Arc<NvmeController>,
+    controller: Arc<NvmeControllerDevice>,
     info: NamespaceInfo,
     queue: BioRequestSingleQueue,
     name: String,
@@ -84,18 +86,50 @@ pub struct NvmeNamespace {
 
 static NEXT_CONTROLLER_INDEX: AtomicU32 = AtomicU32::new(0);
 
-/// Initializes a controller and registers its first namespace.
+/// Initializes a controller and registers it and its first namespace.
 pub(crate) fn init(transport: NvmePciTransport) -> Result<(), NvmeDeviceError> {
+    let pci_device = transport.pci_device().clone();
     let mut init_ctx = ControllerInitContext::new(transport)?;
-    let namespace = init_ctx
-        .scan_namespaces()?
-        .ok_or(NvmeDeviceError::NoNamespace)?;
+    let namespace = init_ctx.scan_namespaces();
     let io_msix_vectors = init_ctx.create_io_queues()?;
-
     let controller = NvmeController::new(init_ctx);
-    controller.setup_msix_handlers(io_msix_vectors);
 
-    controller.register_namespace(namespace)
+    let index = NEXT_CONTROLLER_INDEX.fetch_add(1, Ordering::Relaxed);
+    let controller_device = NvmeControllerDevice::builder(
+        class::NVME_CLASS.get().unwrap(),
+        format!("nvme{}", index),
+        controller,
+    )
+    .parent(pci_device)
+    .build();
+    controller_device.setup_msix_handlers(io_msix_vectors);
+
+    if let Err(err) = aster_device::add_device(&controller_device) {
+        error!("cannot register NVMe controller: {:?}", err);
+        if let Err(err) = controller_device.disable_controller() {
+            error!(
+                "cannot disable NVMe controller after registration failure: {:?}",
+                err
+            );
+            // Keep DMA memory alive if the controller cannot be stopped.
+            core::mem::forget(controller_device);
+        }
+        return Err(NvmeDeviceError::ControllerRegisterFailed);
+    }
+
+    // Namespace discovery can fail independently of controller initialization.
+    let namespace = match namespace {
+        Ok(Some(namespace)) => namespace,
+        Ok(None) => return Ok(()),
+        Err(err) => {
+            error!("cannot discover namespaces for nvme{}: {:?}", index, err);
+            return Ok(());
+        }
+    };
+    if let Err(err) = controller_device.register_namespace(index, namespace) {
+        error!("cannot register namespaces for nvme{}: {:?}", index, err);
+    }
+    Ok(())
 }
 
 impl aster_block::AnyBlockDevice for NvmeNamespace {
@@ -139,30 +173,20 @@ impl WholeDisk for NvmeNamespace {
     }
 }
 
-impl core::fmt::Debug for NvmeController {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("NvmeController")
-            .field("dstrd", &self.dstrd)
-            .field("stats", &self.stats)
-            .finish_non_exhaustive()
-    }
+/// Operations that need ownership of or a reference to the controller device.
+trait NvmeControllerDeviceExt {
+    /// Registers MSI-X handlers that wake completion wait queues for admin and I/O queues.
+    fn setup_msix_handlers(self: &Arc<Self>, io_msix_vectors: IoMsixVectors);
+
+    /// Registers a discovered namespace as a block device.
+    fn register_namespace(
+        self: &Arc<Self>,
+        index: u32,
+        info: NamespaceInfo,
+    ) -> Result<(), NvmeDeviceError>;
 }
 
-impl NvmeController {
-    fn new(init_ctx: ControllerInitContext) -> Arc<Self> {
-        Arc::new(Self {
-            submission_queues: init_ctx
-                .submission_queues
-                .map(|sq| SpinLock::new(sq.with_items())),
-            completion_queues: init_ctx.completion_queues.map(SpinLock::new),
-            completion_wait_queues: [WaitQueue::new(), WaitQueue::new()],
-            transport: NvmePciTransportLock::new(init_ctx.transport),
-            dstrd: init_ctx.dstrd,
-            max_io_bytes: init_ctx.max_io_bytes,
-            stats: NvmeStats::new(),
-        })
-    }
-
+impl NvmeControllerDeviceExt for NvmeControllerDevice {
     fn setup_msix_handlers(self: &Arc<Self>, io_msix_vectors: IoMsixVectors) {
         let mut transport = self.transport.lock();
         let msix_manager = transport.msix_manager_mut();
@@ -192,9 +216,9 @@ impl NvmeController {
 
     fn register_namespace(
         self: &Arc<Self>,
+        index: u32,
         info: NamespaceInfo,
     ) -> Result<(), NvmeDeviceError> {
-        let index = NEXT_CONTROLLER_INDEX.fetch_add(1, Ordering::Relaxed);
         let name = formatted_device_name(index, info.id);
         let id = {
             // Use the allocated major ID for the NVMe device
@@ -214,6 +238,49 @@ impl NvmeController {
 
         bio_segment_pool_init();
         Ok(())
+    }
+}
+
+impl NvmeController {
+    fn new(init_ctx: ControllerInitContext) -> Self {
+        Self {
+            submission_queues: init_ctx
+                .submission_queues
+                .map(|sq| SpinLock::new(sq.with_items())),
+            completion_queues: init_ctx.completion_queues.map(SpinLock::new),
+            completion_wait_queues: [WaitQueue::new(), WaitQueue::new()],
+            transport: NvmePciTransportLock::new(init_ctx.transport),
+            dstrd: init_ctx.dstrd,
+            max_io_bytes: init_ctx.max_io_bytes,
+            controller_ready_timeout: init_ctx.controller_ready_timeout,
+            stats: NvmeStats::new(),
+        }
+    }
+
+    fn disable_controller(&self) -> Result<(), NvmeDeviceError> {
+        let mut transport = self.transport.lock();
+        let regs = transport.regs();
+        let cc = regs.read32(NvmeRegs32::Cc);
+        regs.write32(NvmeRegs32::Cc, cc & !ControllerInitContext::CC_ENABLE);
+        drop(transport);
+
+        let start = Jiffies::elapsed().as_duration();
+        let deadline = start
+            .checked_add(self.controller_ready_timeout)
+            .unwrap_or(Duration::MAX);
+
+        loop {
+            // Release the IRQ-disabling lock between reads so the timeout can advance.
+            let csts = self.transport.lock().regs().read32(NvmeRegs32::Csts);
+            if (csts & ControllerInitContext::CSTS_RDY) == 0 {
+                return Ok(());
+            }
+            if Jiffies::elapsed().as_duration() >= deadline {
+                error!("Controller disable timed out: CSTS={:#x}", csts);
+                return Err(NvmeDeviceError::ControllerDisableTimeout);
+            }
+            spin_loop();
+        }
     }
 
     fn read(&self, nsid: u32, request: BioRequest) {

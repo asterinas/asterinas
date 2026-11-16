@@ -10,11 +10,12 @@ pub(crate) const MAX_NS_NUM: usize = 1024;
 pub(crate) enum NvmeDeviceError {
     BlockDeviceRegisterFailed,
     CommandFailed,
+    ControllerDisableTimeout,
     ControllerEnableTimeout,
+    ControllerRegisterFailed,
     InvalidControllerConfig,
     InvalidNamespaceConfig,
     MsixAllocationFailed,
-    NoNamespace,
     QueueAllocationFailed,
     SubmissionQueueFull,
     DmaAllocationFailed,

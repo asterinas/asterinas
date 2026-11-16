@@ -24,9 +24,10 @@ use aster_block::MajorIdOwner;
 use component::{ComponentInitError, init_component};
 use spin::Once;
 
-use self::device::block_device;
 pub use self::device::block_device::NvmeNamespace;
+use self::{class::NvmeClass, device::block_device};
 
+mod class;
 mod device;
 mod msix;
 mod nvme_cmd;
@@ -40,6 +41,8 @@ static NVME_BLOCK_MAJOR_ID: Once<MajorIdOwner> = Once::new();
 
 #[init_component]
 fn nvme_init() -> Result<(), ComponentInitError> {
+    class::NVME_CLASS.call_once(|| aster_device::class::register(NvmeClass).unwrap());
+
     let major = aster_block::allocate_major().map_err(|_| ComponentInitError::Unknown)?;
     NVME_BLOCK_MAJOR_ID.call_once(|| major);
 
