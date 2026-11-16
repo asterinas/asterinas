@@ -18,3 +18,9 @@ pub(super) fn init() {
     fs_apis::init();
     path::init();
 }
+
+#[cfg(ktest)]
+pub(super) fn init_for_ktest() {
+    aster_systree::init_for_ktest();
+    init();
+}
