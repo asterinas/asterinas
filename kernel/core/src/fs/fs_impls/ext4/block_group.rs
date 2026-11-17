@@ -1,37 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! An independent allocation domain within an ext2 filesystem.
-//!
-//! An ext2 volume is partitioned into equally sized block groups so that
-//! related blocks and inodes can be allocated close together on disk,
-//! reducing seek distance and improving locality.
-//!
-//! # Invariants
-//!
-//! - All group-local bitmap indices fit in `u16` because the superblock
-//!   enforces `nr_blocks_per_group <= block_size * 8` (max 32768 for 4 KiB
-//!   blocks), and `nr_inodes_per_group` is similarly bounded.
-//! - The group descriptor and both bitmaps are protected by a single
-//!   `RwMutex`. Block and inode allocation/free update bitmaps and group
-//!   counters in one critical section.
-//! - Metadata block pointers (block bitmap, inode bitmap, inode table)
-//!   are validated at mount time and are guaranteed to lie within the
-//!   group's block range and be marked as allocated.
-//!
-//! # Locking
-//!
-//! `BlockGroup` uses two independent locks:
-//!
-//! - `metadata` — protects the group descriptor and both allocation
-//!   bitmaps. Held briefly during alloc/free operations.
-//! - `inode_cache` — protects the per-group live inode map. Uses
-//!   double-checked locking (read then promote to write on miss).
+//! Block-group allocation, inode caching, and inode-table I/O.
+
+mod descriptor;
+mod metadata;
 
 use core::fmt;
 
 use aster_block::bio::BioCompleteFn;
-use ostd::const_assert;
 
+pub(super) use self::{
+    descriptor::{BlockGroupDesc, RawBlockGroup},
+    metadata::BlockGroupMetadata,
+};
 use super::{
     fs::{Ext4, MountFlavor},
     inode::{Inode, InodeDesc, RawInode},
@@ -41,15 +22,13 @@ use super::{
 };
 use crate::{fs::utils::IdBitmap, vm::page_cache::PageRun};
 
-/// Represents one block group in an ext2 filesystem.
+/// Block and inode allocation within one EXT2/EXT4 block group.
 ///
-/// A block group is a filesystem-local allocation domain with its own block
-/// bitmap, inode bitmap, and inode table. Keeping related blocks and inodes in
-/// the same group improves locality on disk.
+/// Provides inode access and maintains the group's allocation bitmaps and counts.
 pub(super) struct BlockGroup {
     /// Block group index (0-based).
     group_idx: usize,
-    /// Group descriptor and bitmaps, protected by a single lock.
+    // Keep allocation bits and their descriptor counts consistent under one guard.
     metadata: RwMutex<BlockGroupMetadata>,
     /// Backing block device (shared with `Ext4` and other groups).
     block_device: Arc<dyn BlockDevice>,
@@ -83,9 +62,7 @@ impl Debug for BlockGroup {
 }
 
 impl BlockGroup {
-    /// Loads a block group from the descriptor table.
-    ///
-    /// Caches per-group geometry from `SuperBlock` at load time.
+    /// Loads a block group and validates its allocation metadata.
     pub(super) fn load(
         group_descs: &USegment,
         group_idx: usize,
@@ -192,9 +169,7 @@ impl BlockGroup {
         }
 
         let inode_desc = self.read_inode_desc(inode_idx)?;
-        let filesystem = fs
-            .upgrade()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "filesystem already dropped"))?;
+        let filesystem = fs.upgrade().unwrap();
         if inode_desc.uses_extents() && !filesystem.has_extents() {
             return_errno_with_message!(
                 Errno::EUCLEAN,
@@ -208,13 +183,7 @@ impl BlockGroup {
             );
         }
         let inode_desc = Dirty::new(inode_desc);
-        let inode = Inode::new(
-            ino,
-            inode_desc.type_(),
-            inode_desc,
-            self.group_idx,
-            Arc::downgrade(&filesystem),
-        );
+        let inode = Inode::new(ino, inode_desc.type_(), inode_desc, self.group_idx, fs);
         inode_cache.insert(inode_idx, inode.clone());
         Ok(inode)
     }
@@ -251,6 +220,13 @@ impl BlockGroup {
         let size = self.nr_inodes_per_group as usize * self.inode_size;
         let range = 0..size;
         self.inode_table_cache.flush_range(range)
+    }
+
+    /// Flushes the page(s) containing one inode slot, including a crossing slot.
+    pub(super) fn sync_inode_slot(&self, ino: Ext4Ino) -> Result<()> {
+        let offset = self.inode_idx_in_group(ino) as usize * self.inode_size;
+        self.inode_table_cache
+            .flush_range(offset..offset + self.inode_size)
     }
 
     /// Returns a read guard over the combined group metadata.
@@ -356,18 +332,17 @@ impl BlockGroup {
             return_errno_with_message!(Errno::EIO, "freeing blocks in system zone");
         }
 
-        // Clear bits one by one and count only allocated-to-free transitions.
+        // Count allocated blocks before changing the bitmap to check for counter overflow.
         let range_start = start_bit as u16;
         let range_end = (start_bit + group_count) as u16;
-        let expected = (range_start..range_end)
+        let nr_blocks_to_free = (range_start..range_end)
             .filter(|&bit| metadata.block_bitmap.is_allocated(bit))
             .count() as u16;
         let new_free = metadata
             .desc
             .free_blocks_count
-            .checked_add(expected)
+            .checked_add(nr_blocks_to_free)
             .ok_or_else(|| Error::with_message(Errno::EIO, "free block count overflow in group"))?;
-        let mut actually_freed: u32 = 0;
         for block_bit in range_start..range_end {
             if !metadata.block_bitmap.is_allocated(block_bit) {
                 warn!(
@@ -376,7 +351,6 @@ impl BlockGroup {
                 );
             } else {
                 metadata.block_bitmap.free(block_bit);
-                actually_freed += 1;
             }
         }
 
@@ -384,7 +358,7 @@ impl BlockGroup {
 
         metadata.desc.free_blocks_count = new_free;
 
-        Ok(actually_freed)
+        Ok(u32::from(nr_blocks_to_free))
     }
 
     /// Checks address bounds and protected metadata without scanning allocation bits.
@@ -508,57 +482,15 @@ impl BlockGroup {
         Ok(())
     }
 
-    /// Writes dirty bitmaps and stages the group descriptor under a single lock.
+    /// Writes dirty bitmaps and stages the group descriptor for writeback.
     ///
     /// Dirty bitmaps are written to disk here. If the group descriptor is dirty,
     /// this method updates the caller-provided descriptor table segment; the
     /// caller is responsible for writing that segment to disk.
     pub(super) fn sync_metadata(&self, group_descs: &USegment) -> Result<()> {
-        let mut metadata = self.metadata.write();
-
-        // Sync block bitmap.
-        if metadata.block_bitmap.is_dirty() {
-            let block_bitmap_bid = metadata.desc.block_bitmap_bid;
-            if self
-                .block_device
-                .write_bytes(
-                    Bid::new(block_bitmap_bid as u64).to_offset(),
-                    metadata.block_bitmap.as_bytes(),
-                )
-                .is_err()
-            {
-                // Keep dirty bit set on writeback failure for retry.
-                return_errno_with_message!(Errno::EIO, "failed to write block bitmap");
-            }
-            metadata.block_bitmap.clear_dirty();
-        }
-
-        // Sync inode bitmap.
-        if metadata.inode_bitmap.is_dirty() {
-            let inode_bitmap_bid = metadata.desc.inode_bitmap_bid;
-            if self
-                .block_device
-                .write_bytes(
-                    Bid::new(inode_bitmap_bid as u64).to_offset(),
-                    metadata.inode_bitmap.as_bytes(),
-                )
-                .is_err()
-            {
-                // Keep dirty bit set on writeback failure for retry.
-                return_errno_with_message!(Errno::EIO, "failed to write inode bitmap");
-            }
-            metadata.inode_bitmap.clear_dirty();
-        }
-
-        // Sync group descriptor.
-        if metadata.desc.is_dirty() {
-            let raw_group = RawBlockGroup::from(*metadata.desc);
-            let offset = self.group_idx * size_of::<RawBlockGroup>();
-            group_descs.write_val(offset, &raw_group)?;
-            metadata.desc.clear_dirty();
-        }
-
-        Ok(())
+        self.metadata
+            .write()
+            .sync(self.block_device.as_ref(), self.group_idx, group_descs)
     }
 
     /// Returns the 0-based group-local inode index.
@@ -616,11 +548,9 @@ impl BlockGroup {
         Ok(IdBitmap::from_buf(buf.into_boxed_slice(), capacity as u16))
     }
 
-    /// Checks whether [start, start+count-1] overlaps any system metadata block
-    /// (block bitmap, inode bitmap, inode table) of this group.
+    /// Returns whether the range overlaps this group's bitmaps or inode table.
     ///
-    /// This variant accepts a `BlockGroupDesc` reference directly, allowing callers
-    /// that already hold the metadata lock to avoid re-acquiring it.
+    /// Accepts an already-locked descriptor to avoid recursive locking.
     fn overlaps_system_zone_with(&self, desc: &BlockGroupDesc, range: Range<u32>) -> bool {
         if range.is_empty() {
             return false;
@@ -636,146 +566,6 @@ impl BlockGroup {
             || ranges_overlap(&range, &inode_table)
     }
 }
-
-/// Combined metadata for a block group: descriptor and bitmaps.
-pub(super) struct BlockGroupMetadata {
-    /// Group descriptor with dirty tracking.
-    pub desc: Dirty<BlockGroupDesc>,
-    /// Block bitmap cached in memory.
-    pub block_bitmap: Dirty<IdBitmap>,
-    /// Inode bitmap cached in memory.
-    pub inode_bitmap: Dirty<IdBitmap>,
-}
-
-impl Debug for BlockGroupMetadata {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("BlockGroupMetadata")
-            .field("desc", &self.desc)
-            .field("block_bitmap_dirty", &self.block_bitmap.is_dirty())
-            .field("inode_bitmap_dirty", &self.inode_bitmap.is_dirty())
-            .finish()
-    }
-}
-
-/// In-memory block group descriptor.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct BlockGroupDesc {
-    pub block_bitmap_bid: Ext4Bid,
-    pub inode_bitmap_bid: Ext4Bid,
-    pub inode_table_bid: Ext4Bid,
-    pub free_blocks_count: u16,
-    pub free_inodes_count: u16,
-    pub used_dirs_count: u16,
-}
-
-impl From<RawBlockGroup> for BlockGroupDesc {
-    fn from(raw: RawBlockGroup) -> Self {
-        Self {
-            block_bitmap_bid: raw.block_bitmap_bid,
-            inode_bitmap_bid: raw.inode_bitmap_bid,
-            inode_table_bid: raw.inode_table_bid,
-            free_blocks_count: raw.free_blocks_count,
-            free_inodes_count: raw.free_inodes_count,
-            used_dirs_count: raw.used_dirs_count,
-        }
-    }
-}
-
-impl From<BlockGroupDesc> for RawBlockGroup {
-    fn from(desc: BlockGroupDesc) -> Self {
-        Self {
-            block_bitmap_bid: desc.block_bitmap_bid,
-            inode_bitmap_bid: desc.inode_bitmap_bid,
-            inode_table_bid: desc.inode_table_bid,
-            free_blocks_count: desc.free_blocks_count,
-            free_inodes_count: desc.free_inodes_count,
-            used_dirs_count: desc.used_dirs_count,
-            pad: 0,
-            reserved: [0; 3],
-        }
-    }
-}
-
-impl BlockGroupDesc {
-    /// Validates that free counters fit within this group's capacity.
-    fn validate_free_counts(&self, nr_blocks_in_group: u32, nr_inodes_in_group: u32) -> Result<()> {
-        if u32::from(self.free_blocks_count) > nr_blocks_in_group {
-            return_errno_with_message!(
-                Errno::EINVAL,
-                "group free blocks count exceeds group blocks count"
-            );
-        }
-        if u32::from(self.free_inodes_count) > nr_inodes_in_group {
-            return_errno_with_message!(
-                Errno::EINVAL,
-                "group free inodes count exceeds group inodes count"
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Validates that all metadata block pointers (block bitmap, inode bitmap,
-    /// inode table) fall within the group range and are marked as allocated.
-    fn validate_metadata_blocks(
-        &self,
-        block_bitmap: &IdBitmap,
-        first_block: u32,
-        last_block: u32,
-        nr_inode_table_blocks_per_group: u32,
-    ) -> Result<()> {
-        let max_bit = last_block - first_block;
-
-        let is_valid_fn = |bid: u32| -> bool {
-            let Some(offset) = bid.checked_sub(first_block) else {
-                return false;
-            };
-            if offset > max_bit {
-                return false;
-            }
-            block_bitmap.is_allocated(offset as u16)
-        };
-
-        if !is_valid_fn(self.block_bitmap_bid) {
-            return_errno_with_message!(Errno::EINVAL, "block bitmap block invalid or not marked");
-        }
-        if !is_valid_fn(self.inode_bitmap_bid) {
-            return_errno_with_message!(Errno::EINVAL, "inode bitmap block invalid or not marked");
-        }
-
-        if self.inode_table_bid < first_block || self.inode_table_bid - first_block > max_bit {
-            return_errno_with_message!(Errno::EINVAL, "inode table start out of group range");
-        }
-        let table_start_bit = self.inode_table_bid - first_block;
-        let table_end_bit = table_start_bit + nr_inode_table_blocks_per_group;
-        if table_end_bit - 1 > max_bit {
-            return_errno_with_message!(Errno::EINVAL, "inode table extends beyond group");
-        }
-        for table_bit in table_start_bit..table_end_bit {
-            if !block_bitmap.is_allocated(table_bit as u16) {
-                return_errno_with_message!(Errno::EINVAL, "inode table block not marked in bitmap");
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// On-disk block group descriptor (32 bytes).
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Pod)]
-pub(super) struct RawBlockGroup {
-    pub block_bitmap_bid: u32,  // bg_block_bitmap
-    pub inode_bitmap_bid: u32,  // bg_inode_bitmap
-    pub inode_table_bid: u32,   // bg_inode_table
-    pub free_blocks_count: u16, // bg_free_blocks_count
-    pub free_inodes_count: u16, // bg_free_inodes_count
-    pub used_dirs_count: u16,   // bg_used_dirs_count
-    pub pad: u16,               // bg_pad
-    pub reserved: [u32; 3],     // bg_reserved
-}
-
-const_assert!(size_of::<RawBlockGroup>() == 32);
 
 /// Backend of the inode table page cache in one block group.
 struct InodeTableBackend {
@@ -857,6 +647,58 @@ mod test {
     use crate::fs::fs_impls::ext4::test_utils::{ExtFixtureBuilder, RawInodeBuilder};
 
     #[ktest]
+    fn allocation_metadata_retries_only_unwritten_bitmaps() {
+        let fixture = ExtFixtureBuilder::new(1, 2048)
+            .with_free_blocks(8, 8)
+            .with_free_inodes(16, 16)
+            .build()
+            .unwrap();
+        let group = fixture.fs.block_group(0);
+        assert!(!group.alloc_blocks(1, 8).unwrap().is_empty());
+        assert!(group.alloc_ino(InodeType::Dir).unwrap().is_some());
+        let (block_bid, inode_bid, expected_descriptor) = {
+            let metadata = group.metadata.read();
+            (
+                metadata.desc.block_bitmap_bid,
+                metadata.desc.inode_bitmap_bid,
+                RawBlockGroup::from(*metadata.desc),
+            )
+        };
+        let descriptors: USegment = FrameAllocOptions::new()
+            .zeroed(true)
+            .alloc_segment(1)
+            .unwrap()
+            .into();
+        fixture.disk.fail_write_block(Some(block_bid as usize));
+        assert!(group.sync_metadata(&descriptors).is_err());
+        assert!(group.metadata.read().block_bitmap.is_dirty());
+        assert!(group.metadata.read().inode_bitmap.is_dirty());
+        assert_eq!(fixture.disk.block_writes(inode_bid as usize), 0);
+
+        fixture.disk.fail_write_block(Some(inode_bid as usize));
+        assert!(group.sync_metadata(&descriptors).is_err());
+        assert!(!group.metadata.read().block_bitmap.is_dirty());
+        assert!(group.metadata.read().inode_bitmap.is_dirty());
+        assert!(group.is_desc_dirty());
+        let block_writes = fixture.disk.block_writes(block_bid as usize);
+
+        fixture.disk.fail_write_block(None);
+        group.sync_metadata(&descriptors).unwrap();
+        assert_eq!(fixture.disk.block_writes(block_bid as usize), block_writes);
+        assert!(!group.metadata.read().inode_bitmap.is_dirty());
+        assert!(!group.is_desc_dirty());
+        let staged = descriptors.read_val::<RawBlockGroup>(0).unwrap();
+        assert_eq!(staged.as_bytes(), expected_descriptor.as_bytes());
+        // Descriptor staging is deliberately separate from device writeback.
+        assert_eq!(
+            fixture
+                .disk
+                .block_writes(fixture.sb.group_descriptors_bid(0) as usize),
+            0
+        );
+    }
+
+    #[ktest]
     fn inode_slot_read_update_write_preserves_layout_and_unknown_bytes() {
         for inode_size in [128, 256] {
             const INO: Ext4Ino = 12;
@@ -895,16 +737,19 @@ mod test {
             updated.size_lo = 4096;
             group.write_back_inode_desc(INO, &updated).unwrap();
 
-            let mut actual = vec![0u8; inode_size * 2];
+            let mut read_back_slots = vec![0u8; inode_size * 2];
             group
                 .inode_table_cache
-                .read_bytes(inode_offset, &mut actual)
+                .read_bytes(inode_offset, &mut read_back_slots)
                 .unwrap();
 
-            let mut expected_first = first_slot;
-            expected_first[4..8].copy_from_slice(&4096u32.to_ne_bytes());
-            assert_eq!(&actual[..inode_size], expected_first.as_slice());
-            assert_eq!(&actual[inode_size..], &second_slot);
+            let mut expected_first_slot = first_slot;
+            expected_first_slot[4..8].copy_from_slice(&4096u32.to_ne_bytes());
+            assert_eq!(
+                &read_back_slots[..inode_size],
+                expected_first_slot.as_slice()
+            );
+            assert_eq!(&read_back_slots[inode_size..], &second_slot);
             let reloaded = group.read_inode_desc(inode_idx as u16).unwrap();
             assert_eq!(RawInode::from(&reloaded).size_lo, 4096);
         }

@@ -69,6 +69,7 @@ pub(super) struct Ext4MemoryDisk {
     block_reads: Mutex<BTreeMap<usize, usize>>,
     block_writes: Mutex<BTreeMap<usize, usize>>,
     fail_read_block: AtomicUsize,
+    before_failed_read: Mutex<Option<Box<dyn FnOnce() + Send + Sync>>>,
     fail_write_block: AtomicUsize,
 }
 
@@ -87,6 +88,7 @@ impl Ext4MemoryDisk {
             block_reads: Mutex::new(BTreeMap::new()),
             block_writes: Mutex::new(BTreeMap::new()),
             fail_read_block: AtomicUsize::new(usize::MAX),
+            before_failed_read: Mutex::new(None),
             fail_write_block: AtomicUsize::new(usize::MAX),
         }
     }
@@ -106,6 +108,11 @@ impl Ext4MemoryDisk {
     pub(super) fn fail_read_block(&self, bid: Option<usize>) {
         self.fail_read_block
             .store(bid.unwrap_or(usize::MAX), Ordering::Relaxed);
+    }
+
+    /// Runs once before reporting a configured read failure, outside device locks.
+    pub(super) fn before_failed_read(&self, callback_fn: impl FnOnce() + Send + Sync + 'static) {
+        *self.before_failed_read.lock() = Some(Box::new(callback_fn));
     }
 
     pub(super) fn fail_write_block(&self, bid: Option<usize>) {
@@ -182,6 +189,12 @@ impl BlockDevice for Ext4MemoryDisk {
             *counts.lock().entry(bid).or_default() += 1;
         }
         if (first..end).contains(&failure.load(Ordering::Relaxed)) {
+            if bio.type_() == BioType::Read {
+                let callback_fn = self.before_failed_read.lock().take();
+                if let Some(callback_fn) = callback_fn {
+                    callback_fn();
+                }
+            }
             bio.complete(BioStatus::IoError);
             return Ok(());
         }
