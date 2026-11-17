@@ -285,7 +285,7 @@ fn build_kernel_elf(
     let mut env_cflags = std::env::var(CFLAGS).unwrap_or_default();
     env_cflags += " -fPIC";
 
-    if features.contains(&"coverage".to_string()) {
+    if features.iter().any(|f| f == "coverage") {
         // This is a workaround for minicov <https://github.com/Amanieu/minicov/issues/29>,
         // makes coverage work on x86_64-unknown-none.
         env_cflags += " -D__linux__";

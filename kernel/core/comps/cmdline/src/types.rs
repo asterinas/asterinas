@@ -119,7 +119,7 @@ fn segment_contains(seg: &CpuListSegment, cpu: u32) -> bool {
 
     let offset = cpu - seg.start;
     if let Some(group) = seg.group {
-        let in_group_offset = offset % group.get();
+        let in_group_offset = offset % group;
         in_group_offset.is_multiple_of(seg.stride.get())
     } else {
         offset.is_multiple_of(seg.stride.get())

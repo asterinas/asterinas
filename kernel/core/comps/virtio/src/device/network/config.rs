@@ -99,8 +99,8 @@ impl ConfigManager<VirtioNetConfig> {
     pub(super) fn read_config(&self) -> VirtioNetConfig {
         let mut net_config = VirtioNetConfig::new_zeroed();
         // Only following fields are defined in legacy interface.
-        for i in 0..6 {
-            net_config.mac[i] = self
+        for (i, mac_byte) in net_config.mac.iter_mut().enumerate() {
+            *mac_byte = self
                 .read_once::<u8>(offset_of!(VirtioNetConfig, mac) + i)
                 .unwrap();
         }

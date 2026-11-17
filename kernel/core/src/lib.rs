@@ -10,8 +10,6 @@
 #![feature(array_try_from_fn)]
 #![feature(associated_type_defaults)]
 #![feature(btree_cursors)]
-#![feature(debug_closure_helpers)]
-#![feature(drop_guard)]
 #![feature(format_args_nl)]
 #![feature(ip_as_octets)]
 #![feature(linked_list_cursors)]

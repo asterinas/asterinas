@@ -431,11 +431,7 @@ impl SuperBlock {
         } else {
             0u32
         };
-        if start_blk <= sb_bid && end_blk >= sb_bid {
-            return false;
-        }
-
-        true
+        start_blk > sb_bid || end_blk < sb_bid
     }
 
     /// Returns the first data block number.
