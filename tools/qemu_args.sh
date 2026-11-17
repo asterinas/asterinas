@@ -8,6 +8,7 @@
 # Other arguments are configured via environmental variables:
 #  - OVMF: "on" or "off";
 #  - OVMF_DIR: directory containing OVMF.fd, OVMF_VARS.fd and microvm/MICROVM.fd;
+#  - RUSTSBI_DIR: directory containing rustsbi-prototyper-dynamic.bin;
 #  - BOOT_METHOD: "vmm-direct", "grub-rescue-iso" or "grub-qcow2";
 #  - BOOT_PROTOCOL: "multiboot", "multiboot2", "pvh", "linux-legacy32", "linux-efi-pe64" or "linux-efi-handover64";
 #  - NETDEV: "user", "tap" or "none" ("none" is not supported by microvm);
@@ -32,6 +33,7 @@ OVMF=${OVMF:-"on"}
 # Directory holding OVMF.fd, OVMF_VARS.fd and microvm/MICROVM.fd. Defaults to the
 # Docker image's path; the Nix dev shell exports this to the Nix store instead.
 OVMF_DIR=${OVMF_DIR:-/root/ovmf/release}
+RUSTSBI_DIR=${RUSTSBI_DIR:-/usr/local/share/rustsbi}
 VHOST=${VHOST:-"off"}
 VSOCK=${VSOCK:-"off"}
 VIRTIOFS=${VIRTIOFS:-"off"}
@@ -124,9 +126,12 @@ if [ "$1" = "riscv" ]; then
         ROOTFS_RISCV_DEVICE_ARGS="-device virtio-blk-device,drive=rootfs"
     fi
 
+    # RustSBI preserves SBI SystemFailure in QEMU's exit status, so failed
+    # kernel tests are not reported as successful shutdowns.
     QEMU_ARGS="\
         -cpu rv64,svpbmt=true,zkr=true \
         -machine virt \
+        -bios ${RUSTSBI_DIR}/rustsbi-prototyper-dynamic.bin \
         -m ${MEM:-8G} \
         -smp ${SMP:-1} \
         --no-reboot \
