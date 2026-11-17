@@ -47,7 +47,8 @@ use crate::{
 pub(crate) type Ino = u64;
 
 bitflags! {
-    pub(crate) struct FatAttr : u16{
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) struct FatAttr: u16 {
         /// This inode is read only.
         const READONLY  = 0x0001;
         /// This inode is hidden. This attribute is not supported in our implementation.

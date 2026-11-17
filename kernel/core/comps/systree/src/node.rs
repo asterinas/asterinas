@@ -347,11 +347,11 @@ bitflags! {
         const OTHER_X = 0o0001;
 
         // Common multi-bit flags:
-        const ALL_R = 0o0444;
-        const ALL_W = 0o0222;
-        const ALL_X = 0o0111;
-        const ALL_RW = 0o0666;
-        const ALL_RX = 0o0555;
+        const ALL_R   = 0o0444;
+        const ALL_W   = 0o0222;
+        const ALL_X   = 0o0111;
+        const ALL_RW  = 0o0666;
+        const ALL_RX  = 0o0555;
         const ALL_RWX = 0o0777;
     }
 }

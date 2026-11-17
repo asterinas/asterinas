@@ -181,10 +181,11 @@ fn do_sys_readv(
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct RWFFlag: u32 {
-        const RWF_DSYNC = 0x00000001;
-        const RWF_HIPRI = 0x00000002;
-        const RWF_SYNC = 0x00000004;
+        const RWF_DSYNC  = 0x00000001;
+        const RWF_HIPRI  = 0x00000002;
+        const RWF_SYNC   = 0x00000004;
         const RWF_NOWAIT = 0x00000008;
     }
 }

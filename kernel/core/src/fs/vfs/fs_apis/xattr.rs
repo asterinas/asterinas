@@ -145,12 +145,13 @@ impl<'a> XattrName<'a> {
 
 bitflags::bitflags! {
     /// Flags for setting an xattr value.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct XattrSetFlags: u8 {
         /// Creates a new xattr if it doesn't exist, or replaces the value if it does.
         const CREATE_OR_REPLACE = 0;
         /// Creates a new xattr, fails if it already exists.
-        const CREATE_ONLY = 1;
+        const CREATE_ONLY       = 1;
         /// Replaces the value of an existing xattr, fails if it doesn't exist.
-        const REPLACE_ONLY = 2;
+        const REPLACE_ONLY      = 2;
     }
 }

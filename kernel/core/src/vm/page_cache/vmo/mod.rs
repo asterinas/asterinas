@@ -154,6 +154,7 @@ impl Debug for Vmo {
 
 bitflags! {
     /// VMO flags.
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct VmoFlags: u32 {
         /// Set this flag if a VMO is resizable.
         const RESIZABLE  = 1 << 0;

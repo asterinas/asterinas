@@ -16,19 +16,25 @@ pub(super) fn sys_getgroups(
         return_errno_with_message!(Errno::EINVAL, "size cannot be negative");
     }
 
-    let credentials = ctx.posix_thread.credentials();
-    let groups = credentials.groups();
+    // Copy the supplementary groups out of the read guard before writing to user space, since the
+    // write may take a page fault and sleep.
+    let groups = {
+        let credentials = ctx.posix_thread.credentials();
+        let groups = credentials.groups();
 
-    if size == 0 {
-        return Ok(SyscallReturn::Return(groups.len() as _));
-    }
+        if size == 0 {
+            return Ok(SyscallReturn::Return(groups.len() as _));
+        }
 
-    if groups.len() > size as usize {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "size is less than the number of supplementary group IDs"
-        );
-    }
+        if groups.len() > size as usize {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "size is less than the number of supplementary group IDs"
+            );
+        }
+
+        groups.clone()
+    };
 
     let user_space = ctx.user_space();
     for (idx, gid) in groups.iter().enumerate() {

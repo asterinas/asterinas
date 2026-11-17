@@ -324,8 +324,11 @@ impl Drop for MountNamespace {
         worklist.push_back(root.clone());
         while let Some(current_mount) = worklist.pop_front() {
             current_mount.clear_propagation(&mut topology_guard);
-            let mut children = current_mount.children.write();
-            for (_, child) in children.drain() {
+            // Clearing a topology link may drop the last reference to a mountpoint
+            // dentry, and the reclaim operation may sleep, so do it after releasing
+            // the `children` lock.
+            let children = core::mem::take(&mut *current_mount.children.write());
+            for (_, child) in children {
                 child.clear_topology_link(&mut topology_guard);
                 worklist.push_back(child);
             }

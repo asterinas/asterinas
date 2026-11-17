@@ -1070,21 +1070,14 @@
 - problem_id: 0404-read-cstring-init-stack-defects
   commit: 329c12aaa8cecae8e3de54fc93af07060fade406
   source: >
-    PR 2430 introduced the new ReadCString APIs and changed init-stack string
-    parsing in commit 329c12aaa8cecae8e3de54fc93af07060fade406. Two GitHub
-    review comments identify independent defects in that same change. Comment
-    points out that using Vec::with_capacity(max_len) can allocate too much
-    memory before reading short strings; follow-up comment confirms the threshold
-    approach, and final PR head ea60866 caps the initial capacity with INIT_ALLOC_SIZE.
-    Comment identifies a netlink route attribute parser that stops at an
-    embedded nul before consuming the full attribute payload; the same comment
-    notes that Linux does not require a nul terminator there and that parse
-    errors must be reported to userspace. The final PR adds
-    read_cstring_until_end(...) and FullRead to preserve reader position and
-    propagate recoverable netlink parse errors.
+    PR-review-derived from PR #2430
+    `https://github.com/asterinas/asterinas/pull/2430`. Comments `r2348115060`
+    and `r2352949503` flag excessive `Vec::with_capacity(max_len)` allocation.
+    The change under review is `329c12aaa` alone (`base: HEAD^`); its added
+    C-string reader implementations contain the defect.
   review_mode:
     diff:
-      base: 46aa437c8738e72a47510e764cb2b6eed8032706
+      base: HEAD^
   defects:
     - target:
         kind: file
@@ -1105,29 +1098,6 @@
         for a C-string reader because max_len is only a limit; it should suggest
         using min(self.remain(), max_len), a threshold, or another capped initial
         capacity to avoid unnecessary allocation.
-    - target:
-        kind: file
-        path: kernel/src/net/socket/netlink/route/message/attr/addr.rs
-      persona: development
-      grounding: "consume the complete netlink attribute payload"
-      severity: major
-      desc: >
-        The route address attribute parser uses a NUL-terminated C-string read
-        for a fixed-length netlink attribute payload. If the reader encounters
-        a NUL byte in the middle of the payload, it stops there and returns the
-        string while leaving the reader cursor before the end of the attribute.
-        The next attribute is then parsed from the wrong position.
-      fix: >
-        Read through the complete attribute payload with
-        read_cstring_until_end, which accepts a missing NUL terminator and
-        consumes the remaining bytes. Return a FullRead result so malformed
-        attributes are skipped or reported while the caller remains positioned
-        at the next attribute boundary.
-      expectation: >
-        A valid review must identify the cursor-position bug caused by stopping
-        at an embedded NUL. It must require consuming or skipping the entire
-        attribute payload, must not require a NUL terminator where Linux does
-        not, and must preserve parse errors in the netlink response path.
 
 - problem_id: 0405-named-pipe-open-nonblock-status-flags
   commit: 7e7ba43cdfc572cd2ddeecc86a5951bbd200d692

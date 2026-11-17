@@ -66,10 +66,7 @@ impl DosTimestamp {
         // When ktesting, the time module has not been initialized yet, return a fake value instead.
         #[cfg(ktest)]
         {
-            use crate::time::SystemTime;
-            DosTimestamp::from_duration(
-                SystemTime::UNIX_EPOCH.duration_since(&SystemTime::UNIX_EPOCH)?,
-            )
+            Ok(DosTimestamp::default())
         }
     }
 

@@ -11,7 +11,7 @@ use crate::{
         devpts::Ptmx,
         file::{
             CreationFlags, InodeMode, OpenArgs, PerOpenFileOps, SettableStatusFlags, StatusFlags,
-            file_table::FdFlags,
+            file_table::{FdFlags, FileTableInsert},
         },
         vfs::{inode::FileOps, path::Path},
     },
@@ -200,8 +200,7 @@ impl PerOpenFileOps for PtyMaster {
                     let current_task = Task::current().unwrap();
                     let thread_local = current_task.as_thread_local().unwrap();
                     let file_table = thread_local.borrow_file_table();
-                    let mut file_table_locked = file_table.unwrap().write();
-                    file_table_locked.insert(slave, fd_flags)
+                    file_table.unwrap().lock_and_insert(slave, fd_flags)?
                 };
                 return Ok(fd.into());
             }

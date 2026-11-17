@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![short_vis_path::add(route)]
+
 use aster_bigtcp::{iface::InterfaceName, wire::EthernetAddress};
 
 use crate::{
-    net::socket::netlink::message::{Attribute, CAttrHeader, ContinueRead},
+    net::socket::netlink::message::{Attribute, CAttrHeader, ContinueAttrRead},
     prelude::*,
     util::MultiRead,
 };
@@ -15,7 +17,7 @@ use crate::{
 #[expect(clippy::upper_case_acronyms)]
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromInt)]
-enum LinkAttrClass {
+pub(in route) enum LinkAttrClass {
     UNSPEC = 0,
     ADDRESS = 1,
     BROADCAST = 2,
@@ -98,7 +100,7 @@ pub(crate) enum LinkAttr {
 }
 
 impl LinkAttr {
-    fn class(&self) -> LinkAttrClass {
+    pub(in route) fn class(&self) -> LinkAttrClass {
         match self {
             LinkAttr::Address(_) => LinkAttrClass::ADDRESS,
             LinkAttr::Broadcast(_) => LinkAttrClass::BROADCAST,
@@ -128,7 +130,7 @@ impl Attribute for LinkAttr {
         }
     }
 
-    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<ContinueRead<Self>>
+    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<ContinueAttrRead<Self>>
     where
         Self: Sized,
     {
@@ -139,7 +141,7 @@ impl Attribute for LinkAttr {
             // Unknown attributes should be ignored.
             // Reference: <https://docs.kernel.org/userspace-api/netlink/intro.html#unknown-attributes>.
             reader.skip_some(payload_len);
-            return Ok(ContinueRead::Skipped);
+            return Ok(ContinueAttrRead::SkippedUnsupported);
         };
 
         let res = match (class, payload_len) {
@@ -150,7 +152,7 @@ impl Attribute for LinkAttr {
                 reader.read(&mut writer)?;
 
                 if !name_bytes.contains(&0) {
-                    return Ok(ContinueRead::skipped_with_error(
+                    return Ok(ContinueAttrRead::skipped_invalid(
                         Errno::ERANGE,
                         "the link attribute is invalid",
                     ));
@@ -177,7 +179,7 @@ impl Attribute for LinkAttr {
             ) => {
                 warn!("link attribute `{:?}` contains invalid payload", class);
                 reader.skip_some(payload_len);
-                return Ok(ContinueRead::skipped_with_error(
+                return Ok(ContinueAttrRead::skipped_invalid(
                     if class == LinkAttrClass::IFNAME {
                         Errno::ERANGE
                     } else {
@@ -190,28 +192,34 @@ impl Attribute for LinkAttr {
             (_, _) => {
                 warn!("link attribute `{:?}` is not supported", class);
                 reader.skip_some(payload_len);
-                return Ok(ContinueRead::Skipped);
+                return Ok(ContinueAttrRead::SkippedUnsupported);
             }
         };
 
-        Ok(ContinueRead::Parsed(res))
+        Ok(ContinueAttrRead::Parsed(res))
     }
 }
 
+/// New extended info filters for [`LinkAttr::ExtMask`].
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L819>.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub(crate) struct RtExtFilter(u32);
+
 bitflags! {
-    /// New extended info filters for [`NlLinkAttr::ExtMask`].
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L819>.
-    #[repr(C)]
-    #[derive(Pod)]
-    pub(crate) struct RtExtFilter: u32 {
-        const VF = 1 << 0;
-        const BRVLAN = 1 << 1;
+    impl RtExtFilter: u32 {
+        const VF                = 1 << 0;
+        const BRVLAN            = 1 << 1;
         const BRVLAN_COMPRESSED = 1 << 2;
-        const SKIP_STATS = 1 << 3;
-        const MRP = 1 << 4;
-        const CFM_CONFIG = 1 << 5;
-        const CFM_STATUS = 1 << 6;
-        const MST = 1 << 7;
+        const SKIP_STATS        = 1 << 3;
+        const MRP               = 1 << 4;
+        const CFM_CONFIG        = 1 << 5;
+        const CFM_STATUS        = 1 << 6;
+        const MST               = 1 << 7;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _                 = !0;
     }
 }

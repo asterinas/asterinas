@@ -144,8 +144,7 @@ bitflags::bitflags! {
     /// Their bit values are part of the userspace ABI and must remain compatible with Linux.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L49-L59>.
-    #[repr(transparent)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct DrmModeType: u32 {
         /// Deprecated by Linux; retained for UAPI compatibility.
         const BUILTIN   = 1 << 0;
@@ -169,8 +168,7 @@ bitflags::bitflags! {
     /// and must not be changed or reused.
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm_mode.h#L61-L84>.
-    #[repr(transparent)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct DrmModeFlag: u32 {
         const PHSYNC    = 1 << 0;
         const NHSYNC    = 1 << 1;
@@ -211,8 +209,8 @@ pub struct DrmModeInfo {
 
     vrefresh: u32,
 
-    flags: DrmModeFlag,
-    type_: DrmModeType,
+    flags: u32,
+    type_: u32,
 
     name: FixedCStr<DRM_DISPLAY_MODE_NAME_LEN>,
 }
@@ -243,8 +241,8 @@ impl TryFrom<DrmDisplayMode> for DrmModeInfo {
             vtotal: to_uapi_timing(display_mode.vertical.total)?,
             vscan: to_uapi_timing(display_mode.vscan)?,
             vrefresh: display_mode.vrefresh()?,
-            flags: display_mode.flags,
-            type_: display_mode.mode_type,
+            flags: display_mode.flags.bits(),
+            type_: display_mode.mode_type.bits(),
             name: FixedCStr::from_bytes_until_nul(&display_mode.name),
         })
     }
@@ -266,10 +264,10 @@ impl TryFrom<DrmModeInfo> for DrmDisplayMode {
             u32::from(mode_info.vsync_end),
             u32::from(mode_info.vtotal),
         )?;
-        let flags = DrmModeFlag::from_bits(mode_info.flags.bits()).ok_or_else(|| {
+        let flags = DrmModeFlag::from_bits(mode_info.flags).ok_or_else(|| {
             Error::with_message(Errno::EINVAL, "the display mode has unknown flags")
         })?;
-        let mode_type = DrmModeType::from_bits(mode_info.type_.bits()).ok_or_else(|| {
+        let mode_type = DrmModeType::from_bits(mode_info.type_).ok_or_else(|| {
             Error::with_message(Errno::EINVAL, "the display mode has an unknown type")
         })?;
 

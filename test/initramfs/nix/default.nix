@@ -29,6 +29,7 @@ let
     overlays = [ ];
     inherit system crossSystem;
   };
+  buildMachinePkgs = pkgs.pkgsBuildBuild;
 in
 rec {
   # Packages needed by initramfs
@@ -55,22 +56,22 @@ rec {
   };
   rootfs-image = pkgs.callPackage ./rootfs-image.nix { inherit initramfs; };
 
-  # Packages needed by host
-  apacheHttpd = pkgs.apacheHttpd;
-  iperf3 = pkgs.iperf3;
-  libmemcached = pkgs.libmemcached.overrideAttrs (_: {
+  # These clients run on the build machine, so use its native packages here.
+  # This only selects host clients; guest packages above still use `pkgs` and
+  # keep the requested guest architecture. Use `pkgsBuildBuild` because lmbench
+  # reads `targetPlatform` for its build flags and installation paths;
+  # `buildPackages` would leave that field tied to the guest architecture.
+  apacheHttpd = buildMachinePkgs.apacheHttpd;
+  iperf3 = buildMachinePkgs.iperf3;
+  libmemcached = buildMachinePkgs.libmemcached.overrideAttrs (_: {
     configureFlags = [ "--enable-memaslap" ];
     LDFLAGS = "-lpthread";
     CPPFLAGS = "-fcommon -fpermissive";
   });
-  lmbench = pkgs.callPackage ./benchmark/lmbench.nix { };
+  lmbench = buildMachinePkgs.callPackage ./benchmark/lmbench.nix { };
   redis =
-    (pkgs.redis.overrideAttrs (old: {
+    (buildMachinePkgs.redis.overrideAttrs (_: {
       doCheck = false;
-      makeFlags = (old.makeFlags or [ ]) ++ [
-        "CC=${pkgs.stdenv.cc.targetPrefix}cc"
-        "LD=${pkgs.stdenv.cc.targetPrefix}cc"
-      ];
     })).override
       { withSystemd = false; };
 }

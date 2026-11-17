@@ -90,10 +90,10 @@ impl MountRoots {
                 .downcast_ref::<OverlayFs>()
                 .is_some()
         {
-            return Err(Error::with_message(
+            return_errno_with_message!(
                 Errno::EINVAL,
-                "the overlay upperdir must not be on an overlayfs",
-            ));
+                "the overlay upperdir must not be on an overlayfs"
+            );
         }
 
         let (Some(upper_root), Some(work_root)) = (&roots.upper, &roots.work) else {

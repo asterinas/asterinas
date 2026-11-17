@@ -243,10 +243,7 @@ impl Device for Fb {
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
         let Some(framebuffer) = FRAMEBUFFER.get() else {
-            return Err(Error::with_message(
-                Errno::ENODEV,
-                "the framebuffer device is not present",
-            ));
+            return_errno_with_message!(Errno::ENODEV, "the framebuffer device is not present");
         };
         let framebuffer = framebuffer.clone();
         Ok(Box::new(FbHandle { framebuffer }))

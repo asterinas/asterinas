@@ -8,6 +8,7 @@ use crate::{
             NetlinkSocketAddr,
             common::BoundNetlink,
             message::{ContinueRead, ProtocolSegment},
+            options::NetlinkOptionSet,
             route::kernel::get_netlink_route_kernel,
         },
         util::{RecvFlags, RecvOutput, SendFlags, datagram_common},
@@ -20,6 +21,7 @@ pub(super) type BoundNetlinkRoute = BoundNetlink<RtnlMessage>;
 
 impl datagram_common::Bound for BoundNetlinkRoute {
     type Endpoint = NetlinkSocketAddr;
+    type SendOptions = NetlinkOptionSet;
 
     fn local_endpoint(&self) -> Self::Endpoint {
         self.handle.addr()
@@ -42,6 +44,7 @@ impl datagram_common::Bound for BoundNetlinkRoute {
         reader: &mut dyn MultiRead,
         remote: &Self::Endpoint,
         flags: SendFlags,
+        options: Self::SendOptions,
     ) -> Result<usize> {
         // TODO: Deal with flags
         if !flags.is_all_supported() {
@@ -60,14 +63,14 @@ impl datagram_common::Bound for BoundNetlinkRoute {
 
         let local_port = self.handle.port();
         let rtnl_kernel = get_netlink_route_kernel();
+        let strict_check = options.strict_check();
 
         loop {
-            let mut segment = match RtnlSegment::read_from(reader) {
+            let mut segment = match RtnlSegment::read_from(reader, strict_check) {
                 Ok(ContinueRead::Parsed(seg)) => seg,
-                Ok(ContinueRead::Skipped) => continue,
                 // There is at least a valid segment header, so we can create an error segment to
                 // report any errors found while parsing the segment body or attributes.
-                Ok(ContinueRead::SkippedErr(err_segment)) => {
+                Ok(ContinueRead::SkippedInvalid(err_segment)) => {
                     rtnl_kernel.report_error(err_segment, local_port);
                     continue;
                 }
@@ -89,7 +92,7 @@ impl datagram_common::Bound for BoundNetlinkRoute {
                 header.pid = local_port;
             }
 
-            rtnl_kernel.handle_request(&segment, local_port);
+            rtnl_kernel.handle_request(&segment, local_port, strict_check);
         }
 
         Ok(sum_lens)

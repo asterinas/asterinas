@@ -29,14 +29,12 @@ fn is_efi_boot(boot_params: &BootParams) -> bool {
 impl From<E820Type> for MemoryRegionType {
     fn from(value: E820Type) -> Self {
         match value {
-            E820Type::Ram => Self::Usable,
-            E820Type::Reserved => Self::Reserved,
-            E820Type::Acpi => Self::Reclaimable,
-            E820Type::Nvs => Self::NonVolatileSleep,
-            E820Type::Unusable => Self::BadMemory,
+            E820Type::RAM => Self::Usable,
+            E820Type::RESERVED => Self::Reserved,
+            E820Type::ACPI => Self::Reclaimable,
+            E820Type::NVS => Self::NonVolatileSleep,
+            E820Type::UNUSABLE => Self::BadMemory,
             // All other memory regions are reserved.
-            // FIXME: Using Rust enum in this way can be unsound if the bootloader passes an
-            // unknown memory type to the kernel (e.g., due to a newer protocol version).
             _ => Self::Reserved,
         }
     }

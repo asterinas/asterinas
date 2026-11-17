@@ -93,6 +93,29 @@ impl Vmar {
         debug_assert_eq!(old_size % PAGE_SIZE, 0);
         debug_assert_eq!(new_size % PAGE_SIZE, 0);
 
+        // Check the new range before looking up or changing any mapping, as Linux
+        // does, so that a call rejected for its new range changes no mapping.
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/mm/mremap.c#L1920>
+        if let Some(new_addr) = new_addr {
+            if !new_addr.is_multiple_of(PAGE_SIZE) || !is_userspace_vaddr_range(new_addr, new_size)
+            {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "remap: the new range is not aligned or not in userspace"
+                );
+            }
+            // The new range must not overlap any part of the old range.
+            if is_intersected(
+                &(old_addr..old_addr.saturating_add(old_size)),
+                &(new_addr..new_addr + new_size),
+            ) {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "remap: the new range overlaps with the old one"
+                );
+            }
+        }
+
         let mut inner = self.inner.write();
         let mut rss_delta = RssDelta::new(self);
 
@@ -136,20 +159,6 @@ impl Vmar {
 
         // Allocate a new free region that does not overlap with the old range.
         let new_range = if let Some(new_addr) = new_addr {
-            if !new_addr.is_multiple_of(PAGE_SIZE) || !is_userspace_vaddr_range(new_addr, new_size)
-            {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "remap: the new range is not aligned or not in userspace"
-                );
-            }
-            if is_intersected(&old_range, &(new_addr..new_addr + new_size)) {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "remap: the new range overlaps with the old one"
-                );
-            }
-
             inner.alloc_free_region_exact_truncate(self, new_addr, new_size, &mut rss_delta)
         } else {
             // Fast path: expand the old mapping in place to the new size.

@@ -61,7 +61,7 @@ pub(super) enum UuidMode {
     Auto,
 }
 
-/// The `xino` option: whether the overlay publishes its own device id with a layer-encoded ino.
+/// The `xino` option: whether the overlay publishes its own device ID with a layer-encoded ino.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in overlayfs) enum XinoMode {
     /// Never encode; a non-directory publishes the underlying dev/ino.

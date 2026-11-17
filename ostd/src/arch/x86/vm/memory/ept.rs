@@ -2,59 +2,11 @@
 
 //! Four-level Intel extended page tables with tracked 4-KiB backing frames.
 
-use core::ops::Range;
-
 use crate::mm::{
-    AnyUFrameMeta, HasPaddr, Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce, UFrame,
-    frame::{Frame, FrameRef},
+    Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce,
     page_prop::{CachePolicy, PageFlags, PageTableFlags, PrivilegedPageFlags as PrivFlags},
-    page_table::{PageTableConfig, PteScalar, PteTrait},
+    page_table::{PteScalar, PteTrait},
 };
-
-/// A page table mapping guest physical addresses to host physical frames.
-#[derive(Clone, Debug)]
-pub(crate) struct EptPtConfig {}
-
-// SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
-// `item_ref_from_raw` are correctly implemented with respect to the `Item` and
-// `ItemRef` types.
-unsafe impl PageTableConfig for EptPtConfig {
-    const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..512;
-
-    type E = PageTableEntry;
-    type C = PagingConsts;
-
-    /// All mappings are tracked untyped frames.
-    type Item = EptItem;
-    type ItemRef<'a> = EptItemRef<'a>;
-
-    fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty) {
-        let (frame, prop) = item;
-        (frame.paddr(), frame.map_level(), *prop)
-    }
-
-    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item {
-        debug_assert_eq!(level, 1);
-        // SAFETY: The caller ensures safety.
-        let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
-        (frame, prop)
-    }
-
-    unsafe fn item_ref_from_raw<'a>(
-        paddr: Paddr,
-        level: PagingLevel,
-        prop: PageProperty,
-    ) -> Self::ItemRef<'a> {
-        debug_assert_eq!(level, 1);
-        // SAFETY: The caller ensures that the frame outlives `'a` and that
-        // the type matches the frame.
-        let frame = unsafe { FrameRef::<dyn AnyUFrameMeta>::borrow_paddr(paddr) };
-        (frame, prop)
-    }
-}
-
-pub(crate) type EptItem = (UFrame, PageProperty);
-pub(crate) type EptItemRef<'a> = (FrameRef<'a, dyn AnyUFrameMeta>, PageProperty);
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PagingConsts {}
@@ -69,28 +21,27 @@ impl PagingConstsTrait for PagingConsts {
 }
 
 bitflags::bitflags! {
-    #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug)]
     struct PteFlags: usize {
-        const READABLE =        1 << 0;
-        const WRITABLE =        1 << 1;
-        const EXECUTABLE =      1 << 2;
+        const READABLE   = 1 << 0;
+        const WRITABLE   = 1 << 1;
+        const EXECUTABLE = 1 << 2;
 
         // Ignore the guest PAT and use the EPT memory type if CR0.CD is clear.
-        const IGNORE_PAT =      1 << 6;
+        const IGNORE_PAT = 1 << 6;
 
-        const ACCESSED =        1 << 8;
-        const DIRTY =           1 << 9;
+        const ACCESSED   = 1 << 8;
+        const DIRTY      = 1 << 9;
 
         // Bits 11 and 56:52 are ignored by EPT hardware (Intel SDM, Vol. 3C,
         // Section 29.3.2). Preserve OSTD metadata without granting access.
-        const PRESENT =         1 << 11;
-        const AVAIL2 =          1 << 52;
-        const USER =            1 << 53;
-        const GLOBAL =          1 << 54;
-        const AVAIL1 =          1 << 55;
+        const PRESENT    = 1 << 11;
+        const AVAIL2     = 1 << 52;
+        const USER       = 1 << 53;
+        const GLOBAL     = 1 << 54;
+        const AVAIL1     = 1 << 55;
         #[cfg(feature = "cvm_guest")]
-        const SHARED =          1 << 56;
+        const SHARED     = 1 << 56;
     }
 }
 

@@ -4,15 +4,17 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - .github/workflows/push_cachix_pkgs.yml
+      - .github/workflows/push_cachix_dev.yml
       - distro/**
+      - flake.lock
       - test/nixos/common/merge_nixos_config.sh
   push:
     branches:
       - main
     paths:
-      - .github/workflows/push_cachix_pkgs.yml
+      - .github/workflows/push_cachix_dev.yml
       - distro/**
+      - flake.lock
       - test/nixos/common/merge_nixos_config.sh
 
 jobs:

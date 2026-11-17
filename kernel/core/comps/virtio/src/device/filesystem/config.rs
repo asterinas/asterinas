@@ -11,6 +11,7 @@ use crate::transport::{ConfigManager, VirtioTransport};
 
 bitflags::bitflags! {
     /// The virtio-fs feature bits supported by the driver.
+    #[derive(Clone, Copy, Debug)]
     pub(super) struct FileSystemFeatures: u64 {
         const NOTIFICATION = 1 << 0;
     }

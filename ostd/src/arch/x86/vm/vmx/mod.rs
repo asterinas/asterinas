@@ -4,8 +4,8 @@
 
 pub(super) mod context_switch;
 mod instructions;
-pub(crate) mod invept;
-pub(crate) mod vmcs;
+pub(super) mod invept;
+pub(super) mod vmcs;
 
 use x86::msr::{
     IA32_FEATURE_CONTROL, IA32_VMX_BASIC, IA32_VMX_CR0_FIXED0, IA32_VMX_CR0_FIXED1,
@@ -87,7 +87,7 @@ static VMX_GUARD_STATE: Mutex<VmxGuardState> = Mutex::new(VmxGuardState::new());
 
 /// A guard that keeps VMX operation enabled.
 #[must_use]
-pub(crate) struct VmxGuard {
+pub(super) struct VmxGuard {
     _private: (),
 }
 
@@ -98,7 +98,7 @@ impl VmxGuard {
     ///
     /// Panics if this method or [`Drop::drop`] is called in
     /// [atomic mode](crate::task::atomic_mode).
-    pub(crate) fn acquire_vmx() -> Result<VmxGuard> {
+    pub(super) fn acquire_vmx() -> Result<VmxGuard> {
         atomic_mode::might_sleep();
 
         let mut state = VMX_GUARD_STATE.lock();

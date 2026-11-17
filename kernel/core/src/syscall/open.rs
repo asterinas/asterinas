@@ -7,7 +7,7 @@ use crate::{
         file::{
             AccessMode, CreationFlags, FileLike, InodeHandle, InodeMode, InodeType, OpenArgs,
             StatusFlags,
-            file_table::{FdFlags, RawFileDesc},
+            file_table::{FdFlags, FileTableInsert, RawFileDesc},
         },
         vfs::{
             inode::HardLinkability,
@@ -53,14 +53,15 @@ pub(super) fn sys_openat(
 
     let fd = {
         let file_table = ctx.thread_local.borrow_file_table();
-        let mut file_table_locked = file_table.unwrap().write();
         let fd_flags =
             if CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC) {
                 FdFlags::CLOEXEC
             } else {
                 FdFlags::empty()
             };
-        file_table_locked.insert(file_handle.clone(), fd_flags)
+        file_table
+            .unwrap()
+            .lock_and_insert(file_handle.clone(), fd_flags)?
     };
     fs::vfs::notify::on_open(file_handle.common());
     Ok(SyscallReturn::Return(fd.into()))

@@ -130,7 +130,9 @@ impl MessageQueue {
 pub(super) struct MessageReceiver {
     // `addr` should be dropped as soon as the socket file is closed,
     // so it must not belong to `MessageQueue`.
-    addr: SpinLock<Option<UnixSocketAddrBound>>,
+    //
+    // This is protected by a mutex because `bind()` requires file I/O.
+    addr: Mutex<Option<UnixSocketAddrBound>>,
     queue: Arc<MessageQueue>,
 }
 
@@ -151,7 +153,7 @@ impl MessageReceiver {
         };
 
         Self {
-            addr: SpinLock::new(None),
+            addr: Mutex::new(None),
             queue: Arc::new(queue),
         }
     }

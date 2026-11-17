@@ -104,8 +104,9 @@ fn to_optional_id<T>(id: i32, f: impl Fn(u32) -> T) -> Result<Option<T>> {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct ChownFlags: u32 {
         const AT_SYMLINK_NOFOLLOW = 1 << 8;
-        const AT_EMPTY_PATH = 1 << 12;
+        const AT_EMPTY_PATH       = 1 << 12;
     }
 }

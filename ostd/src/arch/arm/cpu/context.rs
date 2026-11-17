@@ -240,18 +240,18 @@ impl UserContextApiInternal for UserContext {
         loop {
             crate::task::scheduler::might_preempt();
 
-            let guard = crate::irq::disable_local();
-            hooks.pre_user_run(&guard);
-            self.user_context.run(guard);
+            let irq_guard = crate::irq::disable_local();
+            hooks.pre_user_run(&irq_guard);
+            self.user_context.run(&irq_guard);
 
             let trap = CpuTrap::new(self.user_context.trap_num);
             match trap {
                 Some(CpuTrap::Exception(CpuException::SvcInstruction)) => {
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                     break ReturnReason::UserSyscall;
                 }
                 Some(CpuTrap::Exception(exception)) => {
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                     self.exception = Some(exception);
                     break ReturnReason::UserException;
                 }
@@ -264,7 +264,7 @@ impl UserContextApiInternal for UserContext {
                             PrivilegeLevel::User,
                         );
                     }
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                 }
                 _ => panic!(
                     "Cannot handle user CPU exception: {:?}; trapframe: {:#?}",

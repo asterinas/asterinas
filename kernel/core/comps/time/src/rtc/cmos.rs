@@ -91,7 +91,29 @@ impl Driver for RtcCmos {
     }
 
     fn read_rtc(&self) -> SystemTime {
-        CmosData::read_rtc(self).into()
+        let cmos_data = CmosData::read_rtc(self);
+
+        let Some(date_time) = chrono::NaiveDate::from_ymd_opt(
+            i32::from(cmos_data.year),
+            u32::from(cmos_data.month),
+            u32::from(cmos_data.day),
+        )
+        .and_then(|date| {
+            date.and_hms_opt(
+                u32::from(cmos_data.hour),
+                u32::from(cmos_data.minute),
+                u32::from(cmos_data.second),
+            )
+        }) else {
+            warn!("CMOS RTC reports an invalid date time, falling back to the Unix epoch");
+            return SystemTime::UNIX_EPOCH;
+        };
+
+        let duration = date_time
+            .signed_duration_since(chrono::DateTime::UNIX_EPOCH.naive_utc())
+            .to_std()
+            .unwrap_or_default();
+        SystemTime::new(duration)
     }
 }
 
@@ -117,6 +139,7 @@ enum Register {
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct StatusA: u8 {
         /// The update in progress (UIP) bit.
         const UIP = 1 << 7;
@@ -124,6 +147,7 @@ bitflags::bitflags! {
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct StatusB: u8 {
         /// The data mode (DM) bit.
         ///
@@ -137,6 +161,7 @@ bitflags::bitflags! {
 }
 
 bitflags::bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct StatusD: u8 {
         /// The valid RAM and time (VRT) bit.
         ///
@@ -273,19 +298,5 @@ impl CmosData {
             .map(NonZeroU8::get)
             .unwrap_or(DEFAULT_21_CENTURY) as u16)
             * 100;
-    }
-}
-
-impl From<CmosData> for SystemTime {
-    fn from(cmos: CmosData) -> SystemTime {
-        SystemTime {
-            year: cmos.year,
-            month: cmos.month,
-            day: cmos.day,
-            hour: cmos.hour,
-            minute: cmos.minute,
-            second: cmos.second,
-            nanos: 0,
-        }
     }
 }

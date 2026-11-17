@@ -1,7 +1,7 @@
 // Create a new mount
 mount(
     source, target, filesystemtype,
-    mountflags = 0,
+    mountflags = MS_NODEV | MS_NOEXEC | MS_NOSYMFOLLOW,
     data
 );
 

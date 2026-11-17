@@ -328,10 +328,10 @@ impl Inode for OverlayInode {
         let _dir_guard = self.lock();
         // The directory bit comes from the real object alone; the payload says nothing about it.
         if !self.type_().is_directory() {
-            return Err(Error::with_message(
+            return_errno_with_message!(
                 Errno::ENOTDIR,
-                "lookup is supported on overlay directories only",
-            ));
+                "lookup is supported on overlay directories only"
+            );
         }
         let fs = self.fs.upgrade().ok_or_else(|| {
             Error::with_message(Errno::EIO, "the overlay mount is no longer alive")

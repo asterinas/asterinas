@@ -74,6 +74,17 @@ impl EpollFile {
         let file = get_file_fast!(&mut file_table, fd).into_owned();
         drop(file_table);
 
+        // A deadlock can occur if an epoll file becomes ready, wakes up other epoll files, and then
+        // loops back to itself. So we must reject all such loops in advance.
+        //
+        // FIXME: A complete loop detection mechanism needs to be implemented here.
+        if core::ptr::addr_eq(self, file.as_ref()) {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "the epoll file and the target cannot be the same"
+            );
+        }
+
         match *cmd {
             EpollCtl::Add(fd, ep_event, ep_flags) => {
                 self.add_interest(fd, file, ep_event, ep_flags)
@@ -200,10 +211,7 @@ impl EpollFile {
             self.pop_multi_ready(max_events, &mut ep_events);
 
             if ep_events.is_empty() {
-                return Err(Error::with_message(
-                    Errno::EAGAIN,
-                    "there are no available events",
-                ));
+                return_errno_with_message!(Errno::EAGAIN, "there are no available events");
             }
 
             Ok(())

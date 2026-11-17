@@ -232,16 +232,9 @@ FN_TEST(path)
 	TEST_ERRNO(syscall(SYS_pwritev, fd, &single_byte_iov, 1, 0, 0), EBADF);
 
 	TEST_ERRNO(mmap(NULL, PAGE_SIZE, PROT_READ, MAP_SHARED, fd, 0), EBADF);
-	// FIXME: Asterinas reports `EACCES` because it performs the permission check first.
-#ifdef __asterinas__
-	TEST_ERRNO(mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
-			0),
-		   EACCES);
-#else
 	TEST_ERRNO(mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
 			0),
 		   EBADF);
-#endif
 
 	TEST_ERRNO(flock(fd, LOCK_SH), EBADF);
 	TEST_ERRNO(flock(fd, LOCK_UN), EBADF);
@@ -290,16 +283,9 @@ FN_TEST(path)
 	TEST_ERRNO(syscall(SYS_pwritev, fd, &single_byte_iov, 1, 0, 0), EBADF);
 
 	TEST_ERRNO(mmap(NULL, PAGE_SIZE, PROT_READ, MAP_SHARED, fd, 0), EBADF);
-	// FIXME: Asterinas reports `EACCES` because it performs the permission check first.
-#ifdef __asterinas__
-	TEST_ERRNO(mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
-			0),
-		   EACCES);
-#else
 	TEST_ERRNO(mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
 			0),
 		   EBADF);
-#endif
 
 	TEST_ERRNO(flock(fd, LOCK_SH), EBADF);
 	TEST_ERRNO(flock(fd, LOCK_UN), EBADF);

@@ -8,6 +8,8 @@
 //! 2. Error Segment: Indicates that an error occurred while the kernel processed the user space request.
 //!
 
+#![short_vis_path::add(netlink)]
+
 use super::{
     CSegmentType, SegmentBody,
     common::SegmentCommon,
@@ -15,7 +17,7 @@ use super::{
 };
 use crate::{net::socket::netlink::message::NoAttr, prelude::*};
 
-pub(crate) type DoneSegment = SegmentCommon<DoneSegmentBody, NoAttr>;
+pub(in netlink) type DoneSegment = SegmentCommon<DoneSegmentBody, NoAttr>;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
@@ -23,12 +25,10 @@ pub(crate) struct DoneSegmentBody {
     error_code: i32,
 }
 
-impl SegmentBody for DoneSegmentBody {
-    type CType = DoneSegmentBody;
-}
+impl SegmentBody for DoneSegmentBody {}
 
 impl DoneSegment {
-    pub(crate) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
+    pub(in netlink) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
         let header = CMsgSegHdr {
             len: 0,
             type_: CSegmentType::DONE as _,
@@ -46,7 +46,7 @@ impl DoneSegment {
     }
 }
 
-pub(crate) type ErrorSegment = SegmentCommon<ErrorSegmentBody, NoAttr>;
+pub(in netlink) type ErrorSegment = SegmentCommon<ErrorSegmentBody, NoAttr>;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
@@ -55,12 +55,10 @@ pub(crate) struct ErrorSegmentBody {
     request_header: CMsgSegHdr,
 }
 
-impl SegmentBody for ErrorSegmentBody {
-    type CType = ErrorSegmentBody;
-}
+impl SegmentBody for ErrorSegmentBody {}
 
 impl ErrorSegment {
-    pub(crate) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
+    pub(in netlink) fn new_from_request(request_header: &CMsgSegHdr, error: Option<Error>) -> Self {
         let header = CMsgSegHdr {
             len: 0,
             type_: CSegmentType::ERROR as _,

@@ -278,10 +278,7 @@ impl VirtioFsInode {
                 Some(request_offset) => request_offset,
                 None if total_written > 0 => return Ok(total_written),
                 None => {
-                    return Err(Error::with_message(
-                        Errno::EOVERFLOW,
-                        "virtiofs write offset overflow",
-                    ));
+                    return_errno_with_message!(Errno::EOVERFLOW, "virtiofs write offset overflow");
                 }
             };
             let ret = fs

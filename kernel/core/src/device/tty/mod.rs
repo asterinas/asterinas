@@ -234,16 +234,14 @@ impl<D: TtyDriver> Tty<D> {
 
         dispatch_ioctl!(match raw_ioctl {
             cmd @ GetTermios => {
-                let ldisc = self.ldisc.lock();
-                let termios = ldisc.termios();
+                let termios = *self.ldisc.lock().termios();
 
-                cmd.write(termios)?;
+                cmd.write(&termios)?;
             }
             cmd @ GetTermios2 => {
-                let ldisc = self.ldisc.lock();
-                let termios = ldisc.termios();
+                let termios = *self.ldisc.lock().termios();
 
-                cmd.write(termios)?;
+                cmd.write(&termios)?;
             }
             cmd @ SetTermios => {
                 let termios = cmd.read()?;

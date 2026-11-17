@@ -9,6 +9,8 @@ use crate::{
             ProcDir, StaticEntry,
             sys::kernel::{
                 cap_last_cap::CapLastCapFileOps,
+                overflow_gid::OverflowGidFileOps,
+                overflow_uid::OverflowUidFileOps,
                 pid_max::PidMaxFileOps,
                 tainted::TaintedFileOps,
                 uts::{DomainnameFileOps, HostnameFileOps, OsReleaseFileOps, VersionFileOps},
@@ -26,6 +28,8 @@ use crate::{
 };
 
 mod cap_last_cap;
+mod overflow_gid;
+mod overflow_uid;
 mod pid_max;
 mod tainted;
 mod uts;
@@ -51,6 +55,16 @@ impl KernelDirOps {
         ("domainname", InodeType::File, DomainnameFileOps::new_inode),
         ("hostname", InodeType::File, HostnameFileOps::new_inode),
         ("osrelease", InodeType::File, OsReleaseFileOps::new_inode),
+        (
+            "overflowgid",
+            InodeType::File,
+            OverflowGidFileOps::new_inode,
+        ),
+        (
+            "overflowuid",
+            InodeType::File,
+            OverflowUidFileOps::new_inode,
+        ),
         ("pid_max", InodeType::File, PidMaxFileOps::new_inode),
         ("tainted", InodeType::File, TaintedFileOps::new_inode),
         ("version", InodeType::File, VersionFileOps::new_inode),

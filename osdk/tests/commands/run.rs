@@ -107,11 +107,17 @@ mod coverage_feature {
         let mut instance = cargo_osdk(["run", "--coverage"]);
         instance.current_dir(workspace.os_dir());
 
-        let _output = instance
+        let output = instance
             .output()
             .expect("Failed to wait for QEMU coverage instance");
         let coverage_file = Path::new(&workspace.os_dir()).join("coverage.profraw");
-        assert!(coverage_file.exists(), "Coverage file not found");
+        assert!(
+            coverage_file.exists(),
+            "Coverage file not found; `cargo osdk run --coverage` exited with {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 

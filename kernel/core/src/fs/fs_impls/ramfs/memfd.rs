@@ -335,33 +335,35 @@ impl MemfdTmpFs {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct MemfdFlags: u32 {
         /// Close on exec.
-        const MFD_CLOEXEC = 1 << 0;
+        const MFD_CLOEXEC       = 1 << 0;
         /// Allow sealing operations on this file.
         const MFD_ALLOW_SEALING = 1 << 1;
         /// Create in the hugetlbfs.
-        const MFD_HUGETLB = 1 << 2;
+        const MFD_HUGETLB       = 1 << 2;
         /// Not executable and sealed to prevent changing to executable.
-        const MFD_NOEXEC_SEAL = 1 << 3;
+        const MFD_NOEXEC_SEAL   = 1 << 3;
         /// Executable.
-        const MFD_EXEC = 1 << 4;
+        const MFD_EXEC          = 1 << 4;
     }
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct FileSeals: u32 {
         /// Prevent further seals from being set.
-        const F_SEAL_SEAL = 0x0001;
+        const F_SEAL_SEAL         = 0x0001;
         /// Prevent file from shrinking.
-        const F_SEAL_SHRINK = 0x0002;
+        const F_SEAL_SHRINK       = 0x0002;
         /// Prevent file from growing.
-        const F_SEAL_GROW = 0x0004;
+        const F_SEAL_GROW         = 0x0004;
         /// Prevent writes.
-        const F_SEAL_WRITE = 0x0008;
+        const F_SEAL_WRITE        = 0x0008;
         /// Prevent future writes while mapped.
         const F_SEAL_FUTURE_WRITE = 0x0010;
         /// Prevent chmod modifying exec bits.
-        const F_SEAL_EXEC = 0x0020;
+        const F_SEAL_EXEC         = 0x0020;
     }
 }

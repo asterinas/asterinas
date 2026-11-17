@@ -4,7 +4,7 @@ use alloc::str;
 
 use ostd::task::Task;
 
-use super::{Mount, MountTopology, Path};
+use super::{Mount, MountTopology, Path, PerMountFlags};
 use crate::{
     fs::{
         file::{
@@ -596,8 +596,11 @@ impl PathResolver {
                 visible.push(mount.clone());
             }
 
-            let children = mount.children.read();
-            for child_mount in children.values() {
+            // Checking the mountpoint ancestry may drop the last reference to an ancestor
+            // dentry that has been renamed away and removed, and the reclaim operation may
+            // sleep, so do not check it under the `children` lock.
+            let children: Vec<Arc<Mount>> = mount.children.read().values().cloned().collect();
+            for child_mount in children {
                 if is_root_mount && !is_root_mount_root {
                     let Some(mountpoint) = child_mount.mountpoint() else {
                         continue;
@@ -606,7 +609,7 @@ impl PathResolver {
                         continue;
                     }
                 }
-                stack.push(child_mount.clone());
+                stack.push(child_mount);
             }
         }
 
@@ -773,6 +776,16 @@ impl PathResolver {
                     // resolved even when `follow_tail_link` is false.
                     || target_is_dir)
             {
+                if next_path
+                    .mount_node()
+                    .flags()
+                    .contains(PerMountFlags::NOSYMFOLLOW)
+                {
+                    return_errno_with_message!(
+                        Errno::ELOOP,
+                        "the symlink is on a file system mounted with `nosymfollow`"
+                    );
+                }
                 if follows >= SYMLINKS_MAX {
                     return_errno_with_message!(Errno::ELOOP, "there are too many symlinks");
                 }

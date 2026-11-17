@@ -13,8 +13,14 @@ KERNEL_VMA_OFFSET      = 0xffffffff00000000
 
 .section ".ap_boot", "awx", @progbits
 
+# The virtual address of `ap_boot_start` to be used by the Rust code.
+.global __ap_boot_start
+.set __ap_boot_start, (ap_boot_start + KERNEL_VMA_OFFSET)
+
+.option push
+.option norelax
+
 .balign 4096
-.global ap_boot_start
 ap_boot_start:
     # At this point:
     #  - a0 contains the hart ID;
@@ -56,11 +62,9 @@ ap_unreachable_pa:
 ap_flush_tlb:
     sfence.vma                          # Flush TLB.
 
-    # Now we need to switch to virtual addressing.
-    # Calculate virtual address using the same method as boot.S.
-    li      t1, KERNEL_VMA_OFFSET
-    lla     sp, ap_boot_virtual - KERNEL_VMA_OFFSET
-    or      sp, sp, t1
+    # Switch to the fixed virtual address.
+    lui     sp, %hi(ap_boot_virtual)
+    addi    sp, sp, %lo(ap_boot_virtual)
     jr      sp
 
 # From here, we're in the canonical virtual address space instead of linear
@@ -106,6 +110,8 @@ ap_cmpxchg_load:
     # Load stack top and CPU local storage's base address.
     ld      sp, 0(t3)                   # Load stack_top.
     ld      gp, 8(t3)                   # Load cpu_local pointer.
+
+.option pop
 
     # Clear frame pointer for clean stack traces.
     li      fp, 0

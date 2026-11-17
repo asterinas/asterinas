@@ -6,14 +6,11 @@ use core::{mem::ManuallyDrop, ops::Range};
 
 use super::Gpaddr;
 use crate::{
-    arch::vm::{
-        ept::{EptItem, EptPtConfig},
-        vmx::{VmxGuard, invept},
-    },
+    arch::vm::memory::{ArchGuestPhysMemSpace, PageTableEntry, PagingConsts},
     mm::{
-        AnyUFrameMeta, Frame, PageFlags, PageProperty, UFrame,
+        AnyUFrameMeta, Frame, PageFlags, PageProperty, PagingLevel, UFrame,
         frame::FrameRef,
-        page_table::{self, PageTable, PageTableFrag},
+        page_table::{self, PageTable, PageTableConfig, PageTableFrag},
     },
     prelude::*,
     smp::PendingIpis,
@@ -30,8 +27,8 @@ use crate::{
 ///
 /// This address space must be dropped outside [atomic mode](crate::task::atomic_mode).
 pub struct GuestPhysMemSpace {
-    pt: PageTable<EptPtConfig>,
-    vmx_guard: VmxGuard,
+    pt: PageTable<GuestPtConfig>,
+    arch: ArchGuestPhysMemSpace,
 }
 
 impl GuestPhysMemSpace {
@@ -46,13 +43,13 @@ impl GuestPhysMemSpace {
     ///
     /// Panics if called in [atomic mode](crate::task::atomic_mode).
     pub fn new() -> Result<Self> {
-        let vmx_guard = VmxGuard::acquire_vmx()?;
-        let pt = PageTable::<EptPtConfig>::empty();
+        let arch = ArchGuestPhysMemSpace::new()?;
+        let pt = PageTable::<GuestPtConfig>::empty();
 
-        // A reused EPT root-table address may still have cached translations.
-        invept::invalidate(&vmx_guard, &[]).wait();
+        // A reused root-table address may still have cached translations.
+        arch.invalidate(&[]).wait();
 
-        Ok(Self { pt, vmx_guard })
+        Ok(Self { pt, arch })
     }
 
     /// Gets an immutable cursor over a guest physical address range.
@@ -87,19 +84,18 @@ impl GuestPhysMemSpace {
     ) -> Result<CursorMut<'a>> {
         Ok(CursorMut {
             pt_cursor: self.pt.cursor_mut(guard, gpa)?,
-            vmx_guard: &self.vmx_guard,
+            arch: &self.arch,
             pending_ipis: PendingIpis::new_empty(),
         })
     }
 
-    /// Returns the EPT pointer value for this guest memory space.
+    /// Returns the page table's root physical address for this
+    /// guest memory space.
     ///
-    /// The caller must keep this address space borrowed while its EPTP is in use.
-    pub(crate) fn eptp(&self) -> u64 {
-        const EPT_MEM_TYPE_WB: u64 = 6;
-        const EPT_PAGE_WALK_LENGTH_4_LEVELS: u64 = 3 << 3;
-
-        self.pt.root_paddr() as u64 | EPT_MEM_TYPE_WB | EPT_PAGE_WALK_LENGTH_4_LEVELS
+    /// The caller must keep this address space borrowed while
+    /// its page table is in use.
+    pub(crate) fn root_paddr(&self) -> u64 {
+        self.pt.root_paddr() as u64
     }
 }
 
@@ -111,7 +107,7 @@ pub type QueriedItem<'a> = (FrameRef<'a, dyn AnyUFrameMeta>, PageProperty);
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree. Two read-only cursors can not be
 /// created from the same guest physical address range either.
-pub struct Cursor<'a>(page_table::Cursor<'a, EptPtConfig>);
+pub struct Cursor<'a>(page_table::Cursor<'a, GuestPtConfig>);
 
 impl Cursor<'_> {
     /// Queries the mapping at the current guest physical address.
@@ -164,8 +160,8 @@ impl Cursor<'_> {
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree.
 pub struct CursorMut<'a> {
-    pt_cursor: page_table::CursorMut<'a, EptPtConfig>,
-    vmx_guard: &'a VmxGuard,
+    pt_cursor: page_table::CursorMut<'a, GuestPtConfig>,
+    arch: &'a ArchGuestPhysMemSpace,
     pending_ipis: PendingIpis,
 }
 
@@ -215,7 +211,7 @@ impl<'a> CursorMut<'a> {
     ///  - the current guest physical address is already mapped;
     ///  - the current guest physical address is outside the cursor's range.
     pub fn map(&mut self, frame: UFrame, prop: PageProperty) {
-        let item: EptItem = (frame, prop);
+        let item: GuestPtItem = (frame, prop);
 
         // SAFETY: It is safe to map untyped memory into guest physical memory.
         unsafe { self.pt_cursor.map(item) };
@@ -253,8 +249,7 @@ impl<'a> CursorMut<'a> {
             self.pt_cursor
                 .protect_next(len, &mut |prop| op(&mut prop.flags))
         }?;
-        self.pending_ipis
-            .extend(&invept::invalidate(self.vmx_guard, &[]));
+        self.pending_ipis.extend(&self.arch.invalidate(&[]));
         Some(range)
     }
 
@@ -311,8 +306,7 @@ impl<'a> CursorMut<'a> {
         }
 
         if !frames.is_empty() {
-            self.pending_ipis
-                .extend(&invept::invalidate(self.vmx_guard, &frames));
+            self.pending_ipis.extend(&self.arch.invalidate(&frames));
         }
         drop(ManuallyDrop::into_inner(frames));
         num_unmapped
@@ -332,6 +326,51 @@ impl<'a> CursorMut<'a> {
         self.pending_ipis = PendingIpis::new_empty();
     }
 }
+
+/// A page table mapping guest physical addresses to host physical frames.
+#[derive(Clone, Debug)]
+pub(crate) struct GuestPtConfig {}
+
+// SAFETY: `item_raw_info`, `item_into_raw`, `item_from_raw`, and
+// `item_ref_from_raw` are correctly implemented with respect to the `Item` and
+// `ItemRef` types.
+unsafe impl PageTableConfig for GuestPtConfig {
+    const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..512;
+
+    type E = PageTableEntry;
+    type C = PagingConsts;
+
+    /// All mappings are tracked untyped frames.
+    type Item = GuestPtItem;
+    type ItemRef<'a> = GuestPtItemRef<'a>;
+
+    fn item_raw_info(item: &Self::Item) -> (Paddr, PagingLevel, PageProperty) {
+        let (frame, prop) = item;
+        (frame.paddr(), frame.map_level(), *prop)
+    }
+
+    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item {
+        debug_assert_eq!(level, 1);
+        // SAFETY: The caller ensures safety.
+        let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
+        (frame, prop)
+    }
+
+    unsafe fn item_ref_from_raw<'a>(
+        paddr: Paddr,
+        level: PagingLevel,
+        prop: PageProperty,
+    ) -> Self::ItemRef<'a> {
+        debug_assert_eq!(level, 1);
+        // SAFETY: The caller ensures that the frame outlives `'a` and that
+        // the type matches the frame.
+        let frame = unsafe { FrameRef::<dyn AnyUFrameMeta>::borrow_paddr(paddr) };
+        (frame, prop)
+    }
+}
+
+pub(crate) type GuestPtItem = (UFrame, PageProperty);
+pub(crate) type GuestPtItemRef<'a> = (FrameRef<'a, dyn AnyUFrameMeta>, PageProperty);
 
 #[cfg(ktest)]
 mod test {

@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - distro/**
+      - flake.lock
       - .github/workflows/test_iso_image.yml
       - tools/nixos/**
   push:
@@ -12,6 +13,7 @@ on:
       - main
     paths:
       - distro/**
+      - flake.lock
       - .github/workflows/test_iso_image.yml
       - tools/nixos/**
 

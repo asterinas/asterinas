@@ -367,9 +367,9 @@ impl UserContextApiInternal for UserContext {
         loop {
             crate::task::scheduler::might_preempt();
 
-            let guard = crate::irq::disable_local();
-            hooks.pre_user_run(&guard);
-            self.user_context.run(guard);
+            let irq_guard = crate::irq::disable_local();
+            hooks.pre_user_run(&irq_guard);
+            self.user_context.run(&irq_guard);
 
             let exception =
                 CpuException::new(self.user_context.trap_num, self.user_context.error_code);
@@ -379,11 +379,11 @@ impl UserContextApiInternal for UserContext {
                     let ve_handler = VirtualizationExceptionHandler::new();
                     // Check out the doc of `VirtualizationExceptionHandler::new` to
                     // see why IRQs must enabled _after_ instantiating a `VirtualizationExceptionHandler`.
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                     ve_handler.handle(self);
                 }
                 Some(exception) if exception.type_().is_fault_or_trap() => {
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                     self.exception = Some(exception);
                     return ReturnReason::UserException;
                 }
@@ -395,7 +395,7 @@ impl UserContextApiInternal for UserContext {
                     );
                 }
                 None if self.user_context.trap_num == SYSCALL_TRAPNUM => {
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                     return ReturnReason::UserSyscall;
                 }
                 None => {
@@ -404,7 +404,7 @@ impl UserContextApiInternal for UserContext {
                         &HwIrqLine::new(self.as_trap_frame().trap_num as u8),
                         PrivilegeLevel::User,
                     );
-                    crate::arch::irq::enable_local();
+                    drop(irq_guard);
                 }
             }
 
@@ -492,28 +492,29 @@ pub struct RawPageFaultInfo {
 
 bitflags! {
     /// Page Fault error code. Following the Intel Architectures Software Developer's Manual Volume 3
-    pub struct PageFaultErrorCode : usize{
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct PageFaultErrorCode: usize {
         /// 0 if no translation for the linear address.
-        const PRESENT       = 1 << 0;
+        const PRESENT      = 1 << 0;
         /// 1 if the access was a write.
-        const WRITE         = 1 << 1;
+        const WRITE        = 1 << 1;
         /// 1 if the access was a user-mode access.
-        const USER          = 1 << 2;
+        const USER         = 1 << 2;
         /// 1 if there is no translation for the linear address
         /// because a reserved bit was set.
-        const RESERVED      = 1 << 3;
+        const RESERVED     = 1 << 3;
         /// 1 if the access was an instruction fetch.
-        const INSTRUCTION   = 1 << 4;
+        const INSTRUCTION  = 1 << 4;
         /// 1 if the access was a data access to a linear address with a protection key for which
         /// the protection-key rights registers disallow access.
-        const PROTECTION    = 1 << 5;
+        const PROTECTION   = 1 << 5;
         /// 1 if the access was a shadow-stack access.
-        const SHADOW_STACK  = 1 << 6;
+        const SHADOW_STACK = 1 << 6;
         /// 1 if there is no translation for the linear address using HLAT paging.
-        const HLAT          = 1 << 7;
+        const HLAT         = 1 << 7;
         /// 1 if the exception is unrelated to paging and resulted from violation of SGX-specific
         /// access-control requirements.
-        const SGX           = 1 << 15;
+        const SGX          = 1 << 15;
     }
 }
 

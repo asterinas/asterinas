@@ -407,23 +407,23 @@ fn parse_memory_type(mem_type: boot::MemoryType) -> linux_boot_params::E820Type 
         | MemoryType::LOADER_DATA
         | MemoryType::BOOT_SERVICES_CODE
         | MemoryType::BOOT_SERVICES_DATA
-        | MemoryType::CONVENTIONAL => E820Type::Ram,
+        | MemoryType::CONVENTIONAL => E820Type::RAM,
 
         // Some memory types have special meanings.
-        MemoryType::PERSISTENT_MEMORY => E820Type::Pmem,
-        MemoryType::ACPI_RECLAIM => E820Type::Acpi,
-        MemoryType::ACPI_NON_VOLATILE => E820Type::Nvs,
-        MemoryType::UNUSABLE => E820Type::Unusable,
+        MemoryType::PERSISTENT_MEMORY => E820Type::PMEM,
+        MemoryType::ACPI_RECLAIM => E820Type::ACPI,
+        MemoryType::ACPI_NON_VOLATILE => E820Type::NVS,
+        MemoryType::UNUSABLE => E820Type::UNUSABLE,
         MemoryType::UNACCEPTED => {
             #[cfg(feature = "cvm_guest")]
             if tdx_guest::is_tdx_guest_early() {
-                return E820Type::Ram;
+                return E820Type::RAM;
             }
 
             crate::println!(
                 "[EFI stub] Warning: UNACCEPTED memory is unsupported outside a confidential VM!"
             );
-            E820Type::Reserved
+            E820Type::RESERVED
         }
 
         // Other memory types are treated as reserved.
@@ -431,7 +431,7 @@ fn parse_memory_type(mem_type: boot::MemoryType) -> linux_boot_params::E820Type 
         | MemoryType::RUNTIME_SERVICES_CODE
         | MemoryType::RUNTIME_SERVICES_DATA
         | MemoryType::MMIO
-        | MemoryType::MMIO_PORT_SPACE => E820Type::Reserved,
-        _ => E820Type::Reserved,
+        | MemoryType::MMIO_PORT_SPACE => E820Type::RESERVED,
+        _ => E820Type::RESERVED,
     }
 }

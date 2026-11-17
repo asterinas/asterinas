@@ -47,15 +47,21 @@ impl ReadReq {
     }
 }
 
+/// Flags for `FUSE_READ` and `FUSE_READDIR` requests.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fuse.h#L536-L539>
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Pod)]
+pub struct ReadFlags(u32);
+
 bitflags! {
-    /// Flags for `FUSE_READ` and `FUSE_READDIR` requests.
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.18/source/include/uapi/linux/fuse.h#L536-L539>
-    #[repr(C)]
-    #[derive(Pod)]
-    pub struct ReadFlags: u32 {
+    impl ReadFlags: u32 {
         /// `lock_owner` is valid and should be used for lock-aware reads.
         const READ_LOCKOWNER = 1 << 1;
+
+        // This type accepts all bit patterns,
+        // although only some flags are recognized.
+        const _              = !0;
     }
 }
 

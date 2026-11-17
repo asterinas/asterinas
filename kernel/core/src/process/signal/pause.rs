@@ -153,10 +153,10 @@ impl Pause for Waiter {
             };
 
             if has_pending {
-                return Err(Error::with_message(
+                return_errno_with_message!(
                     Errno::EINTR,
-                    "the current thread is interrupted by a signal",
-                ));
+                    "the current thread is interrupted by a signal"
+                );
             }
             Ok(())
         };

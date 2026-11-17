@@ -215,7 +215,8 @@ enum FaultAddressType {
 }
 
 bitflags! {
-    pub struct FaultStatus : u32{
+    #[derive(Clone, Copy, Debug)]
+    pub struct FaultStatus: u32 {
         /// Primary Fault Overflow, indicates overflow of the fault recording registers.
         const PFO = 1 << 0;
         /// Primary Pending Fault, indicates there are one or more pending faults logged in the fault recording registers.
@@ -266,7 +267,7 @@ fn primary_fault_handler(fault_event_regs: &mut FaultEventRegisters) {
         return;
     }
 
-    let start_index = ((fault_event_regs.status().bits & FaultStatus::FRI.bits) >> 8) as usize;
+    let start_index = ((fault_event_regs.status().bits() & FaultStatus::FRI.bits()) >> 8) as usize;
     let mut fault_iter = fault_event_regs.recordings.iter_mut();
     fault_iter.advance_by(start_index).unwrap();
     for raw_recording in fault_iter {
@@ -293,6 +294,6 @@ fn primary_fault_handler(fault_event_regs: &mut FaultEventRegisters) {
         fault_event_regs
             .status
             .as_mut_ptr()
-            .write(fault_status.bits);
+            .write(fault_status.bits());
     }
 }

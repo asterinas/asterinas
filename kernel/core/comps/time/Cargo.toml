@@ -12,15 +12,17 @@ component.workspace = true
 ostd.workspace = true
 spin.workspace = true
 
-[target.riscv64imac-unknown-none-elf.dependencies]
+[target.x86_64-unknown-none.dependencies]
 chrono.workspace = true
+
+[target.riscv64imac-unknown-none-elf.dependencies]
 fdt-util.workspace = true
 
 [target.loongarch64-unknown-none-softfloat.dependencies]
+chrono.workspace = true
 fdt-util.workspace = true
 
 [target.aarch64-unknown-none-softfloat.dependencies]
-chrono.workspace = true
 fdt-util.workspace = true
 
 [lints]

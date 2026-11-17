@@ -211,18 +211,23 @@ impl FileOps for RootInode {
                 *offset += 1;
             }
 
-            // Read the slaves.
-            let slaves = self.slaves.read();
-            let start_offset = *offset;
-            for (idx, (name, node)) in slaves
-                .idxes_and_items()
-                .map(|(idx, (name, node))| (idx + 3, (name, node)))
-                .skip_while(|(idx, _)| idx < &start_offset)
-            {
-                visitor.visit(name.as_ref(), node.ino(), node.type_(), idx)?;
+            // Read the slaves one by one (`*offset >= 3` here). Release the lock before visiting
+            // each slave, since the visitor may write to user space and take a page fault.
+            loop {
+                let next_slave = {
+                    let slaves = self.slaves.read();
+                    (*offset - 3..slaves.slots_len()).find_map(|idx| {
+                        let (name, node) = slaves.get(idx)?;
+                        Some((idx + 3, name.clone(), node.ino(), node.type_()))
+                    })
+                };
+                let Some((idx, name, ino, type_)) = next_slave else {
+                    return Ok(());
+                };
+
+                visitor.visit(name.as_ref(), ino, type_, idx)?;
                 *offset = idx + 1;
             }
-            Ok(())
         };
 
         let mut iterate_offset = offset;

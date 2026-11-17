@@ -157,11 +157,16 @@ impl CurrentVmcs<'_> {
     /// `eptp` must identify a valid EPT that isolates guest memory from the host.
     /// Page-table and backing frames must remain alive while the guest can access them.
     pub(super) unsafe fn sync_controls(&self, eptp: u64, guest_efer: u64) -> Result<()> {
+        const EPT_MEM_TYPE_WB: u64 = 6;
+        const EPT_PAGE_WALK_LENGTH_4_LEVELS: u64 = 3 << 3;
+
         let mut entry = self.read(control::VMENTRY_CONTROLS)?
             & !(EntryControls::IA32E_MODE_GUEST.bits() as usize);
         if guest_efer & EferFlags::LONG_MODE_ACTIVE.bits() != 0 {
             entry |= EntryControls::IA32E_MODE_GUEST.bits() as usize;
         }
+
+        let eptp = eptp | EPT_MEM_TYPE_WB | EPT_PAGE_WALK_LENGTH_4_LEVELS;
 
         // SAFETY: `VmxGuard` validates both guest modes, and the caller guarantees
         // EPT isolation and frame lifetimes.

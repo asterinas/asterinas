@@ -6,7 +6,8 @@
 //!
 //! Reference: <https://developer.arm.com/documentation/ddi0224/b/Functional-Overview/ARM-PrimeCell-Real-Time-Clock--PL031--overview>
 
-use chrono::DateTime;
+use core::time::Duration;
+
 use fdt_util::AcquireIoMems;
 use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
 
@@ -32,9 +33,8 @@ impl Driver for RtcPl031 {
     fn read_rtc(&self) -> SystemTime {
         let timestamp = self.io_mem.read_once::<u32>(RTCDR_OFFSET).unwrap();
 
-        // This won't fail because the timestamp is a 32-bit integer.
-        let time = DateTime::from_timestamp(timestamp as i64, 0).unwrap();
-        SystemTime::from(time.naive_utc())
+        let duration = Duration::from_secs(u64::from(timestamp));
+        SystemTime::new(duration)
     }
 }
 

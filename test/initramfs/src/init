@@ -46,6 +46,8 @@ if [ -b /dev/vdb ]; then
     mount -t exfat /dev/vdb /exfat
 fi
 
+mkdir /ramfs
+
 # When the init process starts,
 # it does not have a process group, session, or controlling terminal.
 # The `script` tool is a standard Linux utility

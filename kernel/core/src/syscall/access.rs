@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file::{Permission, file_table::RawFileDesc},
         utils::PATH_MAX,
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath},
+        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, PerMountFlags},
     },
     prelude::*,
 };
@@ -46,10 +46,11 @@ pub(super) fn sys_faccessat2(
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct FaccessatFlags: u32 {
-        const AT_EACCESS = 0x200;
+        const AT_EACCESS          = 0x200;
         const AT_SYMLINK_NOFOLLOW = 0x100;
-        const AT_EMPTY_PATH = 0x1000;
+        const AT_EMPTY_PATH       = 0x1000;
     }
 }
 
@@ -58,6 +59,7 @@ bitflags! {
     ///
     /// Do not confuse this type with [`crate::fs::file::AccessMode`],
     /// which describes the read/write mode of an opened file.
+    #[derive(Clone, Copy, Debug)]
     struct AccessMode: u32 {
         const R_OK = 0x4;
         const W_OK = 0x2;
@@ -122,6 +124,19 @@ fn do_faccessat(
     };
 
     let inode = path.inode();
+
+    // Executing a regular file on a `noexec` mount is forbidden even when the
+    // file mode grants the execute bit. `access(2)` and its variants need to
+    // report the same restriction through `X_OK`.
+    if mode.contains(AccessMode::X_OK)
+        && inode.type_().is_regular_file()
+        && path.mount_node().flags().contains(PerMountFlags::NOEXEC)
+    {
+        return_errno_with_message!(
+            Errno::EACCES,
+            "execution is not allowed on a file system mounted with `noexec`"
+        );
+    }
 
     // `F_OK` is represented by `AccessMode::empty()`.
     // It only asks whether the file exists,

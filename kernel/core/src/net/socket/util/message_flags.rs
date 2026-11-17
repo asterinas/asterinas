@@ -5,8 +5,7 @@ use bitflags::bitflags;
 
 bitflags! {
     /// Flags passed to socket send operations.
-    #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug)]
     pub(crate) struct SendFlags: i32 {
         const MSG_OOB       = 0x1;
         const MSG_DONTROUTE = 0x4;
@@ -35,22 +34,21 @@ impl SendFlags {
 
 bitflags! {
     /// Flags passed to or returned from socket receive operations.
-    #[repr(C)]
-    #[derive(Pod)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub(crate) struct RecvFlags: i32 {
-        const MSG_OOB          = SendFlags::MSG_OOB.bits;
+        const MSG_OOB          = SendFlags::MSG_OOB.bits();
         const MSG_PEEK         = 0x2;
         const MSG_CTRUNC       = 0x8;
         const MSG_TRUNC        = 0x20;
-        const MSG_DONTWAIT     = SendFlags::MSG_DONTWAIT.bits;
-        const MSG_EOR          = SendFlags::MSG_EOR.bits;
+        const MSG_DONTWAIT     = SendFlags::MSG_DONTWAIT.bits();
+        const MSG_EOR          = SendFlags::MSG_EOR.bits();
         const MSG_WAITALL      = 0x100;
         const MSG_ERRQUEUE     = 0x2000;
         const MSG_WAITFORONE   = 0x10000;
         const MSG_SOCK_DEVMEM  = 0x2000000;
         const MSG_CMSG_CLOEXEC = 0x40000000;
 
-        const SUPPORTED        = RecvFlags::MSG_PEEK.bits | RecvFlags::MSG_TRUNC.bits;
+        const SUPPORTED        = RecvFlags::MSG_PEEK.bits() | RecvFlags::MSG_TRUNC.bits();
     }
 }
 

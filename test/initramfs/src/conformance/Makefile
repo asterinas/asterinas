@@ -6,11 +6,11 @@ INITRAMFS ?= $(CUR_DIR)/../../build/initramfs
 RUN_BASH := $(CUR_DIR)/run_conformance_test.sh
 TARGET_DIR := $(INITRAMFS)/opt
 CONFORMANCE_TEST_SUITE ?= ltp
-VALID_SUITES := ltp gvisor kselftest xfstests
+VALID_SUITES := ltp gvisor kselftest pjdfstest xfstests
 SUITE_DIR := $(INITRAMFS)/opt/$(CONFORMANCE_TEST_SUITE)
 
 $(if $(filter $(CONFORMANCE_TEST_SUITE),$(VALID_SUITES)),,\
-  $(error CONFORMANCE_TEST_SUITE='$(CONFORMANCE_TEST_SUITE)' not one of: $(VALID_SUITES)))
+	$(error CONFORMANCE_TEST_SUITE='$(CONFORMANCE_TEST_SUITE)' not one of: $(VALID_SUITES)))
 
 .PHONY: all
 all: $(TARGET_DIR)

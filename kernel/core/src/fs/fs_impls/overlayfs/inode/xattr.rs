@@ -419,10 +419,7 @@ impl OverlayInode {
         name: &XattrName<'_>,
     ) -> Result<Vec<u8>> {
         let Some(reborrowed) = XattrName::try_from_full_name(name.full_name()) else {
-            return Err(Error::with_message(
-                Errno::EINVAL,
-                "the xattr name is not a valid escaped name",
-            ));
+            return_errno_with_message!(Errno::EINVAL, "the xattr name is not a valid escaped name");
         };
         let mut probe = VmWriter::from(&mut [] as &mut [u8]).to_fallible();
         let value_len = source.get_xattr(reborrowed, &mut probe)?;

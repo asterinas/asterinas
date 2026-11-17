@@ -47,6 +47,7 @@ bitflags::bitflags! {
     ///
     /// These flags are internal to the DRM subsystem. Their bit positions
     /// are not part of the DRM userspace ABI.
+    #[derive(Clone, Copy, Debug)]
     pub struct DrmFeatures: u32 {
         /// Supports creation of a render device node.
         const RENDER           = 1 << 0;

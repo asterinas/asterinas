@@ -244,10 +244,14 @@ impl Backlog {
     }
 
     fn shutdown(&self) {
-        *self.incoming_conns.lock() = None;
+        let old_conns = self.incoming_conns.lock().take();
 
         self.pollee.notify(SHUT_READ_EVENTS);
         self.connect_wait_queue.wake_all();
+
+        // Drop pending connections after releasing the lock, since dropping them may release
+        // the last references to files queued with `SCM_RIGHTS`.
+        drop(old_conns);
     }
 
     fn is_shutdown(&self) -> bool {

@@ -31,6 +31,7 @@ pub(crate) trait Unbound {
 
 pub(crate) trait Bound {
     type Endpoint;
+    type SendOptions;
 
     fn local_endpoint(&self) -> Self::Endpoint;
     fn bind(&mut self, _endpoint: &Self::Endpoint) -> Result<()> {
@@ -49,6 +50,7 @@ pub(crate) trait Bound {
         reader: &mut dyn MultiRead,
         remote: &Self::Endpoint,
         flags: SendFlags,
+        options: Self::SendOptions,
     ) -> Result<usize>;
 
     fn check_io_events(&self) -> IoEvents;

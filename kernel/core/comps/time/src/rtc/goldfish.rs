@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use chrono::DateTime;
+use core::time::Duration;
+
 use fdt_util::AcquireIoMems;
 use ostd::{arch::boot::DEVICE_TREE, io::IoMem, mm::VmIoOnce};
 
@@ -34,8 +35,8 @@ impl Driver for RtcGoldfish {
             last_time_high = time_high;
         };
 
-        let time = DateTime::from_timestamp_nanos(timestamp as i64).naive_utc();
-        SystemTime::from(time)
+        let duration = Duration::from_nanos(timestamp);
+        SystemTime::new(duration)
     }
 }
 

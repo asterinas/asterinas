@@ -12,6 +12,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../../common/capability.h"
 #include "../../common/test.h"
 
 #define SEMMNI 320000
@@ -20,6 +21,9 @@
 #define SEMVMX 32767
 
 #define CUSTOM_KEY 0xdeadbeef
+
+#define RMID_OWNER_UID 1000
+#define RMID_STRANGER_UID 2000
 
 #define SETTLE_MS 100
 #define SHORT_TIMEOUT_MS 1000
@@ -127,6 +131,64 @@ static int join_timed_semop_thread(pthread_t thread,
 		return error;
 	}
 	return args->error;
+}
+
+static void become_user(uid_t uid)
+{
+	CHECK(setresgid(uid, uid, uid));
+	CHECK(setresuid(uid, uid, uid));
+}
+
+typedef void (*child_fn)(void *);
+
+static int run_child(child_fn fn, void *arg)
+{
+	pid_t pid = CHECK(fork());
+	int status;
+
+	if (pid == 0) {
+		fn(arg);
+		_exit(0);
+	}
+
+	CHECK(waitpid(pid, &status, 0));
+	return (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 0 : -1;
+}
+
+static void create_set_as_owner(void *arg)
+{
+	int *pipefd = arg;
+	int semid;
+
+	become_user(RMID_OWNER_UID);
+	semid = CHECK(create_sem_set(1));
+	CHECK_WITH(write(pipefd[1], &semid, sizeof(semid)),
+		   _ret == (ssize_t)sizeof(semid));
+	CHECK(close(pipefd[1]));
+}
+
+static void remove_set_as_stranger(void *arg)
+{
+	int semid = *(int *)arg;
+
+	become_user(RMID_STRANGER_UID);
+	CHECK_WITH(remove_sem_set(semid), _ret == -1 && errno == EPERM);
+}
+
+static void remove_set_without_cap_sys_admin(void *arg)
+{
+	int semid = *(int *)arg;
+
+	drop_capability(CAP_SYS_ADMIN);
+	CHECK_WITH(remove_sem_set(semid), _ret == -1 && errno == EPERM);
+}
+
+static void remove_set_as_owner(void *arg)
+{
+	int semid = *(int *)arg;
+
+	become_user(RMID_OWNER_UID);
+	CHECK(remove_sem_set(semid));
 }
 
 static void signal_handler(int signum)
@@ -619,6 +681,41 @@ FN_TEST(semop_updates_otime_after_blocking)
 	arg.buf = &semid_ds;
 	TEST_RES(semctl(semid, 0, IPC_STAT, arg), semid_ds.sem_otime != 0);
 
+	TEST_SUCC(remove_sem_set(semid));
+}
+END_TEST()
+
+FN_TEST(semctl_rmid_requires_owner_or_cap_sys_admin)
+{
+	int pipefd[2];
+	int semid = -1;
+
+	TEST_SUCC(pipe(pipefd));
+	TEST_RES(run_child(create_set_as_owner, pipefd), _ret == 0);
+	TEST_SUCC(close(pipefd[1]));
+	TEST_RES(read(pipefd[0], &semid, sizeof(semid)),
+		 _ret == (ssize_t)sizeof(semid));
+	TEST_SUCC(close(pipefd[0]));
+
+	// A user that is neither the owner nor has `CAP_SYS_ADMIN` is refused.
+	TEST_RES(run_child(remove_set_as_stranger, &semid), _ret == 0);
+
+	// Being root is not enough; only the effective `CAP_SYS_ADMIN` authorizes
+	// removing another user's set.
+	TEST_RES(run_child(remove_set_without_cap_sys_admin, &semid),
+		 _ret == 0);
+
+	// The unprivileged owner can remove its own set.
+	TEST_RES(run_child(remove_set_as_owner, &semid), _ret == 0);
+
+	TEST_SUCC(pipe(pipefd));
+	TEST_RES(run_child(create_set_as_owner, pipefd), _ret == 0);
+	TEST_SUCC(close(pipefd[1]));
+	TEST_RES(read(pipefd[0], &semid, sizeof(semid)),
+		 _ret == (ssize_t)sizeof(semid));
+	TEST_SUCC(close(pipefd[0]));
+
+	// The caller has `CAP_SYS_ADMIN`, so it can remove another user's set.
 	TEST_SUCC(remove_sem_set(semid));
 }
 END_TEST()

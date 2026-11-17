@@ -50,12 +50,24 @@ That first run is expected to fail with a hash mismatch.
 The error prints the real hash after `got:`, so copy that value into the file.
 The workflow then rebuilds the packages and boots the kernel from them.
 
-The main nixpkgs revision must match the one pinned in
-[`distro/nixpkgs.nix`](../../../distro/nixpkgs.nix) and in the
-[prebuilt Nix packages Dockerfile](../docker/prebuilt-nix-packages/Dockerfile).
-The "Check nixpkgs revisions" step of the
+To update the main nixpkgs source, run `nix flake update nixpkgs` from the repository root,
+either on a host with Nix installed or inside the project development container.
+The development shell and Make-based builds both read this source from `flake.lock`.
+Review the lock diff, then run the validation commands below.
+If Nix reports that `nix-command` or `flakes` is disabled,
+add `--extra-experimental-features 'nix-command flakes'` to the command.
+
+The [prebuilt Nix packages image](../docker/prebuilt-nix-packages/Dockerfile)
+creates its channels from the locked revision when the image is built.
+Updating `flake.lock` does not change the channels in published images,
+so rebuild the image to pick up the new revision.
+The "Check nixpkgs source" step in the
 [Test Nix flake workflow](../../../.github/workflows/test_nix_flake.yml)
-fails when the three pins diverge.
+fails if [`distro/nixpkgs.nix`](../../../distro/nixpkgs.nix) resolves to a different source than the flake.
+
+`--override-input` changes only what the flake sees.
+Make-based builds read `flake.lock` directly,
+so update the lock itself to test a nixpkgs change across all entry points.
 
 The `typos` version is pinned to the one in the OSDK Dockerfile
 through a separate nixpkgs input, because that Dockerfile checks the spelling with a fixed release.

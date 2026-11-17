@@ -1,6 +1,8 @@
 ENTRY(_start)
 OUTPUT_ARCH(aarch64)
 
+# Default ELF load address. TODO: A raw image may be loaded at a different
+# physical address, which is not supported yet.
 KERNEL_LMA = 0x40200000;
 KERNEL_VMA = 0xffffffff40200000;
 KERNEL_VMA_OFFSET = KERNEL_VMA - KERNEL_LMA;
@@ -104,4 +106,7 @@ SECTIONS
 
     __kernel_end = .;
     __kernel_size = . - __kernel_start;
+
+    # The entry assembly maps kernel code pages up to this limit.
+    ASSERT(__kernel_end <= 0xffffffffc0000000, "ARM kernel exceeds boot mapping")
 }
