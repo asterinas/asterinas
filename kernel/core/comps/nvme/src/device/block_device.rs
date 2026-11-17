@@ -977,6 +977,7 @@ mod test {
         mm::{FrameAllocOptions, VmIo, VmReader, io::util::HasVmReaderWriter},
         prelude::ktest,
     };
+    use spin::Once;
 
     use super::{BioType, IoOp, NvmeBlockDevice};
     use crate::nvme_init;
@@ -990,7 +991,11 @@ mod test {
     }
 
     fn ensure_initialized() {
-        if aster_block::collect_all().is_empty() {
+        static INITIALIZED: Once<()> = Once::new();
+
+        // The device registry stays empty when no supported block device is present.
+        // Track initialization separately to avoid initializing components twice.
+        INITIALIZED.call_once(|| {
             component::init_all(
                 component::InitStage::Bootstrap,
                 component::parse_metadata!(),
@@ -998,7 +1003,7 @@ mod test {
             .unwrap();
 
             nvme_init().expect("`nvme_init` returned an error");
-        }
+        });
     }
 
     #[ktest]
