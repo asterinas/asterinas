@@ -181,7 +181,6 @@ aster-device = { path = "kernel/core/comps/device" }
 aster-framebuffer = { path = "kernel/core/comps/framebuffer" }
 aster-input = { path = "kernel/core/comps/input" }
 aster-logger = { path = "kernel/core/comps/logger" }
-aster-mlsdisk = { path = "kernel/core/comps/mlsdisk" }
 aster-network = { path = "kernel/core/comps/network" }
 aster-nvme = { path = "kernel/core/comps/nvme" }
 aster-pci = { path = "kernel/core/comps/pci" }
@@ -274,12 +273,10 @@ time = { version = "0.3", default-features = false, features = ["alloc"] }
 # External dependencies for both safe and unsafe crates
 bitflags = "2.13"
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
-cfg-if = "1.0"
 crc32fast = "1.4"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e", version = "0.1.0" }
 intrusive-collections = { version = "0.9.6", features = ["nightly"] }
-libflate = { version = "2.3.0", default-features = false }
 log = "0.4"
 loongArch64 = "0.2.5"
 miniz_oxide = { version = "0.8.9", default-features = false, features = ["with-alloc"] }

@@ -607,7 +607,6 @@ version = "0.1.0"
 dependencies = [
  "component-macro",
  "inventory",
- "json",
  "log",
 ]
 
