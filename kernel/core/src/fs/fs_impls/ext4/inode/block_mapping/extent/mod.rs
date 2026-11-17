@@ -17,6 +17,7 @@ mod cache;
 mod mutation;
 mod node;
 mod path;
+mod status;
 pub(super) use mutation::PreparedUpdate;
 pub(super) use path::ExtentRangeCursor;
 
@@ -55,6 +56,7 @@ pub(in inode) struct ExtentTree {
     raw_block_ptrs: Dirty<RawBlockPtrs>,
     node_cache: cache::ExtentNodeCache,
     root_cache: Mutex<Option<Arc<ExtentNode>>>,
+    lookup_cache: Mutex<status::LookupCache>,
 }
 
 /// The initialization guarantee for newly allocated data blocks.
@@ -77,6 +79,7 @@ impl ExtentTree {
             raw_block_ptrs: Dirty::new(raw_block_ptrs),
             node_cache: cache::ExtentNodeCache::new(),
             root_cache: Mutex::new(None),
+            lookup_cache: Mutex::new(status::LookupCache::default()),
         })
     }
 
