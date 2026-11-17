@@ -222,7 +222,7 @@ initramfs_pkgs:
 $(EXT2_IMAGE):
 	@mkdir -p $(BUILD_DIR)
 	@truncate -s 2G $(EXT2_IMAGE)
-	@mke2fs $(EXT2_IMAGE)
+	@mke2fs -t ext2 -F $(EXT2_IMAGE)
 
 $(EXFAT_IMAGE):
 	@mkdir -p $(BUILD_DIR)
