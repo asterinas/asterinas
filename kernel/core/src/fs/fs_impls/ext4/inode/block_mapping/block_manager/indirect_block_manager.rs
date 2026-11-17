@@ -6,17 +6,9 @@ use hashbrown::HashMap;
 
 use crate::fs::fs_impls::ext4::{Ext4, prelude::*};
 
-/// Inode-local cache for ext2 indirect metadata blocks.
+/// An inode-private cache of classic EXT indirect blocks.
 ///
-/// Resident indirect blocks belong to exactly one inode and are owned by the
-/// corresponding `BlockPtrTree`. Dirty indirect blocks remain associated with
-/// that inode until they are synced or removed.
-///
-/// # Invariants
-///
-/// - Cached blocks are never shared across inodes.
-/// - Dirty blocks must remain reachable until they are either written back or
-///   discarded as part of freeing their owning subtree.
+/// Dirty blocks remain resident until written back or retired with their subtree.
 #[derive(Debug)]
 pub(super) struct IndirectBlockManager {
     cache: HashMap<Ext4Bid, IndirectBlock>,
@@ -66,9 +58,8 @@ impl IndirectBlockManager {
     }
 
     /// Inserts an indirect block into the cache.
-    pub(super) fn insert(&mut self, block: IndirectBlock) -> Result<()> {
+    pub(super) fn insert(&mut self, block: IndirectBlock) {
         self.cache.insert(block.bid(), block);
-        Ok(())
     }
 
     /// Removes an indirect block from the cache without writing it back.
@@ -76,21 +67,15 @@ impl IndirectBlockManager {
         self.cache.remove(&bid)
     }
 
+    /// Returns whether any cached indirect block needs writeback.
+    pub(super) fn has_dirty_metadata(&self) -> bool {
+        self.cache.values().any(IndirectBlock::is_dirty)
+    }
+
     /// Writes all dirty cached indirect blocks back to the device.
     pub(super) fn sync(&mut self) -> Result<()> {
         let fs = self.fs()?;
-        let dirty_bids: Vec<Ext4Bid> = self
-            .cache
-            .iter()
-            .filter_map(|(bid, block)| block.is_dirty().then_some(*bid))
-            .collect();
-
-        // TODO: do this flush job in best effort (skip the failed flush).
-        for bid in dirty_bids {
-            let block = self
-                .cache
-                .get_mut(&bid)
-                .expect("dirty indirect block key must still be cached");
+        for block in self.cache.values_mut() {
             Self::write_block(&fs, block)?;
         }
 
@@ -143,12 +128,7 @@ impl IndirectBlockManager {
     }
 }
 
-/// One resident indirect metadata block.
-///
-/// Each `IndirectBlock` is a single page-frame that holds one ext2 indirect
-/// metadata block (i.e. an array of `u32` block-number pointers). It tracks
-/// its own device block address (`bid`) and a dirty flag so that write-back
-/// can be skipped for clean entries.
+/// A cached classic EXT indirect block containing physical block pointers.
 #[derive(Debug)]
 pub(super) struct IndirectBlock {
     block: Frame<()>,

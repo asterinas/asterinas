@@ -49,7 +49,7 @@ INITRAMFS_COMPRESSED := true
 endif
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXT4_IMAGE := $(BUILD_DIR)/ext4.img
-EXT4_SEED_FILE := $(CUR_DIR)/ext4-root/seed.txt
+EXT4_SEED_FILE := $(BUILD_DIR)/ext4-root/seed.txt
 EXT4_REGRESSION_DIR := $(BUILD_DIR)/ext4-regression
 EXT4_REGRESSION_IMAGES := \
 	$(EXT4_REGRESSION_DIR)/journal.img \
@@ -240,12 +240,16 @@ $(EXT2_IMAGE):
 
 EXT4_SUPPORTED_FEATURES := extent,filetype,^has_journal,^metadata_csum,^64bit,^flex_bg,^inline_data,^resize_inode,^dir_index,^huge_file,^dir_nlink,^extra_isize
 
+$(EXT4_SEED_FILE):
+	@mkdir -p $(dir $@)
+	@printf '%s\n' 'Created by mke2fs on the host.' > $@
+
 .PHONY: $(EXT4_IMAGE) $(EXT4_REGRESSION_IMAGES)
 $(EXT4_IMAGE): $(EXT4_SEED_FILE)
 	@mkdir -p $(BUILD_DIR)
 	@truncate -s 128M $@
 	@mke2fs -q -F -t ext4 -b 4096 -I 256 \
-		-O $(EXT4_SUPPORTED_FEATURES) -d $(CUR_DIR)/ext4-root $@
+		-O $(EXT4_SUPPORTED_FEATURES) -d $(dir $(EXT4_SEED_FILE)) $@
 
 $(EXT4_REGRESSION_DIR)/journal.img:
 	@mkdir -p $(EXT4_REGRESSION_DIR)

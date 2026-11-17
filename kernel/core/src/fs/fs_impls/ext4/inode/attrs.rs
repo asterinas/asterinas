@@ -35,7 +35,7 @@ impl Inode {
         }
     }
 
-    /// Sets the encoded device ID for special files and persists it.
+    /// Sets the encoded device ID for a device inode and marks its metadata dirty.
     pub(in ext4) fn set_device_id(&self, device_id: u64) -> Result<()> {
         if self.type_ != InodeType::CharDevice && self.type_ != InodeType::BlockDevice {
             return_errno!(Errno::EINVAL);

@@ -1,46 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Ext4 directory entry layout, validation, and page-cache access.
+//! Directory records shared by EXT2 and EXT4.
 //!
-//! Ext4 stores directory contents as a flat linear list of variable-length
-//! records packed into ordinary data blocks. Each record begins with an
-//! 8-byte `DirEntryHeader` followed immediately by the entry's name bytes.
-//! The `inode` module's directory operations (lookup, create, unlink, readdir)
-//! access these records through `DirBlockView`, which provides a bounded view
-//! into one Ext4 directory block.
-//! A view may cover a whole block or a sub-range used for a single write,
-//! but it never crosses the block boundary because Ext4 directory entries
-//! cannot span blocks.
-//!
-//! # On-disk format
+//! Each record contains an eight-byte header followed by its name and padding:
 //!
 //! ```text
-//! ┌──────────────────────────────────────────────────────────┐
-//! │ inode (4 B) │ rec_len (2 B) │ name_len (1 B) │ type (1 B)│ name … │ pad …
-//! └──────────────────────────────────────────────────────────┘
+//! | inode: 4 B | rec_len: 2 B | name_len: 1 B | type: 1 B | name | padding |
 //! ```
 //!
-//! - `rec_len` — byte length of this entire record (header + name + padding),
-//!   always a multiple of 4. The last record in a block is padded to fill the
-//!   block, so its `rec_len` may be much larger than its `name_len` requires.
-//! - `ino == 0` — marks a free (deleted) slot. The iterator yields it with
-//!   an empty name, and higher-level directory operations decide whether to
-//!   skip or reuse it.
-//! - `file_type` — the `DirEntryFileType` byte encodes the inode type,
-//!   avoiding an extra inode lookup during readdir.
-//!
-//! # Types
-//!
-//! - `DirEntryHeader` — the 8-byte on-disk header (`#[repr(C)]`, `Pod`).
-//! - `DirEntry` — a parsed header plus a borrowed name slice from the
-//!   iterator's reusable name buffer.
-//! - `DirEntryFileType` — the `file_type` field enum, with conversions
-//!   to/from `InodeType`.
-//! - `DirBlockView` — a bounded view into one directory block,
-//!   providing entry iteration, entry writing, deletion, and field updates.
-//! - `DirBlockViewIter` — the iterator returned by `DirBlockView::iter_entries`;
-//!   reads entry headers from the page cache, copies live-entry names into a
-//!   reusable buffer, and validates each header before yielding it.
+//! `rec_len` includes padding, is a multiple of four, and cannot cross a block
+//! boundary. The last record fills the remaining block space. An inode number
+//! of zero marks a free slot that can be skipped or reused.
+//! [`DirBlockView`] bounds access to a single block and validates records when
+//! iterating; entry names borrow the iterator's reusable buffer.
 
 use ostd::const_assert;
 
@@ -49,7 +21,7 @@ use crate::fs::{ext4::prelude::*, utils::NAME_MAX};
 pub(super) const DOT_BYTE: &[u8] = b".";
 pub(super) const DOT_DOT_BYTE: &[u8] = b"..";
 
-/// Parsed ext2 directory entry.
+/// A parsed EXT directory entry.
 ///
 /// The `name` slice borrows from the iterator's reusable name buffer.
 #[derive(Clone, Debug)]
@@ -373,14 +345,8 @@ mod test {
     use crate::fs::ext4::test_utils::assert_errno;
 
     #[ktest]
-    fn min_rec_len_ok() {
+    fn directory_entry_record_length_boundaries() {
         assert_eq!(DirEntryHeader::min_rec_len(0), 8);
-        assert_eq!(DirEntryHeader::min_rec_len(1), 12);
-        assert_eq!(DirEntryHeader::min_rec_len(NAME_MAX), 264);
-    }
-
-    #[ktest]
-    fn min_rec_len_boundary_values() {
         // 4-byte alignment: name_len 1..4 all round to 12.
         assert_eq!(DirEntryHeader::min_rec_len(1), 12);
         assert_eq!(DirEntryHeader::min_rec_len(2), 12);
@@ -397,16 +363,10 @@ mod test {
     }
 
     #[ktest]
-    fn iter_all_zero_block_returns_eio() {
+    fn directory_iterator_rejects_zero_and_undersized_records() {
         let page_cache = PageCache::new_anon(BLOCK_SIZE).unwrap();
         let view = DirBlockView::from_index(&page_cache, 0, BLOCK_SIZE);
-        let mut iter = view.iter_entries();
-        assert_errno!(iter.next_entry(), Errno::EIO);
-    }
-
-    #[ktest]
-    fn iter_bad_entry_returns_eio() {
-        let page_cache = PageCache::new_anon(BLOCK_SIZE).unwrap();
+        assert_errno!(view.iter_entries().next_entry(), Errno::EIO);
 
         // Write a first entry with ino=2, rec_len=8, name_len=1, type=Dir, name='.'.
         // rec_len=8 is exactly the header size, which is too small for name_len=1

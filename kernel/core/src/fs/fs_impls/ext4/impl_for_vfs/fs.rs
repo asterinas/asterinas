@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! [`FileSystem`] trait implementation for [`Ext4`].
-//!
-//! Translates VFS-level mount, sync, stat, and root-inode requests into
-//! the corresponding ext2-internal operations.
+//! VFS mount state, synchronization, and statistics for EXT2/EXT4.
 
 use aster_block::{BLOCK_SIZE, bio::BioStatus};
 
