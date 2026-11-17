@@ -75,4 +75,20 @@ impl MqueueQueue {
     pub(crate) fn mode(&self) -> InodeMode {
         self.mode
     }
+
+    /// Returns a snapshot of the queue attributes.
+    ///
+    /// `mq_flags` is always zero here, because `O_NONBLOCK` is a property of
+    /// each open file description rather than of the queue itself.
+    pub(crate) fn attr(&self) -> MqAttr {
+        let messages = self.messages.lock();
+        let mq_curmsgs = messages.values().map(|msgs| msgs.len()).sum::<usize>() as i64;
+
+        MqAttr {
+            mq_flags: 0,
+            mq_maxmsg: self.attr.mq_maxmsg,
+            mq_msgsize: self.attr.mq_msgsize,
+            mq_curmsgs,
+        }
+    }
 }

@@ -12,6 +12,7 @@ mod fs;
 mod inode;
 
 pub(crate) use fs::MqueueFs;
+pub(crate) use inode::MqueueInode;
 
 /// Magic number of `mqueuefs`.
 pub(super) const MQUEUE_MAGIC: u64 = 0x1980_0202;
