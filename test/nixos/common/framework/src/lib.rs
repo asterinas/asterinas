@@ -161,7 +161,7 @@ pub fn __nixos_test_main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
     // Check for --help flag
-    if args.contains(&"--help".to_string()) || args.contains(&"-h".to_string()) {
+    if args.iter().any(|i| i == "--help") || args.iter().any(|i| i == "-h") {
         print_help();
         return Ok(());
     }

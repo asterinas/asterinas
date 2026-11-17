@@ -2,7 +2,6 @@
 
 #![doc = include_str!("../README.md")]
 #![feature(alloc_error_handler)]
-#![feature(allocator_api)]
 #![feature(btree_cursors)]
 #![feature(core_intrinsics)]
 #![feature(linkage)]

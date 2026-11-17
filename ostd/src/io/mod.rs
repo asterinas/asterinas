@@ -18,9 +18,9 @@ cfg_select! {
         mod io_port;
 
         pub use self::io_port::IoPort;
-        pub(crate) use self::io_port::{reserve_io_port_range, sensitive_io_port, RawIoPortRange};
+        pub(crate) use self::io_port::{RawIoPortRange, reserve_io_port_range, sensitive_io_port};
     }
-    _ => {},
+    _ => {}
 }
 
 /// Initializes the static allocator based on builder.

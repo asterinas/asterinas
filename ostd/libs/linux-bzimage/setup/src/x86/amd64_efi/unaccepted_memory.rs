@@ -55,7 +55,8 @@ pub(super) fn prepare_unaccepted_memory(
         let required_size = EfiUnacceptedMemory::required_size_for_range(coverage.clone())
             .expect("invalid unaccepted memory bounds");
 
-        let allocation = alloc::alloc_pages(AllocateType::MaxAddress(u32::MAX as u64), required_size);
+        let allocation =
+            alloc::alloc_pages(AllocateType::MaxAddress(u32::MAX as u64), required_size);
         let allocation_ptr = NonNull::new(allocation.as_mut_ptr().cast()).unwrap();
         // SAFETY: `allocation` is writable, page-aligned, and sized for `coverage`.
         // After this call, the allocation is accessed only through the builder and

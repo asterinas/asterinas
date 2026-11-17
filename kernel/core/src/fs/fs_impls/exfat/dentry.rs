@@ -415,8 +415,7 @@ impl ExfatDentrySet {
             0,
         );
 
-        for i in 1..self.dentries.len() {
-            let dentry = &self.dentries[i];
+        for dentry in self.dentries.iter().skip(1) {
             checksum = calc_checksum_16(dentry.as_le_bytes(), EMPTY_RANGE, checksum);
         }
         checksum

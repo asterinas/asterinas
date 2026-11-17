@@ -33,7 +33,8 @@ use crate::{
 
 cfg_select! {
     feature = "cvm_guest" => {
-        use tdx_guest::{tdcall, handle_virtual_exception};
+        use tdx_guest::{handle_virtual_exception, tdcall};
+
         use crate::arch::tdx_guest::TrapFrameWrapper;
     }
 }

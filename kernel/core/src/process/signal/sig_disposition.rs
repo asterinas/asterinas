@@ -109,7 +109,10 @@ fn check_sigaction(sig_action: &SigAction) -> Result<()> {
             // without `SA_RESTORER` is arch-dependent.
             // Other archs may need to handle scenarios where `SA_RESTORER` is omitted.
             warn!("SA_RESTORER fallback mechanism not implemented for this architecture");
-            return_errno_with_message!(Errno::EINVAL, "this architecture currently requires SA_RESTORER");
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "this architecture currently requires SA_RESTORER"
+            );
         }
     }
 }

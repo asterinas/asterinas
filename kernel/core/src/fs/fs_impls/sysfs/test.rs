@@ -559,10 +559,10 @@ fn readdir_leaf() {
     let mut names: Vec<_> = visitor.entries.iter().map(|(n, _, _)| n.clone()).collect();
     names.sort();
 
-    assert!(names.contains(&".".to_string()));
-    assert!(names.contains(&"..".to_string()));
-    assert!(names.contains(&"r_attr1".to_string()));
-    assert!(names.contains(&"rw_attr1".to_string()));
+    assert!(names.iter().any(|n| n == "."));
+    assert!(names.iter().any(|n| n == ".."));
+    assert!(names.iter().any(|n| n == "r_attr1"));
+    assert!(names.iter().any(|n| n == "rw_attr1"));
 
     for (name, _, type_) in &visitor.entries {
         match name.as_str() {
