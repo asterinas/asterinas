@@ -117,5 +117,5 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     drop(dir_guard);
 
     let exit_status = bundle.run_qemu_and_wait(config, ActionChoice::Test);
-    classify_qemu_exit_status(exit_status)
+    classify_qemu_exit_status(exit_status, config.target_arch)
 }
