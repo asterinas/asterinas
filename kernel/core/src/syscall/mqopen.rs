@@ -12,8 +12,8 @@ use crate::{
         mqueuefs::MqueueFs,
     },
     ipc::mqueue::posix::{
-        DFLT_MSGMAX, DFLT_MSGSIZEMAX, HARD_MSGMAX, HARD_MSGSIZEMAX, MqAttr, create_queue,
-        lookup_queue,
+        MqAttr, create_queue, lookup_queue, msg_default, msg_max, msgsize_default, msgsize_max,
+        unlink_queue,
     },
     prelude::*,
 };
@@ -36,12 +36,15 @@ pub(super) fn sys_mqopen(
 
     let mqueue = MqueueFs::singleton();
 
+    let mut created = false;
     let queue = if creation_flags.contains(CreationFlags::O_CREAT) {
         let attr = read_attr(ctx, attr_addr)?;
-        validate_attr(attr)?;
 
         match create_queue(&name, InodeMode::from_bits_truncate(mode), attr) {
-            Ok(queue) => queue,
+            Ok(queue) => {
+                created = true;
+                queue
+            }
             Err(err) if err.error() == Errno::EEXIST => {
                 if creation_flags.contains(CreationFlags::O_EXCL) {
                     return Err(err);
@@ -63,7 +66,18 @@ pub(super) fn sys_mqopen(
     };
 
     let file_table = ctx.thread_local.borrow_file_table();
-    let fd = file_table.unwrap().lock_and_insert(file_handle, fd_flags)?;
+    let fd = match file_table.unwrap().lock_and_insert(file_handle, fd_flags) {
+        Ok(fd) => fd,
+        Err(err) => {
+            // Undo the queue creation so that a failed `mq_open` (e.g., with
+            // `EMFILE`) does not leave the queue behind. Linux achieves the
+            // same by allocating the fd before creating the queue.
+            if created {
+                let _ = unlink_queue(&name);
+            }
+            return Err(err);
+        }
+    };
 
     Ok(SyscallReturn::Return(fd.into()))
 }
@@ -71,28 +85,14 @@ pub(super) fn sys_mqopen(
 /// Reads `struct mq_attr` from user space.
 ///
 /// A null `attr` pointer means that the queue should be created with the
-/// default attributes.
+/// default attributes, which are bounded by the mqueue sysctls.
 fn read_attr(ctx: &Context, attr_addr: Vaddr) -> Result<MqAttr> {
     if attr_addr == 0 {
         return Ok(MqAttr {
-            mq_maxmsg: DFLT_MSGMAX,
-            mq_msgsize: DFLT_MSGSIZEMAX,
+            mq_maxmsg: msg_default().min(msg_max()),
+            mq_msgsize: msgsize_default().min(msgsize_max()),
             ..MqAttr::default()
         });
     }
     Ok(ctx.user_space().read_val::<MqAttr>(attr_addr)?)
-}
-
-/// Validates the attributes passed to `mq_open` with `O_CREAT`.
-fn validate_attr(attr: MqAttr) -> Result<()> {
-    if attr.mq_maxmsg <= 0 || attr.mq_msgsize <= 0 {
-        return_errno_with_message!(Errno::EINVAL, "mq_maxmsg and mq_msgsize must be positive");
-    }
-    if attr.mq_maxmsg > HARD_MSGMAX || attr.mq_msgsize > HARD_MSGSIZEMAX {
-        return_errno_with_message!(
-            Errno::EINVAL,
-            "mq_maxmsg or mq_msgsize exceeds the hard limit"
-        );
-    }
-    Ok(())
 }
