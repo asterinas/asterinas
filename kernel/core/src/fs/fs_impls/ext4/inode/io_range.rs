@@ -28,9 +28,8 @@ pub(super) enum Backing {
 
 /// Iterator over mapped runs and sparse holes in a logical block range.
 ///
-/// The iterator retains a read guard while the mapping plan is consumed, so
-/// both classic block pointers and extents are traversed against a stable
-/// mapping. Format-specific dispatch remains inside [`MappingTreeType`].
+/// Keeps the mapping stable for its lifetime. Returned intervals distinguish
+/// holes, unwritten allocations, and readable data.
 pub(super) struct IoRangeIter<'a> {
     range: Range<Iblock>,
     manager: RwMutexReadGuard<'a, MappingTreeType>,
@@ -55,7 +54,8 @@ impl<'a> IoRangeIter<'a> {
     /// Returns the next logical run for block-I/O planning.
     ///
     /// Allocated intervals have contiguous physical backing. Hole intervals
-    /// may stop early at direct/indirect region boundaries.
+    /// may stop early at direct/indirect region boundaries. After an error,
+    /// the iterator is exhausted.
     pub(super) fn next(&mut self) -> Result<Option<IoRange>> {
         let result = self
             .manager
@@ -84,18 +84,18 @@ mod test {
         time::clocks,
     };
 
-    fn expect_hole_runs(iter: &mut IoRangeIter<'_>, expected: Range<Iblock>) {
-        let mut cursor = expected.start;
-        while cursor < expected.end {
+    fn expect_hole_runs(iter: &mut IoRangeIter<'_>, expected_hole: Range<Iblock>) {
+        let mut cursor = expected_hole.start;
+        while cursor < expected_hole.end {
             let Some(IoRange {
                 logical: hole,
                 backing: Backing::Hole,
             }) = iter.next().unwrap()
             else {
-                panic!("expected a hole at logical block {cursor}");
+                panic!("expected_hole a hole at logical block {cursor}");
             };
             assert_eq!(hole.start, cursor);
-            assert!(hole.end > cursor && hole.end <= expected.end);
+            assert!(hole.end > cursor && hole.end <= expected_hole.end);
             cursor = hole.end;
         }
     }
