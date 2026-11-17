@@ -70,9 +70,15 @@ run_ext_suite() {
     if [ "$host_seed" = "yes" ]; then
         ./ext/host_seed
     fi
-
+    EXT_REMOUNT_PHASE=prepare ./ext/remount
     umount /ext-test
-    echo "All $suite_name shared EXT tests passed."
+    sync
+    umount "$source"
+    mount -t "$suite_name" "$device" "$source"
+    mount --bind "$source" /ext-test
+    EXT_REMOUNT_PHASE=verify ./ext/remount
+    umount /ext-test
+    echo "All $suite_name shared EXT tests and remount passed."
 }
 
 expect_mount_rejected() {

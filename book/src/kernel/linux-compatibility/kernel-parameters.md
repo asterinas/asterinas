@@ -49,6 +49,7 @@ root=/dev/vda2 rootfstype=ext2
 
 Valid values:
 - `ext2`
+- `ext4`
 
 ### `ro`
 

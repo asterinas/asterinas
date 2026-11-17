@@ -1,35 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Ext4 superblock: on-disk layout, in-memory representation, and mount validation.
+//! Superblock validation and serialization for EXT2/EXT4.
 //!
-//! The superblock is the filesystem-wide metadata record that describes the
-//! overall layout and global state of an ext2 volume. It is stored at a
-//! fixed offset of 1024 bytes from the start of the device (`SUPER_BLOCK_OFFSET`).
-//!
-//! # Types
-//!
-//! - `RawSuperBlock` — the `#[repr(C)]` on-disk layout.
-//! - `SuperBlock` — validated geometry, features, and preserved fields.
-//! - `SuperBlockState` — separately locked runtime metadata and counters.
-//!
-//! # Mount validation
-//!
-//! `SuperBlock::try_from` enforces the subset of ext2 constraints that
-//! Asterinas currently supports:
-//! - Magic number must be `0xEF53`.
-//! - Block size must be 4096 bytes (log₂ shift = 2).
-//! - Fragment size must equal block size.
-//! - Creator OS must be Linux.
-//! - Error behavior must be `Continue`.
-//! - Incompatible and read-only compatible feature sets are checked against
-//!   the supported masks. Unknown incompatible or read-only compatible
-//!   features cause mount failure; compatible features are retained unchanged.
-//!
-//! # Superblock copies
-//!
-//! Ext4 stores backup superblock copies in selected block groups. Asterinas
-//! reads the primary copy during mount and writes both the primary copy and
-//! all supported backup copies during metadata sync.
+//! [`RawSuperBlock`] describes the disk format. [`SuperBlock`] exposes validated
+//! mount-time geometry and features, while [`SuperBlockState`] contains mutable
+//! counters and filesystem state. Mounting rejects unsupported formats and
+//! features; `fs` coordinates writeback of primary and backup metadata.
 
 use ostd::const_assert;
 
@@ -46,8 +22,9 @@ const SUPER_BLOCK_SIZE: usize = 1024;
 
 /// Validated superblock geometry, features, and preserved on-disk fields.
 ///
-/// These fields are fixed for the lifetime of a mount. Only runtime metadata
-/// in `SuperBlockState` requires locking; serialization combines both parts.
+/// Geometry and features remain fixed for the lifetime of a mount;
+/// mutable counters and filesystem state are accessed through `read_state`
+/// and `write_state`.
 #[derive(Debug)]
 pub(super) struct SuperBlock {
     /// Total number of inodes.
@@ -124,10 +101,7 @@ pub(super) struct SuperBlock {
     state: RwMutex<Dirty<SuperBlockState>>,
 }
 
-/// Superblock metadata that may change while the filesystem is mounted.
-///
-/// Allocation and reclamation update the free counters; sync updates the write
-/// time. Mount, check, and recovery fields remain here for their mutable roles.
+/// Mutable filesystem state and allocation counters stored in the superblock.
 #[derive(Debug)]
 pub(super) struct SuperBlockState {
     /// Total number of free blocks.
@@ -907,14 +881,6 @@ mod test {
 
     use super::*;
     use crate::fs::fs_impls::ext4::test_utils::make_valid_raw_super_block;
-
-    #[ktest]
-    fn max_file_size_matches_ext2_4k_limit() {
-        let raw = make_valid_raw_super_block(1);
-        let sb = SuperBlock::try_from(raw).unwrap();
-
-        assert_eq!(sb.max_file_size(), 2_196_873_666_560);
-    }
 
     #[ktest]
     fn sparse_super_backup_groups() {

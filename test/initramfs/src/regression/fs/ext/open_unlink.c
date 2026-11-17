@@ -90,7 +90,41 @@ FN_TEST(append_two_writers)
 }
 END_TEST()
 
-
+/* Closing the last unlinked handle must reclaim even unsynced allocations. */
+FN_TEST(write_after_unlink_reclaims_unsynced_blocks)
+{
+	const char *path = BASE_DIR "/unsynced_file";
+	struct statfs before;
+#ifdef __asterinas__
+	struct statfs allocated, after;
+#endif
+	TEST_SUCC(statfs(BASE_DIR, &before));
+	int fd = TEST_SUCC(open(path, O_CREAT | O_RDWR, 0644));
+	TEST_SUCC(unlink(path));
+	TEST_RES(write(fd, "alive", 5), _ret == 5);
+	char buffer[5];
+	TEST_RES(pread(fd, buffer, sizeof(buffer), 0),
+		 _ret == sizeof(buffer) &&
+			 memcmp(buffer, "alive", sizeof(buffer)) == 0);
+	/* FIXME: Linux may delay allocation and last-close accounting updates.
+	 * Asterinas allocates buffered writes immediately. Keep these immediate
+	 * accounting checks until delayed allocation/reclamation is supported.
+	 */
+#ifdef __asterinas__
+	TEST_RES(statfs(BASE_DIR, &allocated),
+		 allocated.f_bfree < before.f_bfree);
+#endif
+	TEST_SUCC(close(fd));
+#ifdef __asterinas__
+	TEST_RES(statfs(BASE_DIR, &after),
+		 after.f_bfree == before.f_bfree &&
+			 after.f_ffree == before.f_ffree);
+#else
+	/* The unlinked inode is no longer reachable on either system. */
+	TEST_ERRNO(open(path, O_RDONLY), ENOENT);
+#endif
+}
+END_TEST()
 
 FN_SETUP(cleanup_base_dir)
 {

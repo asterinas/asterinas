@@ -1,19 +1,29 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Small helpers shared across the ext2 module.
-//!
-//! - `Dirty` — a wrapper that tracks whether its inner value has been
-//!   mutated, for writeback scheduling.
-//! - `IsPowerOf` — a trait for testing whether a number is a power of
-//!   another (used by sparse-superblock backup-group selection).
-//! - `now` — a convenience function that reads the real-time coarse clock.
-//! - `duration_to_ext2_secs` — converts kernel durations to clamped ext2
-//!   timestamp seconds.
+//! Shared EXT helpers for dirty tracking, I/O completion, and format arithmetic.
 
 use core::ops::MulAssign;
 
 use super::prelude::*;
 use crate::prelude::warn;
+
+/// Submits I/O and waits for all queued requests, even if submission fails.
+/// A submission error takes precedence over a completion error.
+pub(super) fn submit_and_wait(
+    batch: &mut IoBatch,
+    submit_fn: impl FnOnce(&mut IoBatch) -> Result<()>,
+) -> Result<()> {
+    let submitted = submit_fn(batch);
+    let completed = batch.wait_all();
+    submitted?;
+    completed?;
+    Ok(())
+}
+
+/// Returns whether two half-open ranges overlap; empty ranges never overlap.
+pub(super) fn ranges_overlap<T: Ord>(left: &Range<T>, right: &Range<T>) -> bool {
+    !left.is_empty() && !right.is_empty() && left.start < right.end && right.start < left.end
+}
 
 pub(super) trait IsPowerOf: Copy + Sized + MulAssign + PartialOrd {
     /// Returns whether `self` equals `x^k` for some `k > 0`.

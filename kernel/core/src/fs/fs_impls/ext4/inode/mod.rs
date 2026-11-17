@@ -1,73 +1,36 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Ext4 inode implementation.
+//! Shared EXT2/EXT4 inode operations.
 //!
-//! The central type, `Inode`, represents one in-memory ext2 inode and is the
-//! concrete inode object exposed to the VFS adapter.
-//!
-//! # Type aliases
-//!
-//! - `Iblock` — logical block index within a file (0-based).
-//! - `Ext4Bid` — physical block address on the backing device.
-//! - `Ext4Ino` — on-disk inode number (ext2 format is 32-bit; the VFS widens
-//!   to `u64`).
-//!
-//! # Data model
-//!
-//! Inode state is organized as a strict ownership chain:
-//!
-//! ```text
-//! Inode  →  InodeInner  →  InodeDesc  →  RawInode
-//! ```
-//!
-//! - `Inode` — the ref-counted, shareable handle; holds the inode number,
-//!   file type, block-group index, a weak filesystem reference, and an optional
-//!   xattr sidecar.
-//! - `InodeInner` — the `RwMutex`-guarded interior: the dirty descriptor
-//!   and the type-specific inode payload.
-//! - `InodeDesc` — a decoded, Rust-typed mirror of all on-disk inode fields.
-//! - `RawInode` — the 256-byte ext4 disk layout (`#[repr(C)]`); transferred
-//!   according to the volume's 128- or 256-byte inode slot size and converted
-//!   to/from `InodeDesc` at I/O boundaries.
-//!
-//! # Submodules
-//!
-//! The inode implementation is split by inode concern:
-//!
-//! | Submodule                  | Responsibility                                            |
-//! |----------------------------|-----------------------------------------------------------|
-//! | `attrs`                    | Metadata: mode, uid, gid, times, xattr                    |
-//! | `block_mapping`            | Block-mapping dispatch and format-specific implementations|
-//! | `io_range`                 | Direct-I/O block range planning                           |
-//! | `file`                     | Regular-file I/O and allocation                           |
-//! | `dir`                      | Directory entry semantics                                 |
-//! | `symlink`                  | Symlink target storage                                    |
-//! | `sync`                     | Writeback and reclaim                                     |
+//! [`Inode`] exposes file, directory, and symlink operations to the VFS.
+//! [`InodeDesc`] contains decoded metadata; [`RawInode`] is its on-disk
+//! representation. `block_mapping` handles file block allocation and lookup,
+//! and `sync` coordinates inode writeback and reclamation.
 //!
 //! # Locking
 //!
-//! Within a single inode, `inner` and `xattr` are never held simultaneously;
-//! `Xattr` manages its own internal lock and is always accessed outside
-//! `inner`. Data-backed inodes additionally nest the block-pointer tree and
-//! its indirect-block cache under `inner` in order:
+//! Within a single inode, `inner` and the xattr cache lock are never held
+//! simultaneously. Xattr operations release their cache lock before acquiring
+//! `inner` to update the inode descriptor.
+//!
+//! Data-backed operations acquire the mapping lock under `inner`. The mapping
+//! lock protects the selected tree; its indirect-block or extent-node cache
+//! has an additional internal lock. Extent-node cache bookkeeping releases its
+//! lock before device I/O or filesystem allocation.
 //!
 //! ```text
-//! Inode::inner → BlockPtrTree → IndirectBlockManager
+//! Inode::inner → BlockMapping::manager → mapping cache locks
+//! Inode::inner → BlockMapping::manager → SuperBlock::state → BlockGroup::metadata
 //! ```
 //!
 //! When multiple inodes must be write-locked simultaneously, acquire them
 //! in ascending `ino` order and coalesce duplicates first.
 //!
-//! Data-backed inode operations that allocate or free blocks call into
-//! filesystem-level methods (`Ext4::alloc_blocks`, `Ext4::free_blocks`). The
-//! full cross-layer ordering is:
-//!
-//! ```text
-//! Inode::inner → BlockMapping → SuperBlock::state → BlockGroup::metadata
-//! ```
-//!
-//! `BlockGroup::inode_cache` is independent: it is never held while
-//! acquiring `super_block` or `metadata`, nor while holding `Inode::inner`.
+//! Directory operations may acquire `BlockGroup::inode_cache` while holding
+//! inode write locks. The reverse order must be avoided: inode-cache walkers
+//! such as sync clone the inode handles and release the cache lock before
+//! acquiring any cached inode's `inner` lock. Cache misses may load a new inode
+//! under the cache lock, but must not lock an existing inode's `inner` there.
 
 #![short_vis_path::add(ext4)]
 
@@ -119,18 +82,10 @@ impl FilePerm {
     }
 }
 
-/// An in-memory ext2 inode.
+/// An in-memory EXT2/EXT4 inode, identified by its filesystem and inode number.
 ///
-/// Each `Inode` corresponds to one on-disk inode identified by a unique
-/// inode number (`ino`). It caches the inode descriptor and the payload needed
-/// by that inode type, then exposes directory, symlink, and regular-file
-/// operations through the VFS `Inode` trait.
-///
-/// An `Inode` owns the cached descriptor and its type-specific payload. Only
-/// data-backed payloads own data pages and block-mapping state; block-group
-/// bitmaps belong to the parent `Ext4` and `BlockGroup`. See the module-level
-/// documentation, especially the `Locking` section, for the full lock ordering
-/// across inode, filesystem, and block-group layers.
+/// Provides operations appropriate to its file type. Data-backed inodes also
+/// own a page cache and block mapping. See the module's locking requirements.
 pub(crate) struct Inode {
     ino: Ext4Ino,
     type_: InodeType,
@@ -223,7 +178,7 @@ impl Inode {
 impl Drop for Inode {
     fn drop(&mut self) {
         if let Err(err) = self.try_reclaim_deleted_inode() {
-            debug!(
+            warn!(
                 "failed to reclaim deleted inode {} during drop: {:?}",
                 self.ino, err
             );
@@ -346,7 +301,7 @@ impl TryFrom<&RawInode> for InodeDesc {
         let flags = FileFlags::from_bits(raw.flags)
             .ok_or_else(|| Error::with_message(Errno::EIO, "invalid inode flags"))?;
         if flags.contains(FileFlags::EXTENTS) {
-            block_mapping::extent::validate_extent_root(raw.block)?;
+            block_mapping::extent::ExtentTree::validate_root(&raw.block)?;
         }
         let raw_block_ptrs = RawBlockPtrs::new(raw.sector_count, raw.block);
 
@@ -458,7 +413,7 @@ impl Default for RawInode {
 
 const_assert!(size_of::<RawInode>() == 256);
 
-/// Interior of `Inode` guarded by a single `RwMutex`.
+/// Mutable inode metadata and file-type-specific state.
 #[derive(Debug)]
 struct InodeInner {
     /// Full persistence mirror of the on-disk inode.
@@ -467,7 +422,7 @@ struct InodeInner {
     payload: InodePayload,
 }
 
-/// Type-specific in-memory state backed by ext2 inode payload storage.
+/// File-type-specific state encoded in the inode's `i_block` area.
 #[derive(Debug)]
 enum InodePayload {
     /// Regular files, directories, and slow symlinks backed by data blocks.
@@ -528,7 +483,7 @@ impl InodeInner {
     fn clear_dirty(&mut self) {
         self.desc.clear_dirty();
         if let Ok(block_manager) = self.block_manager() {
-            block_manager.clear_dirty();
+            block_manager.clear_inode_dirty();
         }
     }
 
@@ -536,7 +491,7 @@ impl InodeInner {
         self.desc.is_dirty()
             || self
                 .block_manager()
-                .is_ok_and(|block_manager| block_manager.is_dirty())
+                .is_ok_and(|block_manager| block_manager.has_dirty_metadata())
     }
 
     fn inode_type(&self) -> InodeType {
@@ -781,10 +736,10 @@ bitflags! {
 #[cfg(ktest)]
 mod test {
     use super::*;
-    use crate::fs::fs_impls::ext4::test_utils::{self, RawInodeBuilder};
+    use crate::fs::fs_impls::ext4::test_utils;
 
     /// Reads a `RawInode` directly from the test fixture's disk image.
-    pub(super) fn read_raw_inode_from_disk(f: &test_utils::Ext4Fixture, ino: u32) -> RawInode {
+    pub(super) fn read_raw_inode_from_disk(f: &test_utils::ExtFixture, ino: u32) -> RawInode {
         let nr_inodes_per_group = f.sb.nr_inodes_per_group();
         let group_idx = ((ino - 1) / nr_inodes_per_group) as usize;
         let inode_idx = (ino - 1) % nr_inodes_per_group;
@@ -802,29 +757,5 @@ mod test {
             )
             .unwrap();
         raw
-    }
-
-    /// Builds a live in-memory file inode (not on disk) for low-level tests.
-    pub(super) fn make_live_file_inode(
-        ext2: &Arc<Ext4>,
-        ino: u32,
-        size: usize,
-        sector_count: u32,
-        flags: FileFlags,
-        block_ptrs: [u32; RAW_BLOCK_PTRS_LEN],
-    ) -> Arc<Inode> {
-        let mut raw = RawInodeBuilder::new(0o100644).build();
-        raw.size_lo = size as u32;
-        raw.sector_count = sector_count;
-        raw.flags = flags.bits();
-        raw.block = block_ptrs;
-        let desc = InodeDesc::try_from(&raw).unwrap();
-        Inode::new(
-            ino,
-            InodeType::File,
-            Dirty::new(desc),
-            0,
-            Arc::downgrade(ext2),
-        )
     }
 }

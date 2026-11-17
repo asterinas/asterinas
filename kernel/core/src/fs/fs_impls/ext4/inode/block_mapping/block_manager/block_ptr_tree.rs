@@ -53,13 +53,20 @@ impl BlockPtrTree {
         &self.raw_block_ptrs
     }
 
-    /// Returns whether the `RawBlockPtrs` is dirty.
-    pub(in inode) fn is_dirty(&self) -> bool {
+    /// Returns whether the inode-resident pointers or sector count needs writeback.
+    pub(in inode) fn is_inode_dirty(&self) -> bool {
         self.raw_block_ptrs.is_dirty()
     }
 
-    /// Clears the dirty flag for the raw on-disk block pointer state.
-    pub(in inode) fn clear_dirty(&mut self) {
+    /// Returns whether inode-resident metadata or cached indirect blocks need writeback.
+    pub(in inode) fn has_dirty_metadata(&self) -> bool {
+        self.is_inode_dirty() || self.indirect_blocks_manager.lock().has_dirty_metadata()
+    }
+
+    /// Clears only the dirty flag for inode-resident pointers and sector count.
+    ///
+    /// Cached indirect blocks are unaffected; `sync_indirect_blocks` writes them back.
+    pub(in inode) fn clear_inode_dirty(&mut self) {
         self.raw_block_ptrs.clear_dirty();
     }
 
@@ -413,12 +420,7 @@ impl BlockPtrTree {
         }
     }
 
-    /// Translates a logical block number into a block-pointer path and walks
-    /// the on-disk chain to resolve physical block addresses.
-    ///
-    /// After skipping the 12 direct blocks, the remaining block number is
-    /// converted to base-1024 digits — each digit becomes a slot at one
-    /// level of the indirect block tree.
+    /// Resolves the pointer chain for a logical block.
     fn walk_at(&self, iblock: Iblock) -> Result<BlockPointerWalk> {
         let path = BlockPointerPath::new(iblock)?;
         self.walk_path(path)
@@ -483,21 +485,21 @@ impl BlockPtrTree {
         }
 
         let max_count = walk.max_blocks_in_leaf(max_blocks);
-        let mut count = 1u32;
+        let mut nr_contiguous_blocks = 1u32;
         let start_slot = walk.leaf_slot() as usize;
 
         if walk.is_direct_data_block() {
             // Direct blocks are stored inline in the inode, so scan forward in
             // `i_block[]` while the next physical block stays contiguous.
-            while count < max_count {
-                let slot = start_slot + count as usize;
+            while nr_contiguous_blocks < max_count {
+                let slot = start_slot + nr_contiguous_blocks as usize;
                 let Some(&next_bid) = self.raw_block_ptrs.block_ptrs.get(slot) else {
                     break;
                 };
-                if next_bid == 0 || next_bid != first_bid.saturating_add(count) {
+                if next_bid == 0 || next_bid != first_bid.saturating_add(nr_contiguous_blocks) {
                     break;
                 }
-                count += 1;
+                nr_contiguous_blocks += 1;
             }
         } else {
             // Indirect cases share the same contiguity rule, but the leaf slots
@@ -505,17 +507,17 @@ impl BlockPtrTree {
             let leaf_bid = walk.parent_bid_at(walk.leaf_level());
             let mut indirect_block_manager = self.indirect_blocks_manager.lock();
             let leaf_block = indirect_block_manager.find(leaf_bid)?;
-            while count < max_count {
-                let slot = start_slot + count as usize;
+            while nr_contiguous_blocks < max_count {
+                let slot = start_slot + nr_contiguous_blocks as usize;
                 let next_bid = leaf_block.read_bid(slot)?;
-                if next_bid == 0 || next_bid != first_bid.saturating_add(count) {
+                if next_bid == 0 || next_bid != first_bid.saturating_add(nr_contiguous_blocks) {
                     break;
                 }
-                count += 1;
+                nr_contiguous_blocks += 1;
             }
         }
 
-        Ok(first_bid..first_bid.saturating_add(count))
+        Ok(first_bid..first_bid.saturating_add(nr_contiguous_blocks))
     }
 
     /// Returns how many indirect metadata blocks and data blocks are needed.
@@ -541,37 +543,37 @@ impl BlockPtrTree {
             return Ok((indirect_blks, max_data_blks));
         }
 
-        // The indirect path already exists, so only count how many consecutive
+        // The indirect path already exists, so only nr_allocatable_blocks how many consecutive
         // empty slots remain in the current leaf.
         let start_slot = walk.leaf_slot() as usize;
-        let mut count = 1u32;
+        let mut nr_allocatable_blocks = 1u32;
         if walk.is_direct_data_block() {
             // Direct blocks live inline in the inode's `i_block[]`.
-            while count < max_data_blks {
-                let slot = start_slot + count as usize;
+            while nr_allocatable_blocks < max_data_blks {
+                let slot = start_slot + nr_allocatable_blocks as usize;
                 let Some(&next_bid) = self.raw_block_ptrs.block_ptrs.get(slot) else {
                     break;
                 };
                 if next_bid != 0 {
                     break;
                 }
-                count += 1;
+                nr_allocatable_blocks += 1;
             }
         } else {
             // Indirect cases use the final indirect block as the allocation leaf.
             let leaf_bid = walk.parent_bid_at(walk.leaf_level());
             let mut indirect_blocks_manager = self.indirect_blocks_manager.lock();
             let leaf_block = indirect_blocks_manager.find(leaf_bid)?;
-            while count < max_data_blks {
-                let slot = start_slot + count as usize;
+            while nr_allocatable_blocks < max_data_blks {
+                let slot = start_slot + nr_allocatable_blocks as usize;
                 if leaf_block.read_bid(slot)? != 0 {
                     break;
                 }
-                count += 1;
+                nr_allocatable_blocks += 1;
             }
         }
 
-        Ok((0, count))
+        Ok((0, nr_allocatable_blocks))
     }
 
     /// Frees all blocks in a pointer subtree.
@@ -696,12 +698,7 @@ impl BlockPtrTree {
         Ok(())
     }
 
-    /// Splices allocated blocks into the block-pointer tree.
-    ///
-    /// If no indirect metadata blocks were allocated, this only fills data bids
-    /// into existing leaf slots. Otherwise it builds the missing indirect chain,
-    /// links the chain root into the first hole, and updates the inode sector
-    /// count for both metadata and data blocks.
+    /// Links allocated data and metadata blocks and updates the sector count.
     fn link_allocated_blocks(
         &mut self,
         guard: &BlockAllocGuard,
@@ -781,7 +778,7 @@ impl BlockPtrTree {
                 } else {
                     block.write_bid(start_slot, indirect_blocks[indirect_blk_idx + 1])?;
                 }
-                indirect_blocks_manager.insert(block)?;
+                indirect_blocks_manager.insert(block);
             }
 
             // Splice the chain root into the parent pointer.
@@ -844,8 +841,7 @@ impl BlockPtrTree {
     /// Writes a contiguous range of allocated data block IDs into an indirect
     /// block.
     ///
-    /// The caller guarantees that every target slot is zero; the debug
-    /// assertion keeps that invariant explicit during development.
+    /// The caller must ensure every target slot is unallocated.
     fn write_data_range_to_indirect_block(
         block: &mut IndirectBlock,
         start_slot: usize,
@@ -1128,7 +1124,7 @@ mod test {
     use crate::{
         fs::fs_impls::ext4::{
             inode::RAW_BLOCK_PTRS_LEN,
-            test_utils::{Ext4FixtureBuilder, write_indirect_ptr},
+            test_utils::{ExtFixtureBuilder, write_indirect_ptr},
         },
         time::clocks,
     };
@@ -1176,7 +1172,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_direct_and_indirect_ok() {
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = ExtFixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
         let ptrs = PTRS_PER_BLOCK as u32;
@@ -1287,7 +1283,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_get_block_range_returns_contiguous_runs() {
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = ExtFixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
         let indirect_bid = 40u32;
@@ -1312,7 +1308,7 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_out_of_range_iblock_returns_err() {
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = ExtFixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
         let ptrs = PTRS_PER_BLOCK as u64;
@@ -1325,6 +1321,12 @@ mod test {
 
         let block_ptr_tree = make_block_ptr_tree([0; RAW_BLOCK_PTRS_LEN], 0, &f.fs);
 
+        // The sector-accounting limit is lower than the tree's address limit.
+        const MAX_FILE_BYTES_4K: u64 = 2_196_873_666_560;
+        assert_eq!(f.sb.max_file_size() as u64, MAX_FILE_BYTES_4K);
+        let last_file_block = (MAX_FILE_BYTES_4K / BLOCK_SIZE as u64 - 1) as u32;
+        block_ptr_tree.walk_at(last_file_block).unwrap();
+        assert!(u64::from(last_file_block) < max_iblock);
         // Accept the maximum valid logical block and reject the next one.
         block_ptr_tree.walk_at(max_iblock as u32).unwrap();
 
@@ -1377,7 +1379,7 @@ mod test {
     #[ktest]
     fn approx_hole_blocks_scans() {
         clocks::init_for_ktest();
-        let f = Ext4FixtureBuilder::new(2, 256).build().unwrap();
+        let f = ExtFixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
         let ptrs = PTRS_PER_BLOCK;
         let ptrs_bits = (ptrs as u32).trailing_zeros();
@@ -1487,7 +1489,7 @@ mod test {
 
     #[ktest]
     fn block_alloc_direct_range_ok() {
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1529,7 +1531,7 @@ mod test {
 
     #[ktest]
     fn block_alloc_indirect_range_ok() {
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1556,11 +1558,24 @@ mod test {
             SECTORS_PER_BLOCK * 5
         );
         assert_eq!(free_before - free_after, 5);
+
+        // Confirming inode metadata does not discard pending indirect writes.
+        assert!(block_ptr_tree.is_inode_dirty());
+        block_ptr_tree.clear_inode_dirty();
+        assert!(!block_ptr_tree.is_inode_dirty());
+        assert!(block_ptr_tree.has_dirty_metadata());
+        let indirect_bid = block_ptr_tree.raw_block_ptrs.block_ptrs[12];
+        f.disk.fail_write_block(Some(indirect_bid as usize));
+        assert!(block_ptr_tree.sync_indirect_blocks().is_err());
+        assert!(block_ptr_tree.has_dirty_metadata());
+        f.disk.fail_write_block(None);
+        block_ptr_tree.sync_indirect_blocks().unwrap();
+        assert!(!block_ptr_tree.has_dirty_metadata());
     }
 
     #[ktest]
     fn truncate_indirect_frees_shared_path() {
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1596,7 +1611,7 @@ mod test {
 
     #[ktest]
     fn truncate_releases_all_indirect_blocks() {
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();
@@ -1631,7 +1646,7 @@ mod test {
 
     #[ktest]
     fn free_block_subtree_recursively_releases_blocks() {
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
             .unwrap();

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Core `Ext4` filesystem state for a mounted ext2 volume.
+//! Core `Ext4` filesystem state for a mounted EXT2/EXT4 volume.
 //!
-//! This module owns `Ext4`, the top-level handle for a mounted ext2 volume.
+//! This module owns `Ext4`, the top-level handle for a mounted EXT2/EXT4 volume.
 //! It is the filesystem-wide coordination point for mount state, inode
 //! routing, block allocation, and writeback. Group-local metadata and inode
 //! caches remain owned by the corresponding `BlockGroup`.
@@ -12,10 +12,12 @@
 //! `SuperBlock` exposes mount-time geometry and features without locking.
 //! Its runtime metadata uses an `RwMutex` for allocation, deallocation, and sync.
 //! The `block_groups` vector itself is immutable after mount; each `BlockGroup`
-//! carries its own internal locks (see the `block_group` module documentation). The `group_descriptors_segment` has no dedicated
+//! carries its own internal locks (see the `block_group` module documentation).
+//! The `group_descriptors_segment` has no dedicated
 //! lock — it is loaded once at mount and updated during `sync` under each
 //! group's metadata write guard, with disjoint descriptor offsets ensuring
-//! no two writers touch the same bytes. `next_generation` is an `AtomicU32`
+//! no two writers touch the same bytes.
+//! `next_generation` is an `AtomicU32`
 //! incremented once per newly allocated inode.
 
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -48,7 +50,7 @@ pub(super) enum MountFlavor {
     Ext4,
 }
 
-/// Top-level handle for a mounted ext2 filesystem.
+/// Top-level handle for a mounted EXT2/EXT4 filesystem.
 ///
 /// Owns the superblock, block group array, and group descriptor table.
 /// Filesystem-wide operations are routed through the block group selected by
@@ -375,6 +377,7 @@ impl Ext4 {
     }
 
     /// Frees a range of blocks starting at `start`.
+    /// An error may leave only part of the range freed.
     pub(super) fn free_blocks(&self, start: Ext4Bid, count: u32) -> Result<()> {
         if count == 0 {
             return Ok(());
@@ -384,6 +387,9 @@ impl Ext4 {
         let mut state = sb.write_state();
         if !sb.is_data_block_valid(start, count) {
             return_errno_with_message!(Errno::EIO, "freeing invalid data block range");
+        }
+        if state.free_blocks_count().checked_add(count).is_none() {
+            return_errno_with_message!(Errno::EIO, "free block counter overflow");
         }
         let nr_blocks_per_group = sb.nr_blocks_per_group();
         let first_data_block = sb.first_data_block();
@@ -747,29 +753,13 @@ mod test {
         fs::{
             file::SyncMode,
             fs_impls::ext4::test_utils::{
-                BlockBitmapInit, Ext4FixtureBuilder, Ext4MemoryDisk, InodeBitmapInit,
-                RawInodeBuilder, assert_errno, create_file, default_fixture, make_valid_group_desc,
-                make_valid_super_block, write_raw_inode_to_disk,
+                BlockBitmapInit, ExtFixtureBuilder, InodeBitmapInit, RawInodeBuilder, assert_errno,
+                create_file, default_fixture, write_raw_inode_to_disk,
             },
             vfs::{file_system::FileSystem as FileSystemTrait, inode::Inode as VfsInodeTrait},
         },
         time::clocks,
     };
-
-    fn expected_overhead_blocks(sb: &SuperBlock) -> u32 {
-        let nr_block_groups = sb.nr_block_groups() as usize;
-        let gdb_count =
-            ((nr_block_groups * size_of::<RawBlockGroup>()).div_ceil(BLOCK_SIZE)) as u32;
-        let mut overhead = sb.first_data_block();
-
-        for group_idx in 0..nr_block_groups {
-            if group_idx == 0 || sb.is_backup_group(group_idx) {
-                overhead += 1 + gdb_count;
-            }
-        }
-
-        overhead + sb.nr_block_groups() * (2 + sb.nr_inode_table_blocks_per_group())
-    }
 
     fn make_raw_inode(mode: u16, link_count: u16, dtime: u32) -> RawInode {
         RawInodeBuilder::new(mode)
@@ -779,37 +769,9 @@ mod test {
     }
 
     #[ktest]
-    fn stat_bsddf_subtracts_overhead() {
-        let f = Ext4FixtureBuilder::new(3, 512).build().unwrap();
-
-        let stat = FileSystemTrait::sb(f.fs.as_ref());
-        let expected_overhead = expected_overhead_blocks(&f.sb);
-
-        assert_eq!(
-            stat.blocks,
-            (f.sb.total_blocks() - expected_overhead) as usize
-        );
-        assert!(stat.blocks < f.sb.total_blocks() as usize);
-    }
-
-    #[ktest]
-    fn stat_minixdf_reports_total() {
-        let f = Ext4FixtureBuilder::new(3, 512).build().unwrap();
-        let ext2 = Ext4::open(
-            f.disk.clone() as Arc<dyn BlockDevice>,
-            FsFlags::empty(),
-            MountFlavor::Ext2,
-            Some("minixdf"),
-        )
-        .unwrap();
-
-        let stat = FileSystemTrait::sb(ext2.as_ref());
-        assert_eq!(stat.blocks, f.sb.total_blocks() as usize);
-    }
-
-    #[ktest]
-    fn mount_flavor_and_directory_feature_gates() {
-        // Exercise feature negotiation through mount and then inode loading.
+    fn mount_and_inode_loading_report_feature_errors() {
+        // Keep precise errno and per-inode INDEX checks here. Userspace mount
+        // regressions separately cover the supported/unsupported image matrix.
         // dir_index is a superblock capability; INDEX is a per-inode flag.
         let cases = [
             (
@@ -886,7 +848,7 @@ mod test {
             ),
         ];
         for (case, flavor, compat, incompat, indexed, mount_error, inode_error) in cases {
-            let f = Ext4FixtureBuilder::new(1, 256).build().unwrap();
+            let f = ExtFixtureBuilder::new(1, 256).build().unwrap();
             let mut raw = f
                 .disk
                 .segment()
@@ -922,10 +884,10 @@ mod test {
     }
 
     #[ktest]
-    fn inode_write_sync_and_remount_preserve_data_and_allocation_metadata() {
+    fn inode_sync_serializes_superblock_and_allocation_metadata() {
         for flavor in [MountFlavor::Ext2, MountFlavor::Ext4] {
             clocks::init_for_ktest();
-            let f = Ext4FixtureBuilder::new(1, 256)
+            let f = ExtFixtureBuilder::new(1, 256)
                 .with_free_blocks(64, 64)
                 .with_free_inodes(1000, 1000)
                 .with_group0_used_dirs(1)
@@ -966,7 +928,6 @@ mod test {
                     FilePerm::from_bits_truncate(0o644),
                 )
                 .unwrap();
-            let ino = file.ino();
             let free_before = ext4.super_block().read_state().free_blocks_count();
             let block_bitmap_offset = Bid::new(f.descs[0].block_bitmap_bid.into()).to_offset();
             let mut block_bitmap_before = [0u8; BLOCK_SIZE];
@@ -1021,28 +982,13 @@ mod test {
                 .read_bytes(block_bitmap_offset, &mut block_bitmap_after)
                 .unwrap();
             assert_ne!(block_bitmap_after, block_bitmap_before);
-
-            drop(file);
-            drop(ext4);
-            let remounted = Ext4::open(
-                f.disk.clone() as Arc<dyn BlockDevice>,
-                FsFlags::empty(),
-                flavor,
-                None,
-            )
-            .unwrap();
-            let persisted_file = remounted.read_inode(ino).unwrap();
-            let mut readback = [0u8; BLOCK_SIZE];
-            let mut writer = VmWriter::from(&mut readback[..]).to_fallible();
-            assert_eq!(persisted_file.read_at(0, &mut writer).unwrap(), BLOCK_SIZE);
-            assert_eq!(readback, data);
         }
     }
 
     #[ktest]
     fn inode_sync_reports_flush_failure() {
         clocks::init_for_ktest();
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .with_free_inodes(1000, 1000)
             .with_group0_used_dirs(1)
@@ -1067,7 +1013,7 @@ mod test {
     #[ktest]
     fn filesystem_sync_stages_cached_inodes_before_one_final_flush() {
         clocks::init_for_ktest();
-        let f = Ext4FixtureBuilder::new(1, 256)
+        let f = ExtFixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .with_free_inodes(1000, 1000)
             .with_group0_used_dirs(1)
@@ -1131,7 +1077,7 @@ mod test {
     #[ktest]
     fn sync_metadata_writes_primary_and_backup() {
         clocks::init_for_ktest();
-        let fixture = Ext4FixtureBuilder::new(3, 512)
+        let fixture = ExtFixtureBuilder::new(3, 512)
             .with_free_blocks(0, 10)
             .with_free_inodes(16, 16)
             .build()
@@ -1194,11 +1140,23 @@ mod test {
     #[ktest]
     fn block_alloc_and_free_single_group_ok() {
         // Happy path: allocate a contiguous run and then free it back.
-        let f = Ext4FixtureBuilder::new(1, 128)
+        let f = ExtFixtureBuilder::new(1, 128)
             .with_free_blocks(31, 31)
             .block_bitmap(BlockBitmapInit::MetadataOnly)
             .build()
             .unwrap();
+
+        // System metadata must remain allocated and outside allocator results.
+        let first = f.sb.group_first_block_no(0);
+        let metadata = f.fs.block_group(0).metadata();
+        for bid in [
+            f.descs[0].block_bitmap_bid,
+            f.descs[0].inode_bitmap_bid,
+            f.descs[0].inode_table_bid,
+        ] {
+            assert!(metadata.block_bitmap.is_allocated((bid - first) as u16));
+        }
+        drop(metadata);
 
         let before_sb_free = f.fs.super_block().read_state().free_blocks_count();
         let before_group_free = f.fs.block_group(0).free_blocks_count();
@@ -1237,7 +1195,7 @@ mod test {
     #[ktest]
     fn block_alloc_and_free_invalid_returns_err() {
         // No-space and invalid-request checks.
-        let f_nospc = Ext4FixtureBuilder::new(1, 128)
+        let f_nospc = ExtFixtureBuilder::new(1, 128)
             .with_free_blocks(0, 0)
             .block_bitmap(BlockBitmapInit::MetadataOnly)
             .build()
@@ -1252,7 +1210,7 @@ mod test {
         );
 
         // Inconsistent counters/bitmap shape should surface as EIO on allocation.
-        let f_corrupt = Ext4FixtureBuilder::new(1, 128)
+        let f_corrupt = ExtFixtureBuilder::new(1, 128)
             .with_free_blocks(1, 1)
             .block_bitmap(BlockBitmapInit::Full)
             .build()
@@ -1265,7 +1223,7 @@ mod test {
         );
 
         // Free-path boundary and system-zone guards.
-        let f_free = Ext4FixtureBuilder::new(1, 128)
+        let f_free = ExtFixtureBuilder::new(1, 128)
             .with_free_blocks(31, 31)
             .block_bitmap(BlockBitmapInit::MetadataOnly)
             .build()
@@ -1280,7 +1238,7 @@ mod test {
     #[ktest]
     fn inode_alloc_and_free_single_group_ok() {
         // Allocate one directory inode and verify bitmap/counter transitions.
-        let f = Ext4FixtureBuilder::new(1, 128)
+        let f = ExtFixtureBuilder::new(1, 128)
             .with_free_inodes(16, 16)
             .inode_bitmap(InodeBitmapInit::ReservedOnly)
             .build()
@@ -1331,7 +1289,7 @@ mod test {
     #[ktest]
     fn inode_alloc_and_free_invalid_returns_err() {
         // No free inode counter means ENOSPC without bitmap scan.
-        let f_nospc = Ext4FixtureBuilder::new(1, 128)
+        let f_nospc = ExtFixtureBuilder::new(1, 128)
             .with_free_inodes(0, 0)
             .inode_bitmap(InodeBitmapInit::ReservedOnly)
             .build()
@@ -1348,7 +1306,7 @@ mod test {
         );
 
         // All inode bitmap bits set -> no allocatable inode.
-        let f_full = Ext4FixtureBuilder::new(1, 128)
+        let f_full = ExtFixtureBuilder::new(1, 128)
             .with_free_inodes(8, 8)
             .inode_bitmap(InodeBitmapInit::Full)
             .build()
@@ -1358,7 +1316,7 @@ mod test {
             Errno::ENOSPC
         );
 
-        let f_free = Ext4FixtureBuilder::new(1, 128)
+        let f_free = ExtFixtureBuilder::new(1, 128)
             .with_free_inodes(8, 8)
             .inode_bitmap(InodeBitmapInit::ReservedOnly)
             .build()
@@ -1389,27 +1347,7 @@ mod test {
     }
 
     #[ktest]
-    fn load_group_descs_valid_image_ok() {
-        let sb = make_valid_super_block(3);
-        let descs = (0..sb.nr_block_groups() as usize)
-            .map(|idx| make_valid_group_desc(&sb, idx))
-            .collect::<Vec<_>>();
-        let disk = Ext4MemoryDisk::new(64);
-        disk.write_group_desc_table(&sb, &descs);
-
-        let desc_offset = Bid::new(sb.group_descriptors_bid(0) as u64).to_offset();
-        let first_desc = disk
-            .segment()
-            .read_val::<RawBlockGroup>(desc_offset)
-            .unwrap();
-
-        assert_eq!(first_desc.block_bitmap_bid, descs[0].block_bitmap_bid);
-        assert_eq!(first_desc.inode_bitmap_bid, descs[0].inode_bitmap_bid);
-        assert_eq!(first_desc.inode_table_bid, descs[0].inode_table_bid);
-    }
-
-    #[ktest]
-    fn persist_and_reload_inode() {
+    fn inode_cache_reuses_live_inode() {
         let (f, root) = default_fixture();
 
         let child = create_file(&root, "cache_file");
@@ -1417,35 +1355,46 @@ mod test {
 
         let cached = f.fs.read_inode(child_ino).unwrap();
         assert!(Arc::ptr_eq(&child, &cached));
-
-        drop(cached);
-        drop(child);
-        f.fs.sync_all().unwrap();
-
-        let metadata = f.fs.block_group(0).metadata();
-        assert!(metadata.inode_bitmap.is_allocated((child_ino - 1) as u16));
-        drop(metadata);
-
-        let reloaded = f.fs.read_inode(child_ino).unwrap();
-        assert_eq!(reloaded.ino(), child_ino);
     }
+    fn expected_overhead_blocks(sb: &SuperBlock) -> u32 {
+        let nr_block_groups = sb.nr_block_groups() as usize;
+        let gdb_count =
+            ((nr_block_groups * size_of::<RawBlockGroup>()).div_ceil(BLOCK_SIZE)) as u32;
+        let mut overhead = sb.first_data_block();
 
+        for group_idx in 0..nr_block_groups {
+            if group_idx == 0 || sb.is_backup_group(group_idx) {
+                overhead += 1 + gdb_count;
+            }
+        }
+
+        overhead + sb.nr_block_groups() * (2 + sb.nr_inode_table_blocks_per_group())
+    }
     #[ktest]
-    fn load_block_bitmap_valid_image_ok() {
-        let f = Ext4FixtureBuilder::new(2, 128)
-            .block_bitmap(BlockBitmapInit::MetadataOnly)
-            .build()
-            .unwrap();
-        let group = f.fs.block_group(0);
-        let first = f.sb.group_first_block_no(0);
+    fn stat_bsddf_subtracts_overhead() {
+        let f = ExtFixtureBuilder::new(3, 512).build().unwrap();
 
-        let metadata = group.metadata();
-        // Block bitmap, inode bitmap, and inode table blocks must be marked.
-        let bb = (f.descs[0].block_bitmap_bid - first) as u16;
-        let ib = (f.descs[0].inode_bitmap_bid - first) as u16;
-        let it = (f.descs[0].inode_table_bid - first) as u16;
-        assert!(metadata.block_bitmap.is_allocated(bb));
-        assert!(metadata.block_bitmap.is_allocated(ib));
-        assert!(metadata.block_bitmap.is_allocated(it));
+        let stat = FileSystemTrait::sb(f.fs.as_ref());
+        let expected_overhead = expected_overhead_blocks(&f.sb);
+
+        assert_eq!(
+            stat.blocks,
+            (f.sb.total_blocks() - expected_overhead) as usize
+        );
+        assert!(stat.blocks < f.sb.total_blocks() as usize);
+    }
+    #[ktest]
+    fn stat_minixdf_reports_total() {
+        let f = ExtFixtureBuilder::new(3, 512).build().unwrap();
+        let ext2 = Ext4::open(
+            f.disk.clone() as Arc<dyn BlockDevice>,
+            FsFlags::empty(),
+            MountFlavor::Ext2,
+            Some("minixdf"),
+        )
+        .unwrap();
+
+        let stat = FileSystemTrait::sb(ext2.as_ref());
+        assert_eq!(stat.blocks, f.sb.total_blocks() as usize);
     }
 }

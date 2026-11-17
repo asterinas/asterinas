@@ -1,3 +1,17 @@
+# Includes the short list plus directory stress, mmap/truncate, append and fsx.
 generic/001
 generic/002
 generic/005
+generic/006
+generic/007
+generic/011
+generic/014
+generic/023
+generic/024
+generic/029
+generic/035
+generic/069
+generic/075
+generic/130
+generic/141
+generic/169

@@ -1,53 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Ext4 filesystem implementation, providing file I/O, directory operations,
-//! symlinks, and extended attributes through the Asterinas VFS trait interfaces.
+//! Shared EXT2/EXT4 filesystem implementation.
 //!
-//! This module is the shared entry point for ext2 and the currently supported
-//! subset of ext4 in Asterinas. A caller registers both filesystem types via
-//! `init`, after which the VFS can mount ext2 volumes or non-journaled ext4
-//! volumes that use extents. Buffered I/O is delegated to the `PageCache`
-//! subsystem; this module does not cache block data itself.
+//! [`Ext4`] represents a mounted filesystem; [`Inode`] provides file, directory,
+//! symlink, and extended-attribute operations through `impl_for_vfs`.
+//! `block_group` manages local allocation and inode tables, while `super_block`
+//! validates filesystem geometry and features.
 //!
-//! The Second Extended File System (ext2) is a classic Linux filesystem
-//! introduced in 1993 as a replacement for the original ext filesystem.
-//! It was the default Linux filesystem throughout the 1990s and remains
-//! the on-disk foundation for ext3 and ext4. This implementation covers the
-//! base ext2 feature set and basic writable ext4 extents. Journaling, inline
-//! data, metadata checksums, 64-bit block addresses, and HTree directories are
-//! not supported.
-//!
-//! # On-disk layout
-//!
-//! An ext2 volume is divided into fixed-size block groups. Each block group
-//! contains a block bitmap, an inode bitmap, an inode table, and data blocks.
-//! The superblock and the block group descriptor table are stored in block
-//! group 0 (with backup copies in select other groups). The `fs` module
-//! manages the superblock and block group descriptor table, while
-//! `block_group` tracks per-group allocation state.
-//!
-//! Individual files and directories are represented by inodes. The `inode`
-//! module handles inode I/O, including data block mapping, directory entry
-//! management, and symlink resolution. The `impl_for_vfs` module wires
-//! these operations into the VFS trait interfaces so that the rest of the
-//! kernel accesses ext2 through the common filesystem API.
-//!
-//! # Module structure
-//!
-//! | Module         | Responsibility                                       |
-//! |----------------|------------------------------------------------------|
-//! | `fs`           | Filesystem-level state: superblock, block groups     |
-//! | `inode`        | Inode operations: file I/O, directories, symlinks    |
-//! | `xattr`        | Extended attribute block management                  |
-//! | `block_group`  | Block group descriptor and per-group allocation      |
-//! | `super_block`  | On-disk superblock parsing and writeback             |
-//! | `impl_for_vfs` | Wires ext2 types into the VFS trait interfaces       |
-//! | `fs_type`      | `FsType` registration glue                           |
-//! | `utils`        | Dirty tracking, sparse-super helpers, and time utils |
-//! | `prelude`      | Common imports shared across submodules              |
-//!
-//! Directory entry layout helpers live under `inode::dir::dir_entry`,
-//! next to the directory operations that use them.
+//! Supports EXT2 and non-journaled EXT4 with 4 KiB blocks and writable extents.
+//! Journaling, inline data, metadata checksums, 64-bit block addresses, and
+//! indexed directories are unsupported.
 //!
 //! # References
 //!

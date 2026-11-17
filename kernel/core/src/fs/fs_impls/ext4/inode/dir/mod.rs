@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Directory operations for ext2 inodes.
+//! Directory operations for EXT2/EXT4 inodes.
 //!
 //! Directory state is stored as ext2 directory entries inside ordinary inode
 //! data blocks. This module preserves the VFS-visible directory semantics for
@@ -785,9 +785,11 @@ mod test {
     };
 
     #[ktest]
-    fn unlink_last_link_deallocates_on_drop() {
+    fn unlink_retains_inode_slot_until_last_owner_drop() {
         let (f, root) = default_fixture();
 
+        // User-visible open/unlink behavior is covered by ext/open_unlink.c.
+        // Here retain the inode slot, raw fields, and cache error transitions.
         let old = create_file(&root, "old");
         let old_ino = old.ino();
         let payload = vec![0x6au8; BLOCK_SIZE];

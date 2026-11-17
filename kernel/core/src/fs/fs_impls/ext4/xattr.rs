@@ -1,75 +1,28 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Extended attributes for the ext2 filesystem.
+//! External extended attributes shared by EXT2 and EXT4.
 //!
-//! Extended attributes are stored on disk blocks allocated outside of any inode.
-//! The `i_file_acl` field of the on-disk inode points to this allocated block.
-//! An inode with no attributes has `i_file_acl == 0` and no block is allocated.
-//!
-//! # On-disk layout
-//!
-//! The EA block is exactly one filesystem block and is structured as follows:
+//! An inode's `i_file_acl` points to one attribute block, or is zero when no
+//! block is allocated. Names store a namespace index and a suffix; values
+//! occupy the opposite end of the block from the sorted entry headers.
 //!
 //! ```text
-//!   +------------------+
-//!   | header (32B)     |
-//!   | entry 1 header   |  ┐
-//!   | entry 1 name     |  ├ entry 1
-//!   | entry 2 header   |  ┐  |
-//!   | entry 2 name     |  ├ entry 2  | growing downwards
-//!   | entry 3 header   |  ┐  |       v
-//!   | entry 3 name     |  ├ entry 3
-//!   | (terminator)     |
-//!   | (free space)     |
-//!   | . . .            |
-//!   | value 3          |  ┐
-//!   | value 1          |  │ growing upwards
-//!   | value 2          |  ┘
-//!   +------------------+
+//! +-------------------------+
+//! | block header            |
+//! | entry headers and names | v
+//! | zero terminator         |
+//! | free space              |
+//! | attribute values        | ^
+//! +-------------------------+
 //! ```
 //!
-//! The block header is followed by multiple entry descriptors. Each entry
-//! consists of an `XattrEntry` header immediately followed by the name
-//! bytes (whose length is given by `name_len`). Entries are variable in size,
-//! aligned to 4-byte (XATTR_ALIGN) boundaries, and sorted by
-//! `(name_index as u8, name_len, name bytes)` so that two extended attribute
-//! blocks can be compared efficiently.
+//! Entries are sorted by `(name_index, name_len, name)` and both names and
+//! values are padded to four-byte boundaries. A zero word terminates entries.
+//! Inline attributes and shared attribute blocks are not supported.
 //!
-//! Attribute values are aligned to the end of the block, stored in no
-//! specific order. They are also padded to 4-byte boundaries, with no
-//! additional gaps between them.
-//!
-//! Each entry descriptor stores:
-//! - `name_index` — a `XattrNameIndex` byte that encodes the namespace
-//!   prefix (e.g., `user.`, `security.`).
-//! - `name_len` — byte length of the suffix that follows the header.
-//! - `value_offset` — byte offset of the value from the start of the block.
-//! - `value_len` — byte length of the value.
-//! - `hash` — per-entry hash covering name and value (currently always 0;
-//!   block sharing via mb_cache is not implemented).
-//!
-//! The entry list is terminated by an `XattrEntry` with `name_len == 0`
-//! (a 16-byte zeroed header), matching Linux's `IS_LAST_ENTRY` check.
-//!
-//! # Namespace mapping
-//!
-//! The VFS `XattrNamespace` is mapped to ext2's compact `XattrNameIndex`
-//! byte. The full attribute name stored in the VFS layer (e.g., `user.foo`)
-//! is split at the namespace boundary before storage: the index is written to
-//! `name_index` and only the suffix (`foo`) is stored in `name_len` bytes
-//! after the header. The prefix is reconstructed on read.
-//!
-//! # Locking
-//!
-//! All mutable state is held in `XattrCache` behind an internal `RwMutex`.
-//! Public methods on `Xattr` acquire the lock automatically for the duration
-//! of each operation. Callers (e.g. `Inode`) never see the lock and must not
-//! hold `Inode::inner` while calling into `Xattr`. When a mutation changes the
-//! block number (allocation or free), the caller reads the new `Xattr::bid`
-//! after the mutation returns and then acquires `inner` to update
-//! `InodeDesc.file_acl`.
-//!
-//! See the locking hierarchy documented on `Inode`.
+//! Callers must not hold `Inode::inner` during xattr operations. After a
+//! mutation, they must copy the current `Xattr::bid` into `InodeDesc.file_acl`
+//! under the inode lock. See `inode` for the locking hierarchy.
 
 use core::cmp::Ordering;
 
@@ -185,7 +138,7 @@ impl Xattr {
         self.cache.write().flush()
     }
 
-    /// Parses a VFS [`XattrName`] into the ext2 `(name_index, name_suffix)` pair.
+    /// Parses a VFS [`XattrName`] into the EXT `(name_index, name_suffix)` pair.
     fn parse_target_name(name: XattrName) -> Result<(XattrNameIndex, Vec<u8>)> {
         let name_index = XattrNameIndex::from(name.namespace());
         let stripped_name = name_index.strip_prefix(name.full_name())?;
@@ -196,17 +149,10 @@ impl Xattr {
     }
 }
 
-/// Persistent state for an ext2 xattr block.
-///
-/// Tracks the block buffer, block number, decoded entries, and dirty flag for
-/// one inode.
+/// An inode's lazily loaded attribute block and pending updates.
 #[derive(Debug)]
 struct XattrCache {
     block_buf: Option<USegment>,
-    /// Lazily decoded entries.
-    ///
-    /// Always populated after the first mutation or query; empty only for an
-    /// inode that has never had xattrs and has `bid == 0`.
     entries: Vec<XattrEntryData>,
     bid: Ext4Bid,
     dirty: bool,
@@ -477,6 +423,7 @@ impl XattrCache {
             .fill_zeros(0, BLOCK_SIZE)
             .map_err(|(error, _)| error)?;
 
+        // Blocks are inode-private, so sharing reference counts and hashes are unused.
         let header = XattrHeader {
             magic: XATTR_MAGIC,
             ref_count: 1,
@@ -644,7 +591,7 @@ impl XattrCache {
         Ok(entries)
     }
 }
-/// The ext2 xattr namespace index stored in `name_index`.
+/// The EXT xattr namespace index stored in `name_index`.
 ///
 /// Determines the namespace prefix prepended to the attribute name
 /// (e.g., `user.`, `security.`).
@@ -707,19 +654,7 @@ impl XattrNameIndex {
     }
 }
 
-/// In-memory decoded xattr entry used as the working representation during mutations.
-///
-/// # Differences from Linux's `ext2_xattr_entry`
-///
-/// - **`name` is a separate `Vec<u8>`**: In the on-disk layout, the name
-///   bytes follow immediately after the `XattrEntry` header.  Because Rust
-///   does not permit safe mutable borrows of sub-ranges of a buffer, we
-///   store the name as an owned `Vec<u8>` during the in-memory phase.  It
-///   is written back to the correct offset in the block buffer on flush.
-/// - **`hash` is not stored here**: The per-entry hash in `XattrEntry::hash`
-///   is always written as zero.  Block sharing via `mb_cache` (which would
-///   require hash-based deduplication) is not implemented; `ref_count` is
-///   always 1.
+/// An owned attribute name and value used for lookup and mutation.
 #[derive(Clone, Debug)]
 struct XattrEntryData {
     name_index: XattrNameIndex,
@@ -727,7 +662,7 @@ struct XattrEntryData {
     value: Vec<u8>,
 }
 
-/// On-disk header of an ext2 extended-attribute block (32 bytes).
+/// On-disk header of an EXT extended-attribute block (32 bytes).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
 struct XattrHeader {

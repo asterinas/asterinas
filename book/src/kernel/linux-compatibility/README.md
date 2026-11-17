@@ -375,6 +375,7 @@ Here is the list of supported file systems:
 * Devfs
 * Devpts
 * Ext2
+* Ext4
 * Procfs
 * Ramfs
 
