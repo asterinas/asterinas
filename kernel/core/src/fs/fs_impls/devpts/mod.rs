@@ -120,6 +120,10 @@ impl FileSystem for DevPts {
         self.sb.clone()
     }
 
+    fn max_name_len(&self) -> usize {
+        self.sb.namelen
+    }
+
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
         &self.fs_event_subscriber_stats
     }

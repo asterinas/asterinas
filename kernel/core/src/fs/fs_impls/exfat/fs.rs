@@ -441,6 +441,10 @@ impl FileSystem for ExfatFs {
         )
     }
 
+    fn max_name_len(&self) -> usize {
+        MAX_NAME_LENGTH
+    }
+
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
         &self.fs_event_subscriber_stats
     }

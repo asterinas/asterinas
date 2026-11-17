@@ -120,6 +120,15 @@ impl FileSystem for OverlayFs {
         super_block
     }
 
+    fn max_name_len(&self) -> usize {
+        let topmost_layer = self
+            .layer_stack
+            .upper_layer()
+            .ok()
+            .unwrap_or(&self.layer_stack.lower_layers()[0]);
+        topmost_layer.fs().max_name_len()
+    }
+
     fn flags(&self) -> FsFlags {
         if self.policy.is_effective_read_only() {
             FsFlags::RDONLY

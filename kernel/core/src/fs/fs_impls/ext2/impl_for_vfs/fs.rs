@@ -61,6 +61,10 @@ impl FileSystem for Ext2 {
         }
     }
 
+    fn max_name_len(&self) -> usize {
+        NAME_MAX
+    }
+
     fn flags(&self) -> FsFlags {
         self.fs_flags()
     }
