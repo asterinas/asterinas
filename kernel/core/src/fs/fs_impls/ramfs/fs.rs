@@ -128,6 +128,10 @@ impl FileSystem for RamFs {
         self.sb.clone()
     }
 
+    fn max_name_len(&self) -> usize {
+        self.sb.namelen
+    }
+
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
         &self.fs_event_subscriber_stats
     }
@@ -897,9 +901,6 @@ impl RamInode {
         symlink_target: Option<&str>,
         to_be_revalidated: ToBeRevalidated,
     ) -> Result<Arc<dyn Inode>> {
-        if name.len() > NAME_MAX {
-            return_errno!(Errno::ENAMETOOLONG);
-        }
         if self.typ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
@@ -949,9 +950,6 @@ impl RamInode {
         type_: MknodType,
         to_be_revalidated: ToBeRevalidated,
     ) -> Result<Arc<dyn Inode>> {
-        if name.len() > NAME_MAX {
-            return_errno!(Errno::ENAMETOOLONG);
-        }
         if self.typ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }

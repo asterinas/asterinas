@@ -32,6 +32,9 @@ pub(crate) trait FileSystem: Any + Sync + Send {
     /// Returns the super block of this file system.
     fn sb(&self) -> SuperBlock;
 
+    /// Returns the maximum component name length supported by this file system.
+    fn max_name_len(&self) -> usize;
+
     /// Returns the flags of this file system.
     fn flags(&self) -> FsFlags {
         // TODO: Currently we do not support any flags for filesystems.
