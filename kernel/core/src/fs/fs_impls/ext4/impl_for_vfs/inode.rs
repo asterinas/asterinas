@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! VFS inode trait implementations for the ext2 [`Inode`](super::super::Inode).
+//! VFS file and inode operations for EXT2/EXT4.
 //!
-//! Wires the ext2 `Inode` into the VFS layer by implementing the `InodeIo`
-//! and `Inode` traits. The implementation converts VFS requests into
-//! ext2-internal operations, including symlink results and the inode's VFS
-//! extension slot.
+//! Adapts requests to [`Inode`](super::super::Inode), including buffered and
+//! direct I/O, metadata, directory operations, symlinks, and extended attributes.
 
 use core::time::Duration;
 
@@ -276,7 +274,7 @@ impl Inode for Ext4Inode {
         }
         let fs = self.fs()?;
         let block_group = fs.block_group(self.block_group_idx());
-        block_group.sync_inode_table()?;
+        block_group.sync_inode_slot(self.ino())?;
         fs.sync_allocation_metadata()?;
         if fs.block_device().sync()? != BioStatus::Complete {
             return_errno_with_message!(Errno::EIO, "failed to flush block device");

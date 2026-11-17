@@ -1,24 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Core `Ext4` filesystem state for a mounted EXT2/EXT4 volume.
+//! Mounted EXT2/EXT4 filesystems.
 //!
-//! This module owns `Ext4`, the top-level handle for a mounted EXT2/EXT4 volume.
-//! It is the filesystem-wide coordination point for mount state, inode
-//! routing, block allocation, and writeback. Group-local metadata and inode
-//! caches remain owned by the corresponding `BlockGroup`.
-//!
-//! # Locking
-//!
-//! `SuperBlock` exposes mount-time geometry and features without locking.
-//! Its runtime metadata uses an `RwMutex` for allocation, deallocation, and sync.
-//! The `block_groups` vector itself is immutable after mount; each `BlockGroup`
-//! carries its own internal locks (see the `block_group` module documentation).
-//! The `group_descriptors_segment` has no dedicated
-//! lock — it is loaded once at mount and updated during `sync` under each
-//! group's metadata write guard, with disjoint descriptor offsets ensuring
-//! no two writers touch the same bytes.
-//! `next_generation` is an `AtomicU32`
-//! incremented once per newly allocated inode.
+//! [`Ext4`] coordinates inode access, filesystem-wide allocation accounting,
+//! and metadata synchronization. [`BlockGroup`] provides group-local allocation
+//! and inode-table access.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -52,9 +38,7 @@ pub(super) enum MountFlavor {
 
 /// Top-level handle for a mounted EXT2/EXT4 filesystem.
 ///
-/// Owns the superblock, block group array, and group descriptor table.
-/// Filesystem-wide operations are routed through the block group selected by
-/// the target inode or block address.
+/// Provides inode access and coordinates allocation accounting and metadata sync.
 #[derive(Debug)]
 pub(crate) struct Ext4 {
     /// Backing block device.
@@ -101,7 +85,7 @@ struct Ext4MountOptions {
 }
 
 impl Ext4MountOptions {
-    /// Parses ext2 mount options that control block-count reporting.
+    /// Parses mount options that control EXT2/EXT4 block-count reporting.
     fn parse(data: Option<&str>) -> Self {
         let mut options = Self::default();
         let Some(data) = data else {
@@ -121,7 +105,7 @@ impl Ext4MountOptions {
 }
 
 impl Ext4 {
-    /// Opens and loads an Ext4 filesystem from a block device.
+    /// Opens an EXT filesystem with the feature requirements of `mount_flavor`.
     pub(super) fn open(
         device: Arc<dyn BlockDevice>,
         flags: FsFlags,
@@ -232,7 +216,7 @@ impl Ext4 {
         self.super_block.has_extents()
     }
 
-    /// Returns the maximum regular file size supported by this ext2 instance.
+    /// Returns the maximum regular file size supported by this EXT instance.
     pub(super) fn max_file_size(&self) -> usize {
         self.super_block.max_file_size()
     }
@@ -463,10 +447,13 @@ impl Ext4 {
             .ok_or_else(|| Error::with_message(Errno::EIO, "block group index out of range"))?;
 
         if let Err(err) = self.write_back_inode_desc(ino, &raw_inode) {
-            if let Ok(was_allocated) = block_group.free_inode(ino, inode_type)
-                && was_allocated
-            {
-                let _ = self.super_block.write_state().inc_free_inodes();
+            // A concurrent sync may have persisted the allocation already.
+            // Rollback must register a new dirty group along with the counters.
+            if let Err(cleanup_err) = self.free_inode(ino, inode_type) {
+                warn!(
+                    "failed to roll back inode {} creation: {:?}",
+                    ino, cleanup_err
+                );
             }
 
             return Err(err);
@@ -496,6 +483,9 @@ impl Ext4 {
             .find_group(ino)
             .ok_or_else(|| Error::with_message(Errno::EIO, "block group index out of range"))?;
 
+        if state.free_inodes_count().checked_add(1).is_none() {
+            return_errno_with_message!(Errno::EIO, "free inode counter overflow");
+        }
         let was_allocated = group.free_inode(ino, inode_type)?;
         if was_allocated {
             state.inc_free_inodes()?;
@@ -569,23 +559,56 @@ impl Ext4 {
     /// This intentionally performs no device flush: callers issue one final
     /// flush after all inode, allocation, and superblock state is staged.
     pub(super) fn sync_all(&self) -> Result<()> {
-        // `group_descriptors_segment` is updated without a filesystem-wide lock,
-        // but each group writes only its own descriptor slice under its
-        // `metadata.write()` guard.  Because groups are synced sequentially and
-        // their descriptor offsets are disjoint, no two writers touch the same
-        // bytes, so the segment is always consistent.
         for group in &self.block_groups {
             group.sync_inodes()?;
         }
         self.sync_allocation_metadata()
     }
 
-    /// Persists dirty allocation bitmaps, group descriptors, and block counts.
+    /// Writes allocation bitmaps and complete primary and backup metadata copies.
+    ///
+    /// Visits all groups, but skips writing metadata copies when allocation
+    /// state is clean. Failed writes retain the superblock's dirty state so
+    /// retrying repeats the complete primary and backup writeback.
     pub(super) fn sync_allocation_metadata(&self) -> Result<()> {
+        // Allocation takes this lock before group metadata. Keep it through
+        // writeback so bitmap contents, descriptor bytes, and counts agree.
+        let mut state = self.super_block.write_state();
+        // Descriptor staging clears group dirty flags. Keep the existing
+        // superblock state dirty until all metadata copies reach the device.
+        if self.block_groups.iter().any(|group| group.is_desc_dirty()) {
+            state.set_wtime(utils::now());
+        }
+        let mut total_free_blocks = 0u32;
+        let mut total_free_inodes = 0u32;
         for group in &self.block_groups {
             group.sync_metadata(&self.group_descriptors_segment)?;
+            total_free_blocks += u32::from(group.free_blocks_count());
+            total_free_inodes += u32::from(group.free_inodes_count());
         }
-        self.sync_metadata()
+        if !state.is_dirty() {
+            return Ok(());
+        }
+        state.set_free_blocks_count(total_free_blocks);
+        state.set_free_inodes_count(total_free_inodes);
+        state.set_wtime(utils::now());
+
+        let sb = &self.super_block;
+        let mut raw = sb.to_raw(&state);
+        self.write_sb_and_group_descs(&raw, SUPER_BLOCK_OFFSET, sb.group_descriptors_bid(0))?;
+        for group_idx in 1..sb.nr_block_groups() as usize {
+            if !sb.is_backup_group(group_idx) {
+                continue;
+            }
+            raw.block_group_idx = group_idx as u16;
+            self.write_sb_and_group_descs(
+                &raw,
+                Bid::new(u64::from(sb.bid(group_idx))).to_offset(),
+                sb.group_descriptors_bid(group_idx),
+            )?;
+        }
+        state.clear_dirty();
+        Ok(())
     }
 
     /// Allocates a new inode number.
@@ -676,47 +699,6 @@ impl Ext4 {
         }
 
         false
-    }
-
-    /// Flushes the superblock and all dirty group descriptors to the device.
-    fn sync_metadata(&self) -> Result<()> {
-        let mut sb_guard = self.super_block.write_state();
-
-        let any_group_dirty = self.block_groups.iter().any(|group| group.is_desc_dirty());
-        if !sb_guard.is_dirty() && !any_group_dirty {
-            return Ok(());
-        }
-
-        let sb = &self.super_block;
-        let nr_block_groups = sb.nr_block_groups() as usize;
-
-        let mut total_free_blocks: u32 = 0;
-        let mut total_free_inodes: u32 = 0;
-        for group in &self.block_groups {
-            total_free_blocks += group.free_blocks_count() as u32;
-            total_free_inodes += group.free_inodes_count() as u32;
-        }
-        sb_guard.set_free_blocks_count(total_free_blocks);
-        sb_guard.set_free_inodes_count(total_free_inodes);
-        sb_guard.set_wtime(utils::now());
-
-        let mut raw_sb = sb.to_raw(&sb_guard);
-        self.write_sb_and_group_descs(&raw_sb, SUPER_BLOCK_OFFSET, sb.group_descriptors_bid(0))?;
-
-        for group_idx in 1..nr_block_groups {
-            if !sb.is_backup_group(group_idx) {
-                continue;
-            }
-            raw_sb.block_group_idx = group_idx as u16;
-            self.write_sb_and_group_descs(
-                &raw_sb,
-                Bid::new(sb.bid(group_idx) as u64).to_offset(),
-                sb.group_descriptors_bid(group_idx),
-            )?;
-        }
-
-        sb_guard.clear_dirty();
-        Ok(())
     }
 
     /// Persists one copy of the superblock and group descriptor table into the given block group.
@@ -1090,6 +1072,33 @@ mod test {
         let expected_free_inodes = ext2.super_block().read_state().free_inodes_count();
         assert!(ext2.block_group(0).is_desc_dirty());
 
+        // Each failure occurs after bitmap writeback and descriptor staging.
+        // The superblock stays dirty until primary and backup copies succeed.
+        for failed_bid in [
+            sb.group_descriptors_bid(0),
+            sb.group_descriptors_bid(1),
+            sb.bid(1),
+        ] {
+            disk.fail_write_block(Some(failed_bid as usize));
+            assert!(ext2.sync_allocation_metadata().is_err());
+            assert!(ext2.super_block().read_state().is_dirty());
+            assert!(!ext2.block_group(0).is_desc_dirty());
+        }
+        disk.fail_write_block(None);
+        ext2.sync_allocation_metadata().unwrap();
+        assert!(disk.block_writes(sb.bid(1) as usize) > 0);
+        let primary = disk
+            .segment()
+            .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+            .unwrap();
+        assert_eq!(primary.free_inodes_count, expected_free_inodes);
+
+        // Preserve the original clean-sync shortcut without a backup flag.
+        let backup_writes = disk.block_writes(sb.bid(1) as usize);
+        disk.fail_write_block(Some(sb.bid(1) as usize));
+        ext2.sync_allocation_metadata().unwrap();
+        assert_eq!(disk.block_writes(sb.bid(1) as usize), backup_writes);
+        disk.fail_write_block(None);
         ext2.sync_all().unwrap();
 
         assert!(!ext2.super_block().read_state().is_dirty());
@@ -1236,6 +1245,70 @@ mod test {
     }
 
     #[ktest]
+    fn failed_inode_creation_after_allocation_sync_restores_disk_accounting() {
+        clocks::init_for_ktest();
+        for flavor in [MountFlavor::Ext2, MountFlavor::Ext4] {
+            // Inode 33 lives on a different table page from the root, so the
+            // first descriptor write must read that page before modifying it.
+            let f = ExtFixtureBuilder::new(1, 256)
+                .with_mount_flavor(flavor)
+                .with_free_inodes(992, 992)
+                .inode_bitmap(InodeBitmapInit::ReservedPlus((1..=32).collect()))
+                .build()
+                .unwrap();
+            let bitmap_offset = Bid::new(f.descs[0].inode_bitmap_bid.into()).to_offset();
+            let mut bitmap_before = [0u8; BLOCK_SIZE];
+            f.disk
+                .segment()
+                .read_bytes(bitmap_offset, &mut bitmap_before)
+                .unwrap();
+            let table_bid = f.descs[0].inode_table_bid as usize + 1;
+            f.disk.fail_read_block(Some(table_bid));
+            let fs = Arc::downgrade(&f.fs);
+            f.disk.before_failed_read(move || {
+                // Reproduce another inode's fsync between allocation and the
+                // failed descriptor write, persisting the temporary allocation.
+                let fs = fs.upgrade().unwrap();
+                assert!(fs.block_group(0).is_inode_allocated(33));
+                fs.sync_allocation_metadata().unwrap();
+            });
+            assert_errno!(
+                f.fs.create_inode(
+                    ROOT_INO,
+                    InodeType::File,
+                    FilePerm::from_bits_truncate(0o644)
+                ),
+                Errno::EIO
+            );
+            f.disk.fail_read_block(None);
+            assert!(!f.fs.block_group(0).is_inode_allocated(33));
+            assert_eq!(f.fs.super_block().read_state().free_inodes_count(), 992);
+            assert_eq!(f.fs.block_group(0).free_inodes_count(), 992);
+
+            f.fs.sync_allocation_metadata().unwrap();
+            let mut bitmap_after = [0u8; BLOCK_SIZE];
+            f.disk
+                .segment()
+                .read_bytes(bitmap_offset, &mut bitmap_after)
+                .unwrap();
+            assert_eq!(bitmap_after, bitmap_before);
+            let desc_offset = Bid::new(f.sb.group_descriptors_bid(0).into()).to_offset();
+            let desc = f
+                .disk
+                .segment()
+                .read_val::<RawBlockGroup>(desc_offset)
+                .unwrap();
+            let sb = f
+                .disk
+                .segment()
+                .read_val::<RawSuperBlock>(SUPER_BLOCK_OFFSET)
+                .unwrap();
+            assert_eq!(desc.free_inodes_count, 992);
+            assert_eq!(sb.free_inodes_count, 992);
+        }
+    }
+
+    #[ktest]
     fn inode_alloc_and_free_single_group_ok() {
         // Allocate one directory inode and verify bitmap/counter transitions.
         let f = ExtFixtureBuilder::new(1, 128)
@@ -1355,46 +1428,5 @@ mod test {
 
         let cached = f.fs.read_inode(child_ino).unwrap();
         assert!(Arc::ptr_eq(&child, &cached));
-    }
-    fn expected_overhead_blocks(sb: &SuperBlock) -> u32 {
-        let nr_block_groups = sb.nr_block_groups() as usize;
-        let gdb_count =
-            ((nr_block_groups * size_of::<RawBlockGroup>()).div_ceil(BLOCK_SIZE)) as u32;
-        let mut overhead = sb.first_data_block();
-
-        for group_idx in 0..nr_block_groups {
-            if group_idx == 0 || sb.is_backup_group(group_idx) {
-                overhead += 1 + gdb_count;
-            }
-        }
-
-        overhead + sb.nr_block_groups() * (2 + sb.nr_inode_table_blocks_per_group())
-    }
-    #[ktest]
-    fn stat_bsddf_subtracts_overhead() {
-        let f = ExtFixtureBuilder::new(3, 512).build().unwrap();
-
-        let stat = FileSystemTrait::sb(f.fs.as_ref());
-        let expected_overhead = expected_overhead_blocks(&f.sb);
-
-        assert_eq!(
-            stat.blocks,
-            (f.sb.total_blocks() - expected_overhead) as usize
-        );
-        assert!(stat.blocks < f.sb.total_blocks() as usize);
-    }
-    #[ktest]
-    fn stat_minixdf_reports_total() {
-        let f = ExtFixtureBuilder::new(3, 512).build().unwrap();
-        let ext2 = Ext4::open(
-            f.disk.clone() as Arc<dyn BlockDevice>,
-            FsFlags::empty(),
-            MountFlavor::Ext2,
-            Some("minixdf"),
-        )
-        .unwrap();
-
-        let stat = FileSystemTrait::sb(ext2.as_ref());
-        assert_eq!(stat.blocks, f.sb.total_blocks() as usize);
     }
 }

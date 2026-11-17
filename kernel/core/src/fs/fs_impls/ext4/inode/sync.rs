@@ -2,10 +2,8 @@
 
 //! Writeback and reclaim for EXT2/EXT4 inodes.
 //!
-//! This module contains the inode paths that make in-memory state durable and
-//! reclaim deleted inodes. Writeback must keep xattrs, data pages, mapping
-//! metadata, and inode-table state ordered consistently; reclaim must release
-//! all storage owned by a zero-link inode exactly once.
+//! Inode writeback orders data and external mapping metadata before the inode
+//! descriptor.
 
 #![short_vis_path::add(ext4)]
 
@@ -13,7 +11,7 @@ use super::{super::Ext4, Inode, InodeInner, RawInode};
 use crate::fs::ext4::{prelude::*, utils};
 
 impl Inode {
-    /// Flushes all dirty state owned by the inode.
+    /// Writes inode-owned dirty data and stages its descriptor for writeback.
     ///
     /// Writes xattrs, data pages, and mapping nodes back before staging dirty
     /// inode metadata in the block group's inode-table page cache.
@@ -24,7 +22,7 @@ impl Inode {
         self.sync_data()
     }
 
-    /// Flushes dirty file data and the metadata required to retrieve it.
+    /// Writes dirty file data and mapping nodes, then stages the inode descriptor.
     ///
     /// Writes data pages and mapping nodes back before staging dirty inode
     /// metadata in the block group's inode-table page cache. This does not flush

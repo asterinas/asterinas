@@ -81,6 +81,24 @@ run_ext_suite() {
     echo "All $suite_name shared EXT tests and remount passed."
 }
 
+# Use images with no other mounts: mounting a device that is still referenced
+# elsewhere reuses its filesystem instance and its existing accounting option.
+test_statfs_mount_options() {
+    local flavor="$1"
+    local device="$2"
+    local mountpoint="$3"
+    local usable_blocks="$4"
+
+    mount -t "$flavor" -o bsddf "$device" "$mountpoint"
+    EXT_STATFS_DEVICE="$device" EXT_STATFS_PATH="$mountpoint" \
+        EXT_STATFS_EXPECT="$usable_blocks" ./ext/statfs_options
+    umount "$mountpoint"
+    mount -t "$flavor" -o minixdf "$device" "$mountpoint"
+    EXT_STATFS_DEVICE="$device" EXT_STATFS_PATH="$mountpoint" \
+        EXT_STATFS_EXPECT=total ./ext/statfs_options
+    umount "$mountpoint"
+}
+
 expect_mount_rejected() {
     local flavor="$1"
     local device="$2"
@@ -110,6 +128,7 @@ run_test_list ./ext/ext4-only.tests
 umount /ext-test
 echo "All ext4-only EXT tests passed."
 umount /ext4
+test_statfs_mount_options ext4 /dev/vdd /ext4 overhead
 
 expect_mount_rejected ext2 /dev/vdd extents
 expect_mount_rejected ext4 /dev/vde journal
@@ -119,4 +138,12 @@ expect_mount_rejected ext4 /dev/vdh metadata_csum
 expect_mount_rejected ext4 /dev/vdi unknown_incompat
 echo "All unsupported EXT4 feature mounts were rejected."
 
+# This disposable image is separate from the shared suites and all host devices.
+mkdir -p /ext-space
+mount -t ext2 /dev/vdj /ext-space
+EXT_STATFS_DEVICE=/dev/vdj EXT_STATFS_PATH=/ext-space \
+    EXT_STATFS_EXPECT=2035 ./ext/statfs_options
+./ext/fallocate_enospc
+umount /ext-space
+test_statfs_mount_options ext2 /dev/vdj /ext-space 2035
 echo "All EXT regression tests passed."

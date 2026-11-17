@@ -171,12 +171,6 @@ impl XattrCache {
             .ok_or_else(|| Error::with_message(Errno::EIO, "ext2 instance is unavailable"))
     }
 
-    fn inode(&self) -> Result<Arc<Inode>> {
-        self.inode
-            .upgrade()
-            .ok_or_else(|| Error::with_message(Errno::EIO, "inode instance is unavailable"))
-    }
-
     fn set_entry(
         &mut self,
         target_index: XattrNameIndex,
@@ -364,7 +358,8 @@ impl XattrCache {
         debug_assert!(self.bid == 0);
 
         let fs = self.fs()?;
-        let inode = self.inode()?;
+        // Allocation is called through the live inode that owns this cache.
+        let inode = self.inode.upgrade().unwrap();
         let goal = {
             let sb = fs.super_block();
             sb.group_first_block_no(inode.block_group_idx())
