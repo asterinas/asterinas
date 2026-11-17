@@ -38,6 +38,7 @@ use crate::{
     prelude::*,
     thread::work_queue::{self, WorkPriority},
     time::clocks::MonotonicCoarseClock,
+    vm::page_cache::Readahead,
 };
 
 /// Use one page for each `FUSE_READDIR` request.
@@ -51,6 +52,7 @@ impl VirtioFsInode {
         writer: &mut VmWriter,
         fh: FuseFileHandle,
         flags: u32,
+        readahead: Option<&Readahead>,
     ) -> Result<usize> {
         if self.inner.read().page_cache().is_none() {
             return self.direct_read_at(offset, writer, fh, flags);
@@ -74,7 +76,7 @@ impl VirtioFsInode {
         let mut limited_writer = writer.clone_exclusive();
         limited_writer.limit(read_len);
         let page_cache = inner.page_cache().unwrap();
-        page_cache.read(start, &mut limited_writer)?;
+        page_cache.read_buffered(start, &mut limited_writer, readahead)?;
         writer.skip(read_len);
 
         Ok(read_len)
@@ -199,12 +201,15 @@ impl VirtioFsInode {
 
         let written = self.do_direct_write(offset, reader, fh, flags)?;
 
-        // TODO: Do `evict_range` again after write to prevent stale data from
-        // being loaded into the page cache during asynchronous read-ahead.
-
         let new_size = offset
             .checked_add(written)
             .ok_or_else(|| Error::with_message(Errno::EOVERFLOW, "virtiofs write size overflow"))?;
+
+        // Evict pages that may have been loaded by readahead while the direct
+        // write was in progress.
+        if let Some(page_cache) = inner.page_cache() {
+            page_cache.evict_range(offset..new_size)?;
+        }
 
         let new_size = self.size().max(new_size);
         let attr_version = self.fs_ref().session().bump_attr_version();

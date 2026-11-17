@@ -1,0 +1,16 @@
+runtime_config:
+  smp: 1
+  mem: 8G
+  aster_scheme: 'null'
+  filesystem: erofs
+  image_profile: plain
+chart:
+  description: fio --rw=randread --size=full-file --io_size=full --bs=4096 --direct=0
+  legend: EROFS full random read bandwidth (uncompressed EROFS, fresh guest) on {system}
+  title: '[EROFS] Full random read (uncompressed EROFS, buffered I/O, fresh guest)'
+  unit: MB/s
+result_extraction:
+  parser: fio_json
+  direction: read
+  workload: randread
+  io_bytes: full

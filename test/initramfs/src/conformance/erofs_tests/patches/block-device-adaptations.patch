@@ -1,0 +1,69 @@
+--- a/tests/common/rc
++++ b/tests/common/rc
+@@ -162,10 +162,11 @@
+ 	mkdir -p $random_dir/test $random_dir/mnt > /dev/null 2>&1
+ 	truncate -s 1m $random_dir/test/file > /dev/null 2>&1
+ 
+-	eval "$MKFS_EROFS_PROG $opt $random_dir/tmp.erofs $random_dir/test" >> /dev/null 2>&1
+-	_try_mount $random_dir/tmp.erofs $random_dir/mnt || \
++	eval "$MKFS_EROFS_PROG $opt $SCRATCH2_DEV $random_dir/test" >> /dev/null 2>&1 || \
++		_fail "failed to mkfs in _require_erofs_compression"
++	_try_scratch2_mount || \
+ 		_notrun "fail to mount filesystem in _require_erofs_compression"
+-	_do_unmount $random_dir/mnt
++	_scratch2_unmount
+ 
+ 	rm -rf $random_dir
+ }
+--- a/tests/erofs/014
++++ b/tests/erofs/014
+@@ -9,8 +9,19 @@
+ # get standard environment, filters and checks
+ . "${srcdir}/common/rc"
+ 
++cleanup_source_mounts()
++{
++	local source_mount
++	for source_mount in "$tdd1" "$tdd2"; do
++		if [ -n "$source_mount" ] && mountpoint -q "$source_mount"; then
++			$UMOUNT_PROG "$source_mount" || return 1
++		fi
++	done
++}
++
+ cleanup()
+ {
++	cleanup_source_mounts || return 1
+ 	cd /
+ 	rm -rf $tmp.*
+ }
+@@ -40,17 +51,22 @@
+ 
+ mkdir -p $tds
+ touch $tds/t
+-$MKFS_EROFS_PROG $MKFS_OPTIONS $tmg1 $tds >> $seqres.full 2>&1
+-cp $tmg1 $tmg2
++$MKFS_EROFS_PROG $MKFS_OPTIONS $tmg1 $tds >> $seqres.full 2>&1 || \
++	_fail "failed to create source image"
++cp "$tmg1" "$tmg2" >> $seqres.full 2>&1 || _fail "failed to copy source image"
+ 
+ mkdir -p $tdd1 $tdd2
+-$MOUNT_PROG -t erofs -oloop $tmg1 $tdd1
+-$MOUNT_PROG -t erofs -oloop $tmg2 $tdd2
++"$EROFSFUSE_PROG" "$tmg1" "$tdd1" >>"$seqres.full" 2>&1
++"$EROFSFUSE_PROG" "$tmg2" "$tdd2" >>"$seqres.full" 2>&1
++inode1=$(_get_inode_number "$tdd1/t") || _fail "source inode query failed"
++inode2=$(_get_inode_number "$tdd2/t") || _fail "source inode query failed"
++device1=$(stat -c %d "$tdd1/t") || _fail "source device query failed"
++device2=$(stat -c %d "$tdd2/t") || _fail "source device query failed"
++[ "$inode1" = "$inode2" ] || _fail "source inode numbers differ"
++[ "$device1" != "$device2" ] || _fail "source devices are equal"
+ _scratch_mkfs $localdir/d >> $seqres.full 2>&1 || _fail "failed to mkfs"
+ 
+-$UMOUNT_PROG $tdd1
+-$UMOUNT_PROG $tdd2
+-
++cleanup_source_mounts || _fail "failed to unmount source images"
+ _scratch_mount 2>>$seqres.full
+ 
+ [ "x`_get_inode_number $SCRATCH_MNT/d1/t`" = "x`_get_inode_number $SCRATCH_MNT/d2/t`" ] && \

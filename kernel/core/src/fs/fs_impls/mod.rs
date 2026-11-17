@@ -8,6 +8,7 @@ pub(crate) mod cgroupfs;
 pub(crate) mod configfs;
 pub(crate) mod devpts;
 pub mod devtmpfs;
+pub(crate) mod erofs;
 pub(crate) mod exfat;
 pub(crate) mod ext2;
 pub(crate) mod overlayfs;
@@ -30,6 +31,7 @@ pub(super) fn init() {
     pseudofs::init();
 
     ext2::init();
+    erofs::init();
     exfat::init();
     overlayfs::init();
     virtiofs::init();

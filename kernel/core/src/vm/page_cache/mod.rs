@@ -120,11 +120,13 @@ use ostd::mm::{Segment, VmIo, VmIoFill};
 use crate::prelude::*;
 
 mod cache_page;
+mod readahead;
 #[cfg(ktest)]
 mod tests;
 mod vmo;
 
 pub(crate) use cache_page::{CachePage, CachePageExt, CachePageMeta, LockedCachePage};
+pub use readahead::Readahead;
 pub use vmo::Vmo;
 pub(crate) use vmo::{VmoCommitError, VmoFlags, VmoMapMode, VmoOptions};
 
@@ -313,7 +315,6 @@ impl PageCache {
     /// pages are left in place. This is useful for invalidating cached data that
     /// is no longer needed and can be re-read from the backend if necessary
     /// (e.g., before direct I/O operations).
-    #[cfg_attr(not(ktest), expect(dead_code))]
     pub(crate) fn evict_range(&self, range: Range<usize>) -> Result<()> {
         let Some(vmo) = self.0.as_backed_vmo() else {
             return Ok(());
@@ -343,12 +344,22 @@ impl PageCache {
     pub(crate) fn fill_zeros(&self, range: Range<usize>) -> Result<()> {
         self.0.fill_zeros(range)
     }
+
+    /// Reads through the page cache, using an open file's readahead when available.
+    pub(crate) fn read_buffered(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        readahead: Option<&Readahead>,
+    ) -> ostd::Result<()> {
+        self.0.read(offset, writer, readahead)?;
+        Ok(())
+    }
 }
 
 impl VmIo for PageCache {
     fn read(&self, offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
-        self.0.read(offset, writer)?;
-        Ok(())
+        self.read_buffered(offset, writer, None)
     }
 
     // TODO: This should require `&mut` to ensure that the caller holds the
@@ -388,7 +399,6 @@ pub(crate) trait PageCacheBackend: Sync + Send {
     ///
     /// Backends that can process several pages in one request should override
     /// this method. The default implementation submits each page separately.
-    #[expect(dead_code)]
     fn read_pages_async(&self, pages: PageRun<'_>, io_batch: &mut IoBatch) -> Result<()> {
         for (idx, locked_page) in pages.into_indexed() {
             self.read_page_async(idx, locked_page, io_batch)?;
