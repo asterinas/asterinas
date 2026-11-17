@@ -31,7 +31,7 @@ use crate::{
     prelude::*,
     process::LockedHeap,
     vm::{
-        page_cache::{CachePage, Vmo, VmoCommitError, VmoMapMode},
+        page_cache::{CachePage, CachePageExt, Vmo, VmoCommitError, VmoMapMode},
         perms::VmPerms,
     },
 };
@@ -382,31 +382,18 @@ impl VmMapping {
         let page_aligned_addr = page_fault_info.address.align_down(PAGE_SIZE);
         let is_write = page_fault_info.required_perms.contains(VmPerms::WRITE);
 
+        self.readahead_on_fault(vm_space, page_aligned_addr)?;
+
         if !is_write
             && matches!(&self.mapped_mem, MappedMemory::Vmo(_))
             && self.handle_page_faults_around
         {
-            let res = self.handle_page_faults_around(
+            return self.handle_page_faults_around(
                 vm_space,
                 page_aligned_addr,
                 page_fault_info.required_perms,
                 rss_delta,
             );
-
-            // Errors caused by the "around" pages should be ignored, so here we
-            // only return the error if the faulting page is still not mapped.
-            if res.is_err() {
-                let preempt_guard = disable_preempt();
-                let mut cursor = vm_space.cursor(
-                    &preempt_guard,
-                    &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
-                )?;
-                if let (_, Some(_)) = cursor.query().unwrap() {
-                    return Ok(());
-                }
-            }
-
-            return res;
         } else if let MappedMemory::Device(ref mapped_obj) = self.mapped_mem {
             let handle = MapHandle {
                 vm_mapping: self,
@@ -425,6 +412,32 @@ impl VmMapping {
             page_fault_info.required_perms,
             rss_delta,
         )
+    }
+
+    fn readahead_on_fault(&self, vm_space: &VmSpace, page_aligned_addr: Vaddr) -> Result<()> {
+        let Some(vmo) = self.vmo() else {
+            return Ok(());
+        };
+        let Some(readahead) = self.file.as_ref().and_then(|file| file.readahead()) else {
+            return Ok(());
+        };
+
+        let is_mapped = {
+            let preempt_guard = disable_preempt();
+            let mut cursor = vm_space.cursor(
+                &preempt_guard,
+                &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
+            )?;
+            cursor.query().unwrap().1.is_some()
+        };
+        if is_mapped {
+            return Ok(());
+        }
+
+        let page_offset = page_aligned_addr - self.map_to_addr;
+        let page_idx = (vmo.offset() + page_offset) / PAGE_SIZE;
+        readahead.on_fault(vmo.vmo(), page_idx);
+        Ok(())
     }
 
     fn check_perms_for_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
@@ -629,12 +642,16 @@ impl VmMapping {
     }
 
     /// Handles a page fault and maps additional surrounding pages.
+    ///
+    /// This function does not guarantee that all surrounding pages are mapped successfully.
+    /// When this function returns `Ok`, it indicates that at least the current faulting page
+    /// has been mapped successfully.
     fn handle_page_faults_around(
         &self,
         vm_space: &VmSpace,
         page_aligned_addr: Vaddr,
         required_perms: VmPerms,
-        mut rss_delta: &mut RssDelta,
+        rss_delta: &mut RssDelta,
     ) -> Result<()> {
         const SURROUNDING_PAGE_NUM: usize = 16;
         const SURROUNDING_PAGE_ADDR_MASK: usize = !(SURROUNDING_PAGE_NUM * PAGE_SIZE - 1);
@@ -642,7 +659,7 @@ impl VmMapping {
         let vmo = self.vmo().unwrap();
         let around_page_addr = page_aligned_addr & SURROUNDING_PAGE_ADDR_MASK;
         let size = min(vmo.valid_size(), self.map_size.get());
-        let mut start_addr = max(around_page_addr, self.map_to_addr);
+        let start_addr = max(around_page_addr, self.map_to_addr);
         let end_addr = min(
             start_addr + SURROUNDING_PAGE_NUM * PAGE_SIZE,
             self.map_to_addr + size,
@@ -666,44 +683,47 @@ impl VmMapping {
             VmoMapMode::SharedRead
         };
 
-        'retry: loop {
-            let preempt_guard = disable_preempt();
-            let mut cursor = vm_space.cursor_mut(&preempt_guard, &(start_addr..end_addr))?;
+        let preempt_guard = disable_preempt();
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &(start_addr..end_addr))?;
 
-            let rss_delta_ref = &mut rss_delta;
-            let operate =
-                move |commit_fn: &mut dyn FnMut() -> Result<(usize, CachePage), VmoCommitError>| {
-                    if let (_, None) = cursor.query().unwrap() {
-                        // We regard all the surrounding pages as accessed, no matter
-                        // if it is really so. Then the hardware won't bother to update
-                        // the accessed bit of the page table on following accesses.
-                        let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
-                        let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
-                        let (_, frame) = commit_fn()?;
-                        cursor.map(frame.into(), page_prop);
-                        rss_delta_ref.add(self.rss_type(), 1);
-                    } else {
-                        let next_addr = cursor.virt_addr() + PAGE_SIZE;
-                        if next_addr < end_addr {
-                            let _ = cursor.jump(next_addr);
-                        }
-                    }
-                    Ok(())
-                };
-
-            let start_offset = start_addr - self.map_to_addr;
-            let end_offset = end_addr - self.map_to_addr;
-            match vmo.try_operate_on_range(&(start_offset..end_offset), operate, mode) {
-                Ok(_) => return Ok(()),
-                Err(err) => {
-                    let index = err.pending_index()?;
-                    drop(preempt_guard);
-                    vmo.commit_on(index, mode)?;
-                    start_addr = (index * PAGE_SIZE - vmo.offset()) + self.map_to_addr;
-                    continue 'retry;
+        // We regard all the surrounding pages as accessed, no matter
+        // if it is really so. Then the hardware won't bother to update
+        // the accessed bit of the page table on following accesses.
+        let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
+        let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
+        let operate_fn =
+            |commit_fn: &mut dyn FnMut() -> Result<(usize, CachePage), VmoCommitError>| {
+                if cursor.query().unwrap().1.is_none()
+                    && let Ok((_, page)) = commit_fn()
+                    && (cursor.virt_addr() == page_aligned_addr || !page.has_readahead_marker())
+                {
+                    cursor.map(page.into(), page_prop);
+                    rss_delta.add(self.rss_type(), 1);
+                    return Ok(());
                 }
-            }
+                let next_addr = cursor.virt_addr() + PAGE_SIZE;
+                if next_addr < end_addr {
+                    let _ = cursor.jump(next_addr);
+                }
+                Ok(())
+            };
+
+        let start_offset = start_addr - self.map_to_addr;
+        let end_offset = end_addr - self.map_to_addr;
+
+        // Readahead may have already submitted backend reads for these pages.
+        // Ignore speculative commit failures here and retry the faulting page
+        // through the demand path below.
+        let _ = vmo.try_operate_on_range(&(start_offset..end_offset), operate_fn, mode);
+
+        cursor.jump(page_aligned_addr)?;
+        if cursor.query().unwrap().1.is_some() {
+            return Ok(());
         }
+
+        drop(cursor);
+        drop(preempt_guard);
+        self.handle_single_page_fault(vm_space, page_aligned_addr, required_perms, rss_delta)
     }
 }
 

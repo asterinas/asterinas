@@ -17,7 +17,7 @@ use crate::{
     process::{Process, signal::Pollable},
     util::ioctl::RawIoctl,
     vm::{
-        page_cache::Vmo,
+        page_cache::{Readahead, Vmo},
         vmar::{FileMmapRequest, MapHandle},
     },
 };
@@ -104,6 +104,11 @@ pub(crate) trait FileLike: Pollable + Send + Sync + Any {
         // memory mapping".
         // Reference: <https://man7.org/linux/man-pages/man2/mmap.2.html>.
         return_errno_with_message!(Errno::ENODEV, "the file is not mappable");
+    }
+
+    /// Returns the readahead policy shared by buffered reads and file mappings.
+    fn readahead(&self) -> Option<&Readahead> {
+        None
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
