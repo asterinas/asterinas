@@ -119,12 +119,8 @@ pub(super) struct MqueueRootInode {
 
 impl MqueueRootInode {
     pub(super) fn new_root(fs: Weak<dyn FileSystem>, sb: &SuperBlock) -> Arc<Self> {
-        let metadata = Metadata::new_dir(
-            ROOT_INO,
-            mkmod!(a+rx, u+w),
-            BLOCK_SIZE,
-            sb.container_dev_id,
-        );
+        let metadata =
+            Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE, sb.container_dev_id);
         let common = Common::new(metadata, fs);
 
         Arc::new_cyclic(|weak_self| Self {
@@ -279,7 +275,11 @@ impl MqueueInode {
         fs: Weak<dyn FileSystem>,
         sb: &SuperBlock,
     ) -> Arc<Self> {
-        let metadata = Metadata::new_file(ino, mode, BLOCK_SIZE, sb.container_dev_id);
+        let mut metadata = Metadata::new_file(ino, mode, BLOCK_SIZE, sb.container_dev_id);
+        // The queue file is owned by the user who created the queue, so that the
+        // permission checks of `mq_open` and `mq_unlink` agree on the owner.
+        metadata.uid = queue.owner();
+        metadata.gid = queue.group();
         let common = Common::new(metadata, fs);
         Arc::new(Self { queue, common })
     }

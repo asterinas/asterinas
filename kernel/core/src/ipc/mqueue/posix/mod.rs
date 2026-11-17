@@ -15,7 +15,9 @@ use spin::Once;
 use crate::{
     fs::file::InodeMode,
     prelude::*,
-    process::{UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    process::{
+        Gid, Uid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
+    },
     security::lsm::hooks as lsm_hooks,
 };
 
@@ -143,15 +145,31 @@ pub(crate) fn lookup_queue(name: &str) -> Result<Arc<MqueueQueue>> {
 
 /// Removes a queue by name.
 ///
+/// The `mqueuefs` root directory is sticky, so only the owner of the queue, the
+/// owner of the root directory, or a thread with `CAP_FOWNER` may unlink a
+/// queue. Linux reports `EACCES` when this check fails.
+///
 /// Queues that are still open keep their state alive until the last file
 /// descriptor is closed, matching the Linux behavior of `mq_unlink`.
 pub(crate) fn unlink_queue(name: &str) -> Result<()> {
     validate_name(name)?;
 
+    // Query the credentials and the capability before taking the lock, since
+    // the LSM hooks may acquire other locks.
+    let fsuid = current_fsuid();
+    let is_privileged = fsuid.is_root() || has_cap_fowner();
+
     let mut table = queue_table().lock();
-    if table.remove(name).is_none() {
-        return_errno!(Errno::ENOENT);
+    let Some(queue) = table.get(name) else {
+        return_errno_with_message!(Errno::ENOENT, "the message queue does not exist");
+    };
+    if !is_privileged && queue.owner() != fsuid {
+        return_errno_with_message!(
+            Errno::EACCES,
+            "only the owner of the message queue may unlink it"
+        );
     }
+    table.remove(name);
     Ok(())
 }
 
@@ -172,7 +190,13 @@ pub(crate) fn create_queue(name: &str, mode: InodeMode, attr: MqAttr) -> Result<
 
     validate_attr(attr, is_privileged)?;
 
-    let queue = Arc::new(MqueueQueue::new(mode, attr.mq_maxmsg, attr.mq_msgsize));
+    let queue = Arc::new(MqueueQueue::new(
+        mode,
+        current_fsuid(),
+        current_fsgid(),
+        attr.mq_maxmsg,
+        attr.mq_msgsize,
+    ));
     table.insert(name.to_string(), queue.clone());
     Ok(queue)
 }
@@ -205,4 +229,32 @@ fn has_cap_sys_resource() -> bool {
         CapSet::SYS_RESOURCE,
     ))
     .is_ok()
+}
+
+/// Checks whether the current thread has `CAP_FOWNER`.
+fn has_cap_fowner() -> bool {
+    lsm_hooks::on_capable(lsm_hooks::CapableContext::new(
+        UserNamespace::get_init_singleton().as_ref(),
+        current_thread!().as_posix_thread().unwrap(),
+        CapSet::FOWNER,
+    ))
+    .is_ok()
+}
+
+/// Returns the file system user ID of the current thread.
+fn current_fsuid() -> Uid {
+    current_thread!()
+        .as_posix_thread()
+        .unwrap()
+        .credentials()
+        .fsuid()
+}
+
+/// Returns the file system group ID of the current thread.
+fn current_fsgid() -> Gid {
+    current_thread!()
+        .as_posix_thread()
+        .unwrap()
+        .credentials()
+        .fsgid()
 }

@@ -6,7 +6,11 @@ use core::sync::atomic::AtomicUsize;
 
 use ostd::sync::WaitQueue;
 
-use crate::{fs::file::InodeMode, prelude::*};
+use crate::{
+    fs::file::InodeMode,
+    prelude::*,
+    process::{Gid, Uid},
+};
 
 /// POSIX message queue attributes (`struct mq_attr`).
 ///
@@ -38,6 +42,13 @@ pub(crate) struct MqMsg {
 /// This is the in-memory representation of a queue created by `mq_open`. It is
 /// shared between the IPC registry and every open file description.
 pub(crate) struct MqueueQueue {
+    /// The user who created the queue.
+    ///
+    /// Together with the sticky-bit rule of the `mqueuefs` root directory, the
+    /// owner decides who may unlink the queue.
+    owner: Uid,
+    /// The group of the user who created the queue.
+    group: Gid,
     /// Queue permission mode, fixed at creation time.
     mode: InodeMode,
     /// Queue attributes.
@@ -55,9 +66,18 @@ pub(crate) struct MqueueQueue {
 }
 
 impl MqueueQueue {
-    /// Creates a new, empty message queue with the given permission and limits.
-    pub(crate) fn new(mode: InodeMode, mq_maxmsg: i64, mq_msgsize: i64) -> Self {
+    /// Creates a new, empty message queue with the given owner, group,
+    /// permission, and limits.
+    pub(crate) fn new(
+        mode: InodeMode,
+        owner: Uid,
+        group: Gid,
+        mq_maxmsg: i64,
+        mq_msgsize: i64,
+    ) -> Self {
         Self {
+            owner,
+            group,
             mode,
             attr: MqAttr {
                 mq_flags: 0,
@@ -74,6 +94,16 @@ impl MqueueQueue {
     /// Returns the queue permission mode.
     pub(crate) fn mode(&self) -> InodeMode {
         self.mode
+    }
+
+    /// Returns the user who created the queue.
+    pub(crate) fn owner(&self) -> Uid {
+        self.owner
+    }
+
+    /// Returns the group of the user who created the queue.
+    pub(crate) fn group(&self) -> Gid {
+        self.group
     }
 
     /// Returns a snapshot of the queue attributes.
