@@ -280,7 +280,7 @@ impl PageCache {
             if let Some(backed_vmo) = vmo.as_backed_vmo() {
                 backed_vmo.decommit_pages(locked_rmap, locked_pages, &decommit_range)?;
             } else {
-                vmo.decommit_anon_pages(locked_rmap, locked_pages, decommit_range)?;
+                vmo.decommit_unbacked_pages(locked_rmap, locked_pages, decommit_range)?;
             }
         }
 
@@ -307,19 +307,30 @@ impl PageCache {
         vmo.flush_dirty_pages(&range)
     }
 
-    /// Evicts clean pages within the specified range from the page cache.
+    /// Evicts clean pages overlapping the specified range from the page cache.
     ///
-    /// Only pages in the `UpToDate` state are removed. Dirty and uninitialized
-    /// pages are left in place. This is useful for invalidating cached data that
-    /// is no longer needed and can be re-read from the backend if necessary
-    /// (e.g., before direct I/O operations).
-    #[cfg_attr(not(ktest), expect(dead_code))]
+    /// With a live backend, only `UpToDate` pages are removed; dirty and
+    /// uninitialized pages are kept so they can still be flushed. For an
+    /// anonymous cache or a cache whose backend has expired, all overlapping
+    /// pages are discarded because there is no backend to flush them to.
+    ///
+    /// Callers must hold the filesystem-level lock that serializes operations
+    /// in the target range. Partial boundary pages are evicted in full; callers
+    /// such as hole punching must preserve bytes outside the range separately.
     pub(crate) fn evict_range(&self, range: Range<usize>) -> Result<()> {
-        let Some(vmo) = self.0.as_backed_vmo() else {
-            return Ok(());
-        };
+        if let Some(vmo) = self.0.as_backed_vmo() {
+            return vmo.evict_up_to_date_pages(&range);
+        }
 
-        vmo.evict_up_to_date_pages(&range)
+        let range = range.start..range.end.min(self.size());
+        if range.is_empty() {
+            return Ok(());
+        }
+
+        let locked_rmap = self.0.rmap().lock();
+        let locked_pages = self.0.pages.lock();
+        self.0
+            .decommit_unbacked_pages(locked_rmap, locked_pages, range)
     }
 
     /// Flushes dirty pages and then evicts clean pages in the specified range.

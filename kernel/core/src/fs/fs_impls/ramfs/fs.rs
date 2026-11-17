@@ -1540,13 +1540,22 @@ impl Inode for RamInode {
                 Ok(())
             }
             FallocMode::PunchHoleKeepSize => {
+                let page_cache = self.inner.as_file().unwrap().lock();
                 let file_size = self.size();
                 if offset >= file_size {
                     return Ok(());
                 }
-                let range = offset..file_size.min(offset + len);
-                // TODO: Think of a more light-weight approach
-                self.inner.as_file().unwrap().lock().fill_zeros(range)
+                let end = file_size.min(offset + len);
+                let aligned_offset = offset.align_up(PAGE_SIZE);
+                let aligned_end = end.align_down(PAGE_SIZE);
+
+                // Preserve data outside the hole in partial boundary pages.
+                if aligned_end <= aligned_offset {
+                    return page_cache.fill_zeros(offset..end);
+                }
+                page_cache.fill_zeros(offset..aligned_offset)?;
+                page_cache.fill_zeros(aligned_end..end)?;
+                page_cache.evict_range(aligned_offset..aligned_end)
             }
             _ => {
                 return_errno_with_message!(
