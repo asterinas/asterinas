@@ -12,7 +12,7 @@ use quote::{ToTokens, TokenStreamExt};
 use crate::COMPONENT_FILE_NAME;
 
 #[derive(Debug)]
-pub struct ComponentInfo {
+pub(crate) struct ComponentInfo {
     name: String,
     /// The absolute path to the component
     path: String,
@@ -30,7 +30,7 @@ impl ToTokens for ComponentInfo {
 }
 
 /// Automatic generate all the component information
-pub fn component_generate() -> Vec<ComponentInfo> {
+pub(crate) fn component_generate() -> Vec<ComponentInfo> {
     // extract components information
     let mut metadata = metadata();
 
@@ -107,7 +107,7 @@ pub fn component_generate() -> Vec<ComponentInfo> {
 }
 
 /// Get the path to the Components.toml file
-pub fn get_component_toml_path() -> TokenStream {
+pub(crate) fn get_component_toml_path() -> TokenStream {
     let metadata = metadata();
     let workspace_root = metadata["workspace_root"].as_str().unwrap();
     let mut workspace_root = String::from_str(workspace_root)
@@ -209,7 +209,7 @@ fn calculate_priority(
     lowest_priority
 }
 
-fn metadata() -> json::JsonValue {
+fn metadata() -> JsonValue {
     let mut cmd = Command::new(env!("CARGO"));
     cmd.arg("metadata");
     cmd.arg("--format-version").arg("1");

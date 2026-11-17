@@ -59,7 +59,7 @@ run_check_osdk() {
     echo "Checking osdk"
     (
         cd "$PROJECT_ROOT/osdk"
-        RUSTFLAGS="-Dwarnings" cargo clippy --all-targets --no-deps
+        cargo clippy --all-targets --no-deps
     )
 }
 
@@ -73,8 +73,8 @@ run_workspace_clippy() {
     echo "Checking default workspace members"
     (
         cd "$PROJECT_ROOT"
-        RUSTFLAGS="-Dwarnings" cargo osdk clippy -- --no-deps
-        RUSTFLAGS="-Dwarnings" cargo osdk clippy --ktests -- --no-deps
+        cargo osdk clippy -- --no-deps
+        cargo osdk clippy --ktests -- --no-deps
         cargo osdk udeps
     )
 
@@ -94,7 +94,7 @@ run_workspace_clippy() {
         echo "Checking non-default workspace members"
         (
             cd "$PROJECT_ROOT"
-            RUSTFLAGS="-Dwarnings" cargo clippy "${filtered_non_default_package_args[@]}" --all-targets --no-deps
+            cargo clippy "${filtered_non_default_package_args[@]}" --all-targets --no-deps
             cargo udeps "${filtered_non_default_package_args[@]}"
         )
     fi
@@ -105,8 +105,8 @@ run_workspace_clippy() {
         echo "Checking ${LINUX_BZIMAGE_SETUP_DIR}"
         (
             cd "$PROJECT_ROOT/$LINUX_BZIMAGE_SETUP_DIR"
-            RUSTFLAGS="-Dwarnings" cargo osdk clippy -- --no-deps
-            RUSTFLAGS="-Dwarnings" cargo osdk clippy --ktests -- --no-deps
+            cargo osdk clippy -- --no-deps
+            cargo osdk clippy --ktests -- --no-deps
             cargo osdk udeps
         )
     fi
@@ -114,6 +114,8 @@ run_workspace_clippy() {
 
 main() {
     local mode="${1:-}"
+
+    export RUSTFLAGS="-Dwarnings" CARGO_BUILD_WARNINGS=deny
 
     case "$mode" in
         -h|--help)

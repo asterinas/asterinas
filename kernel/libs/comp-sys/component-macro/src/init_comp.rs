@@ -5,7 +5,7 @@ use quote::{ToTokens, TokenStreamExt};
 use syn::parse::Parse;
 
 /// The content inside typeflag macro
-pub struct ComponentInitFunction {
+pub(crate) struct ComponentInitFunction {
     function: Vec<TokenTree>,
     pub function_name: TokenTree,
 }

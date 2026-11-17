@@ -40,7 +40,7 @@ pub(crate) const COMPONENT_FILE_NAME: &str = "Components.toml";
 /// The priority will calculate automatically
 ///
 #[proc_macro_attribute]
-pub fn init_component(args: TokenStream, input: TokenStream) -> proc_macro::TokenStream {
+pub fn init_component(args: TokenStream, input: TokenStream) -> TokenStream {
     let stage = match args.to_string().as_str() {
         "" | "bootstrap" => quote! { Bootstrap },
         "kthread" => quote! { Kthread },
@@ -74,7 +74,7 @@ pub fn init_component(args: TokenStream, input: TokenStream) -> proc_macro::Toke
 /// ```
 ///
 #[proc_macro]
-pub fn parse_metadata(_: TokenStream) -> proc_macro::TokenStream {
+pub fn parse_metadata(_: TokenStream) -> TokenStream {
     let out = priority::component_generate();
     let path = priority::get_component_toml_path();
     quote! {
