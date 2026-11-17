@@ -45,7 +45,7 @@ using the Asterinas NixOS installer ISO.
 
     ```bash
     # The capacity of the disk is 10GB; adjust it as you see fit
-    dd if=/dev/zero of=aster_nixos_disk.img bs=1G count=10
+    truncate -s 10G aster_nixos_disk.img
     ```
 
 5. Start an x86-64 VM with two drives:

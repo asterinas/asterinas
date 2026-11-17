@@ -221,7 +221,7 @@ initramfs_pkgs:
 
 $(EXT2_IMAGE):
 	@mkdir -p $(BUILD_DIR)
-	@dd if=/dev/zero of=$(EXT2_IMAGE) bs=2G count=1
+	@truncate -s 2G $(EXT2_IMAGE)
 	@mke2fs $(EXT2_IMAGE)
 
 $(EXFAT_IMAGE):
@@ -231,12 +231,12 @@ $(EXFAT_IMAGE):
 
 $(LTP_DEV_IMAGE):
 	@mkdir -p $(BUILD_DIR)
-	@dd if=/dev/zero of=$(LTP_DEV_IMAGE) bs=512M count=1
+	@truncate -s 512M $(LTP_DEV_IMAGE)
 	@mke2fs -t ext2 -F $(LTP_DEV_IMAGE)
 
 $(SSD_IMAGE):
 	@mkdir -p $(BUILD_DIR)
-	@dd if=/dev/zero of=$(SSD_IMAGE) bs=2G count=1
+	@truncate -s 2G $(SSD_IMAGE)
 	@mke2fs -t ext2 -F $(SSD_IMAGE)
 
 $(XFSTESTS_TEST_IMAGE):
