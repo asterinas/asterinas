@@ -152,9 +152,9 @@ RUN if [ "${TARGETARCH}" = "arm64" ]; then \
 WORKDIR /root
 RUN rm -rf /root/grub
 
-#= The final stages to produce the OSDK development image ====================
+#= Install the shared OSDK development tools ===================================
 
-FROM build-base AS osdk-final
+FROM build-base AS osdk-base
 
 ARG TARGETARCH
 
@@ -224,6 +224,27 @@ RUN cargo install --locked \
     mdbook@0.5.2 \
     typos-cli@1.39.0
 
+#= Build RustSBI ==============================================================
+
+FROM osdk-base AS rustsbi
+
+# RustSBI Prototyper provides bootable firmware that implements SBI services.
+# Its dynamic mode receives the next-stage kernel entry point from QEMU at boot,
+# so the same firmware can boot different test kernels without being rebuilt.
+WORKDIR /root
+# Pin the latest upstream commit as of 2026-11-17.
+RUN git clone https://github.com/rustsbi/rustsbi.git \
+    && git -C rustsbi checkout ee559644418b29cd3be5e55c9dda4af9f87a1cae
+WORKDIR /root/rustsbi
+RUN cargo prototyper build \
+    && install -D -m 644 \
+        target/riscv64gc-unknown-none-elf/release/rustsbi-prototyper-dynamic.bin \
+        /usr/local/share/rustsbi/rustsbi-prototyper-dynamic.bin
+
+#= The final stages to produce the OSDK development image ====================
+
+FROM osdk-base AS osdk-final
+
 # Install klint. Pin the Klint commit compatible with the Asterinas toolchain.
 RUN cargo install klint --git https://github.com/Rust-for-Linux/klint --rev 3b092315
 
@@ -239,6 +260,9 @@ RUN if [ -d /usr/local/qemu/lib/aarch64-linux-gnu ] && [ ! -e /usr/local/qemu/li
         ln -s /usr/local/qemu/lib/x86_64-linux-gnu /usr/local/qemu/lib/amd64-linux-gnu; \
     fi
 ENV LD_LIBRARY_PATH="/usr/local/qemu/lib/${TARGETARCH}-linux-gnu${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
+# Install RustSBI for RISC-V tests that need to propagate SBI shutdown failure.
+COPY --from=rustsbi /usr/local/share/rustsbi /usr/local/share/rustsbi
 
 # Install OVMF built from the previous stages
 COPY --from=ovmf /root/edk2/Build/OvmfX64/RELEASE_GCC5/FV/ /root/ovmf/release
