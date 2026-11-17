@@ -46,6 +46,7 @@ pub enum VirtioDeviceType {
 pub enum VirtioDeviceError {
     Transport(VirtioTransportError),
     ResourceAlloc(ostd::Error),
+    DeviceModel(aster_device::common::Error),
     InvalidQueueArgs,
     UnsupportedConfig,
 }

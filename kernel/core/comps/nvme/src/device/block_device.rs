@@ -11,7 +11,7 @@
 //! NLB limits), so those CIDs share one [`InFlightRequest`] that completes the whole
 //! `BioRequest` when the last command finishes.
 
-use alloc::{borrow::ToOwned, format, string::String, sync::Arc, vec, vec::Vec};
+use alloc::{borrow::ToOwned, boxed::Box, format, string::String, sync::Arc, vec, vec::Vec};
 use core::{
     ffi::CStr,
     hint::spin_loop,
@@ -25,6 +25,7 @@ use aster_block::{
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio, bio_segment_pool_init},
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
+use aster_device::common::DevNum;
 use aster_util::safe_ptr::SafePtr;
 use device_id::{DeviceId, MinorId};
 use ostd::{
@@ -225,15 +226,25 @@ impl NvmeControllerDeviceExt for NvmeControllerDevice {
             let major_id = NVME_BLOCK_MAJOR_ID.get().unwrap().get();
             DeviceId::new(major_id, MinorId::new(index * aster_block::DEVICE_MINORS))
         };
-
-        let block_device = Arc::new(NvmeNamespace {
+        let block_device = Box::new(NvmeNamespace {
             controller: self.clone(),
             info,
             queue: BioRequestSingleQueue::new(),
-            name,
+            name: name.clone(),
             id,
         });
-        aster_block::register(block_device)
+
+        let block_device = aster_block::BlockDevice::builder(
+            aster_block::BLOCK_CLASS.get().unwrap(),
+            name,
+            block_device,
+        )
+        .parent(self.clone())
+        .dev_type(&aster_block::DISK_TYPE)
+        .devnum(DevNum::block(id))
+        .build();
+
+        aster_device::add_device(&block_device)
             .map_err(|_| NvmeDeviceError::BlockDeviceRegisterFailed)?;
 
         bio_segment_pool_init();
@@ -1060,6 +1071,8 @@ mod test {
     }
 
     fn ensure_initialized() {
+        aster_block::init_for_ktest();
+
         if aster_block::collect_all().is_empty() {
             component::init_all(
                 component::InitStage::Bootstrap,

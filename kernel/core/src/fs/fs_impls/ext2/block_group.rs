@@ -54,7 +54,7 @@ pub(super) struct BlockGroup {
     /// Group descriptor and bitmaps, protected by a single lock.
     metadata: RwMutex<BlockGroupMetadata>,
     /// Backing block device (shared with `Ext2` and other groups).
-    block_device: Arc<dyn AnyBlockDevice>,
+    block_device: Arc<BlockDevice>,
     /// Cached geometry: first filesystem-wide block number of this group.
     first_block: u32,
     /// Cached geometry: last filesystem-wide block number of this group.
@@ -92,7 +92,7 @@ impl BlockGroup {
         group_descs: &USegment,
         group_idx: usize,
         sb: &SuperBlock,
-        block_device: Arc<dyn AnyBlockDevice>,
+        block_device: Arc<BlockDevice>,
     ) -> Result<Self> {
         let offset = group_idx * size_of::<RawBlockGroup>();
         let raw_group = group_descs
@@ -117,13 +117,16 @@ impl BlockGroup {
 
         // Load and validate bitmaps once during mount, keep them cached in memory.
         let block_bitmap = Self::load_block_bitmap(
-            block_device.as_ref(),
+            block_device.payload().as_ref(),
             first_block_no,
             last_block_no,
             &group_desc,
         )?;
-        let inode_bitmap =
-            Self::load_inode_bitmap(block_device.as_ref(), nr_inodes_per_group, &group_desc)?;
+        let inode_bitmap = Self::load_inode_bitmap(
+            block_device.payload().as_ref(),
+            nr_inodes_per_group,
+            &group_desc,
+        )?;
 
         group_desc.validate_metadata_blocks(
             &block_bitmap,
@@ -739,7 +742,7 @@ struct InodeTableBackend {
     /// Total inode table size in bytes (`nr_inodes_per_group * inode_size`).
     raw_inodes_size: usize,
     /// Block device handle for I/O.
-    block_device: Arc<dyn AnyBlockDevice>,
+    block_device: Arc<BlockDevice>,
 }
 
 impl BlockAsPageCacheBackend for InodeTableBackend {
@@ -768,7 +771,7 @@ impl BlockAsPageCacheBackend for InodeTableBackend {
         let bid = Bid::new(self.inode_table_bid as u64) + start_idx as u64;
         let len = pages.len();
 
-        pages.submit_contiguous_read_pages(self.block_device.as_ref(), bid, len, io_batch)
+        pages.submit_contiguous_read_pages(self.block_device.payload().as_ref(), bid, len, io_batch)
     }
 
     fn submit_write_bio(
@@ -800,6 +803,11 @@ impl BlockAsPageCacheBackend for InodeTableBackend {
         let bid = Bid::new(self.inode_table_bid as u64) + start_idx as u64;
         let len = pages.len();
 
-        pages.submit_contiguous_write_pages(self.block_device.as_ref(), bid, len, io_batch)
+        pages.submit_contiguous_write_pages(
+            self.block_device.payload().as_ref(),
+            bid,
+            len,
+            io_batch,
+        )
     }
 }

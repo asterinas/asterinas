@@ -99,6 +99,7 @@ name = "aster-block"
 version = "0.1.0"
 dependencies = [
  "align_ext",
+ "aster-device",
  "aster-util",
  "component",
  "device-id",
@@ -296,6 +297,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "aster-block",
+ "aster-device",
  "bittle",
  "component",
  "ctr",

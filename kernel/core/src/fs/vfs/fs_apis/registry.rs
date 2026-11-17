@@ -2,7 +2,7 @@
 
 use alloc::collections::btree_map::Entry;
 
-use aster_block::AnyBlockDevice;
+use aster_block::BlockDevice;
 use aster_systree::{
     AttrLessBranchNodeFields, SysNode, SysObj, SysPerms, SysStr, inherit_sys_branch_node,
 };
@@ -111,7 +111,7 @@ pub(crate) struct FsCreationCtx<'a> {
 
 enum BlockDeviceResolution<'a> {
     Pending(&'a Context<'a>),
-    Resolved(Arc<dyn AnyBlockDevice>),
+    Resolved(Arc<BlockDevice>),
 }
 
 impl<'a> FsCreationCtx<'a> {
@@ -132,7 +132,7 @@ impl<'a> FsCreationCtx<'a> {
 
     /// Creates a file system creation context from an already resolved block device.
     pub(in crate::fs) fn from_block_device(
-        block_device: Arc<dyn AnyBlockDevice>,
+        block_device: Arc<BlockDevice>,
         flags: FsFlags,
         args: Option<&'a str>,
     ) -> Self {
@@ -168,7 +168,7 @@ impl<'a> FsCreationCtx<'a> {
     }
 
     /// Resolves the mount source into a block device.
-    pub(in crate::fs) fn resolve_block_device(&mut self) -> Result<&Arc<dyn AnyBlockDevice>> {
+    pub(in crate::fs) fn resolve_block_device(&mut self) -> Result<&Arc<BlockDevice>> {
         if self.block_device().is_none() {
             self.do_resolve_block_device()?;
         }
@@ -176,7 +176,7 @@ impl<'a> FsCreationCtx<'a> {
         Ok(self.block_device().unwrap())
     }
 
-    fn block_device(&self) -> Option<&Arc<dyn AnyBlockDevice>> {
+    fn block_device(&self) -> Option<&Arc<BlockDevice>> {
         match &self.block_device {
             BlockDeviceResolution::Pending(_) => None,
             BlockDeviceResolution::Resolved(block_device) => Some(block_device),

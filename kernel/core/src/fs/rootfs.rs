@@ -101,7 +101,7 @@ fn open_rootfs(root: &str, fs_flags: FsFlags) -> Result<FsAndRoot> {
 }
 
 fn open_rootfs_from_candidates(
-    device: Arc<dyn aster_block::AnyBlockDevice>,
+    device: Arc<aster_block::BlockDevice>,
     rootfs_types: &[&dyn DynFsType],
     fs_flags: FsFlags,
 ) -> Result<FsAndRoot> {

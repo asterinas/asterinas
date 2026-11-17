@@ -11,6 +11,7 @@ use aster_block::{
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio, bio_segment_pool_init},
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
+use aster_device::common::DevNum;
 use aster_util::mem_obj_slice::Slice;
 use device_id::{DeviceId, MinorId};
 use ostd::{
@@ -74,7 +75,7 @@ impl BlockDevice {
         virtio_device: Arc<VirtioDevice>,
         negotiated_features: u64,
     ) -> Result<(), VirtioDeviceError> {
-        let device = DeviceInner::init(virtio_device, negotiated_features)?;
+        let device = DeviceInner::init(virtio_device.clone(), negotiated_features)?;
 
         let index = NR_BLOCK_DEVICE.fetch_add(1, Ordering::Relaxed);
         let id = DeviceId::new(
@@ -83,7 +84,7 @@ impl BlockDevice {
         );
         let name = Self::formatted_device_name(index);
 
-        let block_device = Arc::new(BlockDevice {
+        let block_device = Box::new(BlockDevice {
             device,
             // Each bio request includes an additional 1 request and 1 response descriptor,
             // therefore this upper bound is set to (QUEUE_SIZE - 2).
@@ -91,10 +92,20 @@ impl BlockDevice {
                 (DeviceInner::QUEUE_SIZE - 2) as usize,
             ),
             id,
-            name,
+            name: name.clone(),
         });
 
-        aster_block::register(block_device).unwrap();
+        let block_device = aster_block::BlockDevice::builder(
+            aster_block::BLOCK_CLASS.get().unwrap(),
+            name,
+            block_device,
+        )
+        .parent(virtio_device)
+        .dev_type(&aster_block::DISK_TYPE)
+        .devnum(DevNum::block(id))
+        .build();
+
+        aster_device::add_device(&block_device).map_err(VirtioDeviceError::DeviceModel)?;
 
         bio_segment_pool_init();
         Ok(())

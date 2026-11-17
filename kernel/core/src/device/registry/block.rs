@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::borrow::ToOwned;
-
-use aster_block::{AnyBlockDevice, BLOCK_SIZE, BlockDeviceKind, SECTOR_SIZE, bio::BioStatus};
+use aster_block::{BLOCK_SIZE, BlockDevice, BlockDeviceKind, SECTOR_SIZE, bio::BioStatus};
 use device_id::DeviceId;
 use ostd::mm::VmIo;
 
@@ -12,7 +10,7 @@ use crate::{
     dispatch_ioctl,
     events::IoEvents,
     fs::{
-        devtmpfs::{self, DevtmpfsNode, DevtmpfsNodeMeta},
+        devtmpfs::DevtmpfsNodeMeta,
         file::{PerOpenFileOps, SettableStatusFlags, StatusFlags, SyncMode},
         vfs::{inode::FileOps, path::Path},
     },
@@ -40,17 +38,6 @@ pub(super) fn init_in_first_kthread() {
     // Partition scanning performs synchronous block I/O, so the request
     // handling threads above must be available first.
     aster_block::scan_partitions();
-}
-
-pub(super) fn init_in_first_process() -> Result<()> {
-    for device in aster_block::collect_all() {
-        let device: Arc<dyn Device> = Arc::new(BlockFile::new(device));
-        if let Some(meta) = device.devtmpfs_meta() {
-            devtmpfs::create_node(DevtmpfsNode::new(device.type_(), device.id(), meta))?;
-        }
-    }
-
-    Ok(())
 }
 
 mod ioctl_defs {
@@ -81,15 +68,11 @@ mod ioctl_defs {
 }
 
 /// Represents a block device inode in the filesystem.
-//
-// TODO: This type wraps an `Arc<dyn AnyBlockDevice>` in another `Arc` just to implement the `Device`
-// trait. It leads to redundant vtable dispatch, reference counting, and heap allocation. We should
-// devise a better strategy to eliminate the unnecessary intermediate `Arc`.
 #[derive(Debug)]
-struct BlockFile(Arc<dyn AnyBlockDevice>);
+struct BlockFile(Arc<BlockDevice>);
 
 impl BlockFile {
-    fn new(device: Arc<dyn AnyBlockDevice>) -> Self {
+    fn new(device: Arc<BlockDevice>) -> Self {
         Self(device)
     }
 }
@@ -104,7 +87,7 @@ impl Device for BlockFile {
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
-        Some(DevtmpfsNodeMeta::new(self.0.name().to_owned()).unwrap())
+        None
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
@@ -113,11 +96,7 @@ impl Device for BlockFile {
 }
 
 /// Represents an opened block device file ready for I/O operations.
-//
-// TODO: This type wraps an `Arc<dyn AnyBlockDevice>` in another `Box` just to implement the
-// `PerOpenFileOps` trait. It leads to redundant vtable dispatch and heap allocation. We should
-// devise a better strategy to eliminate the unnecessary intermediate `Box`.
-struct OpenBlockFile(Arc<dyn AnyBlockDevice>);
+struct OpenBlockFile(Arc<BlockDevice>);
 
 impl FileOps for OpenBlockFile {
     fn read_at(
@@ -236,16 +215,5 @@ impl PerOpenFileOps for OpenBlockFile {
 }
 
 pub(super) fn lookup(id: DeviceId) -> Option<Arc<dyn Device>> {
-    let block_device = aster_block::lookup(id)?;
-
-    let mut registry = DEVICE_REGISTRY.lock();
-    let block_device_file = registry
-        .entry(id.to_raw())
-        .or_insert_with(move || Arc::new(BlockFile::new(block_device)))
-        .clone();
-    Some(block_device_file)
+    aster_block::lookup(id).map(|device| Arc::new(BlockFile::new(device)) as Arc<dyn Device>)
 }
-
-// TODO: Merge the two mapping tables, one is here and the other is in the block component.
-// Maintaining two mapping tables is undesirable due to duplication and (potential) inconsistency.
-static DEVICE_REGISTRY: Mutex<BTreeMap<u32, Arc<dyn Device>>> = Mutex::new(BTreeMap::new());
