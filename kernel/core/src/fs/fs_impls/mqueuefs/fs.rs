@@ -2,20 +2,27 @@
 
 //! The `mqueuefs` file system instance and its type marker.
 
+use alloc::format;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use spin::Once;
 
-use super::{BLOCK_SIZE, MQUEUE_MAGIC, NAME_MAX, ROOT_INO, inode::MqueueRootInode};
+use super::{
+    BLOCK_SIZE, MQUEUE_MAGIC, ROOT_INO,
+    inode::{MqueueInode, MqueueRootInode},
+};
 use crate::{
     fs::{
+        file::{AccessMode, FileLike, InodeHandle, StatusFlags},
         pseudofs::AnonDeviceId,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
             inode::Inode,
+            path::{Mount, Path},
             registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
+    ipc::mqueue::posix::{NAME_MAX, MqueueQueue},
     prelude::*,
 };
 
@@ -58,6 +65,34 @@ impl MqueueFs {
 
     fn alloc_id(&self) -> u64 {
         self.inode_allocator.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Returns the pseudo mount node used to open queue files internally.
+    pub(crate) fn mount_node() -> &'static Arc<Mount> {
+        static MOUNT: Once<Arc<Mount>> = Once::new();
+        MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+    }
+
+    /// Opens a queue file and returns a file handle.
+    pub(crate) fn open_queue(
+        self: &Arc<Self>,
+        queue: Arc<MqueueQueue>,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Result<Arc<dyn FileLike>> {
+        let ino = self.alloc_id();
+        let mode = queue.mode();
+        let inode = MqueueInode::new(
+            ino,
+            mode,
+            queue,
+            Arc::<MqueueFs>::downgrade(self),
+            &self.sb,
+        );
+        let path = Path::new_pseudo(Self::mount_node().clone(), inode, |inode| {
+            format!("mqueue:[{}]", inode.ino())
+        });
+        Ok(Arc::new(InodeHandle::new(path, access_mode, status_flags)?))
     }
 }
 

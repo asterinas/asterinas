@@ -17,6 +17,7 @@ use crate::{
             path::{Dentry, is_dot, is_dotdot},
         },
     },
+    ipc::mqueue::posix::MqueueQueue,
     prelude::*,
     process::{Gid, Uid},
 };
@@ -261,5 +262,80 @@ impl Inode for MqueueRootInode {
         _mode: RenameMode,
     ) -> Result<()> {
         Err(Error::new(Errno::EPERM))
+    }
+}
+
+/// A queue file inode, wrapping the core queue state.
+pub(crate) struct MqueueInode {
+    queue: Arc<MqueueQueue>,
+    common: Common,
+}
+
+impl MqueueInode {
+    pub(crate) fn new(
+        ino: u64,
+        mode: InodeMode,
+        queue: Arc<MqueueQueue>,
+        fs: Weak<dyn FileSystem>,
+        sb: &SuperBlock,
+    ) -> Arc<Self> {
+        let metadata = Metadata::new_file(ino, mode, BLOCK_SIZE, sb.container_dev_id);
+        let common = Common::new(metadata, fs);
+        Arc::new(Self { queue, common })
+    }
+
+    pub(crate) fn queue(&self) -> &Arc<MqueueQueue> {
+        &self.queue
+    }
+}
+
+impl FileOps for MqueueInode {
+    fn read_at(
+        &self,
+        _offset: usize,
+        _writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        // Message queues are accessed via `mq_timedsend` / `mq_timedreceive`,
+        // not via `read` / `write`.
+        return_errno!(Errno::EINVAL)
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        return_errno!(Errno::EINVAL)
+    }
+}
+
+#[inherit_methods(from = "self.common")]
+impl Inode for MqueueInode {
+    fn size(&self) -> usize;
+    fn extension(&self) -> &Extension;
+    fn ino(&self) -> u64;
+    fn mode(&self) -> Result<InodeMode>;
+    fn set_mode(&self, self_dentry: &Dentry, mode: InodeMode) -> Result<()>;
+    fn owner(&self) -> Result<Uid>;
+    fn set_owner(&self, self_dentry: &Dentry, uid: Uid) -> Result<()>;
+    fn group(&self) -> Result<Gid>;
+    fn set_group(&self, self_dentry: &Dentry, gid: Gid) -> Result<()>;
+    fn atime(&self) -> Duration;
+    fn set_atime(&self, self_dentry: &Dentry, time: Duration);
+    fn mtime(&self) -> Duration;
+    fn set_mtime(&self, self_dentry: &Dentry, time: Duration);
+    fn ctime(&self) -> Duration;
+    fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
+    fn fs(&self) -> Arc<dyn FileSystem>;
+    fn metadata(&self) -> Result<Metadata>;
+
+    fn resize(&self, _self_dentry: &Dentry, _new_size: usize) -> Result<()> {
+        Err(Error::new(Errno::EINVAL))
+    }
+
+    fn type_(&self) -> InodeType {
+        InodeType::File
     }
 }

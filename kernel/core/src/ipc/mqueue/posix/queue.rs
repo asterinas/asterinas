@@ -6,13 +6,14 @@ use core::sync::atomic::AtomicUsize;
 
 use ostd::sync::WaitQueue;
 
-use crate::prelude::*;
+use crate::{fs::file::InodeMode, prelude::*};
 
 /// POSIX message queue attributes (`struct mq_attr`).
 ///
 /// The field layout matches the user-space ABI of `struct mq_attr`, where each
 /// field is a `long`.
-#[derive(Clone, Copy, Debug, Default)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 pub(crate) struct MqAttr {
     /// Message queue flags; only `O_NONBLOCK` is meaningful.
     pub(crate) mq_flags: i64,
@@ -35,8 +36,10 @@ pub(crate) struct MqMsg {
 /// The core state of a POSIX message queue.
 ///
 /// This is the in-memory representation of a queue created by `mq_open`. It is
-/// shared between the queue's VFS inode and every open file description.
+/// shared between the IPC registry and every open file description.
 pub(crate) struct MqueueQueue {
+    /// Queue permission mode, fixed at creation time.
+    mode: InodeMode,
     /// Queue attributes.
     attr: MqAttr,
     /// Messages currently queued, grouped by priority.
@@ -49,4 +52,27 @@ pub(crate) struct MqueueQueue {
     /// Wait queue for blocking `mq_timedsend` / `mq_timedreceive`.
     wait_queue: WaitQueue,
     // TODO: Add `mq_notify` registration (`sigevent` and the owning thread/process).
+}
+
+impl MqueueQueue {
+    /// Creates a new, empty message queue with the given permission and limits.
+    pub(crate) fn new(mode: InodeMode, mq_maxmsg: i64, mq_msgsize: i64) -> Self {
+        Self {
+            mode,
+            attr: MqAttr {
+                mq_flags: 0,
+                mq_maxmsg,
+                mq_msgsize,
+                mq_curmsgs: 0,
+            },
+            messages: Mutex::new(BTreeMap::new()),
+            qsize: AtomicUsize::new(0),
+            wait_queue: WaitQueue::new(),
+        }
+    }
+
+    /// Returns the queue permission mode.
+    pub(crate) fn mode(&self) -> InodeMode {
+        self.mode
+    }
 }

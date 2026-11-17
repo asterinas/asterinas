@@ -10,14 +10,13 @@
 
 mod fs;
 mod inode;
-mod queue;
+
+pub(crate) use fs::MqueueFs;
 
 /// Magic number of `mqueuefs`.
 pub(super) const MQUEUE_MAGIC: u64 = 0x1980_0202;
 /// Block size.
 pub(super) const BLOCK_SIZE: usize = 4096;
-/// Maximum length of a queue name, excluding the leading `/`.
-pub(super) const NAME_MAX: usize = 255;
 /// Root inode number.
 pub(super) const ROOT_INO: u64 = 1;
 
