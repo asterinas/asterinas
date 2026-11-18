@@ -9,7 +9,10 @@ use ostd::sync::WaitQueue;
 use crate::{
     fs::file::InodeMode,
     prelude::*,
-    process::{Gid, Uid},
+    process::{
+        Gid, Pid, Process, Uid,
+        signal::{sig_num::SigNum, signals::kernel::KernelSignal},
+    },
     time::wait::ManagedTimeout,
 };
 
@@ -68,7 +71,8 @@ pub(crate) struct MqueueQueue {
     qsize: AtomicUsize,
     /// Wait queue for blocking `mq_timedsend` / `mq_timedreceive`.
     wait_queue: WaitQueue,
-    // TODO: Add `mq_notify` registration (`sigevent` and the owning thread/process).
+    /// One-shot notification registration for `mq_notify`, if any.
+    notify: Mutex<Option<MqNotify>>,
 }
 
 impl MqueueQueue {
@@ -95,6 +99,7 @@ impl MqueueQueue {
             messages: Mutex::new(BTreeMap::new()),
             qsize: AtomicUsize::new(0),
             wait_queue: WaitQueue::new(),
+            notify: Mutex::new(None),
         }
     }
 
@@ -131,6 +136,39 @@ impl MqueueQueue {
         self.qsize.load(Ordering::Relaxed)
     }
 
+    /// Registers a one-shot notification for this queue.
+    ///
+    /// Only one process may register a notification at a time. `signal` is the
+    /// signal to deliver for `SIGEV_SIGNAL` and is `None` for `SIGEV_NONE`.
+    pub(crate) fn register_notify(
+        &self,
+        owner: Pid,
+        signal: Option<(SigNum, Arc<Process>)>,
+    ) -> Result<()> {
+        let mut notify = self.notify.lock();
+        if notify.is_some() {
+            return_errno!(Errno::EBUSY);
+        }
+        *notify = Some(MqNotify { owner, signal });
+        Ok(())
+    }
+
+    /// Cancels the notification registered by `owner`.
+    ///
+    /// Only the process that registered the notification may cancel it,
+    /// matching the Linux behavior.
+    pub(crate) fn unregister_notify(&self, owner: Pid) -> Result<()> {
+        let mut notify = self.notify.lock();
+        let Some(registered) = notify.as_ref() else {
+            return_errno!(Errno::EPERM);
+        };
+        if registered.owner != owner {
+            return_errno!(Errno::EPERM);
+        }
+        *notify = None;
+        Ok(())
+    }
+
     /// Sends a message to the queue.
     ///
     /// If the queue is full, this method blocks until space becomes available,
@@ -144,27 +182,40 @@ impl MqueueQueue {
     ) -> Result<()> {
         let mut payload = Some(payload);
 
-        if self.try_send(&mut payload, prio) {
-            self.wait_queue.wake_all();
-            return Ok(());
+        match self.try_send(&mut payload, prio) {
+            TrySendOutcome::Enqueued { notify } => {
+                if let Some(notify) = notify {
+                    notify.fire();
+                }
+                self.wait_queue.wake_all();
+                return Ok(());
+            }
+            TrySendOutcome::Full => {}
         }
 
         if nonblock {
             return_errno!(Errno::EAGAIN);
         }
 
-        let res = self
-            .wait_queue
-            .pause_until_or_timeout(|| self.try_send(&mut payload, prio).then_some(()), timeout);
+        let res = self.wait_queue.pause_until_or_timeout(
+            || match self.try_send(&mut payload, prio) {
+                TrySendOutcome::Enqueued { notify } => Some(notify),
+                TrySendOutcome::Full => None,
+            },
+            timeout,
+        );
 
-        match res {
-            Ok(()) => {
-                self.wait_queue.wake_all();
-                Ok(())
-            }
+        let notify = match res {
+            Ok(notify) => notify,
             Err(err) if err.error() == Errno::ETIME => return_errno!(Errno::ETIMEDOUT),
-            Err(err) => Err(err),
+            Err(err) => return Err(err),
+        };
+
+        if let Some(notify) = notify {
+            notify.fire();
         }
+        self.wait_queue.wake_all();
+        Ok(())
     }
 
     /// Receives the highest-priority message from the queue.
@@ -212,11 +263,15 @@ impl MqueueQueue {
         }
     }
 
-    fn try_send(&self, payload: &mut Option<Box<[u8]>>, prio: u32) -> bool {
+    fn try_send(&self, payload: &mut Option<Box<[u8]>>, prio: u32) -> TrySendOutcome {
         let mut messages = self.messages.lock();
         if self.curmsgs.load(Ordering::Relaxed) >= self.attr.mq_maxmsg {
-            return false;
+            return TrySendOutcome::Full;
         }
+
+        // The queue transitions from empty to non-empty, so a one-shot
+        // notification (if registered) is fired.
+        let was_empty = self.curmsgs.load(Ordering::Relaxed) == 0;
 
         let payload = payload.take().unwrap();
         let len = payload.len();
@@ -226,7 +281,16 @@ impl MqueueQueue {
         });
         self.curmsgs.fetch_add(1, Ordering::Relaxed);
         self.qsize.fetch_add(len, Ordering::Relaxed);
-        true
+
+        let notify = if was_empty {
+            // The notification is one-shot, so it is consumed by this
+            // transition.
+            self.notify.lock().take()
+        } else {
+            None
+        };
+
+        TrySendOutcome::Enqueued { notify }
     }
 
     fn try_receive(&self, msg_len: usize) -> ReceiveOutcome {
@@ -255,9 +319,39 @@ impl MqueueQueue {
     }
 }
 
+/// The outcome of a non-blocking send attempt.
+enum TrySendOutcome {
+    /// The queue was full.
+    Full,
+    /// The message was enqueued.
+    Enqueued {
+        /// The one-shot notification to fire, if the queue was previously
+        /// empty and a notification was registered.
+        notify: Option<MqNotify>,
+    },
+}
+
 /// The outcome of an attempt to receive a message.
 enum ReceiveOutcome {
     Success((Box<[u8]>, u32)),
     TooLarge,
     Empty,
+}
+
+/// A one-shot `mq_notify` registration.
+struct MqNotify {
+    /// The process that registered the notification.
+    owner: Pid,
+    /// The signal to deliver for `SIGEV_SIGNAL`; `None` for `SIGEV_NONE`.
+    signal: Option<(SigNum, Arc<Process>)>,
+}
+
+impl MqNotify {
+    /// Fires the notification, consuming it.
+    fn fire(self) {
+        if let Some((signo, process)) = self.signal {
+            let signal = KernelSignal::new(signo);
+            process.enqueue_signal(Box::new(signal));
+        }
+    }
 }
