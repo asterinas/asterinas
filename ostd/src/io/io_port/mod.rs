@@ -109,10 +109,11 @@ impl<T: PortWrite, A: IoPortWriteAccess> IoPort<T, A> {
 
 impl<T, A> Drop for IoPort<T, A> {
     fn drop(&mut self) {
+        let port = self.port as usize;
         let range = if !self.is_overlapping {
-            self.port..(self.port + size_of::<T>() as u16)
+            port..port + size_of::<T>()
         } else {
-            self.port..(self.port + 1)
+            port..port + 1
         };
 
         // SAFETY: We have ownership of the PIO region.
