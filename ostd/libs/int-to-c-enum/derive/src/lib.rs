@@ -2,7 +2,7 @@
 
 use proc_macro2::{Ident, TokenStream};
 use quote::{TokenStreamExt, format_ident, quote};
-use syn::{Attribute, Data, DataEnum, DeriveInput, Generics, parse_macro_input};
+use syn::{Attribute, Data, DataEnum, DeriveInput, Fields, Generics, parse_macro_input};
 
 const ALLOWED_REPRS: &[&str] = &[
     "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "usize", "isize",
@@ -43,13 +43,13 @@ fn impl_try_from(
     };
 
     for variant in &data_enum.variants {
-        if variant.discriminant.is_none() {
-            panic!("Enum can only have fields like Variant=1");
+        if !matches!(variant.fields, Fields::Unit) {
+            panic!("TryFromInt requires an enum with only unit variants");
         }
     }
 
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
-    let fn_body = fn_body_tokens(VALUE_NAME, &data_enum, ident.clone());
+    let fn_body = fn_body_tokens(VALUE_NAME, &data_enum, &ident, &valid_repr);
     let param = format_ident!("{}", VALUE_NAME);
     quote!(
         #[automatically_derived]
@@ -62,23 +62,32 @@ fn impl_try_from(
     )
 }
 
-fn fn_body_tokens(value_name: &str, data_enum: &DataEnum, ident: Ident) -> TokenStream {
-    let mut match_bodys = quote!();
-    for variant in &data_enum.variants {
-        let (_, value) = variant
-            .discriminant
-            .as_ref()
-            .expect("Each field must be assigned a discriminant value explicitly");
+fn fn_body_tokens(
+    value_name: &str,
+    data_enum: &DataEnum,
+    ident: &Ident,
+    repr: &Ident,
+) -> TokenStream {
+    let mut discriminant_consts = quote!();
+    let mut match_arms = quote!();
+    for (index, variant) in data_enum.variants.iter().enumerate() {
         let variant_ident = &variant.ident;
-        let statement = quote!(#value => ::core::result::Result::Ok(#ident::#variant_ident),);
-        match_bodys.append_all(statement);
+        let discriminant_ident = format_ident!("__TRY_FROM_INT_DISCRIMINANT_{}", index);
+        discriminant_consts.append_all(quote!(
+            const #discriminant_ident: #repr = #ident::#variant_ident as #repr;
+        ));
+        match_arms.append_all(quote!(
+            #discriminant_ident => ::core::result::Result::Ok(#ident::#variant_ident),
+        ));
     }
-    match_bodys
-        .append_all(quote!(_ => core::result::Result::Err(::int_to_c_enum::TryFromIntError),));
     let param = format_ident!("{}", value_name);
-    quote!(match #param {
-        #match_bodys
-    })
+    quote!(
+        #discriminant_consts
+        match #param {
+            #match_arms
+            _ => ::core::result::Result::Err(::int_to_c_enum::TryFromIntError),
+        }
+    )
 }
 
 fn has_valid_repr(attrs: Vec<Attribute>) -> Option<&'static str> {
