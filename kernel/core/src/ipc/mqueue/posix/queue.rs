@@ -2,7 +2,7 @@
 
 //! Core data structures of a POSIX message queue.
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 
 use ostd::sync::WaitQueue;
 
@@ -54,6 +54,11 @@ pub(crate) struct MqueueQueue {
     mode: InodeMode,
     /// Queue attributes.
     attr: MqAttr,
+    /// Number of messages currently queued (`mq_curmsgs`).
+    ///
+    /// This mirrors the total length of `messages` so that reads avoid an
+    /// `O(n)` count over the priority buckets.
+    curmsgs: AtomicI64,
     /// Messages currently queued, grouped by priority.
     ///
     /// The key is the message priority and the value is a FIFO queue of the
@@ -86,6 +91,7 @@ impl MqueueQueue {
                 mq_msgsize,
                 mq_curmsgs: 0,
             },
+            curmsgs: AtomicI64::new(0),
             messages: Mutex::new(BTreeMap::new()),
             qsize: AtomicUsize::new(0),
             wait_queue: WaitQueue::new(),
@@ -112,14 +118,11 @@ impl MqueueQueue {
     /// `mq_flags` is always zero here, because `O_NONBLOCK` is a property of
     /// each open file description rather than of the queue itself.
     pub(crate) fn attr(&self) -> MqAttr {
-        let messages = self.messages.lock();
-        let mq_curmsgs = messages.values().map(|msgs| msgs.len()).sum::<usize>() as i64;
-
         MqAttr {
             mq_flags: 0,
             mq_maxmsg: self.attr.mq_maxmsg,
             mq_msgsize: self.attr.mq_msgsize,
-            mq_curmsgs,
+            mq_curmsgs: self.curmsgs.load(Ordering::Relaxed),
         }
     }
 
@@ -206,8 +209,7 @@ impl MqueueQueue {
 
     fn try_send(&self, payload: &mut Option<Box<[u8]>>, prio: u32) -> bool {
         let mut messages = self.messages.lock();
-        let curmsgs = messages.values().map(|msgs| msgs.len()).sum::<usize>();
-        if curmsgs as i64 >= self.attr.mq_maxmsg {
+        if self.curmsgs.load(Ordering::Relaxed) >= self.attr.mq_maxmsg {
             return false;
         }
 
@@ -217,6 +219,7 @@ impl MqueueQueue {
             priority: prio,
             payload,
         });
+        self.curmsgs.fetch_add(1, Ordering::Relaxed);
         self.qsize.fetch_add(len, Ordering::Relaxed);
         true
     }
@@ -240,6 +243,7 @@ impl MqueueQueue {
         }
 
         let len = msg.payload.len();
+        self.curmsgs.fetch_sub(1, Ordering::Relaxed);
         self.qsize.fetch_sub(len, Ordering::Relaxed);
 
         ReceiveOutcome::Success((msg.payload, msg.priority))
