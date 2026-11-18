@@ -180,6 +180,7 @@ END_TEST()
  */
 FN_TEST(rename_exchange_swaps_inodes)
 {
+	ensure_dir(BASE_DIR);
 	const char *a = BASE_DIR "/exchange_a";
 	const char *b = BASE_DIR "/exchange_b";
 
@@ -189,19 +190,17 @@ FN_TEST(rename_exchange_swaps_inodes)
 	TEST_SUCC(close(fd));
 
 	struct stat a_before, b_before;
-	TEST_SUCC(stat(a, &a_before));
-	TEST_SUCC(stat(b, &b_before));
+	TEST_RES(stat(a, &a_before), _ret == 0);
+	TEST_RES(stat(b, &b_before), _ret == 0);
 
 	TEST_SUCC(syscall(SYS_renameat2, AT_FDCWD, a, AT_FDCWD, b,
 			  RENAME_EXCHANGE));
 
 	struct stat a_after, b_after;
-	TEST_SUCC(stat(a, &a_after));
-	TEST_SUCC(stat(b, &b_after));
 	TEST_RES(stat(a, &a_after),
-		 a_after.st_ino == b_before.st_ino);
+		 _ret == 0 && a_after.st_ino == b_before.st_ino);
 	TEST_RES(stat(b, &b_after),
-		 b_after.st_ino == a_before.st_ino);
+		 _ret == 0 && b_after.st_ino == a_before.st_ino);
 
 	TEST_SUCC(unlink(a));
 	TEST_SUCC(unlink(b));
