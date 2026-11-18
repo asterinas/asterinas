@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#define _GNU_SOURCE
+
+#define RENAME_EXCHANGE 2
+
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/mount.h>
+#include <sys/syscall.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -166,5 +171,38 @@ FN_TEST(rename_dir_replace_nlink)
 	remove_if_exists(dst_parent);
 	remove_if_exists(src_parent);
 	remove_if_exists(BASE_DIR);
+}
+END_TEST()
+
+/*
+ * RENAME_EXCHANGE must swap the two existing names so that after the call
+ * each name resolves to the other's original inode.
+ */
+FN_TEST(rename_exchange_swaps_inodes)
+{
+	ensure_dir(BASE_DIR);
+	const char *a = BASE_DIR "/exchange_a";
+	const char *b = BASE_DIR "/exchange_b";
+
+	int fd = TEST_SUCC(open(a, O_CREAT | O_WRONLY | O_TRUNC, 0644));
+	TEST_SUCC(close(fd));
+	fd = TEST_SUCC(open(b, O_CREAT | O_WRONLY | O_TRUNC, 0644));
+	TEST_SUCC(close(fd));
+
+	struct stat a_before, b_before;
+	TEST_RES(stat(a, &a_before), _ret == 0);
+	TEST_RES(stat(b, &b_before), _ret == 0);
+
+	TEST_SUCC(syscall(SYS_renameat2, AT_FDCWD, a, AT_FDCWD, b,
+			  RENAME_EXCHANGE));
+
+	struct stat a_after, b_after;
+	TEST_RES(stat(a, &a_after),
+		 _ret == 0 && a_after.st_ino == b_before.st_ino);
+	TEST_RES(stat(b, &b_after),
+		 _ret == 0 && b_after.st_ino == a_before.st_ino);
+
+	TEST_SUCC(unlink(a));
+	TEST_SUCC(unlink(b));
 }
 END_TEST()
