@@ -71,28 +71,28 @@ pub(crate) enum QemuExit {
     Unknown,
 }
 
-pub(crate) fn classify_qemu_exit_status(exit_status: ExitStatus) -> QemuExit {
-    if exit_status.success() {
-        return QemuExit::Success;
-    }
-
+pub(crate) fn classify_qemu_exit_status(exit_status: ExitStatus, arch: Arch) -> QemuExit {
     let Some(qemu_exit_code) = exit_status.code() else {
         return QemuExit::Unknown;
     };
 
-    // For x86 QEMU with `isa-debug-exit`, the guest exit code is encoded as
-    // `(code << 1) | 1`. Do not decode QEMU's own failure exit code `1`.
-    if qemu_exit_code == 1 {
-        return QemuExit::Unknown;
-    }
-
-    let kernel_exit_code = qemu_exit_code >> 1;
-    match kernel_exit_code {
-        // Corresponds to `ostd::QemuExitCode::Success`.
-        0x10 => QemuExit::Success,
-        // Corresponds to `ostd::QemuExitCode::Failed`.
-        0x20 => QemuExit::Failed,
-        // Unknown exit code, e.g., a triple fault.
+    // QEMU's exit status depends on both OSTD's architecture-specific `try_poweroff`
+    // in `ostd/src/arch/*/power.rs` and any firmware handling the shutdown request.
+    // Keep these mappings in sync with both implementations.
+    let (success_code, failure_code) = match arch {
+        // `isa-debug-exit` encodes OSTD's codes as `(code << 1) | 1`.
+        // In particular, 0 is not a success code: a triple fault with `-no-reboot`
+        // can also make QEMU exit with 0.
+        Arch::X86_64 => ((0x10 << 1) | 1, Some((0x20 << 1) | 1)),
+        // RustSBI on QEMU translates SBI Shutdown with NoReason/SystemFailure
+        // into host exit codes 0/255. This requires RustSBI: OpenSBI may ignore
+        // SystemFailure and return 0 even when tests fail.
+        Arch::RiscV64 => (0, Some(255)),
+        Arch::Aarch64 | Arch::LoongArch64 => (0, None),
+    };
+    match qemu_exit_code {
+        code if code == success_code => QemuExit::Success,
+        code if Some(code) == failure_code => QemuExit::Failed,
         _ => QemuExit::Unknown,
     }
 }
@@ -253,8 +253,7 @@ impl Bundle {
 
     pub fn run(&self, config: &Config, action: ActionChoice) {
         let exit_status = self.run_qemu_and_wait(config, action);
-        // FIXME: When panicking it sometimes returns success, why?
-        match classify_qemu_exit_status(exit_status) {
+        match classify_qemu_exit_status(exit_status, config.target_arch) {
             QemuExit::Success => {}
             QemuExit::Failed => std::process::exit(1),
             QemuExit::Unknown => std::process::exit(2),
@@ -552,4 +551,82 @@ fn connect_to_qemu_monitor(
         socket_path.display()
     );
     Err(Errno::ExecuteCommand)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::process::ExitStatusExt;
+
+    use super::*;
+
+    #[test]
+    fn x86_tests_require_isa_debug_exit_codes() {
+        // Regression test for #4204: a triple fault can exit QEMU with 0.
+        for (code, expected) in [
+            (0, QemuExit::Unknown),
+            (1, QemuExit::Unknown),
+            (32, QemuExit::Unknown),
+            (33, QemuExit::Success),
+            (64, QemuExit::Unknown),
+            (65, QemuExit::Failed),
+            (255, QemuExit::Unknown),
+        ] {
+            assert_eq!(
+                classify_qemu_exit_status(ExitStatus::from_raw(code << 8), Arch::X86_64),
+                expected,
+                "QEMU exit code {code}"
+            );
+        }
+    }
+
+    #[test]
+    fn riscv_tests_use_rustsbi_exit_codes() {
+        for (code, expected) in [
+            (0, QemuExit::Success),
+            (1, QemuExit::Unknown),
+            (33, QemuExit::Unknown),
+            (65, QemuExit::Unknown),
+            (255, QemuExit::Failed),
+        ] {
+            assert_eq!(
+                classify_qemu_exit_status(ExitStatus::from_raw(code << 8), Arch::RiscV64),
+                expected,
+                "QEMU exit code {code}"
+            );
+        }
+    }
+
+    #[test]
+    fn other_architectures_only_accept_zero() {
+        for arch in [Arch::Aarch64, Arch::LoongArch64] {
+            for code in 0..=255 {
+                let expected = if code == 0 {
+                    QemuExit::Success
+                } else {
+                    QemuExit::Unknown
+                };
+                assert_eq!(
+                    classify_qemu_exit_status(ExitStatus::from_raw(code << 8), arch),
+                    expected,
+                    "{arch}: QEMU exit code {code}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn signal_termination_is_unknown_on_all_architectures() {
+        for arch in [
+            Arch::X86_64,
+            Arch::RiscV64,
+            Arch::Aarch64,
+            Arch::LoongArch64,
+        ] {
+            assert_eq!(
+                classify_qemu_exit_status(ExitStatus::from_raw(9), arch),
+                QemuExit::Unknown,
+                "{arch}"
+            );
+        }
+    }
 }

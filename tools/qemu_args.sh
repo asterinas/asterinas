@@ -124,9 +124,12 @@ if [ "$1" = "riscv" ]; then
         ROOTFS_RISCV_DEVICE_ARGS="-device virtio-blk-device,drive=rootfs"
     fi
 
+    # RustSBI preserves SBI SystemFailure in QEMU's exit status, so failed
+    # kernel tests are not reported as successful shutdowns.
     QEMU_ARGS="\
         -cpu rv64,svpbmt=true,zkr=true \
         -machine virt \
+        -bios /usr/local/share/rustsbi/rustsbi-prototyper-dynamic.bin \
         -m ${MEM:-8G} \
         -smp ${SMP:-1} \
         --no-reboot \
