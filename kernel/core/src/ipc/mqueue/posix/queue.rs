@@ -11,7 +11,13 @@ use crate::{
     prelude::*,
     process::{
         Gid, Pid, Process, Uid,
-        signal::{sig_num::SigNum, signals::kernel::KernelSignal},
+        posix_thread::AsPosixThread,
+        signal::{
+            c_types::{siginfo_t, sigval_t},
+            constants::SI_MESGQ,
+            sig_num::SigNum,
+            signals::Signal,
+        },
     },
     time::wait::ManagedTimeout,
 };
@@ -143,7 +149,7 @@ impl MqueueQueue {
     pub(crate) fn register_notify(
         &self,
         owner: Pid,
-        signal: Option<(SigNum, Arc<Process>)>,
+        signal: Option<(SigNum, Arc<Process>, sigval_t)>,
     ) -> Result<()> {
         let mut notify = self.notify.lock();
         if notify.is_some() {
@@ -341,15 +347,61 @@ struct MqNotify {
     /// The process that registered the notification.
     owner: Pid,
     /// The signal to deliver for `SIGEV_SIGNAL`; `None` for `SIGEV_NONE`.
-    signal: Option<(SigNum, Arc<Process>)>,
+    signal: Option<(SigNum, Arc<Process>, sigval_t)>,
 }
 
 impl MqNotify {
     /// Fires the notification, consuming it.
     fn fire(self) {
-        if let Some((signo, process)) = self.signal {
-            let signal = KernelSignal::new(signo);
+        if let Some((signo, process, value)) = self.signal {
+            let current = current_thread!();
+            let posix_thread = current.as_posix_thread().unwrap();
+            let pid = posix_thread.process().pid();
+            let uid = posix_thread.credentials().euid();
+            let signal = MqNotifySignal::new(signo, value, pid, uid);
             process.enqueue_signal(Box::new(signal));
         }
+    }
+}
+
+/// The signal delivered for a `SIGEV_SIGNAL` notification.
+struct MqNotifySignal {
+    num: SigNum,
+    value: sigval_t,
+    pid: Pid,
+    uid: Uid,
+}
+
+impl Debug for MqNotifySignal {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MqNotifySignal")
+            .field("num", &self.num)
+            .field("pid", &self.pid)
+            .field("uid", &self.uid)
+            .finish()
+    }
+}
+
+impl MqNotifySignal {
+    fn new(num: SigNum, value: sigval_t, pid: Pid, uid: Uid) -> Self {
+        Self {
+            num,
+            value,
+            pid,
+            uid,
+        }
+    }
+}
+
+impl Signal for MqNotifySignal {
+    fn num(&self) -> SigNum {
+        self.num
+    }
+
+    fn to_info(&self) -> siginfo_t {
+        let mut info = siginfo_t::new(self.num, SI_MESGQ);
+        info.set_si_value(self.value);
+        info.set_pid_uid(self.pid, self.uid);
+        info
     }
 }
