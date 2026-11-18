@@ -34,30 +34,31 @@ impl IoPortAllocator {
             // `u8`, `u16`, and `u32`.
             assert!(1 <= size_of::<T>() && size_of::<T>() <= 4);
             // Compile-time calculation. No worry about integer overflow at runtime.
-            crate::arch::io::MAX_IO_PORT - (size_of::<T>() as u16)
+            crate::arch::io::MAX_IO_PORT as usize + 1 - size_of::<T>()
         };
+        let port = port as usize;
         if port > max_io_port_for_t {
             return None;
         }
 
         let range = if !is_overlapping {
-            port..port + (size_of::<T>() as u16)
+            port..port + size_of::<T>()
         } else {
             port..port + 1
         };
         debug!("Try to acquire PIO range: {:#x?}", range);
 
         let mut allocator = self.allocator.lock();
-        if range.clone().any(|i| allocator.is_allocated(i as usize)) {
+        if range.clone().any(|i| allocator.is_allocated(i)) {
             return None;
         }
 
         for i in range.clone() {
-            allocator.alloc_specific(i as usize);
+            allocator.alloc_specific(i);
         }
 
         // SAFETY: The created `IoPort` is guaranteed not to access system device I/O.
-        unsafe { Some(IoPort::new_overlapping(port, is_overlapping)) }
+        unsafe { Some(IoPort::new_overlapping(port as u16, is_overlapping)) }
     }
 
     /// Recycles an PIO range.
@@ -65,12 +66,10 @@ impl IoPortAllocator {
     /// # Safety
     ///
     /// The caller must have ownership of the PIO region through the `IoPortAllocator::acquire` interface.
-    pub(super) unsafe fn recycle(&self, range: Range<u16>) {
+    pub(super) unsafe fn recycle(&self, range: Range<usize>) {
         debug!("Recycling PIO range: {:#x?}", range);
 
-        self.allocator
-            .lock()
-            .free_consecutive(range.start as usize..range.end as usize);
+        self.allocator.lock().free_consecutive(range);
     }
 }
 
@@ -89,7 +88,8 @@ pub(super) static IO_PORT_ALLOCATOR: Once<IoPortAllocator> = Once::new();
 ///    value specified by architecture.
 pub(in crate::io) unsafe fn init() {
     // SAFETY: `MAX_IO_PORT` is guaranteed not to exceed the maximum value specified by architecture.
-    let mut allocator = IdAlloc::with_capacity(crate::arch::io::MAX_IO_PORT as usize);
+    let max_nr_io_ports = crate::arch::io::MAX_IO_PORT as usize + 1;
+    let mut allocator = IdAlloc::with_capacity(max_nr_io_ports);
 
     unsafe extern "C" {
         fn __sensitive_io_ports_start();
@@ -174,5 +174,18 @@ mod test {
 
         let pci_data3 = IoPort::acquire_overlapping(0xcf8);
         assert!(pci_data3.is_ok());
+    }
+
+    #[ktest]
+    fn last_region() {
+        let io_port = IoPort::acquire(0xfffc).unwrap();
+        assert!(ByteIoPort::acquire(0xffff).is_err());
+        drop(io_port);
+
+        let io_port = ByteIoPort::acquire_overlapping(0xffff).unwrap();
+        assert!(ByteIoPort::acquire(0xffff).is_err());
+        drop(io_port);
+
+        assert!(ByteIoPort::acquire(0xffff).is_ok());
     }
 }
