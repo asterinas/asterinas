@@ -400,7 +400,7 @@ impl Signal for MqNotifySignal {
 
     fn to_info(&self) -> siginfo_t {
         let mut info = siginfo_t::new(self.num, SI_MESGQ);
-        info.set_si_value(self.value);
+        info.set_ptr(self.value.read_ptr());
         info.set_pid_uid(self.pid, self.uid);
         info
     }

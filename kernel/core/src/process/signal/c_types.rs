@@ -79,10 +79,6 @@ impl siginfo_t {
         *self.siginfo_fields.common_mut().second.value_mut() = sigval;
     }
 
-    pub(crate) fn set_si_value(&mut self, value: sigval_t) {
-        *self.siginfo_fields.common_mut().second.value_mut() = value;
-    }
-
     pub(crate) fn set_status(&mut self, status: i32) {
         *self
             .siginfo_fields
