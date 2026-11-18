@@ -155,18 +155,16 @@ impl MqueueQueue {
 
     /// Cancels the notification registered by `owner`.
     ///
-    /// Only the process that registered the notification may cancel it,
-    /// matching the Linux behavior.
-    pub(crate) fn unregister_notify(&self, owner: Pid) -> Result<()> {
+    /// Matching Linux, an attempt to cancel a notification registered by
+    /// another process is silently ignored rather than reported as an error.
+    pub(crate) fn unregister_notify(&self, owner: Pid) {
         let mut notify = self.notify.lock();
-        let Some(registered) = notify.as_ref() else {
-            return_errno!(Errno::EPERM);
-        };
-        if registered.owner != owner {
-            return_errno!(Errno::EPERM);
+        if notify
+            .as_ref()
+            .is_some_and(|registered| registered.owner == owner)
+        {
+            *notify = None;
         }
-        *notify = None;
-        Ok(())
     }
 
     /// Sends a message to the queue.
