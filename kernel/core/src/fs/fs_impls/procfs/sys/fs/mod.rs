@@ -5,7 +5,7 @@ use crate::{
         file::{InodeType, mkmod},
         procfs::{
             ProcDir, StaticEntry,
-            sys::fs::nr_open::NrOpenFileOps,
+            sys::fs::{mqueue::MqueueDirOps, nr_open::NrOpenFileOps},
             template::{
                 ProcDirOps, ReaddirEntry, listed_entries_from_table, lookup_child_from_table,
                 visit_listed_entries,
@@ -16,6 +16,7 @@ use crate::{
     prelude::*,
 };
 
+mod mqueue;
 mod nr_open;
 
 /// Represents the inode at `/proc/sys/fs`.
@@ -29,8 +30,10 @@ impl FsDirOps {
         ProcDir::new(Self, parent, mkmod!(a+rx))
     }
 
-    const STATIC_ENTRIES: &'static [StaticEntry] =
-        &[("nr_open", InodeType::File, NrOpenFileOps::new_inode)];
+    const STATIC_ENTRIES: &'static [StaticEntry] = &[
+        ("mqueue", InodeType::Dir, MqueueDirOps::new_inode),
+        ("nr_open", InodeType::File, NrOpenFileOps::new_inode),
+    ];
 }
 
 impl ProcDirOps for FsDirOps {

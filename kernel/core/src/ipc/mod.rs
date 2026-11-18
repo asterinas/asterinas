@@ -7,6 +7,7 @@ use crate::{
 
 mod ipc_ids;
 mod ipc_ns;
+pub(crate) mod mqueue;
 pub(crate) mod semaphore;
 
 pub(crate) use ipc_ids::IpcId;

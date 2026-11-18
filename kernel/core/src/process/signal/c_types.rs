@@ -68,6 +68,10 @@ impl siginfo_t {
         self.set_pid_uid(ctx.process.pid(), ctx.posix_thread.credentials().ruid());
     }
 
+    pub(crate) fn set_si_value(&mut self, value: sigval_t) {
+        *self.siginfo_fields.common_mut().second.value_mut() = value;
+    }
+
     pub(crate) fn set_status(&mut self, status: i32) {
         *self
             .siginfo_fields
