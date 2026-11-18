@@ -6,11 +6,11 @@
 #include <string.h>
 #include <stdlib.h>
 
-void test_fdatasync_on_fs(const char *directory)
+static void test_sync_on_fs(const char *directory, int data_only)
 {
 	char filepath[256];
-	snprintf(filepath, sizeof(filepath), "%s/test_fdatasync.txt",
-		 directory);
+	snprintf(filepath, sizeof(filepath), "%s/test_%s.txt", directory,
+		 data_only ? "fdatasync" : "fsync");
 
 	int fd =
 		open(filepath, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
@@ -19,14 +19,14 @@ void test_fdatasync_on_fs(const char *directory)
 		exit(EXIT_FAILURE);
 	}
 
-	char *data = "Hello, fdatasync test!\n";
+	char *data = "Hello, sync test!\n";
 	if (write(fd, data, strlen(data)) != strlen(data)) {
 		perror("Error writing data");
 		close(fd);
 		exit(EXIT_FAILURE);
 	}
 
-	if (fdatasync(fd) == -1) {
+	if ((data_only ? fdatasync(fd) : fsync(fd)) == -1) {
 		perror("Error syncing data");
 		close(fd);
 		exit(EXIT_FAILURE);
@@ -43,7 +43,8 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	test_fdatasync_on_fs(argv[1]);
+	test_sync_on_fs(argv[1], 1);
+	test_sync_on_fs(argv[1], 0);
 
 	return EXIT_SUCCESS;
 }
