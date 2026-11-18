@@ -101,3 +101,35 @@ FN_TEST(xattr_with_o_path_fd)
 	TEST_SUCC(unlink(path));
 }
 END_TEST()
+
+/*
+ * Two attributes that each fit individually but exceed the inode's total
+ * xattr capacity together. The second setxattr must fail at the call site,
+ * the first value must remain intact, and the second must not be visible.
+ */
+FN_TEST(xattr_cumulative_capacity_rejected_at_call)
+{
+	const char *path = BASE_DIR "/capacity";
+	char value[2048];
+
+	int fd = TEST_SUCC(open(path, O_CREAT | O_WRONLY, 0644));
+	TEST_SUCC(close(fd));
+
+	memset(value, 'a', sizeof(value));
+	TEST_SUCC(setxattr(path, "user.first", value,
+			   sizeof(value), 0));
+	TEST_ERRNO(setxattr(path, "user.second", value,
+			    sizeof(value), 0),
+		   ENOSPC);
+
+	char got[2048];
+	TEST_RES(getxattr(path, "user.first", got,
+			  sizeof(got)),
+		 _ret == (ssize_t)sizeof(value) &&
+			 !memcmp(got, value, sizeof(value)));
+	TEST_ERRNO(getxattr(path, "user.second", got,
+			    sizeof(got)),
+		   ENODATA);
+	TEST_SUCC(unlink(path));
+}
+END_TEST()
