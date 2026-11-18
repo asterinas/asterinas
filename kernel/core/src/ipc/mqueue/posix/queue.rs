@@ -126,6 +126,11 @@ impl MqueueQueue {
         }
     }
 
+    /// Returns the total number of payload bytes currently queued.
+    pub(crate) fn qsize(&self) -> usize {
+        self.qsize.load(Ordering::Relaxed)
+    }
+
     /// Sends a message to the queue.
     ///
     /// If the queue is full, this method blocks until space becomes available,
@@ -227,19 +232,19 @@ impl MqueueQueue {
     fn try_receive(&self, msg_len: usize) -> ReceiveOutcome {
         let mut messages = self.messages.lock();
 
-        let Some(prio) = messages.keys().next_back().copied() else {
+        let Some(mut entry) = messages.last_entry() else {
             return ReceiveOutcome::Empty;
         };
 
         // Peek without consuming so that an oversized message stays queued.
-        let first_len = messages.get(&prio).unwrap().front().unwrap().payload.len();
+        let first_len = entry.get().front().unwrap().payload.len();
         if first_len > msg_len {
             return ReceiveOutcome::TooLarge;
         }
 
-        let msg = messages.get_mut(&prio).unwrap().pop_front().unwrap();
-        if messages.get(&prio).is_some_and(|msgs| msgs.is_empty()) {
-            messages.remove(&prio);
+        let msg = entry.get_mut().pop_front().unwrap();
+        if entry.get().is_empty() {
+            entry.remove();
         }
 
         let len = msg.payload.len();

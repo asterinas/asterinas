@@ -313,7 +313,6 @@ impl FileOps for MqueueInode {
 
 #[inherit_methods(from = "self.common")]
 impl Inode for MqueueInode {
-    fn size(&self) -> usize;
     fn extension(&self) -> &Extension;
     fn ino(&self) -> u64;
     fn mode(&self) -> Result<InodeMode>;
@@ -329,7 +328,18 @@ impl Inode for MqueueInode {
     fn ctime(&self) -> Duration;
     fn set_ctime(&self, self_dentry: &Dentry, time: Duration);
     fn fs(&self) -> Arc<dyn FileSystem>;
-    fn metadata(&self) -> Result<Metadata>;
+
+    /// The size of a queue file is the total payload bytes currently queued.
+    fn size(&self) -> usize {
+        self.queue.qsize()
+    }
+
+    /// Returns metadata with the queue's current data size.
+    fn metadata(&self) -> Result<Metadata> {
+        let mut metadata = self.common.metadata()?;
+        metadata.size = self.queue.qsize();
+        Ok(metadata)
+    }
 
     fn resize(&self, _self_dentry: &Dentry, _new_size: usize) -> Result<()> {
         Err(Error::new(Errno::EINVAL))

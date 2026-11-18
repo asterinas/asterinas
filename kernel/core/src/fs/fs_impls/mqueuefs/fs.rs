@@ -41,6 +41,12 @@ pub(crate) struct MqueueFs {
     inode_allocator: AtomicU64,
     /// FS event subscriber stats for this file system.
     fs_event_subscriber_stats: FsEventSubscriberStats,
+    /// Cached queue inodes, so that each queue has exactly one inode.
+    ///
+    /// The entries hold weak references so that a queue and its inode can be
+    /// reclaimed once the queue is unlinked and all of its file descriptors are
+    /// closed.
+    inodes: Mutex<Vec<(Weak<MqueueQueue>, Weak<MqueueInode>)>>,
 }
 
 impl MqueueFs {
@@ -60,6 +66,7 @@ impl MqueueFs {
             root: MqueueRootInode::new_root(weak_fs.clone(), &sb),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
+            inodes: Mutex::new(Vec::new()),
         })
     }
 
@@ -73,13 +80,28 @@ impl MqueueFs {
         MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
     }
 
-    /// Opens a queue file and returns a file handle.
-    pub(crate) fn open_queue(
-        self: &Arc<Self>,
-        queue: Arc<MqueueQueue>,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Result<Arc<dyn FileLike>> {
+    /// Returns the single inode associated with `queue`, creating it on the
+    /// first access.
+    ///
+    /// Every open of the same queue reuses the same inode (and therefore the
+    /// same inode number), matching the Linux behavior where each POSIX
+    /// message queue is a single inode.
+    fn get_or_create_inode(self: &Arc<Self>, queue: Arc<MqueueQueue>) -> Arc<MqueueInode> {
+        let queue_weak = Arc::downgrade(&queue);
+        let mut inodes = self.inodes.lock();
+
+        // Reuse a cached inode if the queue is still referenced by an open file.
+        if let Some(inode) = inodes
+            .iter()
+            .find(|(queued, _)| Weak::ptr_eq(queued, &queue_weak))
+            .and_then(|(_, inode)| inode.upgrade())
+        {
+            return inode;
+        }
+
+        // Drop dead entries, then create and cache a new inode.
+        inodes.retain(|(_, inode)| inode.strong_count() > 0);
+
         let ino = self.alloc_id();
         let mode = queue.mode();
         let inode = MqueueInode::new(
@@ -89,6 +111,18 @@ impl MqueueFs {
             Arc::<MqueueFs>::downgrade(self),
             &self.sb,
         );
+        inodes.push((queue_weak, Arc::downgrade(&inode)));
+        inode
+    }
+
+    /// Opens a queue file and returns a file handle.
+    pub(crate) fn open_queue(
+        self: &Arc<Self>,
+        queue: Arc<MqueueQueue>,
+        access_mode: AccessMode,
+        status_flags: StatusFlags,
+    ) -> Result<Arc<dyn FileLike>> {
+        let inode = self.get_or_create_inode(queue);
         let path = Path::new_pseudo(Self::mount_node().clone(), inode, |inode| {
             format!("mqueue:[{}]", inode.ino())
         });
