@@ -26,7 +26,7 @@ To use this crate, first add this crate to your `Cargo.toml`.
 
 ```toml
 [dependencies]
-int-to-c-enum = "0.1.0"
+int-to-c-enum = "0.2.0"
 ```
 
 Below is a simple example. We derive macro `TryFromInt` for an enum `Color`.
