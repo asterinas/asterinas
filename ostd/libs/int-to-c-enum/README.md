@@ -47,6 +47,53 @@ let color = Color::try_from(1).unwrap();
 assert!(color == Color::Red);
 ```
 
+## Custom Errors
+
+By default, failed conversions return [`TryFromIntError`].
+To customize the error, specify `error_type` and exactly one of `error_fn` or `error_value`
+in an enum-level `#[try_from_int(...)]` attribute.
+
+```rust
+use int_to_c_enum::TryFromInt;
+
+/// An error converting an integer to a color.
+#[derive(Debug, Eq, PartialEq)]
+enum ColorError {
+    InvalidValue,
+    InvalidInteger(u8),
+}
+
+/// A supported color.
+#[repr(u8)]
+#[derive(Debug, Eq, PartialEq, TryFromInt)]
+#[try_from_int(
+    error_type = ColorError,
+    error_value = ColorError::InvalidValue,
+    // To include the invalid integer in the error, replace error_value with error_fn.
+    // error_fn = ColorError::InvalidInteger,
+)]
+enum Color {
+    Red = 1,
+    Yellow,
+    Blue,
+}
+
+assert_eq!(Color::try_from(1), Ok(Color::Red));
+assert_eq!(Color::try_from(4), Err(ColorError::InvalidValue));
+```
+
+`error_fn` accepts a callable expression, such as a function path or closure.
+It receives the original integer with the enum's `repr` type
+and returns the specified `error_type`.
+The expression is evaluated and called once per failed conversion.
+Successful conversions do not evaluate it.
+
+`error_value` accepts an expression that produces the specified `error_type`,
+such as an enum variant, a struct constructor, or a function call.
+It is evaluated once per failed conversion.
+For example, `error_type = InvalidColor, error_value = InvalidColor`
+returns a unit struct error without a closure.
+
 ## Macro Expansion
 
 The `TryFromInt` macro will automatically implement trait `TryFrom<u8>` for `Color`.
@@ -56,16 +103,19 @@ After macro expansion, the generated code looks like as follows:
 impl TryFrom<u8> for Color {
     type Error = TryFromIntError;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        const __TRY_FROM_INT_DISCRIMINANT_0: u8 = Color::Red as u8;
-        const __TRY_FROM_INT_DISCRIMINANT_1: u8 = Color::Yellow as u8;
-        const __TRY_FROM_INT_DISCRIMINANT_2: u8 = Color::Blue as u8;
+        {
+            const __TRY_FROM_INT_DISCRIMINANT_0: u8 = Color::Red as u8;
+            const __TRY_FROM_INT_DISCRIMINANT_1: u8 = Color::Yellow as u8;
+            const __TRY_FROM_INT_DISCRIMINANT_2: u8 = Color::Blue as u8;
 
-        match value {
-            __TRY_FROM_INT_DISCRIMINANT_0 => Ok(Color::Red),
-            __TRY_FROM_INT_DISCRIMINANT_1 => Ok(Color::Yellow),
-            __TRY_FROM_INT_DISCRIMINANT_2 => Ok(Color::Blue),
-            _ => Err(TryFromIntError),
+            match value {
+                __TRY_FROM_INT_DISCRIMINANT_0 => return Ok(Color::Red),
+                __TRY_FROM_INT_DISCRIMINANT_1 => return Ok(Color::Yellow),
+                __TRY_FROM_INT_DISCRIMINANT_2 => return Ok(Color::Blue),
+                _ => {}
+            }
         }
+        Err(TryFromIntError)
     }
 }
 ```
