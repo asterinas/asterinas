@@ -43,8 +43,7 @@ FN_TEST(setgid_directory_grants_gid_on_creation)
 	TEST_SUCC(stat(DIR_PATH, &dir_st));
 	TEST_RES(stat(FILE_PATH, &file_st), file_st.st_gid == DIR_GID);
 	TEST_RES(stat(DIR_PATH, &dir_st),
-		 dir_st.st_gid == DIR_GID &&
-		 (dir_st.st_mode & S_ISGID) != 0);
+		 dir_st.st_gid == DIR_GID && (dir_st.st_mode & S_ISGID) != 0);
 
 	TEST_SUCC(unlink(FILE_PATH));
 	TEST_SUCC(rmdir(DIR_PATH));
