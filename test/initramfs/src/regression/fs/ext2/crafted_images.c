@@ -85,13 +85,14 @@ static off_t indirect_block_offset(int dev, uint32_t ino, unsigned long *bs_out)
 	index = (ino - 1) % ipg;
 
 	if (pread(dev, desc, desc_size,
-		  (off_t)(first_data_block + 1) * bs + (off_t)group * desc_size) !=
-	    (ssize_t)desc_size)
+		  (off_t)(first_data_block + 1) * bs +
+			  (off_t)group * desc_size) != (ssize_t)desc_size)
 		return -1;
 	inode_table = get_u32(desc, 8);
 
 	off_t inode_off = (off_t)inode_table * bs + (off_t)index * inode_size;
-	if (pread(dev, &ind, sizeof(ind), inode_off + 0x28 + INDIRECT_INDEX * 4) !=
+	if (pread(dev, &ind, sizeof(ind),
+		  inode_off + 0x28 + INDIRECT_INDEX * 4) !=
 	    (ssize_t)sizeof(ind))
 		return -1;
 
@@ -130,7 +131,8 @@ FN_TEST(unresolvable_root_inode_mount_fails)
 	TEST_ERRNO(mount_block_device(dev, BAD_ROOT_MOUNT, "ext2", 0), EUCLEAN);
 
 	/* Restore the field so the next case starts from a clean image. */
-	TEST_RES(pwrite(dev, &original, sizeof(original), BG_INODE_TABLE_OFFSET),
+	TEST_RES(pwrite(dev, &original, sizeof(original),
+			BG_INODE_TABLE_OFFSET),
 		 _ret == (ssize_t)sizeof(original));
 	TEST_SUCC(fsync(dev));
 	TEST_SUCC(close_block_device(dev));
@@ -180,7 +182,8 @@ FN_TEST(invalid_indirect_block_access_fails)
 	f = TEST_SUCC(open(path, O_RDWR));
 
 	unsigned char buf[64];
-	TEST_ERRNO(pread(f, buf, sizeof(buf), (off_t)INDIRECT_INDEX * FS_BLOCK_SIZE),
+	TEST_ERRNO(pread(f, buf, sizeof(buf),
+			 (off_t)INDIRECT_INDEX * FS_BLOCK_SIZE),
 		   EIO);
 	TEST_RES(pwrite(f, "Z", 1, (off_t)INDIRECT_INDEX * FS_BLOCK_SIZE),
 		 _ret < 0 && (errno == EIO || errno == EUCLEAN));
