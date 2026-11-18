@@ -62,7 +62,7 @@ impl TryFrom<u8> for Color {
             1 => Ok(Color::Red),
             2 => Ok(Color::Yellow),
             3 => Ok(Color::Blue),
-            _ => Err(TryFromIntError::InvalidValue),
+            _ => Err(TryFromIntError),
         }
     }
 }

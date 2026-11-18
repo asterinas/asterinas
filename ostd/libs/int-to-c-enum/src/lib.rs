@@ -3,11 +3,9 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(not(test), no_std)]
 
-/// Error type for TryFromInt derive macro
+/// An error indicating that an integer does not match any enum discriminant.
 #[derive(Clone, Copy, Debug)]
-pub enum TryFromIntError {
-    InvalidValue,
-}
+pub struct TryFromIntError;
 
 #[cfg(feature = "derive")]
 pub use int_to_c_enum_derive::TryFromInt;
