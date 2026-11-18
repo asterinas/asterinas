@@ -2,7 +2,7 @@
 
 //! Core data structures of a POSIX message queue.
 
-use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use ostd::sync::WaitQueue;
 
@@ -10,6 +10,7 @@ use crate::{
     fs::file::InodeMode,
     prelude::*,
     process::{Gid, Uid},
+    time::wait::ManagedTimeout,
 };
 
 /// POSIX message queue attributes (`struct mq_attr`).
@@ -121,4 +122,133 @@ impl MqueueQueue {
             mq_curmsgs,
         }
     }
+
+    /// Sends a message to the queue.
+    ///
+    /// If the queue is full, this method blocks until space becomes available,
+    /// the timeout expires, or the current thread is interrupted by a signal.
+    pub(crate) fn send(
+        &self,
+        payload: Box<[u8]>,
+        prio: u32,
+        nonblock: bool,
+        timeout: Option<ManagedTimeout<'static>>,
+    ) -> Result<()> {
+        let mut payload = Some(payload);
+
+        if self.try_send(&mut payload, prio) {
+            self.wait_queue.wake_all();
+            return Ok(());
+        }
+
+        if nonblock {
+            return_errno!(Errno::EAGAIN);
+        }
+
+        let res = self
+            .wait_queue
+            .pause_until_or_timeout(|| self.try_send(&mut payload, prio).then_some(()), timeout);
+
+        match res {
+            Ok(()) => {
+                self.wait_queue.wake_all();
+                Ok(())
+            }
+            Err(err) if err.error() == Errno::ETIME => return_errno!(Errno::ETIMEDOUT),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Receives the highest-priority message from the queue.
+    ///
+    /// If `msg_len` is smaller than the queued message, `EMSGSIZE` is returned
+    /// and the message stays queued. If the queue is empty, this method blocks
+    /// until a message arrives, the timeout expires, or the current thread is
+    /// interrupted by a signal.
+    pub(crate) fn receive(
+        &self,
+        msg_len: usize,
+        nonblock: bool,
+        timeout: Option<ManagedTimeout<'static>>,
+    ) -> Result<(Box<[u8]>, u32)> {
+        match self.try_receive(msg_len) {
+            ReceiveOutcome::Success(msg) => {
+                self.wait_queue.wake_all();
+                return Ok(msg);
+            }
+            ReceiveOutcome::TooLarge => return_errno!(Errno::EMSGSIZE),
+            ReceiveOutcome::Empty => {}
+        }
+
+        if nonblock {
+            return_errno!(Errno::EAGAIN);
+        }
+
+        let res = self.wait_queue.pause_until_or_timeout(
+            || match self.try_receive(msg_len) {
+                ReceiveOutcome::Success(msg) => Some(Ok(msg)),
+                ReceiveOutcome::TooLarge => Some(Err(Error::new(Errno::EMSGSIZE))),
+                ReceiveOutcome::Empty => None,
+            },
+            timeout,
+        );
+
+        match res {
+            Ok(Ok(msg)) => {
+                self.wait_queue.wake_all();
+                Ok(msg)
+            }
+            Ok(Err(err)) => Err(err),
+            Err(err) if err.error() == Errno::ETIME => return_errno!(Errno::ETIMEDOUT),
+            Err(err) => Err(err),
+        }
+    }
+
+    fn try_send(&self, payload: &mut Option<Box<[u8]>>, prio: u32) -> bool {
+        let mut messages = self.messages.lock();
+        let curmsgs = messages.values().map(|msgs| msgs.len()).sum::<usize>();
+        if curmsgs as i64 >= self.attr.mq_maxmsg {
+            return false;
+        }
+
+        let payload = payload.take().unwrap();
+        let len = payload.len();
+        messages.entry(prio).or_default().push_back(MqMsg {
+            priority: prio,
+            payload,
+        });
+        self.qsize.fetch_add(len, Ordering::Relaxed);
+        true
+    }
+
+    fn try_receive(&self, msg_len: usize) -> ReceiveOutcome {
+        let mut messages = self.messages.lock();
+
+        let Some(prio) = messages.keys().next_back().copied() else {
+            return ReceiveOutcome::Empty;
+        };
+
+        // Peek without consuming so that an oversized message stays queued.
+        let first_len = messages.get(&prio).unwrap().front().unwrap().payload.len();
+        if first_len > msg_len {
+            return ReceiveOutcome::TooLarge;
+        }
+
+        let msg = messages.get_mut(&prio).unwrap().pop_front().unwrap();
+        if messages.get(&prio).is_some_and(|msgs| msgs.is_empty()) {
+            messages.remove(&prio);
+        }
+
+        let len = msg.payload.len();
+        self.qsize.fetch_sub(len, Ordering::Relaxed);
+
+        ReceiveOutcome::Success((msg.payload, msg.priority))
+    }
+}
+
+/// The outcome of an attempt to receive a message.
+enum ReceiveOutcome {
+    Success((Box<[u8]>, u32)),
+    TooLarge,
+    Empty,
 }
