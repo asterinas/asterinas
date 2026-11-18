@@ -40,6 +40,9 @@ jobs:
         with:
           auto_test: 'general'
           arch: 'aarch64'
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: ${{ matrix.id == 'compile' }}
+          save_builds_to_cache: ${{ matrix.id == 'compile' }}
 
   integration-test:
     name: ${{ matrix.test_id }} (${{ matrix.runs_on }})
@@ -75,3 +78,6 @@ jobs:
           # https://github.com/actions/runner-images/issues/14062#issuecomment-5352403358
           enable_kvm: false
           conformance_test_suite: 'ltp'
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: true
+          save_builds_to_cache: ${{ matrix.test_id == 'boot' }}

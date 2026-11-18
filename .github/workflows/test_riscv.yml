@@ -38,6 +38,9 @@ jobs:
         with:
           auto_test: 'general'
           arch: 'riscv64'
+          restore_osdk_from_cache: ${{ matrix.id != 'usermode_test' }}
+          restore_kernel_from_cache: ${{ matrix.id == 'compile' }}
+          save_builds_to_cache: ${{ matrix.id == 'compile' }}
 
   integration-test:
     runs-on: ubuntu-latest
@@ -81,3 +84,6 @@ jobs:
           arch: 'riscv64'
           smp: ${{ matrix.smp }}
           conformance_test_suite: 'ltp'
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: true
+          save_builds_to_cache: ${{ matrix.test_id == 'boot-release' }}
