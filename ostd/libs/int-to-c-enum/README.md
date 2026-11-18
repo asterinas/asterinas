@@ -19,8 +19,6 @@ for enums that meet the following requirements:
    the repr.
 2. The enum must consist solely of unit variants, which is called
    [units only enum](https://doc.rust-lang.org/reference/items/enumerations.html#unit-only-enum).
-   Each field should have an
-   [explicit discriminant](https://doc.rust-lang.org/reference/items/enumerations.html#explicit-discriminants).
 
 ## Quick Start
 
@@ -39,9 +37,9 @@ use int_to_c_enum::TryFromInt;
 #[repr(u8)]
 #[derive(TryFromInt, Debug, Eq, PartialEq)]
 pub enum Color {
-    Red = 1,
-    Yellow = 2,
-    Blue = 3,
+    Red = 1, // Support explicit discriminants...
+    Yellow,  // and implicit ones as well.
+    Blue,
 }
 
 // Then, we can use method `try_from` for `Color`.
@@ -58,10 +56,14 @@ After macro expansion, the generated code looks like as follows:
 impl TryFrom<u8> for Color {
     type Error = TryFromIntError;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
+        const __TRY_FROM_INT_DISCRIMINANT_0: u8 = Color::Red as u8;
+        const __TRY_FROM_INT_DISCRIMINANT_1: u8 = Color::Yellow as u8;
+        const __TRY_FROM_INT_DISCRIMINANT_2: u8 = Color::Blue as u8;
+
         match value {
-            1 => Ok(Color::Red),
-            2 => Ok(Color::Yellow),
-            3 => Ok(Color::Blue),
+            __TRY_FROM_INT_DISCRIMINANT_0 => Ok(Color::Red),
+            __TRY_FROM_INT_DISCRIMINANT_1 => Ok(Color::Yellow),
+            __TRY_FROM_INT_DISCRIMINANT_2 => Ok(Color::Blue),
             _ => Err(TryFromIntError),
         }
     }
