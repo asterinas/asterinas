@@ -29,3 +29,6 @@ jobs:
           auto_test: 'general'
           runs_on: 'ubuntu-latest'
           arch: 'loongarch64'
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: ${{ matrix.id == 'compile' }}
+          save_builds_to_cache: ${{ matrix.id == 'compile' }}

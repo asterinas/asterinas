@@ -25,3 +25,5 @@ jobs:
           xfstests_fs_type: 'ext2'
           xfstests_runlist: 'full.list'
           xfstests_disk_size: '12G'
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: true

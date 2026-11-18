@@ -38,6 +38,9 @@ jobs:
         with:
           auto_test: 'general'
           runs_on: 'ubuntu-latest'
+          restore_osdk_from_cache: ${{ matrix.id != 'usermode_test' }}
+          restore_kernel_from_cache: ${{ matrix.id == 'compile' }}
+          save_builds_to_cache: ${{ matrix.id == 'compile' }}
 
   osdk-test:
     runs-on: ubuntu-latest
@@ -89,6 +92,8 @@ jobs:
           smp: ${{ matrix.smp }}
           boot_protocol: ${{ matrix.boot_protocol }}
           rootfs_boot: ${{ matrix.rootfs_boot }}
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: true
 
   regression-test:
     runs-on: ubuntu-latest
@@ -120,6 +125,9 @@ jobs:
           release: ${{ !contains(matrix.release, 'false') }}
           smp: ${{ matrix.smp }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: true
+          save_builds_to_cache: ${{ matrix.variant == 'multiboot2-smp4' }}
 
   conformance-test:
     runs-on: ubuntu-latest
@@ -167,6 +175,8 @@ jobs:
           conformance_test_workdir: ${{ matrix.conformance_test_workdir }}
           conformance_test_extra_blocklists: ${{ matrix.conformance_test_extra_blocklists }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: true
 
   cross-compile-test:
     timeout-minutes: 30
@@ -189,6 +199,7 @@ jobs:
         with:
           auto_test: ${{ matrix.auto_test }}
           enable_kvm: ${{ matrix.enable_kvm }}
+          restore_osdk_from_cache: true
 
   xfstests:
     name: xfstests (${{ matrix.fs_type }})
@@ -231,6 +242,8 @@ jobs:
           xfstests_fs_type: ${{ matrix.fs_type }}
           xfstests_runlist: ${{ matrix.runlist }}
           xfstests_disk_size: ${{ matrix.disk_size }}
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: true
 
   pjdfstest:
     name: pjdfstest (${{ matrix.fs_type }})
@@ -260,3 +273,5 @@ jobs:
           conformance_test_suite: 'pjdfstest'
           release: true
           pjdfstest_fs_type: ${{ matrix.fs_type }}
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: true
