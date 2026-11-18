@@ -10,10 +10,7 @@ use aster_block::SECTOR_SIZE;
 use aster_util::slot_vec::SlotVec;
 use device_id::DeviceId;
 use hashbrown::HashMap;
-use ostd::{
-    mm::VmIo,
-    sync::{PreemptDisabled, RwLockWriteGuard},
-};
+use ostd::{mm::VmIo, sync::RwMutexWriteGuard};
 
 use super::{memfd::MemfdInode, xattr::RamXattr, *};
 use crate::{
@@ -78,7 +75,7 @@ impl RamFs {
             sb,
             root: Arc::new_cyclic(|weak_root| RamInode {
                 inner: Inner::new_dir(weak_root.clone(), weak_root.clone()),
-                metadata: SpinLock::new(InodeMeta::new_dir(
+                metadata: Mutex::new(InodeMeta::new_dir(
                     mkmod!(a+rx, u+w),
                     Uid::new_root(),
                     Gid::new_root(),
@@ -142,7 +139,7 @@ pub(in crate::fs::fs_impls) struct RamInode {
     /// Inode inner specifics
     inner: Inner,
     /// Inode metadata
-    metadata: SpinLock<InodeMeta>,
+    metadata: Mutex<InodeMeta>,
     /// Inode number
     ino: u64,
     /// Type of the inode
@@ -177,9 +174,9 @@ pub(in crate::fs::fs_impls) struct RamInode {
 
 /// Inode inner specifics.
 enum Inner {
-    Dir(RwLock<DirEntry>),
+    Dir(RwMutex<DirEntry>),
     File(Mutex<PageCache>),
-    SymLink(SpinLock<String>),
+    SymLink(Mutex<String>),
     BlockDevice(u64),
     CharDevice(u64),
     Socket,
@@ -199,7 +196,7 @@ impl ToBeRevalidated {
 
 impl Inner {
     pub(self) fn new_dir(this: Weak<RamInode>, parent: Weak<RamInode>) -> Self {
-        Self::Dir(RwLock::new(DirEntry::new(this, parent)))
+        Self::Dir(RwMutex::new(DirEntry::new(this, parent)))
     }
 
     pub(self) fn new_file() -> Self {
@@ -207,7 +204,7 @@ impl Inner {
     }
 
     pub(self) fn new_symlink(target: &str) -> Self {
-        Self::SymLink(SpinLock::new(String::from(target)))
+        Self::SymLink(Mutex::new(String::from(target)))
     }
 
     pub(self) fn new_block_device(dev_id: u64) -> Self {
@@ -230,7 +227,7 @@ impl Inner {
         Self::File(Mutex::new(PageCache::new_anon(0).unwrap()))
     }
 
-    fn as_direntry(&self) -> Option<&RwLock<DirEntry>> {
+    fn as_direntry(&self) -> Option<&RwMutex<DirEntry>> {
         match self {
             Self::Dir(dir_entry) => Some(dir_entry),
             _ => None,
@@ -244,7 +241,7 @@ impl Inner {
         }
     }
 
-    fn as_symlink(&self) -> Option<&SpinLock<String>> {
+    fn as_symlink(&self) -> Option<&Mutex<String>> {
         match self {
             Self::SymLink(link) => Some(link),
             _ => None,
@@ -536,7 +533,7 @@ impl RamInode {
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
             inner: Inner::new_dir(weak_self.clone(), parent.clone()),
-            metadata: SpinLock::new(InodeMeta::new_dir(mode, uid, gid)),
+            metadata: Mutex::new(InodeMeta::new_dir(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::Dir,
             dir_revalidation_policy: fs.revalidation_policy,
@@ -559,7 +556,7 @@ impl RamInode {
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
             inner: Inner::new_file(),
-            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
+            metadata: Mutex::new(InodeMeta::new(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::File,
             dir_revalidation_policy: RevalidationPolicy::empty(),
@@ -583,7 +580,7 @@ impl RamInode {
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
             inner: Inner::new_file(),
-            metadata: SpinLock::new(InodeMeta::new_tmpfile(mode, uid, gid)),
+            metadata: Mutex::new(InodeMeta::new_tmpfile(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::File,
             dir_revalidation_policy: RevalidationPolicy::empty(),
@@ -607,7 +604,7 @@ impl RamInode {
     ) -> Self {
         Self {
             inner: Inner::new_file_in_memfd(),
-            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
+            metadata: Mutex::new(InodeMeta::new(mode, uid, gid)),
             ino: weak_self.as_ptr() as u64,
             typ: InodeType::File,
             dir_revalidation_policy: RevalidationPolicy::empty(),
@@ -631,7 +628,7 @@ impl RamInode {
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
             inner: Inner::new_symlink(target),
-            metadata: SpinLock::new({
+            metadata: Mutex::new({
                 let mut metadata = InodeMeta::new(mode, uid, gid);
                 metadata.size = target.len();
                 metadata
@@ -665,7 +662,7 @@ impl RamInode {
 
         Arc::new_cyclic(|weak_self| RamInode {
             inner,
-            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
+            metadata: Mutex::new(InodeMeta::new(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: dev_type.into(),
             dir_revalidation_policy: RevalidationPolicy::empty(),
@@ -688,7 +685,7 @@ impl RamInode {
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
             inner: Inner::new_socket(),
-            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
+            metadata: Mutex::new(InodeMeta::new(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::Socket,
             dir_revalidation_policy: RevalidationPolicy::empty(),
@@ -711,7 +708,7 @@ impl RamInode {
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
             inner: Inner::new_named_pipe(),
-            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
+            metadata: Mutex::new(InodeMeta::new(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::NamedPipe,
             dir_revalidation_policy: RevalidationPolicy::empty(),
@@ -905,7 +902,7 @@ impl RamInode {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
 
-        let self_dir = self.inner.as_direntry().unwrap().upread();
+        let mut self_dir = self.inner.as_direntry().unwrap().write();
         if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
@@ -927,7 +924,6 @@ impl RamInode {
             _ => panic!("unsupported inode type"),
         };
 
-        let mut self_dir = self_dir.upgrade();
         self_dir.append_entry(name, new_inode.clone());
         drop(self_dir);
 
@@ -954,7 +950,7 @@ impl RamInode {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
 
-        let self_dir = self.inner.as_direntry().unwrap().upread();
+        let mut self_dir = self.inner.as_direntry().unwrap().write();
         if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
@@ -982,7 +978,6 @@ impl RamInode {
             ),
         };
 
-        let mut self_dir = self_dir.upgrade();
         self_dir.append_entry(name, new_inode.clone());
         drop(self_dir);
 
@@ -1644,11 +1639,11 @@ impl DirChange {
 }
 
 fn write_lock_two_direntries_by_ino<'a>(
-    this: (u64, &'a RwLock<DirEntry>),
-    other: (u64, &'a RwLock<DirEntry>),
+    this: (u64, &'a RwMutex<DirEntry>),
+    other: (u64, &'a RwMutex<DirEntry>),
 ) -> (
-    RwLockWriteGuard<'a, DirEntry, PreemptDisabled>,
-    RwLockWriteGuard<'a, DirEntry, PreemptDisabled>,
+    RwMutexWriteGuard<'a, DirEntry>,
+    RwMutexWriteGuard<'a, DirEntry>,
 ) {
     if this.0 < other.0 {
         let this = this.1.write();
