@@ -61,17 +61,19 @@ static void handled_trap(void)
 	CHECK_WITH(caught, _ret == 2);
 }
 
+#if defined(__x86_64__)
 static void negative_number(void)
 {
 	set_handler();
 	no_new_privs();
-	/* Exercise the overlap between syscall rollback and SA_RESTART. */
+	/* Syscall rollback puts -ERESTARTSYS in rax on x86-64. */
 	expected_nr = -512;
 	expected_data = 9;
 	deny_syscall(expected_nr, SECCOMP_RET_TRAP | expected_data);
 	syscall(expected_nr);
 	CHECK_WITH(caught, _ret == 1);
 }
+#endif
 
 static void default_trap(void)
 {
@@ -164,7 +166,9 @@ FN_TEST(trap)
 	uint32_t action = SECCOMP_RET_TRAP;
 	TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0, &action));
 	TEST_RES(run_child(handled_trap, 0), _ret == 0);
+#if defined(__x86_64__)
 	TEST_RES(run_child(negative_number, 0), _ret == 0);
+#endif
 	TEST_RES(run_child(default_trap, SIGSYS), _ret == 0);
 	TEST_RES(run_child(ignored_trap, SIGSYS), _ret == 0);
 	TEST_RES(run_child(blocked_trap, SIGSYS), _ret == 0);

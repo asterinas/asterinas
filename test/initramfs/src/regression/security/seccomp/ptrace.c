@@ -82,15 +82,19 @@ static int trace_syscall(enum trace_case which)
 	}
 	return !(changed && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
+#endif
 
 FN_TEST(ptrace_syscall_number)
 {
+#if defined(__x86_64__)
 	TEST_RES(trace_syscall(REWRITE_DENIED), _ret == 0);
 	TEST_RES(trace_syscall(REWRITE_ALLOWED), _ret == 0);
 	TEST_RES(trace_syscall(CHANGE_RETURN_ONLY), _ret == 0);
 	TEST_RES(trace_syscall(SKIP_ALLOWED), _ret == 0);
 	TEST_RES(trace_syscall(SKIP_FILTERED), _ret == 0);
 	TEST_RES(trace_syscall(REWRITE_HIGH_BITS), _ret == 0);
+#else
+	SKIP_TEST_IF(NATIVE_ARCH != AUDIT_ARCH_X86_64);
+#endif
 }
 END_TEST()
-#endif
