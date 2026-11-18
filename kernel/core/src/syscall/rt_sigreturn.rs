@@ -7,10 +7,12 @@ use ostd::{
 };
 
 use super::SyscallReturn;
+#[cfg(target_arch = "x86_64")]
+use crate::process::signal;
 use crate::{
     prelude::*,
     process::{posix_thread::ContextPthreadAdminApi, signal::c_types::ucontext_t},
-    syscall::sigaltstack::set_new_stack,
+    syscall::sigaltstack,
 };
 
 pub(super) fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<SyscallReturn> {
@@ -30,21 +32,36 @@ pub(super) fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Res
     // If the stack setting is invalid, we silently ignore the error,
     // following Linux's behavior.
     // Reference: <https://elixir.bootlin.com/linux/v6.15/source/kernel/signal.c#L4456>.
-    let _ = set_new_stack(stack, ctx, user_ctx.stack_pointer());
+    let _ = sigaltstack::set_new_stack(stack, ctx, user_ctx.stack_pointer());
 
     // Restore the FPU context.
-    let fpu_context_addr = cfg_select! {
-        target_arch = "x86_64" => ucontext.uc_mcontext.fpu_context_addr(),
+    cfg_select! {
+        target_arch = "x86_64" => {
+            let fpu_context_addr = ucontext.uc_mcontext.fpu_context_addr();
+            let fpu_context = match FpuContext::read_from(|offset, bytes| {
+                let address = fpu_context_addr.checked_add(offset).ok_or(ostd::Error::Overflow)?;
+                ctx.user_space().read_bytes(address, bytes)
+            }) {
+                Ok(fpu_context) => fpu_context,
+                Err(_) => {
+                    // Handle the bad frame using its saved mask, not the handler's mask.
+                    ctx.set_sig_mask(ucontext.uc_sigmask.into());
+                    ctx.thread_local.supp_user_context().fpu().set(FpuContext::new());
+                    signal::force_sigsegv(ctx);
+                    return Ok(SyscallReturn::Return(0));
+                }
+            };
+        }
         any(target_arch = "riscv64", target_arch = "loongarch64", target_arch = "aarch64") => {
             // In RISC-V/LoongArch64/ARM, the FPU context is placed directly after `ucontext_t` on
             // the signal stack.
-            sig_context_addr + size_of::<ucontext_t>()
+            let fpu_context_addr = sig_context_addr + size_of::<ucontext_t>();
+            let mut fpu_context = FpuContext::new();
+            ctx.user_space()
+                .read_bytes(fpu_context_addr, fpu_context.as_bytes_mut())?;
         }
         _ => compile_error!("unsupported target"),
-    };
-    let mut fpu_context = FpuContext::new();
-    ctx.user_space()
-        .read_bytes(fpu_context_addr, fpu_context.as_bytes_mut())?;
+    }
     ctx.thread_local.supp_user_context().fpu().set(fpu_context);
 
     // Restore the signal mask.
