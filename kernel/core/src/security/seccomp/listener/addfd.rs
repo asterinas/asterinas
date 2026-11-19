@@ -2,7 +2,7 @@
 
 use ostd::task::Task;
 
-use super::{Listener, NotificationState, SeccompNotifResp, WaitQueue};
+use super::{Listener, NotificationReply, NotificationState, WaitQueue};
 use crate::{
     events::IoEvents,
     fs::file::{
@@ -176,12 +176,8 @@ impl Listener {
         let result = op.install(ctx).map(|(fd, closed)| {
             displaced = closed;
             if op.send {
-                request.state = NotificationState::Replied(SeccompNotifResp {
-                    id,
-                    val: i64::from(i32::from(fd)),
-                    error: 0,
-                    flags: 0,
-                });
+                request.state =
+                    NotificationState::Replied(NotificationReply::Return(i32::from(fd) as usize));
             }
             fd
         });

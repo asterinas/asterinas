@@ -55,13 +55,42 @@ pub(super) struct Listener {
 pub(crate) struct UserNotification(pub(super) Option<Arc<Listener>>);
 
 impl UserNotification {
-    /// Waits for a supervisor response, or returns `None` to continue the syscall.
-    pub(crate) fn resolve(&self, ctx: &Context, data: &SeccompData) -> Result<Option<usize>> {
+    /// Waits for the supervisor to decide how the syscall should complete.
+    pub(crate) fn resolve(&self, ctx: &Context, data: &SeccompData) -> Result<NotificationReply> {
         let listener = self
             .0
             .as_ref()
             .ok_or_else(|| Error::with_message(Errno::ENOSYS, "no seccomp listener"))?;
         listener.notify(ctx, data)
+    }
+}
+
+/// A validated response to a seccomp notification.
+#[derive(Clone, Copy)]
+pub(crate) enum NotificationReply {
+    Continue,
+    Return(usize),
+}
+
+impl NotificationReply {
+    fn decode(response: &SeccompNotifResp) -> Result<Self> {
+        if response.flags & !NOTIF_FLAG_CONTINUE != 0
+            || (response.flags & NOTIF_FLAG_CONTINUE != 0
+                && (response.val != 0 || response.error != 0))
+        {
+            return_errno_with_message!(Errno::EINVAL, "invalid seccomp notification response");
+        }
+        if response.flags & NOTIF_FLAG_CONTINUE != 0 {
+            return Ok(Self::Continue);
+        }
+        // The supervisor supplies a register value. Even -ERESTARTSYS does
+        // not request a kernel restart.
+        let value = if response.error != 0 {
+            response.error as isize as usize
+        } else {
+            response.val as usize
+        };
+        Ok(Self::Return(value))
     }
 }
 
@@ -175,11 +204,11 @@ impl Drop for Notification {
 enum NotificationState {
     Queued,
     Received,
-    Replied(SeccompNotifResp),
+    Replied(NotificationReply),
 }
 
 enum WaitOutcome {
-    Response(SeccompNotifResp),
+    Response(NotificationReply),
     AddFd,
     ModeChanged,
 }
@@ -219,7 +248,7 @@ impl Listener {
         }
     }
 
-    fn notify(&self, ctx: &Context, data: &SeccompData) -> Result<Option<usize>> {
+    fn notify(&self, ctx: &Context, data: &SeccompData) -> Result<NotificationReply> {
         let (waiter, target) = Waiter::new_pair();
         let id = {
             let mut notifications = self.notifications.lock();
@@ -233,18 +262,7 @@ impl Listener {
         self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
         self.receivers.wake_one();
 
-        let response = self.wait_for_response(id, ctx, &waiter)?;
-        if response.flags & NOTIF_FLAG_CONTINUE != 0 {
-            return Ok(None);
-        }
-        // An arbitrary supervisor-provided error is a register value, not a
-        // kernel Error: in particular, -ERESTARTSYS must not request a restart.
-        let value = if response.error != 0 {
-            response.error as isize as usize
-        } else {
-            response.val as usize
-        };
-        Ok(Some(value))
+        self.wait_for_response(id, ctx, &waiter)
     }
 
     fn wait_for_response(
@@ -252,7 +270,7 @@ impl Listener {
         id: u64,
         ctx: &Context,
         waiter: &Waiter,
-    ) -> Result<SeccompNotifResp> {
+    ) -> Result<NotificationReply> {
         loop {
             let is_killable = self.should_sleep_killable(&self.notifications.lock(), id);
             let reason = if is_killable {
@@ -346,20 +364,14 @@ impl Listener {
         self.receivers.wake_one();
     }
 
-    fn respond(&self, response: SeccompNotifResp) -> Result<()> {
-        if response.flags & !NOTIF_FLAG_CONTINUE != 0
-            || (response.flags & NOTIF_FLAG_CONTINUE != 0
-                && (response.val != 0 || response.error != 0))
-        {
-            return_errno_with_message!(Errno::EINVAL, "invalid seccomp notification response");
-        }
+    fn respond(&self, id: u64, reply: NotificationReply) -> Result<()> {
         let mut notifications = self
             .notifications
             .lock_with(|waiter, acquire| waiter.pause_until(acquire))?;
         let request = notifications
             .requests
             .iter_mut()
-            .find(|request| request.message.id == response.id)
+            .find(|request| request.message.id == id)
             .ok_or_else(|| {
                 Error::with_message(Errno::ENOENT, "seccomp notification does not exist")
             })?;
@@ -369,7 +381,7 @@ impl Listener {
                 "seccomp notification is not awaiting a reply"
             );
         }
-        request.state = NotificationState::Replied(response);
+        request.state = NotificationState::Replied(reply);
         let target = request.target.clone();
         drop(notifications);
         self.pollee.invalidate();
@@ -401,12 +413,9 @@ impl Listener {
         self.is_open.store(false, Ordering::Release);
         for request in &mut notifications.requests {
             if !matches!(request.state, NotificationState::Replied(_)) {
-                request.state = NotificationState::Replied(SeccompNotifResp {
-                    id: request.message.id,
-                    val: 0,
-                    error: -(Errno::ENOSYS as i32),
-                    flags: 0,
-                });
+                request.state = NotificationState::Replied(NotificationReply::Return(
+                    (-(Errno::ENOSYS as isize)) as usize,
+                ));
                 request.target.wake_up();
             }
         }
@@ -519,7 +528,9 @@ impl FileLike for ListenerFile {
                 }
             }
             cmd @ Respond => {
-                self.listener.respond(cmd.read()?)?;
+                let response = cmd.read()?;
+                self.listener
+                    .respond(response.id, NotificationReply::decode(&response)?)?;
             }
             cmd @ ValidateId => {
                 self.listener.validate_id(cmd.read()?)?;

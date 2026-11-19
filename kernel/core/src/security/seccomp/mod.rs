@@ -31,6 +31,7 @@ pub(super) use self::listener::init;
 pub(crate) use self::{
     abi::SeccompData,
     filter::{SeccompDecision, SeccompState, ThreadSeccompState},
+    listener::NotificationReply,
 };
 use crate::{cpu::LinuxAbi, prelude::*, process::signal};
 

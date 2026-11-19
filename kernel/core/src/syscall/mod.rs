@@ -28,7 +28,7 @@ use crate::{
     },
     security::{
         self,
-        seccomp::{SeccompData, SeccompDecision},
+        seccomp::{NotificationReply, SeccompData, SeccompDecision},
     },
 };
 
@@ -487,8 +487,8 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
             SeccompDecision::UserNotification(notification) => {
                 match notification.resolve(ctx, &data) {
                     // CONTINUE executes the already filtered call without rechecking.
-                    Ok(None) => break,
-                    Ok(Some(value)) => user_ctx.set_syscall_ret(value),
+                    Ok(NotificationReply::Continue) => break,
+                    Ok(NotificationReply::Return(value)) => user_ctx.set_syscall_ret(value),
                     Err(error) => {
                         if error.error() == Errno::ERESTARTSYS {
                             ctx.thread_local.request_syscall_restart();
