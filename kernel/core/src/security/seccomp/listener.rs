@@ -340,7 +340,9 @@ impl Listener {
         {
             return_errno_with_message!(Errno::EINVAL, "invalid seccomp notification response");
         }
-        let mut notifications = self.notifications.lock();
+        let mut notifications = self
+            .notifications
+            .lock_with(|waiter, acquire| waiter.pause_until(acquire))?;
         let request = notifications
             .requests
             .iter_mut()
@@ -363,7 +365,9 @@ impl Listener {
     }
 
     fn validate_id(&self, id: u64) -> Result<()> {
-        let notifications = self.notifications.lock();
+        let notifications = self
+            .notifications
+            .lock_with(|waiter, acquire| waiter.pause_until(acquire))?;
         if notifications
             .requests
             .iter()

@@ -7,7 +7,7 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use super::WaitQueue;
+use super::{WaitQueue, Waiter};
 
 /// A mutex with waitqueue.
 pub struct Mutex<T: ?Sized> {
@@ -34,6 +34,21 @@ impl<T: ?Sized> Mutex<T> {
     #[track_caller]
     pub fn lock(&self) -> MutexGuard<'_, T> {
         self.queue.wait_until(|| self.try_lock())
+    }
+
+    /// Acquires the mutex, using the supplied wait function when contended.
+    ///
+    /// The wait function can use the waiter and acquisition predicate to
+    /// support interruption by an event such as a signal.
+    #[track_caller]
+    pub fn lock_with<'a, E>(
+        &'a self,
+        wait: impl FnOnce(
+            &Waiter,
+            &mut dyn FnMut() -> Option<MutexGuard<'a, T>>,
+        ) -> Result<MutexGuard<'a, T>, E>,
+    ) -> Result<MutexGuard<'a, T>, E> {
+        self.queue.wait_until_with(|| self.try_lock(), wait)
     }
 
     /// Tries to acquire the mutex immediately.
