@@ -1,6 +1,6 @@
 struct pollfd = {
     events = POLLIN | POLLPRI | POLLOUT | POLLRDHUP | POLLERR |
-             POLLHUP | POLLNVAL | POLLRDNORM,
+             POLLHUP | POLLNVAL | POLLRDNORM | POLLWRNORM,
     ..
 };
 

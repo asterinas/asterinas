@@ -53,3 +53,11 @@ ioctl(fd, op = TDX_CMD_GET_REPORT0, ..);
 
 // Control socket and network interface settings
 ioctl(fd, op = <socket_ops>, ..);
+
+// Receive, reply to, or validate a request on a seccomp listener
+ioctl(
+    fd,
+    op = SECCOMP_IOCTL_NOTIF_RECV | SECCOMP_IOCTL_NOTIF_SEND |
+         SECCOMP_IOCTL_NOTIF_ID_VALID | SECCOMP_IOCTL_NOTIF_ID_VALID_WRONG_DIR,
+    ..
+);
