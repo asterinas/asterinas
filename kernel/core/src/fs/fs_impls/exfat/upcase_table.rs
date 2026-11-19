@@ -47,7 +47,7 @@ impl ExfatUpcaseTable {
         )?;
 
         let mut buf = vec![0; dentry.size as usize];
-        fs.read_meta_at(chain.physical_cluster_start_offset(), &mut buf)?;
+        fs.read_meta_at(chain.physical_cluster_start_offset()?, &mut buf)?;
 
         if dentry.checksum != calc_checksum_32(&buf) {
             return_errno_with_message!(Errno::EINVAL, "invalid checksum")
