@@ -53,7 +53,7 @@ impl<C: Class> ClassDevice<C> {
     }
 
     /// Returns a strong reference to this device.
-    pub(crate) fn this(&self) -> Arc<Self> {
+    pub fn this(&self) -> Arc<Self> {
         self.weak
             .upgrade()
             .expect("a device is only reachable through an `Arc`")

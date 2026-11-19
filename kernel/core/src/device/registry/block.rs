@@ -67,23 +67,13 @@ mod ioctl_defs {
     pub(super) type BlkGetSectorSize = ioc!(BLKSSZGET, 0x12, 104, NoData);
 }
 
-/// Represents a block device inode in the filesystem.
-#[derive(Debug)]
-struct BlockFile(Arc<BlockDevice>);
-
-impl BlockFile {
-    fn new(device: Arc<BlockDevice>) -> Self {
-        Self(device)
-    }
-}
-
-impl Device for BlockFile {
+impl Device for BlockDevice {
     fn type_(&self) -> DeviceType {
         DeviceType::Block
     }
 
     fn id(&self) -> DeviceId {
-        self.0.id()
+        self.payload().id()
     }
 
     fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
@@ -91,7 +81,7 @@ impl Device for BlockFile {
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
-        Ok(Box::new(OpenBlockFile(self.0.clone())))
+        Ok(Box::new(OpenBlockFile(self.this())))
     }
 }
 
@@ -215,5 +205,5 @@ impl PerOpenFileOps for OpenBlockFile {
 }
 
 pub(super) fn lookup(id: DeviceId) -> Option<Arc<dyn Device>> {
-    aster_block::lookup(id).map(|device| Arc::new(BlockFile::new(device)) as Arc<dyn Device>)
+    aster_block::lookup(id).map(|device| device as Arc<dyn Device>)
 }
