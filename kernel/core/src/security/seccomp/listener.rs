@@ -112,6 +112,12 @@ struct Notifications {
 }
 
 impl Notifications {
+    fn get(&self, id: u64) -> Option<&Notification> {
+        self.requests
+            .iter()
+            .find(|request| request.message.id == id)
+    }
+
     fn enqueue(&mut self, pid: u32, data: SeccompData, target: Arc<Waker>) -> Result<u64> {
         let id = self.next_id;
         let next_id = id.checked_add(1).ok_or_else(|| {
@@ -271,8 +277,13 @@ impl Listener {
         ctx: &Context,
         waiter: &Waiter,
     ) -> Result<NotificationReply> {
+        // The caller's PendingNotification owns the entry throughout the wait.
+        let killable_after_receive = self.wait_mode == NotificationWaitMode::KillableAfterReceive;
         loop {
-            let is_killable = self.should_sleep_killable(&self.notifications.lock(), id);
+            let is_killable = killable_after_receive && {
+                let notifications = self.notifications.lock();
+                self.should_sleep_killable(&notifications.get(id).unwrap().state)
+            };
             let reason = if is_killable {
                 PauseReason::Killable
             } else {
@@ -281,20 +292,14 @@ impl Listener {
             let outcome = waiter.pause_until_by(
                 || {
                     let notifications = self.notifications.lock();
-                    // The caller's PendingNotification owns this entry until
-                    // the response or interruption has been consumed.
-                    let request = notifications
-                        .requests
-                        .iter()
-                        .find(|request| request.message.id == id)
-                        .unwrap();
+                    let request = notifications.get(id).unwrap();
                     if !request.add_fds.is_empty() {
                         return Some(WaitOutcome::AddFd);
                     }
                     if let NotificationState::Replied(response) = request.state {
                         return Some(WaitOutcome::Response(response));
                     }
-                    (self.should_sleep_killable(&notifications, id) != is_killable)
+                    (self.should_sleep_killable(&request.state) != is_killable)
                         .then_some(WaitOutcome::ModeChanged)
                 },
                 reason,
@@ -305,11 +310,13 @@ impl Listener {
                 Ok(WaitOutcome::ModeChanged) => continue,
                 Err(_) => {
                     let mut notifications = self.notifications.lock();
-                    // RECV can win a race with an ordinary signal. Linux
-                    // switches to killable waiting rather than canceling the
-                    // request in this case. A pending SIGKILL still interrupts
-                    // the next killable wait.
-                    if !is_killable && self.should_sleep_killable(&notifications, id) {
+                    // If RECV raced ahead of the signal, retry in killable mode.
+                    // See Linux's notification wait loop:
+                    // <https://github.com/torvalds/linux/blob/v6.18/kernel/seccomp.c#L1116-L1135>.
+                    if !is_killable
+                        && killable_after_receive
+                        && self.should_sleep_killable(&notifications.get(id).unwrap().state)
+                    {
                         continue;
                     }
                     // Cancel under the same lock as the mode check so RECV
@@ -326,11 +333,9 @@ impl Listener {
         }
     }
 
-    fn should_sleep_killable(&self, notifications: &Notifications, id: u64) -> bool {
+    fn should_sleep_killable(&self, state: &NotificationState) -> bool {
         self.wait_mode == NotificationWaitMode::KillableAfterReceive
-            && notifications.requests.iter().any(|request| {
-                request.message.id == id && !matches!(request.state, NotificationState::Queued)
-            })
+            && !matches!(state, NotificationState::Queued)
     }
 
     fn receive(&self) -> Result<SeccompNotif> {
@@ -394,9 +399,8 @@ impl Listener {
             .notifications
             .lock_with(|waiter, acquire| waiter.pause_until(acquire))?;
         if notifications
-            .requests
-            .iter()
-            .any(|request| request.message.id == id && request.accepts_reply())
+            .get(id)
+            .is_some_and(Notification::accepts_reply)
         {
             Ok(())
         } else {
