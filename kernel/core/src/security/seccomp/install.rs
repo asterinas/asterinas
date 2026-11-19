@@ -18,6 +18,9 @@ use crate::{
 
 const FILTER_FLAG_TSYNC: u32 = 1;
 const FILTER_FLAG_LOG: u32 = 1 << 1;
+// Opts out of additional speculation mitigation on filter installation.
+// No supported architecture currently enables such a mitigation in seccomp.
+const FILTER_FLAG_SPEC_ALLOW: u32 = 1 << 2;
 const FILTER_FLAG_NEW_LISTENER: u32 = 1 << 3;
 const FILTER_FLAG_TSYNC_ESRCH: u32 = 1 << 4;
 const FILTER_FLAG_WAIT_KILLABLE_RECV: u32 = 1 << 5;
@@ -35,6 +38,7 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
     if flags
         & !(FILTER_FLAG_TSYNC
             | FILTER_FLAG_LOG
+            | FILTER_FLAG_SPEC_ALLOW
             | FILTER_FLAG_NEW_LISTENER
             | FILTER_FLAG_TSYNC_ESRCH
             | FILTER_FLAG_WAIT_KILLABLE_RECV)

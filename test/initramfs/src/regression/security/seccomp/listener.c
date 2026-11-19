@@ -157,6 +157,7 @@ static void listener_flag_combinations(void)
 		   _ret == -1 && errno == EFAULT);
 	unsigned int flags[] = {
 		0,
+		SECCOMP_FILTER_FLAG_SPEC_ALLOW,
 		SECCOMP_FILTER_FLAG_LOG,
 		SECCOMP_FILTER_FLAG_TSYNC_ESRCH,
 		SECCOMP_FILTER_FLAG_TSYNC | SECCOMP_FILTER_FLAG_TSYNC_ESRCH,
