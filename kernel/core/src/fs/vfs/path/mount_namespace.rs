@@ -100,8 +100,8 @@ impl MountNamespace {
 
         INIT.call_once(|| {
             let owner = UserNamespace::get_init_singleton().clone();
-            let nullfs = NullFs::singleton().clone();
-            let rootfs = RamFs::new_rootfs();
+            let nullfs = NullFs::singleton().clone().into_dyn();
+            let rootfs = RamFs::new_rootfs().into_dyn();
 
             let namespace = Self::new_with_root(owner, |weak_ns| {
                 Mount::new_root(nullfs, PerMountFlags::RDONLY, weak_ns.clone())
@@ -254,7 +254,7 @@ impl MountNamespace {
         let mut visited_filesystems = hashbrown::HashSet::new();
 
         self.root().try_walk_tree(|current_mount| {
-            let fs_ptr = Arc::as_ptr(current_mount.fs());
+            let fs_ptr = Arc::as_ptr(current_mount.fs().as_arc());
             // Only sync each filesystem once.
             if visited_filesystems.insert(fs_ptr) {
                 current_mount.sync()?;

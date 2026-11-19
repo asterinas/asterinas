@@ -26,6 +26,7 @@ use crate::{
         },
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::Inode,
         },
     },
@@ -34,14 +35,16 @@ use crate::{
 
 /// Holds one mount's overlay state: what construction settled and what every VFS entry reads.
 pub(super) struct OverlayFs {
-    layer_stack: LayerStack,
     policy: MountPolicy,
     identity: IdentityPolicy,
     upper_workdir_inuse: Option<UpperWorkdirInuse>,
     whiteout_cache: WhiteoutCache,
     inodes: InodeCache,
     fs_event_stats: FsEventSubscriberStats,
+    lifecycle: FsLifecycle,
     self_weak: Weak<OverlayFs>,
+    // Release real inodes before their filesystem handles.
+    layer_stack: LayerStack,
 }
 
 impl OverlayFs {
@@ -74,6 +77,10 @@ impl OverlayFs {
 }
 
 impl FileSystem for OverlayFs {
+    fn lifecycle(&self) -> &FsLifecycle {
+        &self.lifecycle
+    }
+
     fn name(&self) -> &'static str {
         OVERLAY_FS_NAME
     }

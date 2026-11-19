@@ -85,7 +85,7 @@ impl SysTreeInodeTy for CgroupInode {
 
 impl Inode for CgroupInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
-        CgroupFs::singleton().clone()
+        CgroupFs::singleton().as_arc().clone()
     }
 
     fn rmdir(&self, child_dentry: &Dentry) -> Result<()> {

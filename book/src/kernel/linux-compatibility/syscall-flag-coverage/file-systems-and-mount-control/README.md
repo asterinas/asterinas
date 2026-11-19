@@ -33,6 +33,16 @@ Partially supported mount flags:
 * `MS_STRICTATIME` can be set but have no actual effect.
 * `MS_SYNCHRONOUS` can be set but have no actual effect.
 
+ext2, exFAT, and virtiofs reuse a mounted filesystem instance
+when mounted again from the same source,
+i.e., the same block device or the same virtiofs tag.
+If the previous instance from that source is still performing final cleanup
+after its last unmount,
+the mount call waits until the cleanup completes.
+If the final cleanup fails,
+later mounts from that source fail with the same error.
+Linux instead discards the failed instance and allows the source to be mounted again.
+
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/mount.2.html).
 
@@ -44,9 +54,19 @@ Supported functionality in SCML:
 {{#include umount_and_umount2.scml}}
 ```
 
+Without `MNT_DETACH`, final filesystem cleanup runs in the unmounting thread
+if it releases the last active filesystem reference.
+Otherwise, final cleanup is deferred until the remaining users,
+such as open files and mappings, release their references;
+the unmount call does not wait for them.
+
+Partially supported flags:
+* `MNT_DETACH` detaches the mount without waiting for final filesystem cleanup.
+  Asterinas still synchronizes the filesystem before detachment,
+  so this flag does not currently avoid blocking on writeback.
+
 Silently-ignored flags:
 * `MNT_FORCE`
-* `MNT_DETACH`
 * `MNT_EXPIRE`
 
 For more information,
@@ -68,6 +88,9 @@ Unsupported commands:
 * `FSCONFIG_SET_PATH_EMPTY`
 * `FSCONFIG_SET_FD`
 * `FSCONFIG_CMD_CREATE_EXCL`
+
+`FSCONFIG_CMD_CREATE` reuses filesystem instances as `mount` does,
+so it also waits for and reports final cleanup of a previous instance from the same source.
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/fsconfig.2.html).

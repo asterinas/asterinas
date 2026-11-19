@@ -8,7 +8,7 @@ use crate::{
     fs::{
         tmpfs::TmpFs,
         vfs::{
-            file_system::FileSystem,
+            fs_handle::FsHandle,
             inode::RevalidationPolicy,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -16,8 +16,8 @@ use crate::{
     prelude::*,
 };
 
-pub(in crate::fs) fn singleton() -> &'static Arc<TmpFs> {
-    static SINGLETON: Once<Arc<TmpFs>> = Once::new();
+pub(in crate::fs) fn singleton() -> &'static FsHandle<TmpFs> {
+    static SINGLETON: Once<FsHandle<TmpFs>> = Once::new();
 
     SINGLETON.call_once(|| {
         // devtmpfsd creates and deletes device nodes from a kernel thread,
@@ -48,8 +48,8 @@ impl FsType for DevTmpFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(singleton().clone())
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
+        Ok(singleton().clone().into_dyn())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

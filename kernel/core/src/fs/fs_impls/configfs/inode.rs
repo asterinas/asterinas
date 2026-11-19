@@ -81,6 +81,6 @@ impl SysTreeInodeTy for ConfigInode {
 
 impl Inode for ConfigInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
-        ConfigFs::singleton().clone()
+        ConfigFs::singleton().as_arc().clone()
     }
 }

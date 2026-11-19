@@ -13,6 +13,7 @@ use crate::{
         utils::NAME_MAX,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, FsFlags, SuperBlock},
+            fs_handle::FsLifecycle,
             inode::Inode,
         },
     },
@@ -20,6 +21,10 @@ use crate::{
 };
 
 impl FileSystem for Ext2 {
+    fn lifecycle(&self) -> &FsLifecycle {
+        Ext2::lifecycle(self)
+    }
+
     fn name(&self) -> &'static str {
         "ext2"
     }
@@ -30,6 +35,10 @@ impl FileSystem for Ext2 {
             return_errno_with_message!(Errno::EIO, "failed to flush block device");
         }
         Ok(())
+    }
+
+    fn shutdown(&self) -> Result<()> {
+        Ext2::shutdown(self)
     }
 
     fn root_inode(&self) -> Arc<dyn Inode> {

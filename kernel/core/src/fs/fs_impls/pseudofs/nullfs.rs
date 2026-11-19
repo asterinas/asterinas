@@ -11,15 +11,15 @@
 use spin::Once;
 
 use super::NaivePseudoFs;
-use crate::prelude::*;
+use crate::fs::vfs::fs_handle::FsHandle;
 
 /// The empty filesystem used as the root mount of the initial mount namespace.
 pub(in crate::fs) struct NullFs;
 
 impl NullFs {
     /// Returns the singleton null filesystem instance.
-    pub(in crate::fs) fn singleton() -> &'static Arc<NaivePseudoFs> {
-        static NULLFS: Once<Arc<NaivePseudoFs>> = Once::new();
+    pub(in crate::fs) fn singleton() -> &'static FsHandle<NaivePseudoFs> {
+        static NULLFS: Once<FsHandle<NaivePseudoFs>> = Once::new();
 
         NaivePseudoFs::singleton(&NULLFS, "nullfs", NULLFS_MAGIC)
     }

@@ -10,7 +10,7 @@ use device_id::DeviceId;
 
 use super::{fs::Ext2, prelude::*};
 use crate::fs::vfs::{
-    file_system::FileSystem,
+    fs_handle::FsHandle,
     registry::{FsCache, FsCreationCtx, FsProperties, FsType},
 };
 
@@ -35,11 +35,11 @@ impl FsType for Ext2Type {
         FsProperties::NEED_DISK
     }
 
-    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
         let disk = fs_creation_ctx.resolve_block_device()?.clone();
         let flags = fs_creation_ctx.flags();
         let args = fs_creation_ctx.args();
-        Ext2::open(disk, flags, args).map(|fs| fs as Arc<dyn FileSystem>)
+        Ext2::open(disk, flags, args).map(FsHandle::into_dyn)
     }
 
     fn obtain_key_and_cache(

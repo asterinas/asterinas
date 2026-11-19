@@ -7,6 +7,7 @@ use crate::{
         file::mkmod,
         pseudofs::{NaivePseudoFs, PseudoInodeType},
         vfs::{
+            fs_handle::FsHandle,
             inode::Inode,
             path::{Mount, Path},
         },
@@ -26,8 +27,8 @@ pub(crate) struct AnonInodeFs {
 
 impl AnonInodeFs {
     /// Returns the singleton instance of the anonymous inode file system.
-    fn singleton() -> &'static Arc<NaivePseudoFs> {
-        static ANON_INODEFS: Once<Arc<NaivePseudoFs>> = Once::new();
+    fn singleton() -> &'static FsHandle<NaivePseudoFs> {
+        static ANON_INODEFS: Once<FsHandle<NaivePseudoFs>> = Once::new();
 
         NaivePseudoFs::singleton(&ANON_INODEFS, "anon_inodefs", ANON_INODEFS_MAGIC)
     }
@@ -45,7 +46,8 @@ impl AnonInodeFs {
     pub(crate) fn mount_node() -> &'static Arc<Mount> {
         static ANON_INODEFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        ANON_INODEFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        ANON_INODEFS_MOUNT
+            .call_once(|| Mount::new_pseudo(Self::singleton().clone().into_dyn()).unwrap())
     }
 
     /// Returns the shared inode of the anonymous inode file system singleton.
@@ -66,7 +68,7 @@ impl AnonInodeFs {
         static SHARED_INODE: Once<Arc<dyn Inode>> = Once::new();
 
         SHARED_INODE.call_once(|| {
-            let shared_inode = Self::singleton().alloc_inode(
+            let shared_inode = Self::singleton().as_arc().alloc_inode(
                 PseudoInodeType::AnonInode,
                 mkmod!(u+rw),
                 Uid::new_root(),

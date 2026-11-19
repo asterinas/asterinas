@@ -48,7 +48,7 @@ pub(crate) fn init_in_first_process(ctx: &Context) {
         let dev_path = lookup_or_create_dev(&path_resolver).unwrap();
         dev_path
             .mount(
-                FsAndRoot::new(devtmpfs::singleton().clone()),
+                FsAndRoot::new(devtmpfs::singleton().clone().into_dyn()),
                 PerMountFlags::default(),
                 Some("devtmpfs".to_string()),
                 ctx,

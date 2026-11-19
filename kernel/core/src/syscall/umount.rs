@@ -37,7 +37,14 @@ pub(super) fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<
     // to the topmost mount. If there is a mount stacked above the current thread's `cwd`, normal
     // path lookup through "." cannot access the upper mount, but umount through "." can operate
     // on the upper mount.
-    target_path.get_top_path().unmount(ctx)?;
+    let unmounted = target_path.get_top_path().unmount(ctx)?;
+    if !umount_flags.contains(UmountFlags::MNT_DETACH) {
+        // Retain the filesystem until the path, mount, and topology locks are released.
+        let fs = unmounted.fs().clone();
+        drop(unmounted);
+        // Detachment succeeded. Final cleanup errors are logged and retained for remount.
+        let _ = fs.drop_synchronously();
+    }
 
     Ok(SyscallReturn::Return(0))
 }

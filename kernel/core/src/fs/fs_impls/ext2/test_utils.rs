@@ -472,6 +472,7 @@ pub(super) struct Ext2Fixture {
     pub ext2: Arc<Ext2>,
     pub sb: SuperBlock,
     pub descs: Vec<RawBlockGroup>,
+    _handle: crate::fs::vfs::fs_handle::FsHandle<Ext2>,
 }
 
 type PreparedFixture = (
@@ -728,13 +729,16 @@ impl Ext2FixtureBuilder {
         let device: Arc<dyn BlockDevice> = self
             .custom_device
             .unwrap_or_else(|| disk.clone() as Arc<dyn BlockDevice>);
-        let ext2 = Ext2::open(device, FsFlags::empty(), None)?;
+        crate::thread::work_queue::init_for_ktest();
+        let handle = Ext2::open(device, FsFlags::empty(), None)?;
+        let ext2 = handle.as_arc().clone();
 
         Ok(Ext2Fixture {
             disk,
             ext2,
             sb,
             descs,
+            _handle: handle,
         })
     }
 }

@@ -11,7 +11,7 @@
 use super::OverlayFs;
 use crate::{
     fs::vfs::{
-        file_system::FileSystem,
+        fs_handle::FsHandle,
         registry::{FsCreationCtx, FsProperties, FsType},
     },
     prelude::*,
@@ -32,9 +32,9 @@ impl FsType for OverlayFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
         let overlay_fs = OverlayFs::new(fs_creation_ctx)?;
-        Ok(overlay_fs)
+        Ok(overlay_fs.into_dyn())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

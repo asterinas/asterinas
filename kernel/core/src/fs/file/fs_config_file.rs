@@ -9,7 +9,8 @@ use crate::{
         file::file_table::FdFlags,
         pseudofs::AnonInodeFs,
         vfs::{
-            file_system::{FileSystem, FsFlags},
+            file_system::FsFlags,
+            fs_handle::FsHandle,
             path::{Mount, MountNamespace, Path, PerMountFlags},
             registry::{DynFsType, FsAndRoot, FsCreationCtx},
         },
@@ -67,7 +68,7 @@ enum FsConfigState {
     Configuring,
     Failed,
     AwaitingMount(FsAndRoot),
-    Reconfiguring(Arc<dyn FileSystem>),
+    Reconfiguring(FsHandle),
 }
 
 impl FsConfigFile {

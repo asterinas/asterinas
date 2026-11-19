@@ -204,12 +204,14 @@ impl InotifyFile {
             return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist");
         };
 
-        let (inode, subscriber) = match (entry.inode.upgrade(), entry.subscriber.upgrade()) {
-            (Some(inode), Some(subscriber)) => (inode, subscriber),
-            // The subscriber is dead because it's a one-shot subscriber or the inode is dead.
-            // The watch is considered removed.
-            _ => return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist"),
-        };
+        let inode = entry.inode.upgrade();
+        let subscriber = entry.subscriber.upgrade();
+        if inode.is_none() || subscriber.is_none() {
+            drop(watch_map);
+            return_errno_with_message!(Errno::EINVAL, "the inotify watch does not exist");
+        }
+        let inode = inode.unwrap();
+        let subscriber = subscriber.unwrap();
 
         if inode
             .fs_event_publisher()
@@ -219,6 +221,8 @@ impl InotifyFile {
             inode.fs().fs_event_subscriber_stats().remove_subscriber();
         }
 
+        // Releasing the inode itself may reclaim deleted file data.
+        drop(watch_map);
         Ok(())
     }
 
@@ -383,7 +387,14 @@ impl FileLike for InotifyFile {
                 writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
                 writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())?;
 
-                for (wd, entry) in self.inner.watch_map.lock().iter() {
+                let entries: Vec<_> = self
+                    .inner
+                    .watch_map
+                    .lock()
+                    .iter()
+                    .map(|(wd, entry)| (*wd, entry.clone()))
+                    .collect();
+                for (wd, entry) in entries {
                     let Some(inode) = entry.inode.upgrade() else {
                         continue;
                     };

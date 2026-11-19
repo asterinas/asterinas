@@ -5,7 +5,8 @@ use crate::{
         fs_impls::ramfs::{self, RamFs},
         pseudofs::AnonDeviceId,
         vfs::{
-            file_system::{FileSystem, SuperBlock},
+            file_system::SuperBlock,
+            fs_handle::FsHandle,
             inode::RevalidationPolicy,
             registry::{FsCreationCtx, FsProperties, FsType},
         },
@@ -25,7 +26,7 @@ pub(crate) type TmpFs = RamFs;
 
 impl TmpFs {
     /// Creates a tmpfs filesystem instance.
-    pub(in crate::fs) fn new_tmpfs() -> Arc<Self> {
+    pub(in crate::fs) fn new_tmpfs() -> FsHandle<Self> {
         Self::new_tmpfs_backing("tmpfs", RevalidationPolicy::empty())
     }
 
@@ -34,7 +35,7 @@ impl TmpFs {
     pub(in crate::fs) fn new_tmpfs_backing(
         name: &'static str,
         revalidation_policy: RevalidationPolicy,
-    ) -> Arc<Self> {
+    ) -> FsHandle<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for tmpfs");
         let sb = {
             let mut super_block = SuperBlock::new(
@@ -79,8 +80,8 @@ impl FsType for TmpFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(TmpFs::new_tmpfs())
+    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<FsHandle> {
+        Ok(TmpFs::new_tmpfs().into_dyn())
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {

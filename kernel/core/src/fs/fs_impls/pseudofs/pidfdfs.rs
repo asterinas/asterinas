@@ -7,6 +7,7 @@ use crate::{
         file::mkmod,
         pseudofs::{NaivePseudoFs, PseudoInodeType},
         vfs::{
+            fs_handle::FsHandle,
             inode::Inode,
             path::{Mount, Path},
         },
@@ -26,8 +27,8 @@ pub(crate) struct PidfdFs {
 
 impl PidfdFs {
     /// Returns the singleton instance of the pidfd file system.
-    pub(crate) fn singleton() -> &'static Arc<NaivePseudoFs> {
-        static PIDFDFS: Once<Arc<NaivePseudoFs>> = Once::new();
+    pub(crate) fn singleton() -> &'static FsHandle<NaivePseudoFs> {
+        static PIDFDFS: Once<FsHandle<NaivePseudoFs>> = Once::new();
 
         NaivePseudoFs::singleton(&PIDFDFS, "pidfdfs", PIDFDFS_MAGIC)
     }
@@ -45,7 +46,7 @@ impl PidfdFs {
     pub(crate) fn mount_node() -> &'static Arc<Mount> {
         static PIDFDFS_MOUNT: Once<Arc<Mount>> = Once::new();
 
-        PIDFDFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone()).unwrap())
+        PIDFDFS_MOUNT.call_once(|| Mount::new_pseudo(Self::singleton().clone().into_dyn()).unwrap())
     }
 
     /// Returns the shared inode of the pidfd file system.
@@ -53,7 +54,7 @@ impl PidfdFs {
         static SHARED_INODE: Once<Arc<dyn Inode>> = Once::new();
 
         SHARED_INODE.call_once(|| {
-            let pidfd_inode = Self::singleton().alloc_inode(
+            let pidfd_inode = Self::singleton().as_arc().alloc_inode(
                 PseudoInodeType::Pidfd,
                 mkmod!(u+rwx),
                 Uid::new_root(),

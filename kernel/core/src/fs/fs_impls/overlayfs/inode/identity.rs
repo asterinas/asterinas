@@ -92,7 +92,7 @@ use crate::{
             real::{RealObject, RealObjectStack},
         },
         pseudofs::AnonDeviceId,
-        vfs::{file_system::FileSystem, path::Dentry},
+        vfs::{fs_handle::FsHandle, path::Dentry},
     },
     prelude::*,
 };
@@ -387,14 +387,14 @@ impl OverlayFs {
         is_effective_read_only: bool,
         policy: &MountPolicy,
     ) -> IdentityPolicy {
-        let mut fses: Vec<Arc<dyn FileSystem>> = Vec::new();
+        let mut fses: Vec<FsHandle> = Vec::new();
         let mut fsid_by_address: HashMap<usize, u64> = HashMap::new();
         // The upper is assigned first, so its fsid is always 0 (Linux `ovl_layer[].fsid`).
         //
         // Reference:
         // <https://elixir.bootlin.com/linux/v7.0/source/fs/overlayfs/ovl_entry.h#L33-L42>.
-        let mut assign_fsid = |layer: &Layer, fses: &mut Vec<Arc<dyn FileSystem>>| -> u64 {
-            let address = Arc::as_ptr(layer.fs()) as *const () as usize;
+        let mut assign_fsid = |layer: &Layer, fses: &mut Vec<FsHandle>| -> u64 {
+            let address = Arc::as_ptr(layer.fs().as_arc()) as *const () as usize;
             if let Some(fsid) = fsid_by_address.get(&address) {
                 return *fsid;
             }

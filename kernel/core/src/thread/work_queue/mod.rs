@@ -191,6 +191,23 @@ pub(crate) fn init_in_first_kthread() {
         .call_once(|| WorkQueue::new(Arc::downgrade(WORKERPOOL_HIGH_PRI.get().unwrap())));
 }
 
+#[cfg(ktest)]
+pub(crate) fn init_for_ktest() {
+    static INIT: Once<()> = Once::new();
+
+    INIT.call_once(|| {
+        crate::time::clocks::init_for_ktest();
+        // The test kernel does not run the timer softirq that wakes pool monitors.
+        ostd::timer::register_callback_on_cpu(|| {
+            crate::time::clocks::JIFFIES_TIMER_MANAGER
+                .get()
+                .unwrap()
+                .process_expired_timers();
+        });
+        init_in_first_kthread();
+    });
+}
+
 impl Drop for WorkQueue {
     fn drop(&mut self) {
         //TODO: Handling non-empty queues.

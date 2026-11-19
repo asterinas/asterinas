@@ -5,11 +5,14 @@ use core::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use device_id::DeviceId;
 
-use super::inode::Inode;
+use super::{fs_handle::FsLifecycle, inode::Inode};
 use crate::prelude::*;
 
 /// Common interface implemented by each concrete file system instance.
 pub(crate) trait FileSystem: Any + Sync + Send {
+    /// Returns the instance's active-reference and shutdown state.
+    fn lifecycle(&self) -> &FsLifecycle;
+
     /// Gets the name of this FS type such as `"ext4"` or `"sysfs"`.
     fn name(&self) -> &'static str;
 
@@ -20,6 +23,13 @@ pub(crate) trait FileSystem: Any + Sync + Send {
 
     /// Syncs the file system.
     fn sync(&self) -> Result<()>;
+
+    /// Syncs and releases I/O-capable resources after the last active handle.
+    ///
+    /// The cleanup worker retains an `Arc` so internal weak references remain usable.
+    fn shutdown(&self) -> Result<()> {
+        self.sync()
+    }
 
     /// Returns the root inode of this file system.
     ///
