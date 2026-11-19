@@ -636,7 +636,7 @@ getxattr01
 # inotify_init1_02
 
 # inotify01
-# inotify02
+inotify02
 # inotify03
 # inotify04
 # inotify05
