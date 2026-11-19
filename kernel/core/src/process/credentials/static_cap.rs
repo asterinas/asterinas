@@ -22,6 +22,13 @@ impl<R: TRights> Credentials<R> {
         Self(credentials_, R::new())
     }
 
+    /// Creates credentials with explicit IDs and capabilities for kernel tests.
+    #[cfg(ktest)]
+    pub(crate) fn new_for_ktest(uid: Uid, gid: Gid, capset: CapSet) -> Self {
+        let credentials_ = Arc::new(Credentials_::new(uid, gid, capset));
+        Self(credentials_, R::new())
+    }
+
     /// Clones a new `Credentials` from an existing `Credentials`.
     ///
     /// This method requires the `Read` right.
