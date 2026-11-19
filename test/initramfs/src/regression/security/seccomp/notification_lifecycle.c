@@ -159,8 +159,11 @@ static void check_fatal_signal(int fd, int signo)
 {
 	pid_t child = notifying_child(fd, 0, 0);
 	struct seccomp_notif request = receive(fd, child);
-	CHECK(kill(child, SIGUSR1));
-	wait_state(child, PROC_STATE_UNINTERRUPTIBLE);
+	/* Only the SIGKILL case starts with an ordinary signal pending. */
+	if (signo == SIGKILL) {
+		CHECK(kill(child, SIGUSR1));
+		wait_state(child, PROC_STATE_UNINTERRUPTIBLE);
+	}
 	CHECK(kill(child, signo));
 	int status;
 	CHECK_WITH(waitpid(child, &status, 0),
