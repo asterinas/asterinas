@@ -148,9 +148,8 @@ impl Pause for Waiter {
 
         let cancel_cond = || {
             let has_pending = match reason {
-                PauseReason::StopByPtrace | PauseReason::Killable => {
-                    posix_thread.has_pending_sigkill()
-                }
+                PauseReason::StopByPtrace => posix_thread.has_pending_sigkill(),
+                PauseReason::Killable => posix_thread.has_pending_fatal_signal(),
                 _ => posix_thread.has_pending(),
             };
 
@@ -256,7 +255,7 @@ impl Pause for WaitQueue {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum PauseReason {
     Sleep,
-    /// An uninterruptible sleep that SIGKILL can terminate.
+    /// A sleep interrupted by signals initiating group exit.
     Killable,
     StopBySignal,
     StopByPtrace,

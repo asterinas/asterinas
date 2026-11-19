@@ -149,20 +149,26 @@ static void signal_after_receive_waits_for_reply(void)
 	close_signal_report();
 }
 
-static void sigkill_ends_killable_wait(void)
+static void check_fatal_signal(int fd, int signo)
 {
-	setup_signal_handler(0);
-	int fd = listener_flags(SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV);
 	pid_t child = notifying_child(fd, 0, 0);
 	struct seccomp_notif request = receive(fd, child);
 	CHECK(kill(child, SIGUSR1));
 	wait_state(child, 'D');
-	CHECK(kill(child, SIGKILL));
+	CHECK(kill(child, signo));
 	int status;
 	CHECK_WITH(waitpid(child, &status, 0),
 		   _ret == child && WIFSIGNALED(status) &&
-			   WTERMSIG(status) == SIGKILL);
+			   WTERMSIG(status) == signo);
 	invalid_id(fd, request.id);
+}
+
+static void fatal_signals_end_killable_wait(void)
+{
+	setup_signal_handler(0);
+	int fd = listener_flags(SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV);
+	check_fatal_signal(fd, SIGKILL);
+	check_fatal_signal(fd, SIGTERM);
 	CHECK(close(fd));
 	close_signal_report();
 }
@@ -533,7 +539,8 @@ FN_TEST(notification_lifecycle)
 	TEST_RES(run_lifecycle_child(signal_before_receive_cancels), _ret == 0);
 	TEST_RES(run_lifecycle_child(signal_after_receive_waits_for_reply),
 		 _ret == 0);
-	TEST_RES(run_lifecycle_child(sigkill_ends_killable_wait), _ret == 0);
+	TEST_RES(run_lifecycle_child(fatal_signals_end_killable_wait),
+		 _ret == 0);
 	TEST_RES(run_lifecycle_child(receive_fault_restores_interruptibility),
 		 _ret == 0);
 	TEST_RES(run_lifecycle_child(restarting_call_gets_new_id), _ret == 0);
