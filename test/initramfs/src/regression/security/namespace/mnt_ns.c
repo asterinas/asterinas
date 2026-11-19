@@ -310,7 +310,15 @@ static int exit_child_fn(void *arg)
 	return 0;
 }
 
-// Regression test for the bugs in #4191 and #4212.
+// Verifies that a thread releases its filesystem information when exiting.
+//
+// This results in a user-visible difference in syscall behavior because
+// `setns(CLONE_NS)` requires the filesystem information to be unshared.
+//
+// This also ensures that the filesystem-related state is properly dropped
+// when the thread exits, preventing dropping them in the wrong context
+// (e.g., <https://github.com/asterinas/asterinas/issues/4192> and
+// <https://github.com/asterinas/asterinas/issues/4212>).
 FN_TEST(setns_newns_after_shared_fs_exits)
 {
 	// Setup

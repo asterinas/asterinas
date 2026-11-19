@@ -50,7 +50,6 @@ FN_TEST(seekdir_resumes_after_entry)
 }
 END_TEST()
 
-// A regression test for the bug described in #4184.
 FN_TEST(getdents_with_faulting_buffer)
 {
 	static char page[PAGE_SIZE] __attribute__((aligned(PAGE_SIZE)));
