@@ -151,7 +151,7 @@ impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
         let required_perms = match value.cpu_exception() {
             Exception::FetchPageFault => VmPerms::EXEC,
             Exception::LoadPageFault => VmPerms::READ,
-            Exception::StorePageFault => VmPerms::WRITE,
+            Exception::StorePageFault | Exception::PageModifyFault => VmPerms::WRITE,
             _ => return Err(()),
         };
 
