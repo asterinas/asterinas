@@ -32,6 +32,12 @@ static inline int listener(void)
 	return listener_flags(0);
 }
 
+static inline long notify_getppid(void)
+{
+	return syscall(SYS_getppid, 0x1122334455667788UL, 2UL, 3UL, 4UL, 5UL,
+		       0x8877665544332211UL);
+}
+
 static inline pid_t notifying_child_logged(int fd, long expected,
 					   int expected_errno, int log_count)
 {
@@ -47,8 +53,7 @@ static inline pid_t notifying_child_logged(int fd, long expected,
 		fflush(stdout);
 	}
 	errno = 0;
-	long result = syscall(SYS_getppid, 0x1122334455667788UL, 2UL, 3UL, 4UL,
-			      5UL, 0x8877665544332211UL);
+	long result = notify_getppid();
 	int error = errno;
 	if (result != expected || error != expected_errno)
 		fprintf(stderr,

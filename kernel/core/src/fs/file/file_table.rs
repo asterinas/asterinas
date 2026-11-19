@@ -238,12 +238,27 @@ impl FileTable {
         }
 
         let file = self.get_file(fd)?.clone();
+        self.replace_file(new_fd, &file, flags)
+    }
+
+    /// Installs an open file at a descriptor already checked against RLIMIT_NOFILE.
+    /// Drop the displaced file after releasing the table lock.
+    pub(crate) fn replace_file(
+        &mut self,
+        new_fd: FileDesc,
+        file: &Arc<dyn FileLike>,
+        flags: FdFlags,
+    ) -> Result<Option<ClosedFile>> {
         // Linux rejects dup2/dup3 racing a reserved but not installed fd.
         // Reference: <https://github.com/torvalds/linux/blob/v6.18/fs/file.c>.
         if matches!(self.table.get(new_fd.into()), Some(None)) {
             return_errno_with_message!(Errno::EBUSY, "the destination FD is reserved");
         }
-        let entry = FileTableEntry::new(file, flags);
+        let additional = (usize::from(new_fd) + 1).saturating_sub(self.table.slots_len());
+        self.table.try_reserve(additional).map_err(|_| {
+            Error::with_message(Errno::ENOMEM, "cannot allocate the requested FD slot")
+        })?;
+        let entry = FileTableEntry::new(file.clone(), flags);
         let closed_file = self.close_file(new_fd);
         self.table.put_at(new_fd.into(), Some(entry));
         Ok(closed_file)

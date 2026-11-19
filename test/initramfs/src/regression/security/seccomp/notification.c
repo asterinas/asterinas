@@ -54,6 +54,39 @@ static void no_listener_returns_enosys(void)
 	CHECK_WITH(syscall(SYS_getppid), _ret == -1 && errno == ENOSYS);
 }
 
+static void addfd_replaces_file_and_replies(void)
+{
+	int listener_fd = listener();
+	pid_t child = CHECK(fork());
+	if (!child) {
+		alarm(10);
+		int received = CHECK(notify_getppid());
+		CHECK_WITH(received, _ret == listener_fd);
+		CHECK_WITH(fcntl(received, F_GETFD), _ret == FD_CLOEXEC);
+		char byte;
+		CHECK_WITH(read(received, &byte, 1), _ret == 1 && byte == 'x');
+		_exit(0);
+	}
+	struct seccomp_notif req = receive(listener_fd, child);
+	// Create the pipe after fork so only ADDFD can give the child access.
+	int pipe_fds[2];
+	CHECK(pipe(pipe_fds));
+	struct seccomp_notif_addfd op = {
+		.id = req.id,
+		.flags = SECCOMP_ADDFD_FLAG_SETFD | SECCOMP_ADDFD_FLAG_SEND,
+		.srcfd = pipe_fds[0],
+		.newfd = listener_fd,
+		.newfd_flags = O_CLOEXEC,
+	};
+	CHECK_WITH(ioctl(listener_fd, SECCOMP_IOCTL_NOTIF_ADDFD, &op),
+		   _ret == listener_fd);
+	CHECK(close(pipe_fds[0]));
+	CHECK_WITH(write(pipe_fds[1], "x", 1), _ret == 1);
+	CHECK(close(pipe_fds[1]));
+	reap(child);
+	CHECK(close(listener_fd));
+}
+
 static void closed_listener_returns_enosys(void)
 {
 	int fd = listener();
@@ -253,6 +286,7 @@ FN_TEST(notification)
 	TEST_RES(run_child(no_listener_returns_enosys, 0), _ret == 0);
 	TEST_RES(run_child(closed_listener_returns_enosys, 0), _ret == 0);
 	TEST_RES(run_child(responses_and_ids, 0), _ret == 0);
+	TEST_RES(run_child(addfd_replaces_file_and_replies, 0), _ret == 0);
 	TEST_RES(run_child(newest_filter_owns_notification, 0), _ret == 0);
 	TEST_RES(run_child(errno_precedes_notification, 0), _ret == 0);
 	TEST_RES(run_child(invalid_requests_preserve_notification, 0),

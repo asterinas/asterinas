@@ -77,6 +77,16 @@ pub(super) struct SeccompNotifResp {
     pub flags: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod)]
+pub(super) struct SeccompNotifAddFd {
+    pub id: u64,
+    pub flags: u32,
+    pub srcfd: u32,
+    pub newfd: u32,
+    pub newfd_flags: u32,
+}
+
 impl SeccompData {
     pub(super) fn log(&self, ctx: &Context, action: u32) {
         notice!(
@@ -141,4 +151,5 @@ const _: () = {
     assert!(size_of::<SeccompNotifSizes>() == 6);
     assert!(size_of::<SeccompNotif>() == 80);
     assert!(size_of::<SeccompNotifResp>() == 24);
+    assert!(size_of::<SeccompNotifAddFd>() == 24);
 };

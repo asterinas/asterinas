@@ -10,7 +10,13 @@ use core::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use ostd::{mm::VmIo, sync::WaitQueue};
+mod addfd;
+
+use addfd::AddFdRequest;
+use ostd::{
+    mm::VmIo,
+    sync::{WaitQueue, Waiter, Waker},
+};
 
 use super::abi::{SeccompData, SeccompNotif, SeccompNotifResp};
 use crate::{
@@ -32,7 +38,7 @@ pub(crate) struct Listener {
     users: AtomicUsize,
     pollee: Pollee,
     notifications: Mutex<Notifications>,
-    waiters: WaitQueue,
+    receivers: WaitQueue,
     wait_mode: NotificationWaitMode,
 }
 
@@ -52,20 +58,35 @@ struct Notifications {
 }
 
 impl Notifications {
-    fn remove(&mut self, id: u64) {
-        if let Some(index) = self
+    fn remove(&mut self, id: u64) -> Option<Notification> {
+        let index = self
             .requests
             .iter()
-            .position(|request| request.message.id == id)
-        {
-            self.requests.remove(index);
-        }
+            .position(|request| request.message.id == id)?;
+        Some(self.requests.remove(index))
     }
 }
 
 struct Notification {
     message: SeccompNotif,
     state: NotificationState,
+    add_fds: Vec<Arc<AddFdRequest>>,
+    target: Arc<Waker>,
+}
+
+impl Notification {
+    fn accepts_reply(&self) -> bool {
+        matches!(self.state, NotificationState::Received)
+            && !self.add_fds.last().is_some_and(|op| op.send)
+    }
+}
+
+impl Drop for Notification {
+    fn drop(&mut self) {
+        for op in &self.add_fds {
+            op.finish(Err(Error::new(Errno::ESRCH)));
+        }
+    }
 }
 
 enum NotificationState {
@@ -76,6 +97,7 @@ enum NotificationState {
 
 enum WaitOutcome {
     Response(SeccompNotifResp),
+    AddFd,
     ModeChanged,
 }
 
@@ -88,7 +110,7 @@ impl Listener {
             users: AtomicUsize::new(0),
             pollee: Pollee::new(),
             notifications: Mutex::new(Notifications::default()),
-            waiters: WaitQueue::new(),
+            receivers: WaitQueue::new(),
             wait_mode,
         })
         .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate a seccomp listener"))
@@ -110,12 +132,13 @@ impl Listener {
         debug_assert!(previous > 0);
         if previous == 1 {
             self.pollee.notify(IoEvents::HUP);
-            self.waiters.wake_all();
+            self.receivers.wake_all();
         }
     }
 
     /// Waits for a supervisor response, or returns `None` to continue the syscall.
     pub(crate) fn notify(&self, ctx: &Context, data: &SeccompData) -> Result<Option<usize>> {
+        let (waiter, target) = Waiter::new_pair();
         let id = {
             let mut notifications = self.notifications.lock();
             if !self.is_open() {
@@ -138,15 +161,17 @@ impl Listener {
                     data: *data,
                 },
                 state: NotificationState::Queued,
+                add_fds: Vec::new(),
+                target,
             });
             notifications.pending_receives = notifications.pending_receives.saturating_add(1);
             id
         };
         let _pending = PendingNotification { listener: self, id };
         self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
-        self.waiters.wake_all();
+        self.receivers.wake_all();
 
-        let response = self.wait_for_response(id)?;
+        let response = self.wait_for_response(id, ctx, &waiter)?;
         if response.flags & NOTIF_FLAG_CONTINUE != 0 {
             return Ok(None);
         }
@@ -160,7 +185,12 @@ impl Listener {
         Ok(Some(value))
     }
 
-    fn wait_for_response(&self, id: u64) -> Result<SeccompNotifResp> {
+    fn wait_for_response(
+        &self,
+        id: u64,
+        ctx: &Context,
+        waiter: &Waiter,
+    ) -> Result<SeccompNotifResp> {
         loop {
             let is_killable = self.should_sleep_killable(&self.notifications.lock(), id);
             let reason = if is_killable {
@@ -168,7 +198,7 @@ impl Listener {
             } else {
                 PauseReason::Sleep
             };
-            let outcome = self.waiters.pause_until_by(
+            let outcome = waiter.pause_until_by(
                 || {
                     let notifications = self.notifications.lock();
                     // The caller's PendingNotification owns this entry until
@@ -178,6 +208,9 @@ impl Listener {
                         .iter()
                         .find(|request| request.message.id == id)
                         .unwrap();
+                    if !request.add_fds.is_empty() {
+                        return Some(WaitOutcome::AddFd);
+                    }
                     if let NotificationState::Replied(response) = request.state {
                         return Some(WaitOutcome::Response(response));
                     }
@@ -188,6 +221,7 @@ impl Listener {
             );
             match outcome {
                 Ok(WaitOutcome::Response(response)) => return Ok(response),
+                Ok(WaitOutcome::AddFd) => self.install_add_fd(id, ctx),
                 Ok(WaitOutcome::ModeChanged) => continue,
                 Err(_) => {
                     let mut notifications = self.notifications.lock();
@@ -200,7 +234,9 @@ impl Listener {
                     }
                     // Cancel under the same lock as the mode check so RECV
                     // cannot claim a request that we have decided to interrupt.
-                    notifications.remove(id);
+                    let canceled = notifications.remove(id);
+                    drop(notifications);
+                    drop(canceled);
                     return_errno_with_message!(
                         Errno::ERESTARTSYS,
                         "seccomp notification interrupted"
@@ -219,7 +255,7 @@ impl Listener {
 
     fn receive(&self) -> Result<SeccompNotif> {
         let result = self
-            .waiters
+            .receivers
             .pause_until(|| {
                 let mut notifications = self.notifications.lock();
                 if notifications.pending_receives == 0 {
@@ -262,11 +298,15 @@ impl Listener {
         else {
             return;
         };
+        if !request.accepts_reply() {
+            return;
+        }
         request.state = NotificationState::Queued;
+        request.target.wake_up();
         notifications.pending_receives = notifications.pending_receives.saturating_add(1);
         drop(notifications);
         self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
-        self.waiters.wake_all();
+        self.receivers.wake_all();
     }
 
     fn respond(&self, response: SeccompNotifResp) -> Result<()> {
@@ -284,24 +324,27 @@ impl Listener {
             .ok_or_else(|| {
                 Error::with_message(Errno::ENOENT, "seccomp notification does not exist")
             })?;
-        if !matches!(request.state, NotificationState::Received) {
+        if !request.accepts_reply() {
             return_errno_with_message!(
                 Errno::EINPROGRESS,
                 "seccomp notification is not awaiting a reply"
             );
         }
         request.state = NotificationState::Replied(response);
+        let target = request.target.clone();
         drop(notifications);
         self.pollee.invalidate();
-        self.waiters.wake_all();
+        target.wake_up();
         Ok(())
     }
 
     fn validate_id(&self, id: u64) -> Result<()> {
         let notifications = self.notifications.lock();
-        if notifications.requests.iter().any(|request| {
-            request.message.id == id && matches!(request.state, NotificationState::Received)
-        }) {
+        if notifications
+            .requests
+            .iter()
+            .any(|request| request.message.id == id && request.accepts_reply())
+        {
             Ok(())
         } else {
             return_errno_with_message!(
@@ -323,11 +366,12 @@ impl Listener {
                     error: -(Errno::ENOSYS as i32),
                     flags: 0,
                 });
+                request.target.wake_up();
             }
         }
         drop(notifications);
         self.pollee.invalidate();
-        self.waiters.wake_all();
+        self.receivers.wake_all();
     }
 
     fn check_events(&self) -> IoEvents {
@@ -335,7 +379,10 @@ impl Listener {
         for request in &self.notifications.lock().requests {
             match request.state {
                 NotificationState::Queued => events |= IoEvents::IN | IoEvents::RDNORM,
-                NotificationState::Received => events |= IoEvents::OUT | IoEvents::WRNORM,
+                NotificationState::Received if request.accepts_reply() => {
+                    events |= IoEvents::OUT | IoEvents::WRNORM
+                }
+                NotificationState::Received => {}
                 NotificationState::Replied(_) => {}
             }
         }
@@ -355,8 +402,9 @@ struct PendingNotification<'a> {
 impl Drop for PendingNotification<'_> {
     fn drop(&mut self) {
         let mut notifications = self.listener.notifications.lock();
-        notifications.remove(self.id);
+        let finished = notifications.remove(self.id);
         drop(notifications);
+        drop(finished);
         self.listener.pollee.invalidate();
     }
 }
@@ -436,8 +484,7 @@ impl FileLike for ListenerFile {
                 let id = current_userspace!().read_val(raw_ioctl.arg())?;
                 self.listener.validate_id(id)?;
             }
-            _ =>
-                return_errno_with_message!(Errno::EINVAL, "unsupported seccomp notification ioctl"),
+            _ => return self.listener.add_fd(raw_ioctl),
         });
         Ok(0)
     }
