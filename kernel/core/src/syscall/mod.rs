@@ -484,12 +484,8 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
                 // See __seccomp_filter() in Linux kernel/seccomp.c.
                 has_traced = true;
             }
-            SeccompDecision::UserNotification(listener) => {
-                let result = match listener {
-                    Some(listener) => listener.notify(ctx, &data),
-                    None => Err(Error::with_message(Errno::ENOSYS, "no seccomp listener")),
-                };
-                match result {
+            SeccompDecision::UserNotification(notification) => {
+                match notification.resolve(ctx, &data) {
                     // CONTINUE executes the already filtered call without rechecking.
                     Ok(None) => break,
                     Ok(Some(value)) => user_ctx.set_syscall_ret(value),

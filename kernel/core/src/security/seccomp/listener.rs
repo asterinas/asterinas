@@ -42,13 +42,27 @@ pub(in crate::security) fn init() {
 }
 
 /// Notification state shared by a filter and its listener file description.
-pub(crate) struct Listener {
+pub(super) struct Listener {
     is_open: AtomicBool,
     users: AtomicUsize,
     pollee: Pollee,
     notifications: Mutex<Notifications>,
     receivers: WaitQueue,
     wait_mode: NotificationWaitMode,
+}
+
+/// A notification decision with the listener selected by the winning filter.
+pub(crate) struct UserNotification(pub(super) Option<Arc<Listener>>);
+
+impl UserNotification {
+    /// Waits for a supervisor response, or returns `None` to continue the syscall.
+    pub(crate) fn resolve(&self, ctx: &Context, data: &SeccompData) -> Result<Option<usize>> {
+        let listener = self
+            .0
+            .as_ref()
+            .ok_or_else(|| Error::with_message(Errno::ENOSYS, "no seccomp listener"))?;
+        listener.notify(ctx, data)
+    }
 }
 
 /// The signal behavior selected when a listener is installed.
@@ -205,8 +219,7 @@ impl Listener {
         }
     }
 
-    /// Waits for a supervisor response, or returns `None` to continue the syscall.
-    pub(crate) fn notify(&self, ctx: &Context, data: &SeccompData) -> Result<Option<usize>> {
+    fn notify(&self, ctx: &Context, data: &SeccompData) -> Result<Option<usize>> {
         let (waiter, target) = Waiter::new_pair();
         let id = {
             let mut notifications = self.notifications.lock();

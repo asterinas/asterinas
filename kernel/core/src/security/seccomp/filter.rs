@@ -6,7 +6,7 @@ use super::{
         RET_LOG, RET_TRACE, RET_TRAP, RET_USER_NOTIF, SeccompData,
     },
     cbpf::VerifiedProgram,
-    listener::Listener,
+    listener::{Listener, UserNotification},
 };
 use crate::prelude::*;
 
@@ -126,7 +126,7 @@ pub(crate) enum SeccompDecision {
     Errno(u32),
     Trap(u32),
     Trace(u32),
-    UserNotification(Option<Arc<Listener>>),
+    UserNotification(UserNotification),
     KillThread,
     KillProcess,
     StrictViolation,
@@ -333,7 +333,7 @@ impl SeccompState {
             RET_TRAP => (SeccompDecision::Trap(result & RET_DATA), requested_log),
             RET_TRACE => (SeccompDecision::Trace(result & RET_DATA), requested_log),
             RET_USER_NOTIF => (
-                SeccompDecision::UserNotification(listener.cloned()),
+                SeccompDecision::UserNotification(UserNotification(listener.cloned())),
                 requested_log,
             ),
             RET_KILL_THREAD => (SeccompDecision::KillThread, Some(action)),

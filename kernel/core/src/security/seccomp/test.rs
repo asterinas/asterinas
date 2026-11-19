@@ -330,7 +330,7 @@ fn listener_hup_counts_threads_not_policy_snapshots() {
 
 #[ktest]
 fn notification_uses_only_the_winning_filters_listener_and_log_flag() {
-    use super::listener::{self, ListenerFile, NotificationWaitMode};
+    use super::listener::{self, ListenerFile, NotificationWaitMode, UserNotification};
 
     listener::init();
     let file = ListenerFile::new(NotificationWaitMode::Interruptible).unwrap();
@@ -347,7 +347,7 @@ fn notification_uses_only_the_winning_filters_listener_and_log_flag() {
     let data = SeccompData::new_zeroed();
     let result = policy.evaluate(&data);
     assert!(
-        matches!(result.decision(), SeccompDecision::UserNotification(Some(selected))
+        matches!(result.decision(), SeccompDecision::UserNotification(UserNotification(Some(selected)))
         if Arc::ptr_eq(selected, listener))
     );
     assert_eq!(result.logged_action, Some(RET_USER_NOTIF));
@@ -360,7 +360,7 @@ fn notification_uses_only_the_winning_filters_listener_and_log_flag() {
     let result = policy.evaluate(&data);
     assert!(matches!(
         result.decision(),
-        SeccompDecision::UserNotification(None)
+        SeccompDecision::UserNotification(UserNotification(None))
     ));
     assert_eq!(result.logged_action, None);
 }
