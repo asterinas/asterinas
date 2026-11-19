@@ -61,12 +61,72 @@ pub(super) enum NotificationWaitMode {
 #[derive(Default)]
 struct Notifications {
     next_id: u64,
-    // A canceled unread request still consumes one RECV attempt (ENOENT).
+    // Counts published receive attempts, including unread requests that have
+    // since been canceled. A RECV that consumes an attempt with no queued
+    // request returns ENOENT.
     pending_receives: usize,
     requests: Vec<Notification>,
 }
 
 impl Notifications {
+    fn enqueue(&mut self, pid: u32, data: SeccompData, target: Arc<Waker>) -> Result<u64> {
+        let id = self.next_id;
+        let next_id = id.checked_add(1).ok_or_else(|| {
+            Error::with_message(Errno::EOVERFLOW, "seccomp notification IDs exhausted")
+        })?;
+        self.requests.try_reserve(1).map_err(|_| {
+            Error::with_message(Errno::ENOMEM, "cannot allocate a seccomp notification")
+        })?;
+        self.requests.push(Notification {
+            message: SeccompNotif {
+                id,
+                pid,
+                flags: 0,
+                data,
+            },
+            state: NotificationState::Queued,
+            add_fds: Vec::new(),
+            target,
+        });
+        self.next_id = next_id;
+        self.pending_receives = self.pending_receives.saturating_add(1);
+        Ok(id)
+    }
+
+    fn try_receive(&mut self) -> Option<Result<SeccompNotif>> {
+        if self.pending_receives == 0 {
+            return None;
+        }
+        self.pending_receives -= 1;
+        let request = self
+            .requests
+            .iter_mut()
+            .find(|request| matches!(request.state, NotificationState::Queued));
+        Some(match request {
+            Some(request) => {
+                request.state = NotificationState::Received;
+                Ok(request.message)
+            }
+            None => Err(Error::with_message(
+                Errno::ENOENT,
+                "seccomp notification canceled",
+            )),
+        })
+    }
+
+    fn requeue(&mut self, id: u64) -> Option<Arc<Waker>> {
+        let request = self
+            .requests
+            .iter_mut()
+            .find(|request| request.message.id == id)?;
+        if !request.accepts_reply() {
+            return None;
+        }
+        request.state = NotificationState::Queued;
+        self.pending_receives = self.pending_receives.saturating_add(1);
+        Some(request.target.clone())
+    }
+
     fn remove(&mut self, id: u64) -> Option<Notification> {
         let index = self
             .requests
@@ -153,32 +213,12 @@ impl Listener {
             if !self.is_open() {
                 return_errno_with_message!(Errno::ENOSYS, "no seccomp listener");
             }
-            let next_id = notifications.next_id.checked_add(1).ok_or_else(|| {
-                Error::with_message(Errno::EOVERFLOW, "seccomp notification IDs exhausted")
-            })?;
-            notifications.requests.try_reserve(1).map_err(|_| {
-                Error::with_message(Errno::ENOMEM, "cannot allocate a seccomp notification")
-            })?;
-            let id = notifications.next_id;
-            notifications.next_id = next_id;
-            notifications.requests.push(Notification {
-                message: SeccompNotif {
-                    id,
-                    // The kernel currently supports only the initial PID namespace.
-                    pid: ctx.posix_thread.tid(),
-                    flags: 0,
-                    data: *data,
-                },
-                state: NotificationState::Queued,
-                add_fds: Vec::new(),
-                target,
-            });
-            notifications.pending_receives = notifications.pending_receives.saturating_add(1);
-            id
+            // The kernel currently supports only the initial PID namespace.
+            notifications.enqueue(ctx.posix_thread.tid(), *data, target)?
         };
         let _pending = PendingNotification { listener: self, id };
         self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
-        self.receivers.wake_all();
+        self.receivers.wake_one();
 
         let response = self.wait_for_response(id, ctx, &waiter)?;
         if response.flags & NOTIF_FLAG_CONTINUE != 0 {
@@ -267,28 +307,13 @@ impl Listener {
             .receivers
             .pause_until(|| {
                 let mut notifications = self.notifications.lock();
-                if notifications.pending_receives == 0 {
-                    return (self.users.load(Ordering::Acquire) == 0).then(|| {
+                notifications.try_receive().or_else(|| {
+                    (self.users.load(Ordering::Acquire) == 0).then(|| {
                         Err(Error::with_message(
                             Errno::ENOENT,
                             "no seccomp notification",
                         ))
-                    });
-                }
-                notifications.pending_receives -= 1;
-                let request = notifications
-                    .requests
-                    .iter_mut()
-                    .find(|request| matches!(request.state, NotificationState::Queued));
-                Some(match request {
-                    Some(request) => {
-                        request.state = NotificationState::Received;
-                        Ok(request.message)
-                    }
-                    None => Err(Error::with_message(
-                        Errno::ENOENT,
-                        "seccomp notification canceled",
-                    )),
+                    })
                 })
             })
             .map_err(|_| Error::with_message(Errno::ERESTARTSYS, "seccomp receive interrupted"))?;
@@ -299,23 +324,13 @@ impl Listener {
     }
 
     fn requeue(&self, id: u64) {
-        let mut notifications = self.notifications.lock();
-        let Some(request) = notifications
-            .requests
-            .iter_mut()
-            .find(|request| request.message.id == id)
-        else {
+        let target = self.notifications.lock().requeue(id);
+        let Some(target) = target else {
             return;
         };
-        if !request.accepts_reply() {
-            return;
-        }
-        request.state = NotificationState::Queued;
-        request.target.wake_up();
-        notifications.pending_receives = notifications.pending_receives.saturating_add(1);
-        drop(notifications);
+        target.wake_up();
         self.pollee.notify(IoEvents::IN | IoEvents::RDNORM);
-        self.receivers.wake_all();
+        self.receivers.wake_one();
     }
 
     fn respond(&self, response: SeccompNotifResp) -> Result<()> {

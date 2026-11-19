@@ -226,24 +226,16 @@ impl Pause for Waiter {
 impl Pause for WaitQueue {
     fn pause_until_or_timeout_impl<F, R>(
         &self,
-        mut cond: F,
+        cond: F,
         timeout: Option<&ManagedTimeout>,
         reason: PauseReason,
     ) -> Result<R>
     where
         F: FnMut() -> Option<R>,
     {
-        // Fast path:
-        if let Some(res) = cond() {
-            return Ok(res);
-        }
-
-        let (waiter, _) = Waiter::new_pair();
-        let cond = || {
-            self.enqueue(waiter.waker());
-            cond()
-        };
-        waiter.pause_until_or_timeout_impl(cond, timeout, reason)
+        self.wait_until_with(cond, |waiter, cond| {
+            waiter.pause_until_or_timeout_impl(cond, timeout, reason)
+        })
     }
 
     fn pause_timeout(&self, _timeout: &TimeoutExt<'_>) -> Result<()> {

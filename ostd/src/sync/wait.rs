@@ -84,6 +84,34 @@ impl WaitQueue {
             .unwrap()
     }
 
+    /// Waits using a caller-provided wait function, such as an interruptible wait.
+    ///
+    /// The wait function must use the supplied waiter and predicate. Its queue
+    /// registrations are removed when the wait function returns.
+    #[track_caller]
+    pub fn wait_until_with<R, E>(
+        &self,
+        mut cond: impl FnMut() -> Option<R>,
+        wait: impl FnOnce(&Waiter, &mut dyn FnMut() -> Option<R>) -> Result<R, E>,
+    ) -> Result<R, E> {
+        if let Some(result) = cond() {
+            return Ok(result);
+        }
+
+        let (waiter, waker) = Waiter::new_pair();
+        let result = wait(&waiter, &mut || {
+            self.enqueue(waker.clone());
+            cond()
+        });
+        // A condition or a signal can finish the wait without a queue wakeup.
+        let mut wakers = self.wakers.lock();
+        let previous_len = wakers.len();
+        wakers.retain(|queued| !Arc::ptr_eq(queued, &waker));
+        self.num_wakers
+            .fetch_sub((previous_len - wakers.len()) as u32, Ordering::Release);
+        result
+    }
+
     /// Wakes up one waiting thread, if there is one at the point of time when this method is
     /// called, returning whether such a thread was woken up.
     pub fn wake_one(&self) -> bool {
@@ -107,16 +135,13 @@ impl WaitQueue {
         }
     }
 
-    /// Wakes up all waiting threads, returning the number of threads that were woken up.
+    /// Wakes up waiting threads, bounded by the number of entries at the start
+    /// of the call, and returns the number of threads that were woken up.
     pub fn wake_all(&self) -> usize {
-        // Fast path
-        if self.is_empty() {
-            return 0;
-        }
-
         let mut num_woken = 0;
 
-        loop {
+        // Wakeups may cause waiters to run and enqueue again before we return.
+        for _ in 0..self.num_wakers() {
             let mut wakers = self.wakers.lock();
             let Some(waker) = wakers.pop_front() else {
                 break;
@@ -134,10 +159,14 @@ impl WaitQueue {
     }
 
     fn is_empty(&self) -> bool {
+        self.num_wakers() == 0
+    }
+
+    fn num_wakers(&self) -> u32 {
         // On x86-64, this generates `mfence; mov`, which is exactly the right way to implement
         // atomic loading with `Ordering::Release`. It performs much better than naively
         // translating `fetch_add(0)` to `lock; xadd`.
-        self.num_wakers.fetch_add(0, Ordering::Release) == 0
+        self.num_wakers.fetch_add(0, Ordering::Release)
     }
 
     /// Enqueues the input [`Waker`] to the wait queue.
@@ -324,6 +353,30 @@ mod test {
         queue_wake(|queue| {
             queue.wake_all();
         });
+    }
+
+    #[ktest]
+    fn custom_wait_deregisters_on_completion_and_cancellation() {
+        let queue = WaitQueue::new();
+        let mut checked = false;
+        let completed = queue.wait_until_with(
+            || {
+                let was_checked = checked;
+                checked = true;
+                was_checked.then_some(())
+            },
+            |waiter, cond| waiter.wait_until_or_cancelled(cond, || Err(())),
+        );
+        assert_eq!(completed, Ok(()));
+        assert!(queue.wakers.lock().is_empty());
+
+        let canceled = queue.wait_until_with(
+            || None::<()>,
+            |waiter, cond| waiter.wait_until_or_cancelled(cond, || Err(())),
+        );
+        assert_eq!(canceled, Err(()));
+        assert!(queue.wakers.lock().is_empty());
+        assert!(queue.is_empty());
     }
 
     #[ktest]
