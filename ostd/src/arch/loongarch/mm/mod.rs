@@ -29,8 +29,13 @@ bitflags::bitflags! {
     pub(crate) struct PteFlags: usize {
         /// Specifies whether the mapped frame is valid.
         const VALID          = 1 << 0;
-        /// Whether the memory area represented by this entry is modified.
-        const DIRTY          = 1 << 1;
+        /// Controls whether writes to the mapped frame are allowed.
+        ///
+        /// This corresponds to the TLB's `D` (Dirty) bit in LoongArch, which acts as
+        /// the write-enable bit and must be set for writable pages.
+        ///
+        /// Reference: <https://loongson.github.io/LoongArch-Documentation/LoongArch-Vol1-EN.html#tlb-entry>.
+        const WRITABLE       = 1 << 1;
         /// Privilege level corresponding to the page table entry.
         /// When `RPLV` = 0, the page table entry can be accessed by any program
         /// with a privilege level not lower than `PLV`;
@@ -52,9 +57,9 @@ bitflags::bitflags! {
         /// Specifies whether the mapped frame or page table is loaded in memory.
         /// This flag does not fill in TLB.
         const PRESENT        = 1 << 7;
-        /// Controls whether writes to the mapped frames are allowed.
+        /// Preserves the dirty status when write permission is removed.
         /// This flag does not fill in TLB.
-        const WRITABLE       = 1 << 8;
+        const MODIFIED       = 1 << 8;
         /// Whether this entry is a basic page table entry.
         const IS_BASIC       = 1 << 9;
         /// First bit ignored by MMU.
@@ -124,6 +129,9 @@ pub(crate) unsafe fn activate_page_table(root_paddr: Paddr) {
     assert!(root_paddr.is_multiple_of(PagingConsts::BASE_PAGE_SIZE));
     loongArch64::register::pgdl::set_base(root_paddr);
     loongArch64::register::pgdh::set_base(root_paddr);
+
+    // Address spaces share the same ASID, so translations from the previous one must be flushed.
+    tlb_flush_all_excluding_global();
 }
 
 pub(crate) fn current_page_table_paddr() -> Paddr {
@@ -190,7 +198,7 @@ impl PageTableEntry {
             | parse_flags!(!self.0, PteFlags::NOT_EXECUTABLE, PageFlags::X)
             // TODO: How to get the `ACCESSED` bit in LoongArch?
             | parse_flags!(self.0, PteFlags::PRESENT, PageFlags::ACCESSED)
-            | parse_flags!(self.0, PteFlags::DIRTY, PageFlags::DIRTY)
+            | parse_flags!(self.0, PteFlags::MODIFIED, PageFlags::DIRTY)
             | parse_flags!(self.0, PteFlags::RSV2, PageFlags::AVAIL2);
 
         let mut priv_flags = parse_flags!(self.0, PteFlags::RSV1, PrivFlags::AVAIL1);
@@ -225,9 +233,6 @@ impl PageTableEntry {
 
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
         let mut flags = PteFlags::VALID.bits()
-            // FIXME: To avoid the Page Modify Exception,
-            // we set the `DIRTY` bit to 1 all the time.
-            | PteFlags::DIRTY.bits()
             | parse_flags!(
                 !prop.flags.bits(),
                 PageFlags::R,
@@ -239,9 +244,9 @@ impl PageTableEntry {
                 PageFlags::X,
                 PteFlags::NOT_EXECUTABLE
             )
-            | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PteFlags::DIRTY)
             // TODO: How to get the `ACCESSED` bit in LoongArch?
             | parse_flags!(prop.flags.bits(), PageFlags::ACCESSED, PteFlags::PRESENT)
+            | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PteFlags::MODIFIED)
             | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PteFlags::RSV2);
         flags |= parse_flags!(prop.priv_flags.bits(), PrivFlags::AVAIL1, PteFlags::RSV1);
         if prop.priv_flags.contains(PrivFlags::USER) {
