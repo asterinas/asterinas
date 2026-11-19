@@ -439,7 +439,7 @@ impl PathResolver {
         }
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
-        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        let current_mnt_ns = current_ns_proxy.mnt_ns();
         if !current_mnt_ns.owns(&new_root_path.mount) || !current_mnt_ns.owns(&put_old_path.mount) {
             return_errno_with_message!(
                 Errno::EINVAL,

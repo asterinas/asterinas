@@ -603,7 +603,7 @@ impl Path {
         }
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
-        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        let current_mnt_ns = current_ns_proxy.mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
             return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
@@ -638,7 +638,7 @@ impl Path {
         };
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
-        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        let current_mnt_ns = current_ns_proxy.mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
             return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
@@ -677,7 +677,7 @@ impl Path {
         };
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
-        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        let current_mnt_ns = current_ns_proxy.mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
             return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }
@@ -724,7 +724,7 @@ impl Path {
         }
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
-        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        let current_mnt_ns = current_ns_proxy.mnt_ns();
 
         // Linux does not require the source path to belong to the current
         // mount namespace, but still rejects source mount namespace files that
@@ -786,7 +786,7 @@ impl Path {
         };
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
-        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        let current_mnt_ns = current_ns_proxy.mnt_ns();
         if self.mount.id() == current_mnt_ns.root().id() {
             return_errno_with_message!(Errno::EINVAL, "the root mount can not be moved");
         }
@@ -911,7 +911,7 @@ impl Path {
         };
 
         let current_ns_proxy = ctx.thread_local.borrow_ns_proxy();
-        let current_mnt_ns = current_ns_proxy.unwrap().mnt_ns();
+        let current_mnt_ns = current_ns_proxy.mnt_ns();
         if !current_mnt_ns.owns(&self.mount) {
             return_errno_with_message!(Errno::EINVAL, "the path is not in this mount namespace");
         }

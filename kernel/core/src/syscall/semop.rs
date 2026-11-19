@@ -74,7 +74,7 @@ fn do_sys_semtimedop(
     }
 
     let ns_proxy = ctx.thread_local.borrow_ns_proxy();
-    let ipc_ns = ns_proxy.unwrap().ipc_ns();
+    let ipc_ns = ns_proxy.ipc_ns();
 
     sem_op(semid, semops, timeout, ipc_ns, ctx)?;
 

@@ -30,7 +30,7 @@ pub(super) fn sys_semctl(
     );
 
     let ns_proxy = ctx.thread_local.borrow_ns_proxy();
-    let ipc_ns = ns_proxy.unwrap().ipc_ns();
+    let ipc_ns = ns_proxy.ipc_ns();
 
     match cmd {
         IpcControlCmd::IPC_RMID => {

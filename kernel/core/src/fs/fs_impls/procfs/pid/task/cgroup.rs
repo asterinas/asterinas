@@ -45,7 +45,7 @@ impl ProcFileOps for CgroupFileOps {
         let current_task = Task::current().unwrap();
         let thread_local = current_task.as_thread_local().unwrap();
         let ns_proxy = thread_local.borrow_ns_proxy();
-        let cgroup_ns = ns_proxy.unwrap().cgroup_ns();
+        let cgroup_ns = ns_proxy.cgroup_ns();
         let path = cgroup_ns.virtualize_path(cgroup);
 
         let mut printer = VmPrinter::new_skip(writer, offset);

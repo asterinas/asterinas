@@ -106,7 +106,7 @@ fn read_current_uts_name(
     let ns_proxy = thread_local.borrow_ns_proxy();
 
     let value = {
-        let uts_name = ns_proxy.unwrap().uts_ns().uts_name();
+        let uts_name = ns_proxy.uts_ns().uts_name();
         *get_value(&uts_name)
     };
 
@@ -139,7 +139,7 @@ fn write_current_uts_name(
 
     let thread_local = current_task.as_thread_local().unwrap();
     let ns_proxy = thread_local.borrow_ns_proxy();
-    let uts_ns = ns_proxy.unwrap().uts_ns();
+    let uts_ns = ns_proxy.uts_ns();
 
     // We need to edit the old name. The lock is released before writing the
     // new value, so concurrent updates can race. Linux does the same thing:
