@@ -31,7 +31,9 @@ pub(crate) struct ThreadSeccompState {
 
 impl ThreadSeccompState {
     pub(crate) fn new(state: SeccompState) -> Self {
-        state.for_each_listener(|listener| listener.attach_thread());
+        if let Some(listener) = state.latest_listener() {
+            listener.attach_thread();
+        }
         Self { state }
     }
 
@@ -55,8 +57,9 @@ impl ThreadSeccompState {
 
 impl Drop for ThreadSeccompState {
     fn drop(&mut self) {
-        self.state
-            .for_each_listener(|listener| listener.detach_thread());
+        if let Some(listener) = self.state.latest_listener() {
+            listener.detach_thread();
+        }
     }
 }
 
@@ -79,6 +82,7 @@ struct FilterNode {
     path_insns: usize,
     logging: FilterLogging,
     listener: Option<Arc<Listener>>,
+    latest_listener: Option<Arc<Listener>>,
 }
 
 /// Whether the filter requests logging of its non-ALLOW decisions.
@@ -226,14 +230,8 @@ impl SeccompState {
         false
     }
 
-    fn for_each_listener(&self, visit_fn: impl Fn(&Listener)) {
-        let mut node = self.head();
-        while let Some(filter) = node {
-            if let Some(listener) = &filter.listener {
-                visit_fn(listener);
-            }
-            node = filter.previous.as_ref();
-        }
+    fn latest_listener(&self) -> Option<&Arc<Listener>> {
+        self.head()?.latest_listener.as_ref()
     }
 
     #[cfg(ktest)]
@@ -256,21 +254,11 @@ impl SeccompState {
                 "cannot change strict seccomp mode to filter"
             );
         }
-        if listener.is_some() {
-            let mut node = self.head();
-            while let Some(filter) = node {
-                if filter
-                    .listener
-                    .as_ref()
-                    .is_some_and(|listener| listener.is_open())
-                {
-                    return_errno_with_message!(
-                        Errno::EBUSY,
-                        "a seccomp listener is already attached"
-                    );
-                }
-                node = filter.previous.as_ref();
-            }
+        // A previous listener must close permanently before this chain can
+        // acquire a new one. Only the most recent listener can still be open.
+        let previous_listener = self.latest_listener();
+        if listener.is_some() && previous_listener.is_some_and(|listener| listener.is_open()) {
+            return_errno_with_message!(Errno::EBUSY, "a seccomp listener is already attached");
         }
         let path_insns = program.len()
             + self
@@ -285,6 +273,7 @@ impl SeccompState {
             previous: self.head().cloned(),
             path_insns,
             logging,
+            latest_listener: listener.as_ref().or(previous_listener).cloned(),
             listener,
         })
         .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate seccomp filter"))?;
