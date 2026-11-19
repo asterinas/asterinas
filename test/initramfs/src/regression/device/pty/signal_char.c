@@ -5,6 +5,7 @@
 #include <poll.h>
 #include <pty.h>
 #include <signal.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -105,11 +106,44 @@ static int wait_sig(volatile sig_atomic_t *counter)
 // PTY data flow is asynchronous (see pty(7)): bytes written to one end may
 // not be readable at the other end immediately. Returns 1 if the file
 // descriptor becomes readable before the timeout.
-static int poll_in(int fd)
+static int poll_in_timeout(int fd, int timeout_ms)
 {
 	struct pollfd pfd = { .fd = fd, .events = POLLIN };
 
-	return poll(&pfd, 1, 2000) == 1 && (pfd.revents & POLLIN) != 0;
+	return poll(&pfd, 1, timeout_ms) == 1 && (pfd.revents & POLLIN) != 0;
+}
+
+static int poll_in(int fd)
+{
+	return poll_in_timeout(fd, 2000);
+}
+
+// Reads until `len` bytes have arrived or the timeout expires. Returns the
+// number of bytes read.
+static int read_upto(int fd, char *buf, int len)
+{
+	int total = 0, ret;
+
+	while (total < len && poll_in(fd)) {
+		ret = read(fd, buf + total, len - total);
+		if (ret <= 0)
+			break;
+		total += ret;
+	}
+
+	errno = 0;
+	return total;
+}
+
+// Reads and discards everything until the file descriptor stays quiet.
+static void drain(int fd)
+{
+	char buf[4096];
+
+	while (poll_in_timeout(fd, 200) && read(fd, buf, sizeof(buf)) > 0)
+		;
+
+	errno = 0;
 }
 
 // Signal characters must be recognized with ISIG alone; canonical mode is
@@ -168,6 +202,131 @@ FN_TEST(noflsh_keeps_input)
 	TEST_ERRNO(read(slave, buf, sizeof(buf)), EAGAIN);
 }
 END_TEST()
+
+// Without NOFLSH, a signal character also discards the echoes of the input
+// that precedes it in the same batch. Its own echo comes after the flush.
+FN_TEST(signal_char_flushes_echoes)
+{
+	char buf[8];
+
+	set_lflags(ISIG | ECHO | ECHOCTL);
+	reset_state();
+
+	TEST_RES(write(master, "ab\x03", 3), _ret == 3);
+	TEST_RES(wait_sig(&nr_sigint), _ret == 1);
+	TEST_RES(read_upto(master, buf, 2),
+		 _ret == 2 && buf[0] == '^' && buf[1] == 'C');
+	TEST_ERRNO(read(master, buf, sizeof(buf)), EAGAIN);
+	TEST_ERRNO(read(slave, buf, sizeof(buf)), EAGAIN);
+}
+END_TEST()
+
+// With NOFLSH, the pending echoes survive and keep their order.
+FN_TEST(noflsh_keeps_echoes)
+{
+	char buf[8];
+
+	set_lflags(ISIG | ECHO | ECHOCTL | NOFLSH);
+	reset_state();
+
+	TEST_RES(write(master, "cd\x03", 3), _ret == 3);
+	TEST_RES(wait_sig(&nr_sigint), _ret == 1);
+	TEST_RES(read_upto(master, buf, 4),
+		 _ret == 4 && memcmp(buf, "cd^C", 4) == 0);
+	TEST_ERRNO(read(master, buf, sizeof(buf)), EAGAIN);
+	TEST_RES(poll_in(slave), _ret == 1);
+	TEST_RES(read(slave, buf, sizeof(buf)),
+		 _ret == 2 && buf[0] == 'c' && buf[1] == 'd');
+}
+END_TEST()
+
+// An echo that does not fit into the full output buffer is not lost: it is
+// written out before the next output.
+FN_TEST(echo_deferred_by_full_output)
+{
+	static char big[4096];
+	char buf[8];
+
+	set_lflags(ISIG | ECHO | ECHOCTL);
+	reset_state();
+
+	// Fill the output buffer without reading from the master. Bytes may still
+	// be in flight towards the master (see pty(7)), so retry until the buffer
+	// stays full.
+	memset(big, 'a', sizeof(big));
+	do {
+		while (write(slave, big, sizeof(big)) > 0)
+			;
+		usleep(50 * 1000);
+	} while (write(slave, big, sizeof(big)) > 0);
+	TEST_ERRNO(write(slave, big, sizeof(big)), EAGAIN);
+
+	TEST_RES(write(master, "x", 1), _ret == 1);
+	drain(master);
+
+	TEST_RES(write(slave, "y", 1), _ret == 1);
+	TEST_RES(read_upto(master, buf, 2),
+		 _ret == 2 && buf[0] == 'x' && buf[1] == 'y');
+	TEST_ERRNO(read(master, buf, sizeof(buf)), EAGAIN);
+}
+END_TEST()
+
+// A batch whose echoes are twice its size (ECHOCTL doubles every control
+// character) is echoed in full when the output buffer has room.
+FN_TEST(echo_batch_doubled_by_echoctl)
+{
+	static char big[3000], out[6000];
+	char buf[8];
+	int i;
+
+	set_lflags(ISIG | ECHO | ECHOCTL);
+	reset_state();
+
+	memset(big, '\x01', sizeof(big));
+	TEST_RES(write(master, big, sizeof(big)), _ret == (int)sizeof(big));
+	TEST_RES(read_upto(master, out, sizeof(out)), _ret == (int)sizeof(out));
+	for (i = 0; i < (int)sizeof(out); i += 2)
+		if (out[i] != '^' || out[i + 1] != 'A')
+			break;
+	TEST_RES(i, _ret == (int)sizeof(out));
+	TEST_ERRNO(read(master, buf, sizeof(buf)), EAGAIN);
+}
+END_TEST()
+
+#ifdef __asterinas__
+// An echo unit is never split across commits: with one byte free in the
+// output ring, `^C` waits as a whole, so a later flush cannot leave a stray
+// `^` behind. The setup relies on the 8 KiB pty output ring, so this case
+// cannot run on Linux.
+FN_TEST(echo_unit_not_split)
+{
+	static char big[8191];
+	char buf[8];
+
+	set_lflags(ISIG | ECHO | ECHOCTL);
+	reset_state();
+
+	memset(big, 'a', sizeof(big));
+	TEST_RES(write(slave, big, 4096), _ret == 4096);
+	TEST_RES(write(slave, big, 4095), _ret == 4095);
+
+	TEST_RES(write(master, "\x03", 1), _ret == 1);
+	TEST_RES(wait_sig(&nr_sigint), _ret == 1);
+	nr_sigint = 0;
+	TEST_RES(write(master, "\x03", 1), _ret == 1);
+	TEST_RES(wait_sig(&nr_sigint), _ret == 1);
+
+	TEST_RES(read_upto(master, big, sizeof(big)),
+		 _ret == (int)sizeof(big) && big[sizeof(big) - 1] == 'a');
+	TEST_ERRNO(read(master, buf, sizeof(buf)), EAGAIN);
+
+	TEST_RES(write(slave, "y", 1), _ret == 1);
+	TEST_RES(read_upto(master, buf, 3),
+		 _ret == 3 && memcmp(buf, "^Cy", 3) == 0);
+	TEST_ERRNO(read(master, buf, sizeof(buf)), EAGAIN);
+}
+END_TEST()
+#endif
 
 // Without ISIG, signal characters are ordinary input.
 FN_TEST(isig_off_passes_through)

@@ -13,7 +13,7 @@ use crate::{
     device::{
         Device,
         tty::{
-            CFontOp, Tty, TtyDriver,
+            CFontOp, EchoUnit, Tty, TtyDriver,
             termio::CTermios,
             vt::{
                 VtIndex,
@@ -108,8 +108,11 @@ impl TtyDriver for VtDriver {
         Ok(chs.len())
     }
 
-    fn echo_callback(&self) -> impl FnMut(&[u8]) + '_ {
-        |chs| self.console.send(chs)
+    fn push_echo(&self, units: &[EchoUnit]) -> usize {
+        for unit in units {
+            self.console.send(unit.as_bytes());
+        }
+        units.len()
     }
 
     fn can_push(&self) -> bool {
