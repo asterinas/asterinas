@@ -87,6 +87,32 @@ impl<T> SlotVec<T> {
     /// the range is empty or has no available index. On failure, the vector is
     /// unchanged.
     pub fn try_put_in(&mut self, entry: T, range: Range<usize>) -> Result<usize, T> {
+        let Some(idx) = self.lowest_vacant_in(range) else {
+            return Err(entry);
+        };
+        self.put_at(idx, entry);
+        Ok(idx)
+    }
+
+    /// Inserts at the lowest vacant index in `range` with fallible allocation.
+    ///
+    /// Returns `Ok(None)` if the range has no vacancy and an error if the
+    /// vector cannot grow. In either case the vector is unchanged and `entry`
+    /// is dropped.
+    pub fn try_put_in_fallible(
+        &mut self,
+        entry: T,
+        range: Range<usize>,
+    ) -> Result<Option<usize>, TryReserveError> {
+        let Some(idx) = self.lowest_vacant_in(range) else {
+            return Ok(None);
+        };
+        self.try_reserve((idx + 1).saturating_sub(self.slots.len()))?;
+        self.put_at(idx, entry);
+        Ok(Some(idx))
+    }
+
+    fn lowest_vacant_in(&self, range: Range<usize>) -> Option<usize> {
         let append_idx = self.slots.len().max(range.start);
         let idx = if self.num_occupied == self.slots.len() {
             append_idx
@@ -95,12 +121,7 @@ impl<T> SlotVec<T> {
                 .find(|&idx| self.slots[idx].is_none())
                 .unwrap_or(append_idx)
         };
-        if idx >= range.end {
-            return Err(entry);
-        }
-
-        self.put_at(idx, entry);
-        Ok(idx)
+        (idx < range.end).then_some(idx)
     }
 
     /// Puts and returns the item at position `idx`.

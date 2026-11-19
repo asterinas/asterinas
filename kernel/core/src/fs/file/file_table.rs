@@ -367,16 +367,11 @@ impl FileDescReservation {
         let fd = {
             let mut locked = table.write();
             let limit = limit.min(i32::MAX as u64 + 1) as usize;
-            let end = limit.min(locked.table.slots_len() + 1);
-            let index = (0..end)
-                .find(|&index| locked.table.get(index).is_none())
-                .ok_or_else(|| Error::with_message(Errno::EMFILE, "the FD limit is reached"))?;
-            let additional = (index + 1).saturating_sub(locked.table.slots_len());
-            locked
+            let index = locked
                 .table
-                .try_reserve(additional)
-                .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate an FD slot"))?;
-            locked.table.put_at(index, FileSlot::Reserved);
+                .try_put_in_fallible(FileSlot::Reserved, 0..limit)
+                .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate an FD slot"))?
+                .ok_or_else(|| Error::with_message(Errno::EMFILE, "the FD limit is reached"))?;
             (index as RawFileDesc).try_into().unwrap()
         };
         Ok(Self {
