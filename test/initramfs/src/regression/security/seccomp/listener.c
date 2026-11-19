@@ -42,13 +42,19 @@ static void exec_closes_listener_but_keeps_filter(void)
 
 static pthread_barrier_t barrier;
 
+static void rendezvous(void)
+{
+	CHECK_WITH(pthread_barrier_wait(&barrier),
+		   _ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD);
+}
+
 static void *divergent_thread(void *arg)
 {
 	(void)arg;
 	struct sock_filter allow = BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
 	CHECK(install(&allow, 1));
-	pthread_barrier_wait(&barrier);
-	pthread_barrier_wait(&barrier);
+	rendezvous();
+	rendezvous();
 	return NULL;
 }
 
@@ -60,7 +66,7 @@ static void failed_tsync_releases_reserved_fd(void)
 	CHECK(pthread_barrier_init(&barrier, NULL, 2));
 	pthread_t thread;
 	CHECK(pthread_create(&thread, NULL, divergent_thread, NULL));
-	pthread_barrier_wait(&barrier);
+	rendezvous();
 	CHECK_WITH(new_listener(SECCOMP_FILTER_FLAG_TSYNC |
 				SECCOMP_FILTER_FLAG_TSYNC_ESRCH),
 		   _ret == -1 && errno == ESRCH);
@@ -68,7 +74,7 @@ static void failed_tsync_releases_reserved_fd(void)
 	int next = CHECK(dup(STDOUT_FILENO));
 	CHECK_WITH(next, _ret == available);
 	CHECK(close(next));
-	pthread_barrier_wait(&barrier);
+	rendezvous();
 	CHECK(pthread_join(thread, NULL));
 	CHECK(pthread_barrier_destroy(&barrier));
 	int fd = CHECK(new_listener(0));
@@ -79,12 +85,12 @@ static void failed_tsync_releases_reserved_fd(void)
 static void *synced_thread(void *arg)
 {
 	(void)arg;
-	pthread_barrier_wait(&barrier);
-	pthread_barrier_wait(&barrier);
+	rendezvous();
+	rendezvous();
 	CHECK_WITH(prctl(PR_GET_SECCOMP), _ret == SECCOMP_MODE_FILTER);
 	CHECK_WITH(new_listener(0), _ret == -1 && errno == EBUSY);
-	pthread_barrier_wait(&barrier);
-	pthread_barrier_wait(&barrier);
+	rendezvous();
+	rendezvous();
 	int fd = CHECK(new_listener(0));
 	CHECK(close(fd));
 	return NULL;
@@ -96,14 +102,14 @@ static void tsync_propagates_listener_ownership(void)
 	CHECK(pthread_barrier_init(&barrier, NULL, 2));
 	pthread_t thread;
 	CHECK(pthread_create(&thread, NULL, synced_thread, NULL));
-	pthread_barrier_wait(&barrier);
+	rendezvous();
 	int fd = CHECK(new_listener(SECCOMP_FILTER_FLAG_TSYNC |
 				    SECCOMP_FILTER_FLAG_TSYNC_ESRCH |
 				    SECCOMP_FILTER_FLAG_LOG));
-	pthread_barrier_wait(&barrier);
-	pthread_barrier_wait(&barrier);
+	rendezvous();
+	rendezvous();
 	CHECK(close(fd));
-	pthread_barrier_wait(&barrier);
+	rendezvous();
 	CHECK(pthread_join(thread, NULL));
 	CHECK(pthread_barrier_destroy(&barrier));
 }
