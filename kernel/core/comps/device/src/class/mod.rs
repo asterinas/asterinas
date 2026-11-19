@@ -72,6 +72,7 @@ pub trait Class: Sized + Send + Sync + 'static {
 pub fn register<C: Class>(class: C) -> Result<Arc<ClassHandle<C>>> {
     let dir = Dir::new(SysStr::from(C::NAME));
     registry::get().class_root().attach_child(dir.clone())?;
+
     let handle = Arc::new(ClassHandle {
         class,
         dir,
@@ -187,6 +188,7 @@ impl<C: Class> SubsystemOps for ClassHandle<C> {
             .downcast_ref::<ClassDevice<C>>()
             .expect("a class device reports its own class as its subsystem");
         let dev = dev.this();
+
         let _guard = self.membership.lock();
         self.devices.lock().push(dev.clone());
         for observer in self.observers() {
@@ -200,6 +202,7 @@ impl<C: Class> SubsystemOps for ClassHandle<C> {
             .downcast_ref::<ClassDevice<C>>()
             .expect("a class device reports its own class as its subsystem");
         let dev = dev.this();
+
         let _guard = self.membership.lock();
         // A device whose registration failed before `on_added` was never
         // announced to the observers, so it is not un-announced either.

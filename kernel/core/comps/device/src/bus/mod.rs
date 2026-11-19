@@ -139,6 +139,7 @@ impl<B: Bus> BusHandle<B> {
         {
             return Err(Error::NameConflict);
         }
+
         let handle = DriverHandle::new(driver, self.weak.clone())?;
         self.drivers_dir.attach_child(handle.dir().clone())?;
         self.drivers.lock().push(handle.clone());
@@ -150,6 +151,7 @@ impl<B: Bus> BusHandle<B> {
                 }
             }
         }
+
         Ok(handle)
     }
 
@@ -166,6 +168,7 @@ impl<B: Bus> BusHandle<B> {
         if !removed {
             return Err(Error::NotFound);
         }
+
         // Close registration and collect every binding in one critical section.
         // Release this lock before waiting on each device's binding lock.
         let devices = driver.state().lock().set_unregistered()?;
@@ -173,6 +176,7 @@ impl<B: Bus> BusHandle<B> {
             let _ = self.unbind_from(&dev, driver);
         }
         let _ = self.drivers_dir.detach_child(driver.name());
+
         Ok(())
     }
 
@@ -226,6 +230,7 @@ impl<B: Bus> BusHandle<B> {
         if !self.bus.matches(dev.payload(), driver.match_data()) {
             return Err(Error::NoDriver);
         }
+
         let _guard = dev.bind_lock().lock();
         if !dev.base().is_added() {
             return Err(Error::NotAdded);
@@ -233,16 +238,15 @@ impl<B: Bus> BusHandle<B> {
         if dev.driver().is_some() {
             return Err(Error::AlreadyBound);
         }
-        driver.state().lock().start_binding(dev)?;
 
-        let result = self.bind_inner(dev, driver);
-        let mut state = driver.state().lock();
-        if result.is_ok() {
-            state.finish_binding(dev);
-        } else {
-            state.abort_binding(dev);
+        driver.state().lock().start_binding(dev)?;
+        if let Err(e) = self.bind_inner(dev, driver) {
+            driver.state().lock().abort_binding(dev);
+            return Err(e);
         }
-        result
+        driver.state().lock().finish_binding(dev);
+
+        Ok(())
     }
 
     /// Completes a binding recorded in the driver's list, undoing it on error.
@@ -259,6 +263,7 @@ impl<B: Bus> BusHandle<B> {
             remove_link(driver.dir().as_ref(), dev.base().name());
             return Err(e);
         }
+
         if let Err(e) = driver.on_probe(dev) {
             driver::remove_driver_links(dev, driver);
             return Err(match e {
@@ -271,7 +276,9 @@ impl<B: Bus> BusHandle<B> {
             driver.on_release(dev);
             return Err(e);
         }
+
         dev.set_driver(driver.clone());
+
         Ok(())
     }
 
@@ -281,12 +288,14 @@ impl<B: Bus> BusHandle<B> {
         expected: Option<&Arc<DriverHandle<B>>>,
     ) -> Result<()> {
         let _guard = dev.bind_lock().lock();
+
         if let Some(expected) = expected
             && !dev.driver().is_some_and(|d| Arc::ptr_eq(&d, expected))
         {
             return Err(Error::NotBound);
         }
         let driver = dev.driver().ok_or(Error::NotBound)?;
+
         // Driver attribute callbacks have finished and cannot start
         // while we hold the binding lock.
         driver::remove_driver_links(dev, &driver);
@@ -294,6 +303,7 @@ impl<B: Bus> BusHandle<B> {
         driver.on_release(dev);
         dev.take_driver();
         driver.state().lock().forget_bound(dev);
+
         Ok(())
     }
 
@@ -355,6 +365,7 @@ impl<B: Bus> SubsystemOps for BusHandle<B> {
             .downcast_ref::<BusDevice<B>>()
             .expect("a bus device reports its own bus as its subsystem");
         let dev = dev.this();
+
         self.devices.lock().push(dev.clone());
         if self.autoprobe.load(Ordering::Relaxed) {
             // Automatic probing failure does not fail device registration.
@@ -368,6 +379,7 @@ impl<B: Bus> SubsystemOps for BusHandle<B> {
             .downcast_ref::<BusDevice<B>>()
             .expect("a bus device reports its own bus as its subsystem");
         let dev = dev.this();
+
         let was_present = {
             let mut devices = self.devices.lock();
             let before = devices.len();
@@ -394,6 +406,7 @@ struct BusDirOps<B: Bus> {
 impl<B: Bus> DirAttrOps for BusDirOps<B> {
     fn show(&self, name: &str, w: &mut dyn Write) -> Result<()> {
         let bus = self.bus.upgrade().ok_or(Error::NotFound)?;
+
         match name {
             "drivers_autoprobe" => {
                 writeln!(w, "{}", if bus.is_autoprobe_enabled() { 1 } else { 0 })?;
@@ -405,6 +418,7 @@ impl<B: Bus> DirAttrOps for BusDirOps<B> {
 
     fn store(&self, name: &str, value: &str) -> Result<()> {
         let bus = self.bus.upgrade().ok_or(Error::NotFound)?;
+
         match name {
             "drivers_autoprobe" => match value.trim() {
                 "0" => bus.set_autoprobe(false),
@@ -422,6 +436,7 @@ impl<B: Bus> DirAttrOps for BusDirOps<B> {
             }
             _ => return Err(Error::NotFound),
         }
+
         Ok(())
     }
 }
