@@ -6,7 +6,7 @@ use super::{
     abi::{SockFilter, SockFprog},
     cbpf::{MAX_INSNS, VerifiedProgram},
     filter::FilterLogging,
-    listener::{Listener, ListenerFile, NotificationWaitMode},
+    listener::{ListenerFile, NotificationWaitMode},
 };
 use crate::{
     fs::file::file_table::{FdFlags, FileDescReservation},
@@ -110,9 +110,8 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
             let table = ctx.thread_local.borrow_file_table();
             FileDescReservation::new(&table, limit)?
         };
-        let state = Listener::new(wait_mode)?;
-        let file = ListenerFile::new(state.clone())?;
-        Some((reservation, file, state))
+        let file = ListenerFile::new(wait_mode)?;
+        Some((reservation, file))
     } else {
         None
     };
@@ -136,7 +135,7 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
     let new_state = old_state.append_with_listener(
         program,
         logging,
-        listener.as_ref().map(|(_, _, state)| state.clone()),
+        listener.as_ref().map(|(_, file)| file.listener().clone()),
     )?;
 
     if sync_threads {
@@ -172,7 +171,7 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
     }
     drop(tasks);
     drop(_cred_guard);
-    if let Some((reservation, file, _)) = listener {
+    if let Some((reservation, file)) = listener {
         Ok(reservation.install(file, FdFlags::CLOEXEC).into())
     } else {
         Ok(0)

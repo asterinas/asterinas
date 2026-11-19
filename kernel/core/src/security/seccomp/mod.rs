@@ -27,6 +27,7 @@ use self::abi::{
     MODE_FILTER, MODE_STRICT, RET_ALLOW, RET_ERRNO, RET_KILL_PROCESS, RET_KILL_THREAD, RET_LOG,
     RET_TRACE, RET_TRAP, RET_USER_NOTIF, SeccompNotif, SeccompNotifResp, SeccompNotifSizes,
 };
+pub(super) use self::listener::init;
 pub(crate) use self::{
     abi::SeccompData,
     filter::{SeccompDecision, SeccompState, ThreadSeccompState},

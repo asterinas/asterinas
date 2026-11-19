@@ -294,10 +294,12 @@ fn fatal_actions_log_without_filter_flag() {
 
 #[ktest]
 fn listener_hup_counts_threads_not_policy_snapshots() {
-    use super::listener::{Listener, NotificationWaitMode};
+    use super::listener::{self, ListenerFile, NotificationWaitMode};
     use crate::{events::IoEvents, process::signal::Pollable};
 
-    let listener = Listener::new(NotificationWaitMode::Interruptible).unwrap();
+    listener::init();
+    let file = ListenerFile::new(NotificationWaitMode::Interruptible).unwrap();
+    let listener = file.listener();
     let state = SeccompState::default()
         .append_with_listener(
             program(RET_ALLOW),
@@ -328,9 +330,11 @@ fn listener_hup_counts_threads_not_policy_snapshots() {
 
 #[ktest]
 fn notification_uses_only_the_winning_filters_listener_and_log_flag() {
-    use super::listener::{Listener, NotificationWaitMode};
+    use super::listener::{self, ListenerFile, NotificationWaitMode};
 
-    let listener = Listener::new(NotificationWaitMode::Interruptible).unwrap();
+    listener::init();
+    let file = ListenerFile::new(NotificationWaitMode::Interruptible).unwrap();
+    let listener = file.listener();
     let policy = SeccompState::default()
         .append_with_listener(
             program(RET_USER_NOTIF | 0xffff),
@@ -344,7 +348,7 @@ fn notification_uses_only_the_winning_filters_listener_and_log_flag() {
     let result = policy.evaluate(&data);
     assert!(
         matches!(result.decision(), SeccompDecision::UserNotification(Some(selected))
-        if Arc::ptr_eq(selected, &listener))
+        if Arc::ptr_eq(selected, listener))
     );
     assert_eq!(result.logged_action, Some(RET_USER_NOTIF));
 

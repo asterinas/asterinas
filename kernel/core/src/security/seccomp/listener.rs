@@ -17,6 +17,7 @@ use ostd::{
     mm::VmIo,
     sync::{WaitQueue, Waiter, Waker},
 };
+use spin::Once;
 
 use super::abi::{SeccompData, SeccompNotif, SeccompNotifResp};
 use crate::{
@@ -26,11 +27,19 @@ use crate::{
     fs::{
         file::{AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::AnonInodeFs,
+        vfs::path::Path,
     },
     prelude::*,
     process::signal::{PauseReason, PollHandle, Pollable, Pollee},
     util::ioctl::RawIoctl,
 };
+
+static LISTENER_PATH: Once<Path> = Once::new();
+
+pub(in crate::security) fn init() {
+    // Share the pseudo dentry so listener installation needs no path allocation.
+    LISTENER_PATH.call_once(|| AnonInodeFs::new_path(|_| "anon_inode:seccomp notify".to_string()));
+}
 
 /// Notification state shared by a filter and its listener file description.
 pub(crate) struct Listener {
@@ -104,11 +113,11 @@ enum WaitOutcome {
 const NOTIF_FLAG_CONTINUE: u32 = 1;
 
 impl Listener {
-    pub(super) fn new(wait_mode: NotificationWaitMode) -> Result<Arc<Self>> {
+    fn new(wait_mode: NotificationWaitMode) -> Result<Arc<Self>> {
         Arc::try_new(Self {
             is_open: AtomicBool::new(true),
             users: AtomicUsize::new(0),
-            pollee: Pollee::new(),
+            pollee: Pollee::try_new()?,
             notifications: Mutex::new(Notifications::default()),
             receivers: WaitQueue::new(),
             wait_mode,
@@ -416,13 +425,18 @@ pub(super) struct ListenerFile {
 }
 
 impl ListenerFile {
-    pub(super) fn new(listener: Arc<Listener>) -> Result<Arc<Self>> {
-        let path = AnonInodeFs::new_path(|_| "anon_inode:seccomp notify".to_string());
+    pub(super) fn new(wait_mode: NotificationWaitMode) -> Result<Arc<Self>> {
+        let listener = Listener::new(wait_mode)?;
+        let path = LISTENER_PATH.get().unwrap().clone();
         Arc::try_new(Self {
             listener,
             common: FileCommon::new(path, AccessMode::O_RDWR, StatusFlags::empty()),
         })
         .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate a seccomp listener file"))
+    }
+
+    pub(super) fn listener(&self) -> &Arc<Listener> {
+        &self.listener
     }
 }
 

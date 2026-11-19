@@ -13,6 +13,7 @@ cfg_select! {
 
 pub(super) fn init() {
     lsm::init();
+    seccomp::init();
 
     #[cfg(target_arch = "x86_64")]
     ostd::if_tdx_enabled!({
