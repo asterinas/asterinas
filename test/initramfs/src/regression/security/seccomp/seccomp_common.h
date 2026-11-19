@@ -54,11 +54,15 @@ static inline void deny_syscall(int nr, uint32_t action)
 	CHECK(install(code, sizeof(code) / sizeof(code[0])));
 }
 
-static inline int run_child(void (*body)(void), int expected_signal)
+static inline int run_child_with_timeout(void (*body)(void),
+					 int expected_signal,
+					 unsigned int timeout_seconds)
 {
 	fflush(NULL);
 	pid_t pid = CHECK(fork());
 	if (pid == 0) {
+		if (timeout_seconds)
+			alarm(timeout_seconds);
 		body();
 		_exit(0);
 	}
@@ -68,6 +72,11 @@ static inline int run_child(void (*body)(void), int expected_signal)
 		return !(WIFSIGNALED(status) &&
 			 WTERMSIG(status) == expected_signal);
 	return !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+static inline int run_child(void (*body)(void), int expected_signal)
+{
+	return run_child_with_timeout(body, expected_signal, 0);
 }
 
 #endif

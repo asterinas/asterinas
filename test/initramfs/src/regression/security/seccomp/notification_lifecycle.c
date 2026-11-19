@@ -526,16 +526,7 @@ static void last_filter_exit_wakes_receiver(void)
 
 static int run_lifecycle_child(void (*body)(void))
 {
-	fflush(NULL);
-	pid_t child = CHECK(fork());
-	if (!child) {
-		alarm(30);
-		body();
-		_exit(0);
-	}
-	int status;
-	CHECK_WITH(waitpid(child, &status, 0), _ret == child);
-	return !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	return run_child_with_timeout(body, 0, 30);
 }
 
 FN_TEST(notification_lifecycle)
