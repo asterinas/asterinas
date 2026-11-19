@@ -222,11 +222,11 @@ impl ContextSetNsAdminApi for Context<'_> {
         // TODO: When setting a specific namespace,
         // other dependent fields of a POSIX thread may also need to be updated.
 
-        if !Arc::ptr_eq(&thread_local_ns_proxy.unwrap().mnt_ns, &ns_proxy.mnt_ns) {
+        if !Arc::ptr_eq(&thread_local_ns_proxy.mnt_ns, &ns_proxy.mnt_ns) {
             *self.thread_local.borrow_fs().resolver().write() = ns_proxy.mnt_ns.new_path_resolver();
         }
 
         *pthread_ns_proxy = Some(ns_proxy.clone());
-        thread_local_ns_proxy.replace(Some(ns_proxy));
+        *thread_local_ns_proxy = ns_proxy;
     }
 }

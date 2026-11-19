@@ -79,7 +79,7 @@ pub(super) fn sys_listmount(
     }
 
     let ns_proxy = ctx.thread_local.borrow_ns_proxy();
-    let mnt_ns = ns_proxy.unwrap().mnt_ns();
+    let mnt_ns = ns_proxy.mnt_ns();
 
     let parent_mount = if req.mnt_id == LSMT_ROOT {
         mnt_ns.root().clone()

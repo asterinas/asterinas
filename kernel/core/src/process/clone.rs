@@ -401,7 +401,7 @@ fn clone_child_task(
     // Clone namespaces
     let child_user_ns = thread_local.borrow_user_ns().clone();
     let child_ns_proxy = clone_ns_proxy(
-        thread_local.borrow_ns_proxy().unwrap(),
+        &thread_local.borrow_ns_proxy(),
         &child_user_ns,
         process,
         posix_thread,
@@ -536,7 +536,7 @@ fn clone_child_process(
     // Clone the namespaces
     let child_user_ns = clone_user_ns(clone_flags, thread_local)?;
     let child_ns_proxy = clone_ns_proxy(
-        thread_local.borrow_ns_proxy().unwrap(),
+        &thread_local.borrow_ns_proxy(),
         &child_user_ns,
         process,
         posix_thread,

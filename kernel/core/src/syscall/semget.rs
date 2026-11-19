@@ -19,7 +19,7 @@ pub(super) fn sys_semget(
     );
 
     let ns_proxy = ctx.thread_local.borrow_ns_proxy();
-    let ipc_ns = ns_proxy.unwrap().ipc_ns();
+    let ipc_ns = ns_proxy.ipc_ns();
 
     let credentials = ctx.posix_thread.credentials();
     let semid = ipc_ns.get_or_create_sem_set(key, num_sems, flags, mode, credentials)?;

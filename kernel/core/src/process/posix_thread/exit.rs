@@ -117,7 +117,7 @@ fn exit_internal(
     drop_after!(thread_local.vmar().borrow_mut().take());
     drop_after!(thread_local.remove_file_table());
     drop_after!(thread_local.remove_fs());
-    drop_after!(thread_local.borrow_ns_proxy_mut().remove());
+    drop_after!(thread_local.remove_ns_proxy());
 
     if is_last_thread {
         exit_process(&posix_process);

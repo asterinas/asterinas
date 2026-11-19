@@ -8,8 +8,7 @@ use crate::{
 pub(super) fn sys_sethostname(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
     let new_host_name = read_uts_field(addr, len, ctx)?;
 
-    let ns_proxy_ref = ctx.thread_local.borrow_ns_proxy();
-    let ns_proxy = ns_proxy_ref.unwrap();
+    let ns_proxy = ctx.thread_local.borrow_ns_proxy();
     ns_proxy
         .uts_ns()
         .set_hostname(new_host_name, ctx.posix_thread)?;

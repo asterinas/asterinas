@@ -68,7 +68,7 @@ impl FileSystem for CgroupFs {
         let current_task = Task::current().unwrap();
         let thread_local = current_task.as_thread_local().unwrap();
         let ns_proxy = thread_local.borrow_ns_proxy();
-        let cgroup_namespace = ns_proxy.unwrap().cgroup_ns();
+        let cgroup_namespace = ns_proxy.cgroup_ns();
 
         CgroupInode::new_root(cgroup_namespace.root_node(), &self.sb)
     }

@@ -210,12 +210,23 @@ impl ThreadLocal {
         self.user_ns.borrow()
     }
 
-    pub(crate) fn borrow_ns_proxy(&self) -> NsProxyRef<'_> {
-        ThreadLocalOptionRef(self.ns_proxy.borrow())
+    /// Returns a reference to the namespace proxy.
+    pub(crate) fn borrow_ns_proxy(&self) -> Ref<'_, Arc<NsProxy>> {
+        Ref::map(self.ns_proxy.borrow(), |ns_proxy| {
+            ns_proxy.as_ref().unwrap()
+        })
     }
 
-    pub(in crate::process) fn borrow_ns_proxy_mut(&self) -> NsProxyRefMut<'_> {
-        ThreadLocalOptionRefMut(self.ns_proxy.borrow_mut())
+    /// Returns a mutable reference to the namespace proxy.
+    pub(in crate::process) fn borrow_ns_proxy_mut(&self) -> RefMut<'_, Arc<NsProxy>> {
+        RefMut::map(self.ns_proxy.borrow_mut(), |ns_proxy| {
+            ns_proxy.as_mut().unwrap()
+        })
+    }
+
+    /// Removes the namespace proxy and returns it.
+    pub(super) fn remove_ns_proxy(&self) -> Option<Arc<NsProxy>> {
+        self.ns_proxy.borrow_mut().take()
     }
 }
 
@@ -318,52 +329,8 @@ impl SuppUserContext {
 /// An immutable, shared reference to the file table in [`ThreadLocal`].
 pub(crate) type FileTableRef<'a> = Ref<'a, RwArc<FileTable>>;
 
-/// An immutable, shared reference to the `NsProxy` in [`ThreadLocal`].
-pub(crate) type NsProxyRef<'a> = ThreadLocalOptionRef<'a, Arc<NsProxy>>;
-
-/// An immutable, shared reference to thread-local data contained within a `RefCell<Option<..>>`.
-pub(crate) struct ThreadLocalOptionRef<'a, T>(Ref<'a, Option<T>>);
-
-impl<T> ThreadLocalOptionRef<'_, T> {
-    /// Unwraps and returns a reference to the data.
-    ///
-    /// # Panics
-    ///
-    /// This method will panic if the thread has exited and the data has been dropped.
-    pub(crate) fn unwrap(&self) -> &T {
-        self.0.as_ref().unwrap()
-    }
-}
-
 /// A mutable, exclusive reference to the file table in [`ThreadLocal`].
 pub(crate) type FileTableRefMut<'a> = RefMut<'a, RwArc<FileTable>>;
-
-/// A mutable, exclusive reference to the `NsProxy` in [`ThreadLocal`].
-pub(in crate::process) type NsProxyRefMut<'a> = ThreadLocalOptionRefMut<'a, Arc<NsProxy>>;
-
-/// A mutable, exclusive reference to thread-local data contained within a `RefCell<Option<..>>`.
-pub(crate) struct ThreadLocalOptionRefMut<'a, T>(RefMut<'a, Option<T>>);
-
-impl<T> ThreadLocalOptionRefMut<'_, T> {
-    /// Unwraps and returns a reference to the data.
-    ///
-    /// # Panics
-    ///
-    /// This method will panic if the thread has exited and the data has been dropped.
-    pub(crate) fn unwrap(&mut self) -> &mut T {
-        self.0.as_mut().unwrap()
-    }
-
-    /// Removes the data and returns it.
-    pub(super) fn remove(&mut self) -> Option<T> {
-        self.0.take()
-    }
-
-    /// Replaces the data with a new one, returning the old one.
-    pub(in crate::process) fn replace(&mut self, new: Option<T>) -> Option<T> {
-        core::mem::replace(&mut *self.0, new)
-    }
-}
 
 /// A trait to provide the `as_thread_local` method for tasks.
 pub(crate) trait AsThreadLocal {

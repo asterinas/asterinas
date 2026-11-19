@@ -5,8 +5,7 @@ use crate::{net::uts_ns::UtsField, prelude::*, syscall::SyscallReturn};
 pub(super) fn sys_setdomainname(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
     let new_domain_name = read_uts_field(addr, len, ctx)?;
 
-    let ns_proxy_ref = ctx.thread_local.borrow_ns_proxy();
-    let ns_proxy = ns_proxy_ref.unwrap();
+    let ns_proxy = ctx.thread_local.borrow_ns_proxy();
     ns_proxy
         .uts_ns()
         .set_domainname(new_domain_name, ctx.posix_thread)?;
