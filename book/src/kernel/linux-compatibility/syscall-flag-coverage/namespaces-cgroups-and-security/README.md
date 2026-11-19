@@ -81,6 +81,14 @@ the first incompatible thread's TID, or fails with `ESRCH` if
 
 `SECCOMP_FILTER_FLAG_NEW_LISTENER` returns a close-on-exec listener file descriptor on success.
 Combining it with `SECCOMP_FILTER_FLAG_TSYNC` requires `SECCOMP_FILTER_FLAG_TSYNC_ESRCH`.
+When the winning filter returns `SECCOMP_RET_USER_NOTIF` and has an open listener,
+the calling thread waits for the supervisor to respond. With no open listener,
+the syscall returns `ENOSYS`.
+The listener supports `SECCOMP_IOCTL_NOTIF_RECV` to receive a request,
+`SECCOMP_IOCTL_NOTIF_SEND` to respond or continue the syscall,
+`SECCOMP_IOCTL_NOTIF_ID_VALID` to check a request ID, and
+`SECCOMP_IOCTL_NOTIF_ADDFD` to install a descriptor in the target thread's table.
+Polling the listener reports `POLLHUP` when the last thread using its filter exits.
 `SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV` requires `SECCOMP_FILTER_FLAG_NEW_LISTENER`
 and makes the target's notification wait killable after the listener receives the notification.
 `SECCOMP_FILTER_FLAG_SPEC_ALLOW` is accepted and has no effect on supported architectures.
