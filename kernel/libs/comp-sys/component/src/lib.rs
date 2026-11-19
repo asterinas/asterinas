@@ -9,7 +9,6 @@
 extern crate alloc;
 
 use alloc::{
-    borrow::ToOwned,
     collections::BTreeMap,
     fmt::Debug,
     string::{String, ToString},
@@ -164,7 +163,7 @@ fn parse_input(components: Vec<ComponentInfo>) -> BTreeMap<String, ComponentInfo
     out
 }
 
-/// Match the ComponentInfo with ComponentRegistry. The key is the relative path of one component
+/// Match the ComponentInfo with ComponentRegistry. The key is the absolute path of one component
 fn match_and_call(
     stage: InitStage,
     mut components: BTreeMap<String, ComponentInfo>,
@@ -175,29 +174,14 @@ fn match_and_call(
             continue;
         }
 
-        // relative/path/to/comps/pci/src/lib.rs
-        let mut str: String = registry.path.to_owned();
-        str = str.replace('\\', "/");
-        // relative/path/to/comps/pci
-        // There are two cases, one in the test folder and one in the src folder.
-        // There may be multiple directories within the folder.
-        // There we assume it will not have such directories: 'comp1/src/comp2/src/lib.rs' so that we can split by tests or src string
-        if str.contains("src/") {
-            str = str
-                .trim_end_matches(str.get(str.find("src/").unwrap()..str.len()).unwrap())
-                .to_string();
-        } else if str.contains("tests/") {
-            str = str
-                .trim_end_matches(str.get(str.find("tests/").unwrap()..str.len()).unwrap())
-                .to_string();
-        } else {
-            panic!("The path of {} cannot recognized by component system", str);
-        }
-        let str = str.trim_end_matches('/').to_owned();
+        // `registry.path` is the value of `CARGO_MANIFEST_DIR` where `init_component` was
+        // expanded, so it equals the absolute package path that `parse_metadata` extracts,
+        // regardless of the workspace layout.
+        let path = registry.path.replace('\\', "/");
 
         let mut info = components
-            .remove(&str)
-            .ok_or(ComponentSystemInitError::NotIncludeAllComponent(str))?;
+            .remove(&path)
+            .ok_or(ComponentSystemInitError::NotIncludeAllComponent(path))?;
         info.function.replace(registry.function);
         infos.push(info);
     }
