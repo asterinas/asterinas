@@ -7,6 +7,12 @@
 #include <sys/mman.h>
 #include <time.h>
 
+enum proc_state {
+	PROC_STATE_INTERRUPTIBLE = 'S',
+	PROC_STATE_UNINTERRUPTIBLE = 'D',
+	PROC_STATE_ZOMBIE = 'Z',
+};
+
 static int signal_report[2];
 
 static void report_signal(int signal)
@@ -41,7 +47,7 @@ static void close_signal_report(void)
 	CHECK(close(signal_report[1]));
 }
 
-static void wait_state(pid_t pid, char expected)
+static void wait_state(pid_t pid, enum proc_state expected)
 {
 	struct timespec start, now;
 	CHECK(clock_gettime(CLOCK_MONOTONIC, &start));
@@ -57,7 +63,7 @@ static void wait_state(pid_t pid, char expected)
 		char *end = CHECK_WITH(strrchr(buffer, ')'), _ret != NULL);
 		if (end[2] == expected)
 			return;
-		CHECK_WITH(end[2], _ret != 'Z');
+		CHECK_WITH(end[2], _ret != PROC_STATE_ZOMBIE);
 		CHECK(clock_gettime(CLOCK_MONOTONIC, &now));
 		CHECK_WITH(now.tv_sec - start.tv_sec, _ret < 10);
 		CHECK(sched_yield());
@@ -119,7 +125,7 @@ static void signal_before_receive_cancels(void)
 	int fd = listener_flags(SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV);
 	pid_t child = notifying_child(fd, -1, EINTR);
 	wait_readable(fd);
-	wait_state(child, 'S');
+	wait_state(child, PROC_STATE_INTERRUPTIBLE);
 	CHECK(kill(child, SIGUSR1));
 	collect_signal();
 	reap(child);
@@ -137,7 +143,7 @@ static void signal_after_receive_waits_for_reply(void)
 	pid_t child = notifying_child(fd, 777, 0);
 	struct seccomp_notif request = receive(fd, child);
 	CHECK(kill(child, SIGUSR1));
-	wait_state(child, 'D');
+	wait_state(child, PROC_STATE_UNINTERRUPTIBLE);
 	struct pollfd report = { .fd = signal_report[0], .events = POLLIN };
 	CHECK_WITH(poll(&report, 1, 0), _ret == 0);
 	CHECK(ioctl(fd, SECCOMP_IOCTL_NOTIF_ID_VALID, &request.id));
@@ -154,7 +160,7 @@ static void check_fatal_signal(int fd, int signo)
 	pid_t child = notifying_child(fd, 0, 0);
 	struct seccomp_notif request = receive(fd, child);
 	CHECK(kill(child, SIGUSR1));
-	wait_state(child, 'D');
+	wait_state(child, PROC_STATE_UNINTERRUPTIBLE);
 	CHECK(kill(child, signo));
 	int status;
 	CHECK_WITH(waitpid(child, &status, 0),
@@ -376,7 +382,7 @@ static void receive_races_with_signal(void)
 		CHECK(close(result_pipe[1]));
 		CHECK(close(gate[0]));
 		wait_readable(fd);
-		wait_state(child, 'S');
+		wait_state(child, PROC_STATE_INTERRUPTIBLE);
 		CHECK(pthread_barrier_init(&barrier, NULL, 3));
 		struct racing_receiver receiver = { .fd = fd, .child = child };
 		pthread_t reader, interrupter;
@@ -466,7 +472,7 @@ static void nonblocking_receive_still_waits(void)
 			   _ret == -1 && errno == EINTR);
 		_exit(0);
 	}
-	wait_state(receiver, 'S');
+	wait_state(receiver, PROC_STATE_INTERRUPTIBLE);
 	CHECK(kill(receiver, SIGUSR1));
 	collect_signal();
 	reap(receiver);
@@ -509,7 +515,7 @@ static void last_filter_exit_wakes_receiver(void)
 		CHECK(close(fd));
 		_exit(0);
 	}
-	wait_state(receiver, 'S');
+	wait_state(receiver, PROC_STATE_INTERRUPTIBLE);
 	CHECK_WITH(write(gate[1], "x", 1), _ret == 1);
 	reap(filtered);
 	reap(receiver);
