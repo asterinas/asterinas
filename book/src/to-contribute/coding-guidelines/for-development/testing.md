@@ -4,9 +4,12 @@
 
 When a bug is fixed,
 a test that would have caught the bug should accompany the fix.
-Include a reference to the issue number
-in a comment so future readers
-can recover the original context.
+
+Include the necessary context in code comments to explain the test.
+Do not hide the context of the test behind an issue link.
+Only include an issue link in the code
+if it provides useful additional information to future readers.
+If an issue link is included, explain when and why readers should open it.
 
 See also:
 PR [#2962](https://github.com/asterinas/asterinas/pull/2962).
