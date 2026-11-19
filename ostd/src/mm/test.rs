@@ -385,10 +385,23 @@ mod io {
         assert_eq!(val, 300);
         assert!(!ok);
 
+        let (val, ok) = cmpxchg(300, u32::MAX);
+        assert_eq!(val, 300);
+        assert!(ok);
+
+        // Check u32::MAX on both comparison outcomes.
+        let (val, ok) = cmpxchg(0, 400);
+        assert_eq!(val, u32::MAX);
+        assert!(!ok);
+
+        let (val, ok) = cmpxchg(u32::MAX, 400);
+        assert_eq!(val, u32::MAX);
+        assert!(ok);
+
         // Final check with raw reader
         let mut reader = segment.reader().to_fallible();
-        assert_eq!(reader.atomic_load::<u32>().unwrap(), 300);
-        assert_eq!(reader.read_val::<u32>().unwrap(), 300);
+        assert_eq!(reader.atomic_load::<u32>().unwrap(), 400);
+        assert_eq!(reader.read_val::<u32>().unwrap(), 400);
     }
 
     /// Tests the `fill_zeros` method in Fallible mode.
