@@ -89,7 +89,6 @@ impl RamFs {
                 this: weak_root.clone(),
                 fs: weak_fs.clone(),
                 container_dev_id: root_dev_id,
-                hard_linkability: HardLinkability::Linkable,
                 extension: Extension::new(),
                 to_be_revalidated: false,
                 xattr: RamXattr::new(),
@@ -158,11 +157,6 @@ pub(in crate::fs::fs_impls) struct RamInode {
     /// Detached inodes such as `memfd` store it directly
     /// because they do not have a valid fs reference.
     container_dev_id: DeviceId,
-    /// Hard linkability.
-    ///
-    /// All inodes except temporary files are set to linkable
-    /// Linkability of temporary files is specified via [`RamInode::create_tmpfile`]
-    hard_linkability: HardLinkability,
     /// Extensions
     extension: Extension,
     /// Whether this inode should be revalidated during VFS path lookup.
@@ -306,6 +300,11 @@ struct InodeMeta {
     ctime: Duration,
     mode: InodeMode,
     nlinks: usize,
+    /// Whether the inode may get a hard link while it has none.
+    ///
+    /// This is true only for a temporary file that was created hard-linkable
+    /// and has not been linked yet.
+    linkable_without_links: bool,
     uid: Uid,
     gid: Gid,
 }
@@ -321,6 +320,7 @@ impl InodeMeta {
             ctime: now,
             mode,
             nlinks: 1,
+            linkable_without_links: false,
             uid,
             gid,
         }
@@ -336,14 +336,21 @@ impl InodeMeta {
             ctime: now,
             mode,
             nlinks: NUM_SPECIAL_ENTRIES,
+            linkable_without_links: false,
             uid,
             gid,
         }
     }
 
-    pub(crate) fn new_tmpfile(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
+    pub(crate) fn new_tmpfile(
+        mode: InodeMode,
+        uid: Uid,
+        gid: Gid,
+        hard_linkability: HardLinkability,
+    ) -> Self {
         let mut meta = Self::new(mode, uid, gid);
         meta.nlinks = 0;
+        meta.linkable_without_links = hard_linkability == HardLinkability::Linkable;
         meta
     }
 
@@ -383,6 +390,18 @@ impl InodeMeta {
 
     pub(crate) fn inc_nlinks(&mut self) {
         self.nlinks += 1;
+    }
+
+    /// Adds a hard link to the inode.
+    ///
+    /// Fails with `ENOENT` if the inode has no links and may not get one.
+    pub(crate) fn add_hard_link(&mut self) -> Result<()> {
+        if self.nlinks == 0 && !self.linkable_without_links {
+            return_errno_with_message!(Errno::ENOENT, "the inode has no links");
+        }
+        self.linkable_without_links = false;
+        self.inc_nlinks();
+        Ok(())
     }
 
     pub(crate) fn dec_nlinks(&mut self) {
@@ -543,7 +562,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -566,7 +584,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -583,14 +600,13 @@ impl RamInode {
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
             inner: Inner::new_file(),
-            metadata: SpinLock::new(InodeMeta::new_tmpfile(mode, uid, gid)),
+            metadata: SpinLock::new(InodeMeta::new_tmpfile(mode, uid, gid, hard_linkability)),
             ino: fs.alloc_id(),
             typ: InodeType::File,
             dir_revalidation_policy: RevalidationPolicy::empty(),
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -614,7 +630,6 @@ impl RamInode {
             this: Weak::new(),
             fs: Weak::new(),
             container_dev_id: dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: false,
             xattr: RamXattr::new(),
@@ -642,7 +657,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -672,7 +686,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -695,7 +708,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -718,7 +730,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -876,6 +887,13 @@ impl RamInode {
             return Ok(false);
         }
         self_dir.remove_entry(idx);
+
+        // Drop the link count while `target_dir` is still locked, so that
+        // `check_dir_not_removed` sees it under the same lock.
+        let mut target_meta = target.metadata.lock();
+        target_meta.dec_nlinks();
+        target_meta.dec_nlinks();
+        drop(target_meta);
         drop(self_dir);
         drop(target_dir);
 
@@ -885,10 +903,6 @@ impl RamInode {
         self_meta.dec_nlinks();
         self_meta.set_mtime(now);
         self_meta.set_ctime(now);
-        drop(self_meta);
-        let mut target_meta = target.metadata.lock();
-        target_meta.dec_nlinks();
-        target_meta.dec_nlinks();
 
         Ok(true)
     }
@@ -906,6 +920,7 @@ impl RamInode {
         }
 
         let self_dir = self.inner.as_direntry().unwrap().upread();
+        self.check_dir_not_removed()?;
         if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
@@ -955,6 +970,7 @@ impl RamInode {
         }
 
         let self_dir = self.inner.as_direntry().unwrap().upread();
+        self.check_dir_not_removed()?;
         if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
@@ -988,6 +1004,17 @@ impl RamInode {
 
         self.metadata.lock().inc_size();
         Ok(new_inode)
+    }
+
+    /// Returns `ENOENT` if this directory has been removed.
+    ///
+    /// `rmdir` drops the link count of the directory to zero while holding the
+    /// lock on the directory's entries, so the caller must hold that lock too.
+    fn check_dir_not_removed(&self) -> Result<()> {
+        if self.metadata.lock().nlinks == 0 {
+            return_errno_with_message!(Errno::ENOENT, "the directory has been removed");
+        }
+        Ok(())
     }
 
     fn resize_impl(&self, new_size: usize) -> Result<()> {
@@ -1266,23 +1293,20 @@ impl Inode for RamInode {
         if old.typ == InodeType::Dir {
             return_errno_with_message!(Errno::EPERM, "old is a dir");
         }
-        if old.hard_linkability == HardLinkability::Unlinkable {
-            return_errno_with_message!(Errno::ENOENT, "tmpfile is not linkable");
-        }
 
         let mut self_dir = self.inner.as_direntry().unwrap().write();
+        self.check_dir_not_removed()?;
         if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exist");
         }
-        self_dir.append_entry(name, old.this.upgrade().unwrap());
         let now = now();
 
-        // An `O_TMPFILE` inode starts with zero links. Bump the link count
-        // before exposing the new entry to concurrent lookup or unlink.
+        // Add the link before exposing the new entry to concurrent lookup or unlink.
         let mut old_meta = old.metadata.lock();
-        old_meta.inc_nlinks();
+        old_meta.add_hard_link()?;
         old_meta.set_ctime(now);
         drop(old_meta);
+        self_dir.append_entry(name, old.this.upgrade().unwrap());
         drop(self_dir);
 
         let mut self_meta = self.metadata.lock();
@@ -1352,6 +1376,16 @@ impl Inode for RamInode {
                 }
                 Ok(())
             };
+        // Drops the links held by the name of `dst_inode`, which has been replaced.
+        // A replaced directory is empty, so it also loses the link of its `.` entry.
+        let drop_replaced_links = |dst_inode: &Arc<RamInode>, now: Duration| {
+            let mut dst_meta = dst_inode.metadata.lock();
+            dst_meta.dec_nlinks();
+            if dst_inode.typ == InodeType::Dir {
+                dst_meta.dec_nlinks();
+            }
+            dst_meta.set_ctime(now);
+        };
 
         let new_dir_inode = new_dir_dentry.inode().downcast_ref::<RamInode>().unwrap();
 
@@ -1383,7 +1417,7 @@ impl Inode for RamInode {
                 let now = now();
                 DirChange::del(&src_inode).apply(self, now);
                 src_inode.metadata.lock().set_ctime(now);
-                dst_inode.metadata.lock().set_ctime(now);
+                drop_replaced_links(&dst_inode, now);
             } else {
                 self_dir.substitute_entry(
                     src_idx,
@@ -1405,6 +1439,7 @@ impl Inode for RamInode {
                     new_dir_inode.inner.as_direntry().unwrap(),
                 ),
             );
+            new_dir_inode.check_dir_not_removed()?;
             let self_inode_arc = self.this.upgrade().unwrap();
             // The source is guaranteed to exist (checked by VFS layer).
             let (src_idx, src_inode) = self_dir.get_entry(&old_name).unwrap();
@@ -1442,7 +1477,7 @@ impl Inode for RamInode {
                 let now = now();
                 DirChange::del(&src_inode).apply(self, now);
                 DirChange::exchange(&dst_inode, &src_inode).apply(new_dir_inode, now);
-                dst_inode.metadata.lock().set_ctime(now);
+                drop_replaced_links(&dst_inode, now);
                 src_inode.metadata.lock().set_ctime(now);
             } else {
                 self_dir.remove_entry(src_idx);
