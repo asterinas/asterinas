@@ -6,6 +6,7 @@
 
 #include <time.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <unistd.h>
 #include <sys/syscall.h>
 
@@ -59,8 +60,21 @@ static int GLIBC_timer_delete(timer_t timerid)
 }
 
 static volatile int expected_sig;
-static volatile int sig_val;
-static volatile pid_t sig_tid;
+static atomic_int sig_val;
+static atomic_int sig_tid;
+static atomic_llong delivery_ns;
+
+/* These atomics are also accessed from signal handlers. */
+_Static_assert(ATOMIC_INT_LOCK_FREE == 2 && ATOMIC_LLONG_LOCK_FREE == 2,
+	       "signal observations require lock-free atomics");
+
+static long long monotonic_ns(void)
+{
+	struct timespec now;
+	if (clock_gettime(CLOCK_MONOTONIC, &now))
+		return -1;
+	return now.tv_sec * 1000000000LL + now.tv_nsec;
+}
 
 static void sig_handler(int sig, siginfo_t *si, void *ctx)
 {
@@ -68,21 +82,27 @@ static void sig_handler(int sig, siginfo_t *si, void *ctx)
 	    si->si_code != SI_TIMER)
 		return;
 
+	int saved_errno = errno;
+	long long now = monotonic_ns();
 	sig_val += si->si_value.sival_int;
 	sig_tid += gettid();
+	atomic_store(&delivery_ns, now);
+	errno = saved_errno;
 }
 
 static void sig_function(union sigval val)
 {
+	long long now = monotonic_ns();
 	sig_val += val.sival_int;
 	sig_tid += gettid();
+	atomic_store(&delivery_ns, now);
 }
 
 static pid_t tid;
 
 FN_SETUP(setup)
 {
-	struct sigaction sa;
+	struct sigaction sa = { 0 };
 
 	expected_sig = SIGRTMIN;
 
@@ -90,6 +110,7 @@ FN_SETUP(setup)
 
 	sa.sa_flags = SA_SIGINFO;
 	sa.sa_sigaction = &sig_handler;
+	CHECK(sigemptyset(&sa.sa_mask));
 	CHECK(sigaction(SIGALRM, &sa, NULL));
 	CHECK(sigaction(SIGRTMIN, &sa, NULL));
 }
@@ -102,6 +123,8 @@ END_SETUP()
 
 #define DELAY_US (100 * 1000) /* 100 ms */
 #define DELAY_NS (DELAY_US * 1000)
+/* A lightly loaded regression VM should not add a polling interval. */
+#define MAX_LATENESS_NS (50 * 1000 * 1000LL)
 
 static struct itimerspec timerspec = { .it_value = { .tv_nsec = DELAY_NS } };
 
@@ -114,11 +137,18 @@ static struct itimerspec timerspec = { .it_value = { .tv_nsec = DELAY_NS } };
                                                                                \
 		sig_val = 0;                                                   \
 		sig_tid = 0;                                                   \
+		atomic_store(&delivery_ns, 0);                                 \
+		long long start_ns = CHECK(monotonic_ns());                    \
 		TEST_SUCC(                                                     \
 			prefix##_timer_settime(timerid, 0, &timerspec, NULL)); \
 		usleep(DELAY_US * 4);                                          \
                                                                                \
 		TEST_SUCC(prefix##_timer_delete(timerid));                     \
+		long long observed_ns = atomic_load(&delivery_ns);             \
+		long long lateness_ns = observed_ns - start_ns - DELAY_NS;     \
+		printf("%s timer delivery lateness: %lld ns\n", #prefix,       \
+		       lateness_ns);                                           \
+		TEST_RES(lateness_ns, _ret >= 0 && _ret < MAX_LATENESS_NS);    \
                                                                                \
 		if (sev)                                                       \
 			TEST_RES(sig_val,                                      \
