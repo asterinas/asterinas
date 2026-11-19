@@ -496,6 +496,10 @@ pub(crate) trait Inode: Any + FileOps + Send + Sync {
     }
 
     /// Creates a hard link to an existing inode.
+    ///
+    /// Fails with `ENOENT` if the inode has no links left,
+    /// unless it is a temporary file that was created hard-linkable
+    /// and has not been linked yet.
     fn link(&self, self_dentry: &Dentry, old_dentry: &Dentry, name: &str) -> Result<()> {
         Err(Error::new(Errno::ENOTDIR))
     }

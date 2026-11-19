@@ -17,6 +17,7 @@
 #define LINKED_NAME "linked_file"
 #define LINKED_SECOND_NAME "linked_second_file"
 #define LINKED_O_EXCL_NAME "linked_o_excl_file"
+#define RELINKED_NAME "relinked_file"
 #define SYMLINK_NAME "tmpfile_symlink"
 #define DATA "hello from tmpfile"
 #define DATA_LEN (sizeof(DATA) - 1)
@@ -28,6 +29,7 @@ static void cleanup_test_files(void)
 	unlink(TEST_DIR "/" LINKED_NAME);
 	unlink(TEST_DIR "/" LINKED_SECOND_NAME);
 	unlink(TEST_DIR "/" LINKED_O_EXCL_NAME);
+	unlink(TEST_DIR "/" RELINKED_NAME);
 	unlink(TEST_DIR "/" SYMLINK_NAME);
 	unlink(CROSS_LINK_DIR "/" CROSS_LINK_NAME);
 	rmdir(TEST_DIR);
@@ -240,6 +242,26 @@ FN_TEST(tmpfile_open_with_o_excl_cannot_be_linked)
 
 	TEST_ERRNO(linkat(fd, "", dirfd, LINKED_O_EXCL_NAME, AT_EMPTY_PATH),
 		   ENOENT);
+
+	TEST_SUCC(close(dirfd));
+	TEST_SUCC(close(fd));
+}
+END_TEST()
+
+FN_TEST(tmpfile_cannot_be_relinked_after_its_link_is_removed)
+{
+	int fd;
+	int dirfd;
+	struct stat st;
+
+	fd = TEST_SUCC(open(TEST_DIR, O_TMPFILE | O_RDWR, 0666));
+	dirfd = TEST_SUCC(open(TEST_DIR, O_RDONLY | O_DIRECTORY));
+
+	TEST_SUCC(linkat(fd, "", dirfd, RELINKED_NAME, AT_EMPTY_PATH));
+	TEST_SUCC(unlinkat(dirfd, RELINKED_NAME, 0));
+	TEST_RES(fstat(fd, &st), st.st_nlink == 0);
+
+	TEST_ERRNO(linkat(fd, "", dirfd, RELINKED_NAME, AT_EMPTY_PATH), ENOENT);
 
 	TEST_SUCC(close(dirfd));
 	TEST_SUCC(close(fd));
