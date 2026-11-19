@@ -379,16 +379,22 @@ impl UserContextApiInternal for UserContext {
             let irq_guard = crate::irq::disable_local();
             hooks.pre_user_run(&irq_guard);
             let kernel_cr4 = Cr4::read();
-            let mut user_cr4 = kernel_cr4;
-            user_cr4.set(Cr4Flags::TIMESTAMP_DISABLE, self.is_tsc_disabled);
-            // SAFETY: Only CR4.TSD changes. It restricts timestamp instructions
-            // at CPL > 0 without affecting kernel execution or memory safety.
-            // IRQs remain disabled through entry and on return, so migration
-            // cannot separate the update, user execution, and restoration.
-            unsafe { Cr4::write(user_cr4) };
+            let change_tsd =
+                kernel_cr4.contains(Cr4Flags::TIMESTAMP_DISABLE) != self.is_tsc_disabled;
+            if change_tsd {
+                let mut user_cr4 = kernel_cr4;
+                user_cr4.set(Cr4Flags::TIMESTAMP_DISABLE, self.is_tsc_disabled);
+                // SAFETY: Only CR4.TSD changes. It restricts timestamp instructions
+                // at CPL > 0 without affecting kernel execution or memory safety.
+                // IRQs remain disabled through entry and on return, so migration
+                // cannot separate the update, user execution, and restoration.
+                unsafe { Cr4::write(user_cr4) };
+            }
             self.user_context.run(&irq_guard);
-            // SAFETY: Restores this CPU's CR4 before IRQs or preemption resume.
-            unsafe { Cr4::write(kernel_cr4) };
+            if change_tsd {
+                // SAFETY: Restores this CPU's CR4 before IRQs or preemption resume.
+                unsafe { Cr4::write(kernel_cr4) };
+            }
 
             let exception =
                 CpuException::new(self.user_context.trap_num, self.user_context.error_code);
