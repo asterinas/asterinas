@@ -137,6 +137,9 @@ fn exit_internal(
         tracer.process().children_wait_queue().wake_all();
     }
 
+    // Release the listener before waking a joiner, and retain zombie status.
+    // The task has already been removed from the set considered by TSYNC.
+    posix_thread.set_seccomp(posix_thread.seccomp_snapshot().exited());
     wake_clear_ctid(thread_local);
 
     wake_robust_list(thread_local, posix_thread.tid());
@@ -148,8 +151,6 @@ fn exit_internal(
     }
 
     // Drop fields in `PosixThread`.
-    // Linux retains mode and filter count until the zombie is reaped.
-    posix_thread.set_seccomp(posix_thread.seccomp_snapshot().exited());
     drop_after!(posix_thread.file_table().lock().take());
     drop_after!(posix_thread.fs.write().take());
     drop_after!(posix_thread.ns_proxy().lock().take());

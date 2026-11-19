@@ -231,6 +231,25 @@ static void listener_hup_after_last_filter_user(void)
 	CHECK(close(gate[1]));
 }
 
+static void *last_listener_thread(void *arg)
+{
+	int *fd = arg;
+	no_new_privs();
+	*fd = CHECK(new_listener(0));
+	return NULL;
+}
+
+static void listener_hup_after_join(void)
+{
+	int fd;
+	pthread_t thread;
+	CHECK(pthread_create(&thread, NULL, last_listener_thread, &fd));
+	CHECK(pthread_join(thread, NULL));
+	struct pollfd pfd = { .fd = fd, .events = POLLIN | POLLOUT };
+	CHECK_WITH(poll(&pfd, 1, 0), _ret == 1 && pfd.revents == POLLHUP);
+	CHECK(close(fd));
+}
+
 FN_TEST(listener)
 {
 	TEST_RES(run_child(descriptor_properties, 0), _ret == 0);
@@ -240,6 +259,7 @@ FN_TEST(listener)
 	TEST_RES(run_child(fd_exhaustion_preserves_policy, 0), _ret == 0);
 	TEST_RES(run_child(listener_permission, 0), _ret == 0);
 	TEST_RES(run_child(listener_hup_after_last_filter_user, 0), _ret == 0);
+	TEST_RES(run_child(listener_hup_after_join, 0), _ret == 0);
 	TEST_RES(run_child(exec_closes_listener_but_keeps_filter, 0),
 		 _ret == 0);
 	TEST_RES(run_child(failed_tsync_releases_reserved_fd, 0), _ret == 0);
