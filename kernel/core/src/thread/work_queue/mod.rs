@@ -82,7 +82,7 @@ static WORKERPOOL_HIGH_PRI: Once<Arc<WorkerPool>> = Once::new();
 static WORKQUEUE_GLOBAL_NORMAL: Once<Arc<WorkQueue>> = Once::new();
 static WORKQUEUE_GLOBAL_HIGH_PRI: Once<Arc<WorkQueue>> = Once::new();
 
-/// Submit a function to a global work queue.
+/// Submits a function to a global work queue.
 pub(crate) fn submit_work_func<F>(work_func: F, work_priority: WorkPriority)
 where
     F: Fn() + Send + Sync + 'static,
@@ -91,7 +91,7 @@ where
     submit_work_item(work_item, work_priority);
 }
 
-/// Submit a work item to a global work queue.
+/// Submits a work item to a global work queue.
 pub(crate) fn submit_work_item(work_item: Arc<WorkItem>, work_priority: WorkPriority) -> bool {
     match work_priority {
         WorkPriority::High => WORKQUEUE_GLOBAL_HIGH_PRI
@@ -117,8 +117,9 @@ struct WorkQueueInner {
 }
 
 impl WorkQueue {
-    /// Create a `WorkQueue` and specify a `WorkerPool` to
-    /// process the submitted `WorkItems`.
+    /// Creates a work queue.
+    ///
+    /// The specified [`WorkerPool`] processes the submitted [`WorkItem`]s.
     pub(crate) fn new(worker_pool: Weak<WorkerPool>) -> Arc<Self> {
         let queue = Arc::new(WorkQueue {
             worker_pool: worker_pool.clone(),
@@ -133,7 +134,9 @@ impl WorkQueue {
         queue
     }
 
-    /// Submit a work item. Return `false` if the work item is currently pending.
+    /// Submits a work item.
+    ///
+    /// Returns `false` if the work item is currently pending.
     pub(crate) fn enqueue(&self, work_item: Arc<WorkItem>) -> bool {
         if !work_item.try_pending() {
             return false;
@@ -154,8 +157,9 @@ impl WorkQueue {
         true
     }
 
-    /// Request a pending work item. The `request_cpu` indicates the CPU where
-    /// the calling worker is located.
+    /// Requests a pending work item.
+    ///
+    /// The `request_cpu` indicates the CPU where the calling worker is located.
     fn dequeue(&self, request_cpu: CpuId) -> Option<Arc<WorkItem>> {
         let mut inner = self.inner.disable_irq().lock();
         let mut cursor = inner.pending_work_items.front_mut();
@@ -180,7 +184,7 @@ impl WorkQueue {
     }
 }
 
-/// Initialize global worker pools and work queues.
+/// Initializes global worker pools and work queues.
 pub(crate) fn init_in_first_kthread() {
     WORKERPOOL_NORMAL.call_once(|| {
         let cpu_set = CpuSet::new_full();
