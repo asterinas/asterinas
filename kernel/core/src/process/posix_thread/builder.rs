@@ -50,7 +50,6 @@ pub(crate) struct PosixThreadBuilder {
     user_ns: Option<Arc<UserNamespace>>,
     ns_proxy: Option<Arc<NsProxy>>,
     default_timer_slack_ns: u64,
-    seccomp: SeccompState,
 }
 
 impl PosixThreadBuilder {
@@ -79,7 +78,6 @@ impl PosixThreadBuilder {
             user_ns: None,
             ns_proxy: None,
             default_timer_slack_ns: 50_000, // 50 usec default slack
-            seccomp: SeccompState::default(),
         }
     }
 
@@ -195,7 +193,6 @@ impl PosixThreadBuilder {
             user_ns,
             ns_proxy,
             default_timer_slack_ns,
-            seccomp,
         } = self;
 
         let file_table = file_table.unwrap_or_else(FileTable::new);
@@ -231,7 +228,7 @@ impl PosixThreadBuilder {
                     ns_proxy: Mutex::new(Some(ns_proxy.clone())),
                     timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
                     default_timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
-                    seccomp: Mutex::new(ThreadSeccompState::new(seccomp)),
+                    seccomp: Mutex::new(ThreadSeccompState::new(SeccompState::default())),
                     tracee_status: Once::new(),
                     tracees: Once::new(),
                     exit_code: AtomicU32::new(0),
