@@ -83,8 +83,14 @@ the first incompatible thread's TID, or fails with `ESRCH` if
 Combining it with `SECCOMP_FILTER_FLAG_TSYNC` requires `SECCOMP_FILTER_FLAG_TSYNC_ESRCH`.
 `SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV` requires `SECCOMP_FILTER_FLAG_NEW_LISTENER`
 and makes the target's notification wait killable after the listener receives the notification.
-`SECCOMP_FILTER_FLAG_LOG` requests logging for filter actions.
 `SECCOMP_FILTER_FLAG_SPEC_ALLOW` is accepted and has no effect on supported architectures.
+
+`SECCOMP_GET_ACTION_AVAIL` accepts `SECCOMP_RET_LOG`.
+When `SECCOMP_RET_LOG` wins, the kernel logs the syscall and lets it proceed.
+`SECCOMP_FILTER_FLAG_LOG` requests logging for eligible actions from the winning filter.
+`SECCOMP_RET_ALLOW` produces no record, and a `TRACE` or `USER_NOTIF` decision
+is logged only if it causes syscall execution to be skipped.
+Asterinas sends seccomp records to the kernel log console independently of `loglevel`.
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/seccomp.2.html).

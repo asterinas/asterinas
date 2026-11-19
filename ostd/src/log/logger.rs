@@ -30,7 +30,7 @@ pub(super) fn __logger() -> Option<&'static dyn Log> {
 /// or falls back to early console output
 /// if no logger has been registered yet.
 ///
-/// Called by the `log!` macro. Not intended for direct use.
+/// Called by the `log!` and `audit!` macros. Not intended for direct use.
 #[doc(hidden)]
 pub fn __write_log_record(record: &Record) {
     if let Some(logger) = __logger() {
@@ -72,9 +72,8 @@ pub fn __write_log_record(record: &Record) {
 pub trait Log: Sync + Send {
     /// Logs a record.
     ///
-    /// The caller (the `log!` macro) has already verified that the record's
-    /// level passes both the compile-time and runtime level filters. The
-    /// backend does not need to re-check the level.
+    /// Logging macros decide which records reach the backend. The backend
+    /// does not need to re-check the diagnostic level filters.
     fn log(&self, record: &Record);
 }
 

@@ -55,6 +55,24 @@ macro_rules! notice {
     ($($arg:tt)+) => { $crate::log!($crate::log::Level::Notice, $($arg)+) };
 }
 
+/// Emits a notice-level audit event independently of the diagnostic log level.
+///
+/// The calling subsystem decides which events to audit. The event is sent to
+/// the registered logger using the same format as other notices.
+#[macro_export]
+macro_rules! audit {
+    ($($arg:tt)+) => {{
+        $crate::log::__write_log_record(&$crate::log::Record::new(
+            $crate::log::Level::Notice,
+            __log_prefix!(),
+            format_args!($($arg)+),
+            module_path!(),
+            file!(),
+            line!(),
+        ));
+    }};
+}
+
 /// Logs a message at the [`Info`] level.
 ///
 /// [`Info`]: crate::log::Level::Info

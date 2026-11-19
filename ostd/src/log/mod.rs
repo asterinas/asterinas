@@ -66,6 +66,9 @@
 //! debug!("variable x = {:?}", x);
 //! ```
 //!
+//! For audit events selected by subsystem policy, [`audit!`](crate::audit!)
+//! emits a notice-level record independent of the diagnostic log level.
+//!
 //! # `log` crate bridge
 //!
 //! A bridge forwards messages from third-party crates

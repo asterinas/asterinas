@@ -88,20 +88,16 @@ pub(super) struct SeccompNotifAddFd {
 }
 
 impl SeccompData {
-    pub(super) fn log(&self, ctx: &Context, action: u32) {
-        notice!(
-            "pid={} tid={} syscall={} arch={:#x} ip={:#x} action={:#x}",
-            ctx.process.pid(),
-            ctx.posix_thread.tid(),
-            self.nr,
-            self.arch,
-            self.instruction_pointer,
-            action,
-        );
-    }
-
     pub(super) fn syscall_number(&self) -> i32 {
         self.nr
+    }
+
+    pub(super) fn arch(&self) -> u32 {
+        self.arch
+    }
+
+    pub(super) fn instruction_pointer(&self) -> u64 {
+        self.instruction_pointer
     }
 
     pub(super) fn trap_info(&self, reason: u32) -> crate::process::signal::c_types::siginfo_t {

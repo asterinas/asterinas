@@ -99,7 +99,15 @@ impl SeccompEvaluation {
     /// Records the decision when its action or winning filter requests logging.
     pub(crate) fn log(&self, ctx: &Context, data: &SeccompData) {
         if let Some(action) = self.logged_action {
-            data.log(ctx, action);
+            ostd::audit!(
+                "pid={} tid={} syscall={} arch={:#x} ip={:#x} action={:#x}",
+                ctx.process.pid(),
+                ctx.posix_thread.tid(),
+                data.syscall_number(),
+                data.arch(),
+                data.instruction_pointer(),
+                action,
+            );
         }
     }
 }
