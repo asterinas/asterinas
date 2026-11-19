@@ -104,6 +104,10 @@ impl<C: Class> DeviceInternals for ClassDevice<C> {
         &self.base
     }
 
+    fn type_name(&self) -> Option<&'static str> {
+        self.declared.type_name()
+    }
+
     fn attr_groups(&self) -> Vec<TyErasedAttr> {
         self.declared.attr_groups(self.class.class().dev_attrs())
     }
@@ -131,7 +135,7 @@ impl<C: Class> DeviceInternals for ClassDevice<C> {
     }
 
     fn append_uevent_vars(&self, vars: &mut UeventVars) -> Result<()> {
-        if let Some(name) = self.declared.type_name() {
+        if let Some(name) = self.type_name() {
             vars.add("DEVTYPE", name)?;
         }
         self.class.class().append_uevent_vars(self, vars)?;

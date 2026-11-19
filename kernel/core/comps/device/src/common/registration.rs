@@ -207,6 +207,13 @@ fn add_steps(this: &Arc<dyn AnyDevice>) -> Result<()> {
         add_link(index.as_ref(), base.name(), &path)?;
         base.links().lock().index = true;
     }
+    // Only whole disks have a top-level link in `/sys/block`.
+    if subsystem.is_class() && subsystem.name() == Some("block") && this.type_name() == Some("disk")
+    {
+        let block_root = registry::get().block_root();
+        add_link(block_root.as_ref(), base.name(), &path)?;
+        base.links().lock().block = true;
+    }
 
     // 5. Device number: `/sys/dev` entry and `/dev` node.
     if let Some(devnum) = base.devnum() {
@@ -286,6 +293,10 @@ fn teardown(this: &Arc<dyn AnyDevice>, remove_uevent: RemoveUevent) {
     }
 
     // 4. Links.
+    if links.block {
+        let block_root = registry::get().block_root();
+        remove_link(block_root.as_ref(), base.name());
+    }
     if links.index
         && let Some(index) = subsystem.index_dir()
     {
