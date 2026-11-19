@@ -96,7 +96,6 @@ pub(super) fn do_poll(
     ctx: &Context,
 ) -> Result<usize> {
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
-    let file_table = file_table.unwrap();
 
     let poll_files = if let Some(file_table_inner) = file_table.get() {
         PollFiles::new_borrowed(poll_fds, file_table_inner)

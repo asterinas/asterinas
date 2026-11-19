@@ -30,9 +30,7 @@ pub(super) fn sys_timerfd_create(
         } else {
             FdFlags::empty()
         };
-        file_table
-            .unwrap()
-            .lock_and_insert(Arc::new(timerfd_file), fd_flags)?
+        file_table.lock_and_insert(Arc::new(timerfd_file), fd_flags)?
     };
 
     Ok(SyscallReturn::Return(fd.into()))

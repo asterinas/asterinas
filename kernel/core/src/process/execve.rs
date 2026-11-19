@@ -371,7 +371,7 @@ fn unshare_and_close_files(ctx: &Context) {
 
     let closed_files = {
         let file_table = ctx.thread_local.borrow_file_table();
-        let mut file_table_locked = file_table.unwrap().write();
+        let mut file_table_locked = file_table.write();
         file_table_locked.close_files_on_exec()
     };
     drop(closed_files);

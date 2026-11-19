@@ -31,9 +31,7 @@ pub(super) fn sys_fsopen(fs_name_addr: Vaddr, flags: u32, ctx: &Context) -> Resu
 
     let file = Arc::new(FsConfigFile::new(fs_type)) as Arc<dyn FileLike>;
     let file_table = ctx.thread_local.borrow_file_table();
-    let fd = file_table
-        .unwrap()
-        .lock_and_insert(file, FdFlags::from(flags))?;
+    let fd = file_table.lock_and_insert(file, FdFlags::from(flags))?;
     Ok(SyscallReturn::Return(fd.into()))
 }
 

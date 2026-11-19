@@ -35,7 +35,7 @@ pub(super) fn sys_setns(fd: RawFileDesc, flags: u32, ctx: &Context) -> Result<Sy
 
     let file = {
         let file_table = ctx.thread_local.borrow_file_table();
-        let file_table_locked = file_table.unwrap().read();
+        let file_table_locked = file_table.read();
         file_table_locked.get_file(fd.try_into()?)?.clone()
     };
 

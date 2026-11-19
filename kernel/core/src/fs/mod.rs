@@ -83,18 +83,18 @@ pub(crate) fn init_in_first_process(ctx: &Context) {
             .unwrap()
     };
 
-    let mut file_table_ref = ctx.thread_local.borrow_file_table_mut();
-    let mut file_table = file_table_ref.unwrap().write();
+    let file_table = ctx.thread_local.borrow_file_table();
+    let mut file_table_locked = file_table.write();
 
-    file_table
+    file_table_locked
         .insert(Arc::new(stdin), FdFlags::empty())
         .map_err(|(err, _)| err)
         .unwrap();
-    file_table
+    file_table_locked
         .insert(Arc::new(stdout), FdFlags::empty())
         .map_err(|(err, _)| err)
         .unwrap();
-    file_table
+    file_table_locked
         .insert(Arc::new(stderr), FdFlags::empty())
         .map_err(|(err, _)| err)
         .unwrap();

@@ -23,7 +23,7 @@ pub(super) fn sys_close(raw_fd: RawFileDesc, ctx: &Context) -> Result<SyscallRet
     let closed_file = {
         let fd = raw_fd.try_into()?;
         let file_table = ctx.thread_local.borrow_file_table();
-        let mut file_table_locked = file_table.unwrap().write();
+        let mut file_table_locked = file_table.write();
         let _ = file_table_locked.get_file(fd)?;
         file_table_locked.close_file(fd).unwrap()
     };
@@ -74,7 +74,7 @@ pub(super) fn sys_close_range(
     let mut files_to_drop = Vec::new();
 
     {
-        let mut file_table_locked = file_table.unwrap().write();
+        let mut file_table_locked = file_table.write();
 
         let table_len = file_table_locked.len() as u32;
         if first >= table_len {

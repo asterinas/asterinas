@@ -17,9 +17,7 @@ pub(crate) trait ContextUnshareAdminApi {
 impl ContextUnshareAdminApi for Context<'_> {
     fn unshare_files(&self) {
         let mut pthread_file_table = self.posix_thread.file_table().lock();
-
-        let mut thread_local_file_table_ref = self.thread_local.borrow_file_table_mut();
-        let thread_local_file_table = thread_local_file_table_ref.unwrap();
+        let mut thread_local_file_table = self.thread_local.borrow_file_table_mut();
 
         let new_file_table = FileTable::fork_from(&thread_local_file_table.read());
 

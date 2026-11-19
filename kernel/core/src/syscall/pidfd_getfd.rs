@@ -55,9 +55,7 @@ pub(super) fn sys_pidfd_getfd(
         .clone();
 
     // Duplicate the file descriptor into the caller's file descriptor table.
-    let new_fd = file_table
-        .unwrap()
-        .lock_and_insert(target_file, FdFlags::CLOEXEC)?;
+    let new_fd = file_table.lock_and_insert(target_file, FdFlags::CLOEXEC)?;
 
     Ok(SyscallReturn::Return(new_fd.into()))
 }

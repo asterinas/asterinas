@@ -384,7 +384,7 @@ pub(crate) trait WithFileTable {
 
 impl WithFileTable for FileTableRefMut<'_> {
     fn read_with<R>(&mut self, f: impl FnOnce(&FileTable) -> R) -> R {
-        let file_table = self.unwrap();
+        let file_table = &mut **self;
 
         if let Some(inner) = file_table.get() {
             f(inner)
@@ -425,7 +425,7 @@ macro_rules! get_file_fast {
         };
 
         let file_table: &mut FileTableRefMut<'_> = $file_table;
-        let file_table: &mut RwArc<FileTable> = file_table.unwrap();
+        let file_table: &mut RwArc<FileTable> = &mut **file_table;
         let file_desc: FileDesc = $file_desc;
 
         if let Some(inner) = file_table.get() {

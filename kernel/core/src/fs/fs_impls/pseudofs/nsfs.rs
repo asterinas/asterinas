@@ -282,9 +282,7 @@ fn open_ns_as_file<T: NsCommonOps>(ns: &Arc<T>) -> Result<FileDesc> {
     let current_task = Task::current().unwrap();
     let thread_local = current_task.as_thread_local().unwrap();
     let file_table = thread_local.borrow_file_table();
-    file_table
-        .unwrap()
-        .lock_and_insert(Arc::new(inode_handle), FdFlags::CLOEXEC)
+    file_table.lock_and_insert(Arc::new(inode_handle), FdFlags::CLOEXEC)
 }
 
 /// Common operations shared by all namespace types.
