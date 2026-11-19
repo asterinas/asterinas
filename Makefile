@@ -8,6 +8,7 @@ BENCHMARK ?= none
 BOOT_METHOD ?= grub-rescue-iso
 BOOT_PROTOCOL ?= multiboot2
 ENABLE_KVM ?= 1
+ENABLE_TPM ?= 0
 INTEL_TDX ?= 0
 MEM ?= 8G
 OVMF ?= on
@@ -255,6 +256,12 @@ endif
 ifeq ($(ENABLE_KVM), 1)
 	ifeq ($(shell [ -e /dev/kvm ] && [ "$$(uname -m)" = "$(TARGET_ARCH)" ] && echo yes),yes)
 	CARGO_OSDK_COMMON_ARGS += --qemu-args="-accel kvm"
+	endif
+endif
+
+ifeq ($(ENABLE_TPM), 1)
+	ifeq ($(TARGET_ARCH), x86_64)
+	CARGO_OSDK_COMMON_ARGS += --qemu-args="-tpmdev passthrough,id=tpm0,path=/dev/tpm0,cancel-path=/dev/null -device tpm-tis,tpmdev=tpm0"
 	endif
 endif
 

@@ -3,6 +3,7 @@
 SUBDIRS := \
 	drm \
 	pty \
+	tpm \
 	vt
 
 include ../common/Makefile
