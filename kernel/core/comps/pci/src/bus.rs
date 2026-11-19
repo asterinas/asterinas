@@ -5,12 +5,14 @@
 //! [`PciBus`] uses [`PciCommonDevice`] as its device payload.
 //! Drivers registered on this bus must provide a slice of [`PciMatch`] rules for device matching.
 //! The bus exposes read-only `vendor`, `device`, `class`, and `revision` sysfs attributes on each [`PciDevice`].
+//! Its uevent environment includes `PCI_CLASS`, `PCI_ID`, and `PCI_SLOT_NAME`.
 
 use alloc::sync::Arc;
 
 use aster_device::{
     bus::{Bus, BusDevice},
     common::Attr,
+    uevent::UeventVars,
 };
 use ostd::Result;
 
@@ -101,5 +103,36 @@ impl Bus for PciBus {
             }),
         ];
         ATTRS
+    }
+
+    fn append_uevent_vars(
+        &self,
+        dev: &PciDevice,
+        vars: &mut UeventVars,
+    ) -> aster_device::common::Result<()> {
+        // Match Linux's PCI uevent formatting for these variables:
+        // <https://elixir.bootlin.com/linux/v6.16/source/drivers/pci/pci-driver.c#L1549>.
+        // Omit `PCI_SUBSYS_ID` and `MODALIAS`
+        // because the PCI device model does not yet track subsystem IDs.
+
+        let id = dev.device_id();
+        let class =
+            (u32::from(id.class) << 16) | (u32::from(id.subclass) << 8) | u32::from(id.prog_if);
+        let location = dev.location();
+
+        vars.add("PCI_CLASS", format_args!("{class:04X}"))?;
+        vars.add(
+            "PCI_ID",
+            format_args!("{:04X}:{:04X}", id.vendor_id, id.device_id),
+        )?;
+        vars.add(
+            "PCI_SLOT_NAME",
+            format_args!(
+                "0000:{:02x}:{:02x}.{}",
+                location.bus, location.device, location.function
+            ),
+        )?;
+
+        Ok(())
     }
 }
