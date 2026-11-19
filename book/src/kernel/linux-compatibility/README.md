@@ -381,8 +381,13 @@ Here is the list of supported file systems:
 
 Procfs exposes `NoNewPrivs`, `Seccomp`, and `Seccomp_filters`
 in `/proc/[pid]/status` and `/proc/[pid]/task/[tid]/status`.
-The process path reports the main thread's state;
-the task path reports the selected thread's state.
+The process path reports the main thread's state.
+The task path reports the selected thread's state.
+`NoNewPrivs` is set when `execve()` is prevented from granting the thread new privileges.
+`Seccomp` reports `0` for disabled, `1` for strict, `2` for filter,
+and `3` for a thread exiting after a fatal seccomp decision.
+Mode `3` covers strict violations and the thread that triggers
+`SECCOMP_RET_KILL_THREAD` or `SECCOMP_RET_KILL_PROCESS`.
 `Seccomp_filters` counts the filters in that thread's policy chain.
 These fields remain available for a zombie until it is reaped.
 

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #include "seccomp_common.h"
+#include <sys/ptrace.h>
+
+#define SECCOMP_MODE_DEAD 3
 
 static void check_status(pid_t pid, pid_t tid, int nnp, int mode, int filters,
 			 size_t chunk)
@@ -242,6 +245,37 @@ static void strict_status(void)
 			   WEXITSTATUS(status) == 0);
 }
 
+static void strict_violation_status(void)
+{
+	pid_t child = CHECK(fork());
+	if (!child) {
+		CHECK(ptrace(PTRACE_TRACEME, 0, 0, 0));
+		CHECK(raise(SIGSTOP));
+		CHECK(syscall(SYS_seccomp, SECCOMP_SET_MODE_STRICT, 0, NULL));
+		syscall(SYS_getpid);
+		syscall(SYS_exit, 1);
+		__builtin_unreachable();
+	}
+	int status;
+	CHECK_WITH(waitpid(child, &status, 0),
+		   _ret == child && WIFSTOPPED(status) &&
+			   WSTOPSIG(status) == SIGSTOP);
+	CHECK(ptrace(PTRACE_SETOPTIONS, child, 0, PTRACE_O_TRACEEXIT));
+	CHECK(ptrace(PTRACE_CONT, child, 0, 0));
+	CHECK_WITH(waitpid(child, &status, 0),
+		   _ret == child && WIFSTOPPED(status) &&
+			   (unsigned int)status >> 16 == PTRACE_EVENT_EXIT);
+	check_status(child, 0, 0, SECCOMP_MODE_DEAD, 0, 1024);
+	CHECK(ptrace(PTRACE_CONT, child, 0, 0));
+	siginfo_t info;
+	CHECK(waitid(P_PID, child, &info, WEXITED | WNOWAIT));
+	check_status(child, 0, 0, SECCOMP_MODE_DEAD, 0, 1024);
+	check_status(child, child, 0, SECCOMP_MODE_DEAD, 0, 7);
+	CHECK_WITH(waitpid(child, &status, 0),
+		   _ret == child && WIFSIGNALED(status) &&
+			   WTERMSIG(status) == SIGKILL);
+}
+
 static void zombie_status(uint32_t action)
 {
 	pid_t child = CHECK(fork());
@@ -257,8 +291,8 @@ static void zombie_status(uint32_t action)
 	}
 	siginfo_t info;
 	CHECK(waitid(P_PID, child, &info, WEXITED | WNOWAIT));
-	/* Fatal filter actions expose Linux's internal SECCOMP_MODE_DEAD (3). */
-	int mode = action == SECCOMP_RET_ALLOW ? SECCOMP_MODE_FILTER : 3;
+	int mode = action == SECCOMP_RET_ALLOW ? SECCOMP_MODE_FILTER :
+						 SECCOMP_MODE_DEAD;
 	check_status(child, 0, 1, mode, 2, 1024);
 	check_status(child, child, 1, mode, 2, 7);
 	int status;
@@ -295,6 +329,7 @@ FN_TEST(proc_status)
 	TEST_RES(run_child(exec_with_status, 0), _ret == 0);
 	TEST_RES(run_child(nonleader_exec_status, 0), _ret == 0);
 	TEST_RES(run_child(strict_status, 0), _ret == 0);
+	TEST_RES(run_child(strict_violation_status, 0), _ret == 0);
 	TEST_RES(run_child(normal_exit_status, 0), _ret == 0);
 	TEST_RES(run_child(kill_thread_status, 0), _ret == 0);
 	TEST_RES(run_child(kill_process_status, 0), _ret == 0);

@@ -17,6 +17,7 @@ use crate::{
         pid_table,
         signal::{
             constants::{SIGKILL, SIGSYS},
+            sig_num::SigNum,
             signals::kernel::KernelSignal,
         },
         task_set::TaskSet,
@@ -44,7 +45,21 @@ pub(crate) fn do_exit_group(term_status: TermStatus, ctx: &Context, user_ctx: &m
 
 /// Terminates the process with `SIGSYS` using the normal group-exit arbitration.
 pub(crate) fn do_seccomp_exit_group(ctx: &Context, user_ctx: &mut UserContext) {
-    do_exit_group(TermStatus::Killed(SIGSYS), ctx, user_ctx);
+    do_seccomp_exit(SIGSYS, ExitScope::Group, ctx, user_ctx);
+}
+
+/// Terminates the current thread after a fatal seccomp decision.
+pub(crate) fn do_seccomp_exit_thread(signal: SigNum, ctx: &Context, user_ctx: &mut UserContext) {
+    do_seccomp_exit(signal, ExitScope::Thread, ctx, user_ctx);
+}
+
+fn do_seccomp_exit(signal: SigNum, scope: ExitScope, ctx: &Context, user_ctx: &mut UserContext) {
+    {
+        // Publish the dead mode before the ptrace exit stop and serialize it with TSYNC.
+        let _tasks = ctx.process.tasks().lock();
+        ctx.posix_thread.seccomp.lock().mark_dead();
+    }
+    exit_internal(TermStatus::Killed(signal), scope, ctx, user_ctx);
 }
 
 enum ExitScope {

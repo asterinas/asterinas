@@ -19,7 +19,7 @@ use crate::{
     cpu::LinuxAbi,
     prelude::*,
     process::{
-        TermStatus, posix_thread,
+        posix_thread,
         posix_thread::ptrace::PtraceStopResult,
         signal::{
             HandlePendingSignal,
@@ -503,16 +503,14 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
                 return;
             }
             SeccompDecision::KillThread => {
-                ctx.posix_thread.mark_seccomp_dead();
-                posix_thread::do_exit(TermStatus::Killed(SIGSYS), ctx, user_ctx);
+                posix_thread::do_seccomp_exit_thread(SIGSYS, ctx, user_ctx);
                 return;
             }
             SeccompDecision::StrictViolation => {
-                posix_thread::do_exit(TermStatus::Killed(SIGKILL), ctx, user_ctx);
+                posix_thread::do_seccomp_exit_thread(SIGKILL, ctx, user_ctx);
                 return;
             }
             SeccompDecision::KillProcess => {
-                ctx.posix_thread.mark_seccomp_dead();
                 posix_thread::do_seccomp_exit_group(ctx, user_ctx);
                 return;
             }

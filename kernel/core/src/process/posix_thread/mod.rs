@@ -42,7 +42,7 @@ mod thread_local;
 
 pub(crate) use builder::PosixThreadBuilder;
 pub(super) use exit::sigkill_other_threads;
-pub(crate) use exit::{do_exit, do_exit_group, do_seccomp_exit_group};
+pub(crate) use exit::{do_exit, do_exit_group, do_seccomp_exit_group, do_seccomp_exit_thread};
 pub(crate) use personality::Personality;
 pub use posix_thread_ext::AsPosixThread;
 pub(crate) use robust_list::RobustListHead;
@@ -130,14 +130,6 @@ impl PosixThread {
         let state = ThreadSeccompState::new(state);
         let previous = core::mem::replace(&mut *self.seccomp.lock(), state);
         drop(previous);
-    }
-
-    /// Marks a fatal filter decision before reporting the ptrace exit event.
-    pub(crate) fn mark_seccomp_dead(&self) {
-        // Serialize with installation and TSYNC so neither can revive the policy.
-        let process = self.process();
-        let _tasks = process.tasks().lock();
-        self.seccomp.lock().mark_dead();
     }
 
     /// Inherits a thread's seccomp policy and its monotonic privilege restriction.

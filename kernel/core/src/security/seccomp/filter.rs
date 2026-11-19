@@ -15,7 +15,7 @@ use crate::prelude::*;
 const MAX_INSNS_PER_PATH: usize = 32768;
 const PREVIOUS_FILTER_PENALTY: usize = 4;
 const MAX_ERRNO: u32 = 4095;
-// Linux uses this internal mode after a filter returns a fatal action.
+// Linux uses this internal mode after a fatal seccomp decision.
 const MODE_DEAD: u32 = MODE_FILTER + 1;
 
 /// The effective seccomp policy of one thread.
@@ -62,7 +62,7 @@ enum Policy {
     Disabled,
     Strict,
     Filter(Arc<FilterNode>),
-    Dead(Arc<FilterNode>),
+    Dead(Option<Arc<FilterNode>>),
     Exited {
         mode: u32,
         filter_count: usize,
@@ -147,11 +147,13 @@ impl SeccompState {
         }
     }
 
-    /// Prevents further syscalls after a fatal filter decision.
+    /// Prevents further syscalls after a fatal seccomp decision.
     pub(crate) fn mark_dead(&mut self) {
-        if let Policy::Filter(head) = &self.policy {
-            self.policy = Policy::Dead(head.clone());
-        }
+        self.policy = match &self.policy {
+            Policy::Strict => Policy::Dead(None),
+            Policy::Filter(head) => Policy::Dead(Some(head.clone())),
+            _ => return,
+        };
     }
 
     fn is_terminated(&self) -> bool {
@@ -176,7 +178,8 @@ impl SeccompState {
 
     fn head(&self) -> Option<&Arc<FilterNode>> {
         match &self.policy {
-            Policy::Filter(head) | Policy::Dead(head) => Some(head),
+            Policy::Filter(head) => Some(head),
+            Policy::Dead(head) => head.as_ref(),
             _ => None,
         }
     }
