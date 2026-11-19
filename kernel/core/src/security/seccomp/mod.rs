@@ -38,7 +38,10 @@ const SET_MODE_FILTER: u32 = 1;
 const GET_ACTION_AVAIL: u32 = 2;
 const GET_NOTIF_SIZES: u32 = 3;
 
-/// Handles the supported seccomp operations.
+/// Handles seccomp operations and returns their Linux ABI values.
+///
+/// A filter installation can return a listener file descriptor on success or a
+/// thread ID if synchronization is rejected. See [`install::install_filter`].
 pub(crate) fn seccomp(
     operation: u32,
     flags: u32,
@@ -100,5 +103,6 @@ pub(crate) fn prctl_set_seccomp(mode: u64, fprog_addr: Vaddr, ctx: &Context) -> 
     if mode != MODE_FILTER as u64 {
         return_errno_with_message!(Errno::EINVAL, "unsupported seccomp mode");
     }
+    // With zero flags, a successful installation always returns 0.
     install::install_filter(ctx, 0, fprog_addr).map(|_| ())
 }

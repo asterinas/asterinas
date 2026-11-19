@@ -24,6 +24,11 @@ prctl(
     capability
 );
 
+// Query the calling thread's seccomp mode or enter strict or filter mode
+prctl(op = PR_GET_SECCOMP);
+prctl(op = PR_SET_SECCOMP, mode = SECCOMP_MODE_STRICT);
+prctl(op = PR_SET_SECCOMP, mode = SECCOMP_MODE_FILTER, filter);
+
 // Retrieve or set "child subreaper" attribute
 prctl(op = PR_GET_CHILD_SUBREAPER | PR_SET_CHILD_SUBREAPER, isset);
 

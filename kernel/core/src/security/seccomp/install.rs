@@ -33,7 +33,12 @@ pub(super) fn install_strict(ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-/// Installs a new filter after preparing it without modifying the effective policy.
+/// Validates a new filter and any requested thread synchronization before publishing the policy.
+///
+/// Returns `Ok(0)` on successful installation, or the listener file descriptor if
+/// `NEW_LISTENER` was requested. If `TSYNC` finds an incompatible thread,
+/// rejects the installation and returns `Ok(tid)` for the first such thread,
+/// or reports `ESRCH` if `TSYNC_ESRCH` was requested.
 pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Result<isize> {
     if flags
         & !(FILTER_FLAG_TSYNC
