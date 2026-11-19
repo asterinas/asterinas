@@ -303,26 +303,25 @@ impl SeccompState {
                 }
             };
         }
-        let mut result = RET_ALLOW;
-        let mut logging = FilterLogging::Default;
-        let mut listener = None;
+        let mut winner = (RET_ALLOW, None);
         let mut node = self.head().map(Arc::as_ref);
         while let Some(filter) = node {
             let current = filter.program.run(data);
             // Linux compares signed actions so KILL_PROCESS precedes KILL_THREAD.
             // Strict inequality retains the newest filter's data on a tie.
-            if ((current & RET_ACTION_FULL) as i32) < ((result & RET_ACTION_FULL) as i32) {
-                result = current;
-                logging = filter.logging;
-                listener = filter.listener.as_ref();
+            if ((current & RET_ACTION_FULL) as i32) < ((winner.0 & RET_ACTION_FULL) as i32) {
+                winner = (current, Some(filter));
             }
             node = filter.previous.as_deref();
         }
 
+        let (result, winning_filter) = winner;
         let action = result & RET_ACTION_FULL;
         // Match Linux's default actions_logged policy. This uses the kernel
         // logger, not the Linux audit transport; no task audit rules apply.
-        let requested_log = (logging == FilterLogging::Requested).then_some(action);
+        let requested_log = winning_filter
+            .is_some_and(|filter| filter.logging == FilterLogging::Requested)
+            .then_some(action);
         let (decision, logged_action) = match action {
             RET_ALLOW => (SeccompDecision::Allow, None),
             RET_LOG => (SeccompDecision::Allow, Some(action)),
@@ -333,7 +332,9 @@ impl SeccompState {
             RET_TRAP => (SeccompDecision::Trap(result & RET_DATA), requested_log),
             RET_TRACE => (SeccompDecision::Trace(result & RET_DATA), requested_log),
             RET_USER_NOTIF => (
-                SeccompDecision::UserNotification(UserNotification(listener.cloned())),
+                SeccompDecision::UserNotification(UserNotification(
+                    winning_filter.and_then(|filter| filter.listener.clone()),
+                )),
                 requested_log,
             ),
             RET_KILL_THREAD => (SeccompDecision::KillThread, Some(action)),
