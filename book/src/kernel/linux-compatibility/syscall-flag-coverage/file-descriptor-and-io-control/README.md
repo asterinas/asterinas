@@ -159,6 +159,17 @@ Supported functionality in SCML:
 * `SECCOMP_IOCTL_NOTIF_ID_VALID` checks whether a request is awaiting a reply.
   Both the current `_IOW` encoding and the legacy `_IOR` encoding read
   the request ID from a pointer to a 64-bit unsigned integer.
+* `SECCOMP_IOCTL_NOTIF_ADDFD` takes a `struct seccomp_notif_addfd`.
+  It installs the supervisor's `srcfd` in the notifying thread's file table
+  and returns the new descriptor number. The request must be awaiting a reply,
+  and the descriptor must be below the target's `RLIMIT_NOFILE`.
+  * `SECCOMP_ADDFD_FLAG_SETFD` selects the exact descriptor in `newfd`
+    and replaces any file installed there. Without this flag, set `newfd` to zero
+    to let the kernel choose the lowest available descriptor.
+  * `newfd_flags` accepts zero or `O_CLOEXEC`.
+  * `SECCOMP_ADDFD_FLAG_SEND` installs the descriptor and replies atomically.
+    The notified syscall returns the new descriptor number on success.
+    A pending fd injection for the same request causes `EBUSY`.
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/ioctl.2.html).
