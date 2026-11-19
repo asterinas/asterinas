@@ -984,3 +984,32 @@ impl ExtentTree {
         Ok(out)
     }
 }
+
+#[ktest]
+fn extent_allocation_separates_file_homes_and_preserves_locality() {
+    clocks::init_for_ktest();
+    let f = extent_fixture_builder(3, 1536)
+        .with_blocks_per_group(512)
+        .with_group_free_blocks(&[100, 100, 100])
+        .build()
+        .unwrap();
+    let mut trees = (0..3)
+        .map(|_| ExtentTree::new(RawBlockPtrs::new(0, super::empty_extent_root())).unwrap())
+        .collect::<Vec<_>>();
+    let mut first = Vec::new();
+    for tree in &mut trees {
+        tree.allocate_range_blocks(&f.fs, 0, 4).unwrap();
+        first.push(tree.lookup_readable_block(&f.fs, 0).unwrap().unwrap());
+    }
+    let mut groups = first.iter().map(|bid| bid / 512).collect::<Vec<_>>();
+    groups.sort();
+    assert_eq!(groups, vec![0, 1, 2]);
+    for (tree, start) in trees.iter_mut().zip(first) {
+        tree.allocate_range_blocks(&f.fs, 4, 8).unwrap();
+        assert_eq!(
+            tree.lookup_readable_block(&f.fs, 7).unwrap(),
+            Some(start + 7)
+        );
+    }
+    assert_eq!(f.fs.super_block().read_state().free_blocks_count(), 276);
+}

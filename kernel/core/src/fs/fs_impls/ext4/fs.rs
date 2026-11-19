@@ -47,6 +47,7 @@ pub(crate) struct Ext4 {
     super_block: SuperBlock,
     /// Block group descriptors and caches.
     block_groups: Vec<BlockGroup>,
+    allocator: super::allocator::BlockAllocator,
     /// Group descriptor table segment.
     group_descriptors_segment: USegment,
     /// Runtime mount options that affect block-count reporting.
@@ -180,10 +181,13 @@ impl Ext4 {
             block_groups
         };
 
+        let allocator =
+            super::allocator::BlockAllocator::new(super_block.read_state().free_blocks_count());
         let ext2 = Arc::new_cyclic(|weak_self| Ext4 {
             block_device: device,
             super_block,
             block_groups,
+            allocator,
             group_descriptors_segment,
             mount_options,
             flags: AtomicFsFlags::new(flags),
@@ -316,27 +320,20 @@ impl Ext4 {
             return_errno_with_message!(Errno::EINVAL, "zero block allocation requested");
         }
 
+        let _operation = self.allocator.operation();
         let sb = &self.super_block;
-        let mut state = sb.write_state();
         let nr_block_groups = sb.nr_block_groups() as usize;
-        let sb_free_blocks = state.free_blocks_count();
         let first_data_block = sb.first_data_block();
         let nr_blocks_per_group = sb.nr_blocks_per_group();
-        if state.free_blocks_count() == 0 {
-            return_errno_with_message!(Errno::ENOSPC, "no free blocks on device");
-        }
-
-        if !Self::can_alloc(
-            sb_free_blocks,
-            sb.reserved_blocks_count(),
-            sb.default_reserved_uid(),
-            sb.default_reserved_gid(),
-        ) {
-            return_errno_with_message!(
-                Errno::ENOSPC,
-                "no free blocks available for unprivileged user"
-            );
-        }
+        let reserved_floor = if sb.reserved_blocks_count() == 0
+            || Self::can_use_reserved_blocks(sb.default_reserved_uid(), sb.default_reserved_gid())
+        {
+            0
+        } else {
+            sb.reserved_blocks_count()
+        };
+        let reservation = self.allocator.claim(count, reserved_floor)?;
+        let count = reservation.count();
 
         let goal_group = if goal > first_data_block {
             ((goal - first_data_block) / nr_blocks_per_group) as usize
@@ -349,15 +346,28 @@ impl Ext4 {
             let group_idx = (goal_group + group_search_offset) % nr_block_groups;
             let group = &self.block_groups[group_idx];
 
-            let range = group.alloc_blocks(count, sb_free_blocks)?;
+            let range = group.alloc_blocks(count)?;
             if !range.is_empty() {
                 let allocated_count = range.end - range.start;
-                state.dec_free_blocks(allocated_count)?;
+                // The group guard has been released before publishing counts.
+                let mut state = sb.write_state();
+                if let Err(error) = state.dec_free_blocks(allocated_count) {
+                    let first = group.first_block();
+                    group.free_blocks((range.start - first)..(range.end - first))?;
+                    return Err(error);
+                }
+                reservation.consume(allocated_count);
                 return Ok(range);
             }
         }
 
         return_errno_with_message!(Errno::ENOSPC, "no free blocks available in any group");
+    }
+
+    /// Returns a fallback block-group goal for an independent extent tree.
+    pub(super) fn extent_allocation_goal(&self) -> Ext4Bid {
+        let group = self.allocator.home_group(self.block_groups.len());
+        self.block_groups[group].first_block()
     }
 
     /// Frees a range of blocks starting at `start`.
@@ -367,6 +377,7 @@ impl Ext4 {
             return Ok(());
         }
 
+        let _operation = self.allocator.operation();
         let sb = &self.super_block;
         let mut state = sb.write_state();
         if !sb.is_data_block_valid(start, count) {
@@ -394,6 +405,7 @@ impl Ext4 {
                 group.free_blocks(group_start_bit..(group_start_bit + blocks_in_group))?;
             if freed_count > 0 {
                 state.inc_free_blocks(freed_count)?;
+                self.allocator.release(freed_count);
             }
             current_block += blocks_in_group;
             remaining_blocks -= blocks_in_group;
@@ -571,8 +583,9 @@ impl Ext4 {
     /// state is clean. Failed writes retain the superblock's dirty state so
     /// retrying repeats the complete primary and backup writeback.
     pub(super) fn sync_allocation_metadata(&self) -> Result<()> {
-        // Allocation takes this lock before group metadata. Keep it through
-        // writeback so bitmap contents, descriptor bytes, and counts agree.
+        // Wait for bitmap/count publication before taking the state lock.
+        // Allocation holds the shared gate, never a group guard while publishing.
+        let _synchronization = self.allocator.synchronize();
         let mut state = self.super_block.write_state();
         // Descriptor staging clears group dirty flags. Keep the existing
         // superblock state dirty until all metadata copies reach the device.
@@ -590,6 +603,7 @@ impl Ext4 {
             return Ok(());
         }
         state.set_free_blocks_count(total_free_blocks);
+        self.allocator.reconcile(total_free_blocks);
         state.set_free_inodes_count(total_free_inodes);
         state.set_wtime(utils::now());
 
@@ -652,20 +666,8 @@ impl Ext4 {
         self.block_groups.get(group_idx)
     }
 
-    /// Checks whether the current caller may allocate blocks.
-    ///
-    /// Non-privileged users are denied when free blocks fall below the reserved
-    /// threshold, unless they have `CAP_SYS_RESOURCE` or match `s_resuid`/`s_resgid`.
-    fn can_alloc(
-        free_blocks: u32,
-        reserved_blocks: u32,
-        reserved_uid: u32,
-        reserved_gid: u32,
-    ) -> bool {
-        if free_blocks > reserved_blocks {
-            return true;
-        }
-
+    /// Returns whether the caller may consume the filesystem's reserved blocks.
+    fn can_use_reserved_blocks(reserved_uid: u32, reserved_gid: u32) -> bool {
         let Some(thread) = Thread::current() else {
             return true;
         };
@@ -1144,6 +1146,81 @@ mod test {
                 .unwrap();
             assert_eq!(backup_desc, primary_desc);
         }
+
+        // Recounted group capacity must also be available to the allocator.
+        let range = ext2.alloc_blocks(1, sb.first_data_block()).unwrap();
+        assert_eq!(range.end - range.start, 1);
+        ext2.free_blocks(range.start, 1).unwrap();
+        assert_eq!(
+            ext2.super_block().read_state().free_blocks_count(),
+            primary_sb.free_blocks_count
+        );
+    }
+
+    #[ktest]
+    fn block_allocation_scans_outside_superblock_publication_lock() {
+        use ostd::{
+            sync::Mutex,
+            task::{Task, TaskOptions},
+        };
+        clocks::init_for_ktest();
+        let f = ExtFixtureBuilder::new(3, 1536)
+            .with_blocks_per_group(512)
+            .with_group_free_blocks(&[100, 100, 100])
+            .build()
+            .unwrap();
+        let fs = f.fs.clone();
+        let results = Arc::new(Mutex::new(Vec::new()));
+        let state = fs.super_block().write_state();
+        for group in [1, 2] {
+            let worker_fs = fs.clone();
+            let completed = results.clone();
+            TaskOptions::new(move || {
+                let result = worker_fs.alloc_blocks(4, group * 512);
+                completed.lock().push(result);
+            })
+            .data(())
+            .spawn()
+            .unwrap();
+        }
+        let mut bitmaps_progressed = false;
+        for _ in 0..100 {
+            Task::yield_now();
+            if fs.block_group(1).free_blocks_count() == 96
+                && fs.block_group(2).free_blocks_count() == 96
+            {
+                bitmaps_progressed = true;
+                break;
+            }
+        }
+        let sync_result = Arc::new(Mutex::new(None));
+        let sync_fs = fs.clone();
+        let completed = sync_result.clone();
+        TaskOptions::new(move || {
+            *completed.lock() = Some(sync_fs.sync_allocation_metadata());
+        })
+        .data(())
+        .spawn()
+        .unwrap();
+        for _ in 0..20 {
+            Task::yield_now();
+        }
+        let sync_waited_for_publication = sync_result.lock().is_none();
+        // Release before asserting so failure cannot strand any worker.
+        drop(state);
+        while results.lock().len() != 2 || sync_result.lock().is_none() {
+            Task::yield_now();
+        }
+        assert!(bitmaps_progressed);
+        assert!(sync_waited_for_publication);
+        sync_result.lock().take().unwrap().unwrap();
+        assert_eq!(fs.super_block().read_state().free_blocks_count(), 292);
+        for range in results.lock().drain(..) {
+            let range = range.unwrap();
+            assert!(range.start >= 512 && range.end <= 1536);
+            fs.free_blocks(range.start, 4).unwrap();
+        }
+        assert_eq!(fs.super_block().read_state().free_blocks_count(), 300);
     }
 
     #[ktest]

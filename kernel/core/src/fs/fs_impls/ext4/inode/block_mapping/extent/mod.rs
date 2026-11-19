@@ -54,6 +54,7 @@ pub(super) use path::ExtentRangeCursor;
 #[derive(Debug)]
 pub(in inode) struct ExtentTree {
     raw_block_ptrs: Dirty<RawBlockPtrs>,
+    allocation_goal: Option<Ext4Bid>,
     node_cache: cache::ExtentNodeCache,
     root_cache: Mutex<Option<Arc<ExtentNode>>>,
     lookup_cache: Mutex<status::LookupCache>,
@@ -77,6 +78,7 @@ impl ExtentTree {
         Self::validate_root(&raw_block_ptrs.block_ptrs)?;
         Ok(Self {
             raw_block_ptrs: Dirty::new(raw_block_ptrs),
+            allocation_goal: None,
             node_cache: cache::ExtentNodeCache::new(),
             root_cache: Mutex::new(None),
             lookup_cache: Mutex::new(status::LookupCache::default()),

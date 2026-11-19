@@ -264,7 +264,7 @@ impl BlockGroup {
     ///
     /// Returns `Ok(range)` with filesystem-wide block numbers on success, or an empty range
     /// if no allocatable blocks are available. Returns `Err(EIO)` on bitmap corruption.
-    pub(super) fn alloc_blocks(&self, count: u32, sb_free_blocks: u32) -> Result<Range<Ext4Bid>> {
+    pub(super) fn alloc_blocks(&self, count: u32) -> Result<Range<Ext4Bid>> {
         let group_size = self.last_block - self.first_block + 1;
         debug_assert!(group_size <= IdBitmap::capacity() as u32);
 
@@ -272,8 +272,7 @@ impl BlockGroup {
 
         let mut requested_count = count
             .min(group_size)
-            .min(metadata.desc.free_blocks_count as u32)
-            .min(sb_free_blocks) as u16;
+            .min(metadata.desc.free_blocks_count as u32) as u16;
 
         // TODO: Improve bitmap allocation to reduce fragmentation (e.g., find the
         // first free block directly instead of retrying with smaller counts).
@@ -301,7 +300,6 @@ impl BlockGroup {
             (self.first_block + range_start)..(self.first_block + range_start + alloc_count);
         if self.overlaps_system_zone_with(&metadata.desc, abs_range)
             || (metadata.desc.free_blocks_count as u32) < alloc_count
-            || sb_free_blocks < alloc_count
         {
             metadata.block_bitmap.free_consecutive(range);
             return_errno_with_message!(Errno::EIO, "block bitmap corruption detected");
@@ -654,7 +652,7 @@ mod test {
             .build()
             .unwrap();
         let group = fixture.fs.block_group(0);
-        assert!(!group.alloc_blocks(1, 8).unwrap().is_empty());
+        assert!(!group.alloc_blocks(1).unwrap().is_empty());
         assert!(group.alloc_ino(InodeType::Dir).unwrap().is_some());
         let (block_bid, inode_bid, expected_descriptor) = {
             let metadata = group.metadata.read();

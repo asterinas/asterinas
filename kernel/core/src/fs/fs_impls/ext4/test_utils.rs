@@ -563,6 +563,7 @@ pub(super) struct ExtFixtureBuilder {
     sb_free_blocks: Option<u32>,
     sb_free_inodes: Option<u32>,
     group0_free_blocks: Option<u16>,
+    group_free_blocks: Option<Vec<u16>>,
     group0_free_inodes: Option<u16>,
     group0_used_dirs: Option<u16>,
     inode_size: Option<usize>,
@@ -583,6 +584,7 @@ impl ExtFixtureBuilder {
             sb_free_blocks: None,
             sb_free_inodes: None,
             group0_free_blocks: None,
+            group_free_blocks: None,
             group0_free_inodes: None,
             group0_used_dirs: None,
             inode_size: None,
@@ -604,6 +606,13 @@ impl ExtFixtureBuilder {
     pub(super) fn with_free_blocks(mut self, sb_free_blocks: u32, group0_free_blocks: u16) -> Self {
         self.sb_free_blocks = Some(sb_free_blocks);
         self.group0_free_blocks = Some(group0_free_blocks);
+        self
+    }
+
+    pub(super) fn with_group_free_blocks(mut self, counts: &[u16]) -> Self {
+        assert_eq!(counts.len(), self.groups as usize);
+        self.sb_free_blocks = Some(counts.iter().map(|count| u32::from(*count)).sum());
+        self.group_free_blocks = Some(counts.to_vec());
         self
     }
 
@@ -681,6 +690,11 @@ impl ExtFixtureBuilder {
         descs[0].inode_bitmap_bid = layout.inode_bitmap_bid;
         descs[0].inode_table_bid = layout.inode_table_bid;
 
+        if let Some(counts) = &self.group_free_blocks {
+            for (desc, count) in descs.iter_mut().zip(counts) {
+                desc.free_blocks_count = *count;
+            }
+        }
         if let Some(v) = self.group0_free_blocks {
             descs[0].free_blocks_count = v;
         }

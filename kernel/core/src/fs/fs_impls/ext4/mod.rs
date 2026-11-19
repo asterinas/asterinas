@@ -29,6 +29,7 @@ pub(crate) use inode::{FilePerm, Inode};
 pub(in crate::fs) use self::fs_type::{EXT2_TYPE, EXT4_TYPE};
 use crate::fs::vfs::registry;
 
+mod allocator;
 mod block_group;
 mod fs;
 mod fs_type;

@@ -32,6 +32,7 @@ pub(in block_mapping) struct PreparedUpdate<'a> {
 /// Newly allocated blocks released on drop unless their mapping is accepted.
 struct AllocatedBlocks<'a> {
     fs: &'a Ext4,
+    goal: Option<Ext4Bid>,
     ranges: Vec<Range<Ext4Bid>>,
 }
 
@@ -83,6 +84,20 @@ impl ExtentTree {
                 }
                 ExtentMappingRange::Hole(hole) => {
                     let path = self.lookup_path(fs, current)?;
+                    let NodeEntries::Leaf(entries) = &path.levels.last().unwrap().node.entries
+                    else {
+                        unreachable!()
+                    };
+                    let predecessor = entries
+                        .partition_point(|extent| extent.logical_end() <= u64::from(current));
+                    let goal = predecessor
+                        .checked_sub(1)
+                        .map(|slot| entries[slot].start() + u32::from(entries[slot].len()))
+                        .unwrap_or_else(|| {
+                            *self
+                                .allocation_goal
+                                .get_or_insert_with(|| fs.extent_allocation_goal())
+                        });
                     let mut update = PreparedUpdate::new(
                         fs,
                         (*path.levels[0].node).clone(),
@@ -95,7 +110,7 @@ impl ExtentTree {
                     };
                     let data = update
                         .allocations
-                        .allocate((hole.end - current).min(u32::from(max_len)))?;
+                        .allocate((hole.end - current).min(u32::from(max_len)), Some(goal))?;
                     if !unwritten {
                         zero_new_blocks(fs, &data)?;
                     }
@@ -515,11 +530,16 @@ impl<'a> AllocatedBlocks<'a> {
     fn new(fs: &'a Ext4) -> Self {
         Self {
             fs,
+            goal: None,
             ranges: Vec::new(),
         }
     }
-    fn allocate(&mut self, count: u32) -> Result<Range<Ext4Bid>> {
-        let range = self.fs.alloc_blocks(count, 0)?;
+    fn allocate(&mut self, count: u32, goal: Option<Ext4Bid>) -> Result<Range<Ext4Bid>> {
+        let goal = goal
+            .or(self.goal)
+            .unwrap_or_else(|| self.fs.extent_allocation_goal());
+        let range = self.fs.alloc_blocks(count, goal)?;
+        self.goal = Some(range.end);
         self.ranges.push(range.clone());
         Ok(range)
     }
@@ -552,7 +572,7 @@ impl<'a> PreparedUpdate<'a> {
     }
 
     fn metadata_block(&mut self) -> Result<Ext4Bid> {
-        Ok(self.allocations.allocate(1)?.start)
+        Ok(self.allocations.allocate(1, None)?.start)
     }
 
     fn retire_node(&mut self, bid: Ext4Bid) {
