@@ -10,7 +10,7 @@ pub(super) fn sys_dup(old_fd: RawFileDesc, ctx: &Context) -> Result<SyscallRetur
     debug!("old_fd = {}", old_fd);
 
     let file_table = ctx.thread_local.borrow_file_table();
-    let mut file_table_locked = file_table.unwrap().write();
+    let mut file_table_locked = file_table.write();
     let file = file_table_locked.get_file(old_fd.try_into()?)?.clone();
     let new_fd = match file_table_locked.insert(file, FdFlags::empty()) {
         Ok(fd) => fd,
@@ -72,7 +72,7 @@ fn do_dup3(
 
     let file_table = ctx.thread_local.borrow_file_table();
     let replaced_file = {
-        let mut file_table_locked = file_table.unwrap().write();
+        let mut file_table_locked = file_table.write();
         file_table_locked.dup_exact(old_fd, new_fd, flags)?
     };
     drop(replaced_file);

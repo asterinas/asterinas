@@ -35,9 +35,8 @@ pub(super) fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<Syscall
     };
 
     let file_table = ctx.thread_local.borrow_file_table();
-    let [reader_fd, writer_fd] = file_table
-        .unwrap()
-        .lock_and_insert_multiple([pipe_reader, pipe_writer], fd_flags)?;
+    let [reader_fd, writer_fd] =
+        file_table.lock_and_insert_multiple([pipe_reader, pipe_writer], fd_flags)?;
     let pipe_fds = PipeFds {
         reader_raw_fd: reader_fd.into(),
         writer_raw_fd: writer_fd.into(),
@@ -48,7 +47,7 @@ pub(super) fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<Syscall
         // FIXME: Introduce reserved FDs to ensure that the files are never visible to user space
         // before `write_val` succeeds and cleanup closes the exact reserved FDs below.
         let closed_files = {
-            let mut file_table_locked = file_table.unwrap().write();
+            let mut file_table_locked = file_table.write();
             [
                 file_table_locked.close_file(reader_fd),
                 file_table_locked.close_file(writer_fd),

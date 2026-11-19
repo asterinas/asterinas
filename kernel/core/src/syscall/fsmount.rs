@@ -40,9 +40,7 @@ pub(super) fn sys_fsmount(
         fs_config.create_detached_mount(per_mount_flags, Arc::downgrade(current_mnt_ns))?;
     let file = Arc::new(DetachedMountFile::new(detached_mount)) as Arc<dyn FileLike>;
     let file_table = ctx.thread_local.borrow_file_table();
-    let fd = file_table
-        .unwrap()
-        .lock_and_insert(file, FdFlags::from(flags))?;
+    let fd = file_table.lock_and_insert(file, FdFlags::from(flags))?;
     Ok(SyscallReturn::Return(fd.into()))
 }
 

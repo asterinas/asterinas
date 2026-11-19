@@ -60,9 +60,7 @@ pub(super) fn sys_socketpair(
         } else {
             FdFlags::empty()
         };
-        let [fd_a, fd_b] = file_table
-            .unwrap()
-            .lock_and_insert_multiple([socket_a, socket_b], fd_flags)?;
+        let [fd_a, fd_b] = file_table.lock_and_insert_multiple([socket_a, socket_b], fd_flags)?;
         SocketFds(fd_a.into(), fd_b.into())
     };
     ctx.user_space().write_val(sv, &socket_fds)?;

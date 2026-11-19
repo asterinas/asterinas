@@ -59,9 +59,7 @@ pub(super) fn sys_openat(
             } else {
                 FdFlags::empty()
             };
-        file_table
-            .unwrap()
-            .lock_and_insert(file_handle.clone(), fd_flags)?
+        file_table.lock_and_insert(file_handle.clone(), fd_flags)?
     };
     fs::vfs::notify::on_open(file_handle.common());
     Ok(SyscallReturn::Return(fd.into()))

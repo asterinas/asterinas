@@ -36,6 +36,6 @@ fn do_sys_eventfd2(init_val: u32, flags: EventFileFlags, ctx: &Context) -> Resul
     };
 
     let file_table = ctx.thread_local.borrow_file_table();
-    let fd = file_table.unwrap().lock_and_insert(event_file, fd_flags)?;
+    let fd = file_table.lock_and_insert(event_file, fd_flags)?;
     Ok(SyscallReturn::Return(fd.into()))
 }

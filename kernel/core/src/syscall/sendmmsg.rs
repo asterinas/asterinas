@@ -33,7 +33,7 @@ pub(super) fn sys_sendmmsg(
         // Reading control messages may access the file table,
         // so we have to clone the file and drop the file table reference here.
         let file_table = ctx.thread_local.borrow_file_table();
-        let file_table_locked = file_table.unwrap().read();
+        let file_table_locked = file_table.read();
         file_table_locked.get_file(sockfd.try_into()?)?.clone()
     };
     let socket = file.as_socket_or_err()?;

@@ -115,7 +115,7 @@ fn exit_internal(
 
     // Drop fields in `ThreadLocal`.
     drop_after!(thread_local.vmar().borrow_mut().take());
-    drop_after!(thread_local.borrow_file_table_mut().remove());
+    drop_after!(thread_local.remove_file_table());
     drop_after!(thread_local.remove_fs());
     drop_after!(thread_local.borrow_ns_proxy_mut().remove());
 

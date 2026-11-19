@@ -72,9 +72,7 @@ fn do_accept(
         write_socket_addr_to_user(&socket_addr, sockaddr_ptr, addrlen_ptr)?;
     }
 
-    let fd = file_table
-        .unwrap()
-        .lock_and_insert(connected_socket, fd_flags)?;
+    let fd = file_table.lock_and_insert(connected_socket, fd_flags)?;
 
     Ok(SyscallReturn::Return(fd.into()))
 }

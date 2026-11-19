@@ -52,9 +52,7 @@ pub(super) fn sys_memfd_create(
         let memfd_file = InodeHandle::new_memfd(name.to_string_lossy().into_owned(), memfd_flags)?;
 
         let file_table = ctx.thread_local.borrow_file_table();
-        file_table
-            .unwrap()
-            .lock_and_insert(Arc::new(memfd_file), fd_flags)?
+        file_table.lock_and_insert(Arc::new(memfd_file), fd_flags)?
     };
 
     Ok(SyscallReturn::Return(fd.into()))

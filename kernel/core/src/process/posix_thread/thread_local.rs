@@ -142,12 +142,23 @@ impl ThreadLocal {
         &self.robust_list
     }
 
+    /// Returns a reference to the file table.
     pub(crate) fn borrow_file_table(&self) -> FileTableRef<'_> {
-        ThreadLocalOptionRef(self.file_table.borrow())
+        Ref::map(self.file_table.borrow(), |file_table| {
+            file_table.as_ref().unwrap()
+        })
     }
 
+    /// Returns a mutable reference to the file table.
     pub(crate) fn borrow_file_table_mut(&self) -> FileTableRefMut<'_> {
-        ThreadLocalOptionRefMut(self.file_table.borrow_mut())
+        RefMut::map(self.file_table.borrow_mut(), |file_table| {
+            file_table.as_mut().unwrap()
+        })
+    }
+
+    /// Removes the file table and returns it.
+    pub(super) fn remove_file_table(&self) -> Option<RwArc<FileTable>> {
+        self.file_table.borrow_mut().take()
     }
 
     /// Returns a reference to the file system information.
@@ -305,7 +316,7 @@ impl SuppUserContext {
 }
 
 /// An immutable, shared reference to the file table in [`ThreadLocal`].
-pub(crate) type FileTableRef<'a> = ThreadLocalOptionRef<'a, RwArc<FileTable>>;
+pub(crate) type FileTableRef<'a> = Ref<'a, RwArc<FileTable>>;
 
 /// An immutable, shared reference to the `NsProxy` in [`ThreadLocal`].
 pub(crate) type NsProxyRef<'a> = ThreadLocalOptionRef<'a, Arc<NsProxy>>;
@@ -325,7 +336,7 @@ impl<T> ThreadLocalOptionRef<'_, T> {
 }
 
 /// A mutable, exclusive reference to the file table in [`ThreadLocal`].
-pub(crate) type FileTableRefMut<'a> = ThreadLocalOptionRefMut<'a, RwArc<FileTable>>;
+pub(crate) type FileTableRefMut<'a> = RefMut<'a, RwArc<FileTable>>;
 
 /// A mutable, exclusive reference to the `NsProxy` in [`ThreadLocal`].
 pub(in crate::process) type NsProxyRefMut<'a> = ThreadLocalOptionRefMut<'a, Arc<NsProxy>>;

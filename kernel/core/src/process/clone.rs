@@ -390,7 +390,7 @@ fn clone_child_task(
         .clone_handle();
 
     // Clone file table
-    let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
+    let child_file_table = clone_files(&thread_local.borrow_file_table(), clone_flags);
 
     // Clone FS
     let child_fs = clone_fs(&thread_local.borrow_fs(), clone_flags);
@@ -519,7 +519,7 @@ fn clone_child_process(
     clone_tls_pointer(child_user_ctx.as_mut(), clone_flags, clone_args.tls);
 
     // Clone the file table
-    let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
+    let child_file_table = clone_files(&thread_local.borrow_file_table(), clone_flags);
 
     // Clone the filesystem information
     let child_fs = clone_fs(&thread_local.borrow_fs(), clone_flags);
@@ -782,9 +782,7 @@ fn clone_pidfd(
     let fd = {
         let pid_file = PidFile::new(child.clone(), false);
         let file_table = ctx.thread_local.borrow_file_table();
-        file_table
-            .unwrap()
-            .lock_and_insert(Arc::new(pid_file), FdFlags::CLOEXEC)?
+        file_table.lock_and_insert(Arc::new(pid_file), FdFlags::CLOEXEC)?
     };
 
     // Since `write_val` may sleep, we cannot hold the file table lock during its execution.
@@ -798,7 +796,7 @@ fn clone_pidfd(
             // before `write_val` succeeds and cleanup closes the exact reserved FD below.
             let closed_file = {
                 let file_table = ctx.thread_local.borrow_file_table();
-                let mut file_table_locked = file_table.unwrap().write();
+                let mut file_table_locked = file_table.write();
                 file_table_locked.close_file(fd)
             };
             drop(closed_file);
