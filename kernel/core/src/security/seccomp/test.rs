@@ -137,17 +137,17 @@ fn strict_and_filter_modes_cannot_be_interchanged() {
 }
 
 #[ktest]
-fn strict_threads_are_not_filter_sync_ancestors() {
+fn strict_threads_are_ineligible_for_filter_sync() {
     let disabled = SeccompState::default();
     let strict = disabled.to_strict().unwrap();
     let filtered = disabled
         .append(program(RET_ALLOW), FilterLogging::Default)
         .unwrap();
-    assert!(!strict.is_ancestor_of(&disabled));
-    assert!(!strict.is_ancestor_of(&filtered));
-    assert!(!strict.is_ancestor_of(&strict));
-    assert!(disabled.is_ancestor_of(&filtered));
-    assert!(filtered.is_ancestor_of(&filtered.clone()));
+    assert!(!strict.can_sync_from(&disabled));
+    assert!(!strict.can_sync_from(&filtered));
+    assert!(!strict.can_sync_from(&strict));
+    assert!(disabled.can_sync_from(&filtered));
+    assert!(filtered.can_sync_from(&filtered.clone()));
 }
 
 #[ktest]
@@ -197,8 +197,8 @@ fn terminated_policies_cannot_be_reactivated() {
         active.exited(),
         disabled.exited(),
     ] {
-        assert!(!policy.is_ancestor_of(&active));
-        assert!(!disabled.is_ancestor_of(&policy));
+        assert!(!policy.can_sync_from(&active));
+        assert!(!disabled.can_sync_from(&policy));
         assert_eq!(policy.to_strict().err().unwrap().error(), Errno::EINVAL);
         assert_eq!(
             policy

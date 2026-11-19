@@ -145,7 +145,7 @@ pub(super) fn install_filter(ctx: &Context, flags: u32, fprog_addr: Vaddr) -> Re
                 continue;
             }
             let target = task.as_posix_thread().unwrap();
-            if !target.seccomp_snapshot().is_ancestor_of(&old_state) {
+            if !target.seccomp_snapshot().can_sync_from(&old_state) {
                 if flags & FILTER_FLAG_TSYNC_ESRCH != 0 {
                     return_errno_with_message!(
                         Errno::ESRCH,

@@ -181,16 +181,20 @@ impl SeccompState {
         }
     }
 
-    /// Checks whether this policy is an ancestor of (or identical to) `other`.
-    pub(super) fn is_ancestor_of(&self, other: &Self) -> bool {
-        // Strict threads are ineligible for TSYNC, even though they have no filter.
-        if self.is_strict() || other.is_strict() || self.is_terminated() || other.is_terminated() {
+    /// Checks whether this policy can receive a TSYNC update from `source`.
+    ///
+    /// A disabled target can receive the update. A filtered target must share
+    /// a chain suffix with `source` starting at the target's current head.
+    /// Strict and terminated policies are ineligible.
+    pub(super) fn can_sync_from(&self, source: &Self) -> bool {
+        if self.is_strict() || source.is_strict() || self.is_terminated() || source.is_terminated()
+        {
             return false;
         }
         let Some(head) = self.head() else {
             return true;
         };
-        let mut node = other.head();
+        let mut node = source.head();
         while let Some(filter) = node {
             if Arc::ptr_eq(head, filter) {
                 return true;
