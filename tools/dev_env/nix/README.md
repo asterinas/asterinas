@@ -13,7 +13,7 @@ If you only want to use the shell, read
   and the project-specific packages into a nixpkgs overlay.
 - [`devshell.nix`](devshell.nix) selects the host tools
   and sets the environment variables of the shell.
-- [`packages/`](packages/) contains the definitions of QEMU, GRUB, and the OVMF firmware.
+- [`packages/`](packages/) contains the definitions of QEMU, GRUB, OVMF, and RustSBI.
 - The test suites are packaged under [`test/initramfs/nix`](../../../test/initramfs/nix), not here.
   The shell only provides the `nix` command that the existing Make targets use to build them.
 
@@ -24,6 +24,8 @@ The header comment of each file lists its deviations from nixpkgs.
 
 The shell sets `GRUB_MKRESCUE` to its packaged GRUB executable
 so that the `iso` and `nixos` targets do not depend on `/usr/bin/grub-mkrescue`.
+It also sets `RUSTSBI_DIR` to the directory containing `rustsbi-prototyper-dynamic.bin`,
+unless the caller already set it.
 
 The host-side clients of the network benchmarks come from
 [`test/initramfs/nix`](../../../test/initramfs/nix/default.nix),
@@ -33,9 +35,10 @@ the definitions that the Docker image installs with `make install_host_pkgs`.
 
 The Rust toolchain is read from [`rust-toolchain.toml`](../../../rust-toolchain.toml),
 and the shell adds `rust-analyzer` from the same nightly.
-Never pin a second Rust version in the Nix expressions.
+RustSBI uses the `rust-toolchain.toml` in its pinned upstream source, as it does in Docker.
+Read each toolchain from its source file rather than duplicating the version in Nix expressions.
 
-The QEMU and GRUB versions and the edk2 release used to build OVMF follow the
+The QEMU and GRUB versions, the edk2 release used to build OVMF, and the RustSBI revision follow the
 [OSDK Dockerfile](../../../osdk/tools/docker/Dockerfile).
 The vDSO revision follows the
 [kernel development Dockerfile](../docker/kernel-dev/Dockerfile).
@@ -86,7 +89,7 @@ nix flake check --no-build --all-systems --no-update-lock-file
 When you change a package definition, build the boot-stack packages:
 
 ```bash
-nix build .#qemu .#grub .#ovmf
+nix build .#qemu .#grub .#ovmf .#rustsbi
 ```
 
 Then reproduce the CI checks, which run the shell with a stripped-down host environment:

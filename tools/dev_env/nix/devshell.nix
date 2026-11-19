@@ -26,6 +26,7 @@
   asterinas-qemu,
   asterinas-grub,
   asterinas-ovmf,
+  asterinas-rustsbi,
   gdb,
   mtools,
   xorriso,
@@ -73,6 +74,7 @@ let
     asterinas-qemu
     asterinas-grub
     asterinas-ovmf
+    asterinas-rustsbi
     # Disk-image and filesystem tools the kernel-dev image takes from Ubuntu.
     gdb
     mtools
@@ -136,5 +138,8 @@ mkShell {
     # `make iso` and `make nixos` force linux-efi-handover64, for which the
     # Makefile defaults to the Docker image's /usr/bin/grub-mkrescue.
     export GRUB_MKRESCUE="''${GRUB_MKRESCUE:-${asterinas-grub}/bin/grub-mkrescue}"
+
+    # Allow testing custom RustSBI builds without changing the dev shell.
+    export RUSTSBI_DIR="''${RUSTSBI_DIR:-${asterinas-rustsbi}/share/rustsbi}"
   '';
 }
