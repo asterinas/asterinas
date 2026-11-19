@@ -27,7 +27,7 @@ static void *wait_on_futex_a(void *arg)
 	// Specify a sufficiently long timeout; a join can be performed in the
 	// end even if this thread is not woken up.
 	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
+	clock_gettime(CLOCK_MONOTONIC, &ts);
 	ts.tv_sec += 5;
 
 	futex(&futex_a, FUTEX_WAIT_BITSET | FUTEX_PRIVATE_FLAG, 0,
