@@ -9,7 +9,6 @@ use aster_pci::{
 };
 use aster_util::safe_ptr::SafePtr;
 use ostd::{
-    bus::BusProbeError,
     info,
     io::IoMem,
     irq::IrqCallbackFunction,
@@ -75,7 +74,7 @@ pub(crate) struct VirtioPciLegacyTransport {
 impl VirtioPciLegacyTransport {
     pub(crate) const QUEUE_ALIGN_SIZE: usize = 4096;
 
-    pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, BusProbeError> {
+    pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, aster_device::common::Error> {
         let device_type = match common_device.device_id().device_id {
             0x1000 => VirtioDeviceType::Network,
             0x1001 => VirtioDeviceType::Block,
@@ -89,7 +88,7 @@ impl VirtioPciLegacyTransport {
                     "Unrecognized virtio-pci device ID: {:x?}",
                     common_device.device_id().device_id
                 );
-                return Err(BusProbeError::ConfigurationSpaceError);
+                return Err(aster_device::common::Error::ProbeFailed);
             }
         };
         info!("Found device: {:?}", device_type);
@@ -115,7 +114,7 @@ impl VirtioPciLegacyTransport {
 
         // TODO: Support interrupt without MSI-X.
         let Ok(Some(msix)) = common_device.acquire_msix_capability() else {
-            return Err(BusProbeError::ConfigurationSpaceError);
+            return Err(aster_device::common::Error::ResourceUnavailable);
         };
         let msix_manager = VirtioMsixManager::new(msix);
 

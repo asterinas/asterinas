@@ -6,7 +6,6 @@ use core::mem::offset_of;
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use ostd::{
-    bus::BusProbeError,
     io::IoMem,
     irq::IrqCallbackFunction,
     mm::{HasDaddr, PAGE_SIZE, dma::DmaCoherent},
@@ -59,7 +58,9 @@ impl VirtioMmioTransport {
         &self.device
     }
 
-    pub(super) fn new(device: MmioCommonDevice) -> Result<Self, (BusProbeError, MmioCommonDevice)> {
+    pub(super) fn new(
+        device: MmioCommonDevice,
+    ) -> Result<Self, (aster_device::common::Error, MmioCommonDevice)> {
         let device_id = device.read_device_id().unwrap();
         let device_type = match u8::try_from(device_id)
             .ok()
@@ -68,7 +69,7 @@ impl VirtioMmioTransport {
             Some(device_type) => device_type,
             None => {
                 warn!("Unrecognized virtio-mmio device ID: {:#x}", device_id);
-                return Err((BusProbeError::DeviceNotMatch, device));
+                return Err((aster_device::common::Error::ProbeFailed, device));
             }
         };
         let irq = device.irq().clone();

@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use aster_device::{
     bus::Driver,
-    common::{Attr, Error, Result},
+    common::{Attr, Result},
 };
 use aster_pci::bus::{PciBus, PciDevice, PciMatch};
 
@@ -30,7 +30,7 @@ impl Driver<PciBus> for NvmePciDriver {
     }
 
     fn on_probe(&self, device: &Arc<PciDevice>) -> Result<()> {
-        let transport = NvmePciTransport::new(device.clone()).map_err(|_| Error::ProbeFailed)?;
+        let transport = NvmePciTransport::new(device.clone())?;
         super::push_device_transport(transport);
         Ok(())
     }

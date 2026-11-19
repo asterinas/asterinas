@@ -6,7 +6,7 @@
 
 use alloc::{collections::VecDeque, fmt::Debug, sync::Arc, vec::Vec};
 
-use ostd::{bus::BusProbeError, debug, error};
+use ostd::{debug, error};
 
 use super::common_device::MmioCommonDevice;
 
@@ -29,7 +29,7 @@ pub(in mmio) trait MmioDriver: Sync + Send + Debug {
     fn probe(
         &self,
         device: MmioCommonDevice,
-    ) -> Result<Arc<dyn MmioDevice>, (BusProbeError, MmioCommonDevice)>;
+    ) -> Result<Arc<dyn MmioDevice>, (aster_device::common::Error, MmioCommonDevice)>;
 }
 
 /// MMIO bus
@@ -54,7 +54,7 @@ impl MmioBus {
                     continue;
                 }
                 Err((err, device)) => {
-                    if err != BusProbeError::DeviceNotMatch {
+                    if !matches!(err, aster_device::common::Error::ProbeFailed) {
                         error!("MMIO device construction failed, reason: {:?}", err);
                     }
                     device
@@ -75,7 +75,7 @@ impl MmioBus {
                     return;
                 }
                 Err((err, common_device)) => {
-                    if err != BusProbeError::DeviceNotMatch {
+                    if !matches!(err, aster_device::common::Error::ProbeFailed) {
                         error!("MMIO device construction failed, reason: {:?}", err);
                     }
                     common_device

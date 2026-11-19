@@ -42,12 +42,10 @@ impl Driver<PciBus> for VirtioPciDriver {
                 if device_id.revision_id == 0 =>
             {
                 if has_vendor_cap {
-                    let modern = VirtioPciModernTransport::new(device.clone())
-                        .map_err(|_| Error::ProbeFailed)?;
+                    let modern = VirtioPciModernTransport::new(device.clone())?;
                     Box::new(modern)
                 } else {
-                    let legacy = VirtioPciLegacyTransport::new(device.clone())
-                        .map_err(|_| Error::ProbeFailed)?;
+                    let legacy = VirtioPciLegacyTransport::new(device.clone())?;
                     Box::new(legacy)
                 }
             }
@@ -55,8 +53,7 @@ impl Driver<PciBus> for VirtioPciDriver {
                 if !has_vendor_cap {
                     return Err(Error::NoDriver);
                 }
-                let modern = VirtioPciModernTransport::new(device.clone())
-                    .map_err(|_| Error::ProbeFailed)?;
+                let modern = VirtioPciModernTransport::new(device.clone())?;
                 Box::new(modern)
             }
             _ => return Err(Error::NoDriver),
