@@ -431,27 +431,28 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
 
         // TRACE and USER_NOTIF are logged only when they skip the syscall,
         // not when the tracer or supervisor permits it to continue.
+        let decision = evaluation.decision();
         if !matches!(
-            evaluation.decision,
+            decision,
             SeccompDecision::Trace(_) | SeccompDecision::UserNotification(_)
         ) {
             evaluation.log(ctx, &data);
         }
-        match evaluation.decision {
+        match decision {
             SeccompDecision::Allow => break,
             SeccompDecision::Errno(errno) => {
-                user_ctx.set_syscall_ret((-(errno as isize)) as usize);
+                user_ctx.set_syscall_ret((-(*errno as isize)) as usize);
                 return;
             }
             SeccompDecision::Trap(reason) => {
-                security::seccomp::trap(ctx, user_ctx, syscall_number as i32, reason);
+                security::seccomp::trap(ctx, user_ctx, syscall_number as i32, *reason);
                 return;
             }
             SeccompDecision::Trace(_) if has_traced => break,
             SeccompDecision::Trace(reason) => {
                 match ctx
                     .posix_thread
-                    .ptrace_may_stop_on_seccomp(reason, ctx, user_ctx)
+                    .ptrace_may_stop_on_seccomp(*reason, ctx, user_ctx)
                 {
                     PtraceStopResult::NotTraced(_) => {
                         evaluation.log(ctx, &data);
@@ -483,7 +484,7 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
                 // See __seccomp_filter() in Linux kernel/seccomp.c.
                 has_traced = true;
             }
-            SeccompDecision::UserNotification(ref listener) => {
+            SeccompDecision::UserNotification(listener) => {
                 let result = match listener {
                     Some(listener) => listener.notify(ctx, &data),
                     None => Err(Error::with_message(Errno::ENOSYS, "no seccomp listener")),

@@ -89,14 +89,18 @@ pub(super) enum FilterLogging {
     Requested,
 }
 
-/// A disposition and the log request from the winning filter.
+/// A syscall disposition and the optional action selected for logging.
 pub(crate) struct SeccompEvaluation {
-    pub(crate) decision: SeccompDecision,
+    decision: SeccompDecision,
     pub(super) logged_action: Option<u32>,
 }
 
 impl SeccompEvaluation {
-    /// Records the decision when its action or winning filter requests logging.
+    pub(crate) fn decision(&self) -> &SeccompDecision {
+        &self.decision
+    }
+
+    /// Emits the selected seccomp audit record, if any.
     pub(crate) fn log(&self, ctx: &Context, data: &SeccompData) {
         if let Some(action) = self.logged_action {
             ostd::audit!(
@@ -327,27 +331,25 @@ impl SeccompState {
         }
 
         let action = result & RET_ACTION_FULL;
-        let decision = match action {
-            RET_ALLOW | RET_LOG => SeccompDecision::Allow,
-            RET_ERRNO => SeccompDecision::Errno((result & RET_DATA).min(MAX_ERRNO)),
-            RET_TRAP => SeccompDecision::Trap(result & RET_DATA),
-            RET_TRACE => SeccompDecision::Trace(result & RET_DATA),
-            RET_USER_NOTIF => SeccompDecision::UserNotification(listener.cloned()),
-            RET_KILL_THREAD => SeccompDecision::KillThread,
-            // Unknown or unsupported actions must never permit a syscall.
-            _ => SeccompDecision::KillProcess,
-        };
         // Match Linux's default actions_logged policy. This uses the kernel
         // logger, not the Linux audit transport; no task audit rules apply.
-        let logged_action = match action {
-            RET_ALLOW => None,
-            RET_LOG | RET_KILL_THREAD => Some(action),
-            RET_ERRNO | RET_TRAP | RET_TRACE | RET_USER_NOTIF => {
-                (logging == FilterLogging::Requested).then_some(action)
-            }
-            // Linux retains an unknown action's raw value in the log even
-            // though its disposition is KILL_PROCESS.
-            _ => Some(action),
+        let requested_log = (logging == FilterLogging::Requested).then_some(action);
+        let (decision, logged_action) = match action {
+            RET_ALLOW => (SeccompDecision::Allow, None),
+            RET_LOG => (SeccompDecision::Allow, Some(action)),
+            RET_ERRNO => (
+                SeccompDecision::Errno((result & RET_DATA).min(MAX_ERRNO)),
+                requested_log,
+            ),
+            RET_TRAP => (SeccompDecision::Trap(result & RET_DATA), requested_log),
+            RET_TRACE => (SeccompDecision::Trace(result & RET_DATA), requested_log),
+            RET_USER_NOTIF => (
+                SeccompDecision::UserNotification(listener.cloned()),
+                requested_log,
+            ),
+            RET_KILL_THREAD => (SeccompDecision::KillThread, Some(action)),
+            // Unknown actions kill the process and retain the original action in the log.
+            _ => (SeccompDecision::KillProcess, Some(action)),
         };
         SeccompEvaluation {
             decision,

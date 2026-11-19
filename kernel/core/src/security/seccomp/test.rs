@@ -25,18 +25,18 @@ fn newest_equal_priority_data_wins() {
         .append(program(RET_ERRNO | 16), FilterLogging::Default)
         .unwrap();
     assert!(matches!(
-        original.evaluate(&data).decision,
+        original.evaluate(&data).decision(),
         SeccompDecision::Errno(13)
     ));
     assert!(matches!(
-        appended.evaluate(&data).decision,
+        appended.evaluate(&data).decision(),
         SeccompDecision::Errno(16)
     ));
     let allowed = appended
         .append(program(RET_ALLOW), FilterLogging::Default)
         .unwrap();
     assert!(matches!(
-        allowed.evaluate(&data).decision,
+        allowed.evaluate(&data).decision(),
         SeccompDecision::Errno(16)
     ));
 }
@@ -52,7 +52,7 @@ fn signed_action_precedence_and_unknown_actions() {
         .append(program(RET_ERRNO | 13), FilterLogging::Default)
         .unwrap();
     assert!(matches!(
-        policy.evaluate(&data).decision,
+        policy.evaluate(&data).decision(),
         SeccompDecision::KillProcess
     ));
 
@@ -61,14 +61,14 @@ fn signed_action_precedence_and_unknown_actions() {
         .append(program(0x1234_0000), FilterLogging::Default)
         .unwrap();
     assert!(matches!(
-        unknown.evaluate(&data).decision,
+        unknown.evaluate(&data).decision(),
         SeccompDecision::KillProcess
     ));
     let errno = unknown
         .append(program(RET_ERRNO | 16), FilterLogging::Default)
         .unwrap();
     assert!(matches!(
-        errno.evaluate(&data).decision,
+        errno.evaluate(&data).decision(),
         SeccompDecision::Errno(16)
     ));
 }
@@ -80,14 +80,14 @@ fn errno_zero_and_saturation() {
         .append(program(RET_ERRNO), FilterLogging::Default)
         .unwrap();
     assert!(matches!(
-        policy.evaluate(&data).decision,
+        policy.evaluate(&data).decision(),
         SeccompDecision::Errno(0)
     ));
     let policy = policy
         .append(program(RET_ERRNO | 0xffff), FilterLogging::Default)
         .unwrap();
     assert!(matches!(
-        policy.evaluate(&data).decision,
+        policy.evaluate(&data).decision(),
         SeccompDecision::Errno(4095)
     ));
 }
@@ -108,7 +108,7 @@ fn maximum_depth_chain_is_bounded_and_can_be_released() {
     let inherited = policy.clone();
     drop(policy);
     assert!(matches!(
-        inherited.evaluate(&SeccompData::new_zeroed()).decision,
+        inherited.evaluate(&SeccompData::new_zeroed()).decision(),
         SeccompDecision::Allow
     ));
     drop(inherited);
@@ -162,7 +162,7 @@ fn inherited_strict_policy_retains_its_mode_and_restrictions() {
     context.set_syscall_ret(usize::MAX);
     let data = SeccompData::from_context(&context, -1);
     assert!(matches!(
-        inherited.evaluate(&data).decision,
+        inherited.evaluate(&data).decision(),
         SeccompDecision::StrictViolation
     ));
 }
@@ -177,7 +177,7 @@ fn strict_allows_x86_probe_trampolines() {
         assert!(matches!(
             strict
                 .evaluate(&SeccompData::from_context(&context, number))
-                .decision,
+                .decision(),
             SeccompDecision::Allow
         ));
     }
@@ -209,7 +209,7 @@ fn terminated_policies_cannot_be_reactivated() {
             Errno::EINVAL
         );
         assert!(matches!(
-            policy.evaluate(&SeccompData::new_zeroed()).decision,
+            policy.evaluate(&SeccompData::new_zeroed()).decision(),
             SeccompDecision::KillProcess
         ));
     }
@@ -226,7 +226,7 @@ fn log_action_allows_with_data_and_respects_precedence() {
         .append(program(RET_LOG | 123), FilterLogging::Default)
         .unwrap();
     let evaluation = policy.evaluate(&data);
-    assert!(matches!(evaluation.decision, SeccompDecision::Allow));
+    assert!(matches!(evaluation.decision(), SeccompDecision::Allow));
     assert_eq!(evaluation.logged_action, Some(RET_LOG));
     let policy = policy
         .append(program(RET_ALLOW), FilterLogging::Requested)
@@ -236,7 +236,7 @@ fn log_action_allows_with_data_and_respects_precedence() {
         .append(program(RET_ERRNO | 13), FilterLogging::Default)
         .unwrap();
     let evaluation = policy.evaluate(&data);
-    assert!(matches!(evaluation.decision, SeccompDecision::Errno(13)));
+    assert!(matches!(evaluation.decision(), SeccompDecision::Errno(13)));
     assert_eq!(evaluation.logged_action, None);
 }
 
@@ -343,7 +343,7 @@ fn notification_uses_only_the_winning_filters_listener_and_log_flag() {
     let data = SeccompData::new_zeroed();
     let result = policy.evaluate(&data);
     assert!(
-        matches!(result.decision, SeccompDecision::UserNotification(Some(ref selected))
+        matches!(result.decision(), SeccompDecision::UserNotification(Some(selected))
         if Arc::ptr_eq(selected, &listener))
     );
     assert_eq!(result.logged_action, Some(RET_USER_NOTIF));
@@ -355,7 +355,7 @@ fn notification_uses_only_the_winning_filters_listener_and_log_flag() {
         .unwrap();
     let result = policy.evaluate(&data);
     assert!(matches!(
-        result.decision,
+        result.decision(),
         SeccompDecision::UserNotification(None)
     ));
     assert_eq!(result.logged_action, None);
