@@ -5,7 +5,10 @@ use ostd::mm::VmIo;
 use super::{SyscallReturn, mqtimedsend::mq_queue_from_fd};
 use crate::{
     prelude::*,
-    process::signal::{c_types::{SigNotify, sigevent_t}, sig_num::SigNum},
+    process::signal::{
+        c_types::{SigNotify, sigevent_t},
+        sig_num::SigNum,
+    },
 };
 
 pub(super) fn sys_mqnotify(

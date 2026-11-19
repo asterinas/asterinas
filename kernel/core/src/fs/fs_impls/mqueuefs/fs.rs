@@ -22,7 +22,7 @@ use crate::{
             registry::{FsCreationCtx, FsProperties, FsType},
         },
     },
-    ipc::mqueue::posix::{NAME_MAX, MqueueQueue},
+    ipc::mqueue::posix::{MqueueQueue, NAME_MAX},
     prelude::*,
 };
 
@@ -104,13 +104,7 @@ impl MqueueFs {
 
         let ino = self.alloc_id();
         let mode = queue.mode();
-        let inode = MqueueInode::new(
-            ino,
-            mode,
-            queue,
-            Arc::<MqueueFs>::downgrade(self),
-            &self.sb,
-        );
+        let inode = MqueueInode::new(ino, mode, queue, Arc::<MqueueFs>::downgrade(self), &self.sb);
         inodes.push((queue_weak, Arc::downgrade(&inode)));
         inode
     }
