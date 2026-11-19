@@ -1,91 +1,88 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#include <stdio.h>
-#include <sys/time.h>
+#include "../../common/test.h"
+
 #include <signal.h>
-#include <stdlib.h>
-#include <unistd.h>
+#include <stdint.h>
+#include <sys/time.h>
 #include <time.h>
-#include <string.h>
 
-volatile sig_atomic_t counter = 0;
+#define NS_PER_SEC INT64_C(1000000000)
+/* A latency regression envelope for a lightly loaded test VM. */
+#define MAX_LATENESS_NS (50 * INT64_C(1000000))
+#define TARGET_COUNT 3
 
-void timer_handler(int signum)
+static sigset_t signals, old_mask;
+
+FN_SETUP(block_alarm)
 {
-	counter++;
+	CHECK(sigemptyset(&signals));
+	CHECK(sigaddset(&signals, SIGALRM));
+	CHECK(sigprocmask(SIG_BLOCK, &signals, &old_mask));
+}
+END_SETUP()
+
+static int64_t elapsed_ns(const struct timespec *start,
+			  const struct timespec *end)
+{
+	return (end->tv_sec - start->tv_sec) * NS_PER_SEC + end->tv_nsec -
+	       start->tv_nsec;
 }
 
-int main()
+FN_TEST(periodic_timer_delivery)
 {
-	struct itimerval timer;
-	struct sigaction sa;
-	int target_count = 3;
-	struct timespec start_time, end_time;
+	struct timespec start;
+	struct itimerval timer = { .it_value = { .tv_sec = 1 },
+				   .it_interval = { .tv_sec = 1 } };
 
-	memset(&sa, 0, sizeof(sa));
-	sa.sa_handler = &timer_handler;
-	sa.sa_flags = SA_RESTART;
-	sigaction(SIGALRM, &sa, NULL);
+	if (TEST_SUCC(clock_gettime(CLOCK_MONOTONIC, &start)) < 0)
+		goto cleanup;
+	if (TEST_SUCC(setitimer(ITIMER_REAL, &timer, NULL)) < 0)
+		goto cleanup;
 
-	// Set the interval to 1.
-	timer.it_value.tv_sec = 1;
-	timer.it_value.tv_usec = 0;
-	timer.it_interval.tv_sec = 1;
-	timer.it_interval.tv_usec = 0;
+	for (int i = 0; i < TARGET_COUNT; i++) {
+		/* Blocking SIGALRM avoids handler races; a missing tick is bounded. */
+		struct timespec timeout = { .tv_sec = 2 };
+		if (TEST_RES(sigtimedwait(&signals, NULL, &timeout),
+			     _ret == SIGALRM) != SIGALRM)
+			break;
 
-	// Start timer.
-	if (setitimer(ITIMER_REAL, &timer, NULL) == -1) {
-		perror("Error calling setitimer()");
-		return EXIT_FAILURE;
+		struct timespec now;
+		int64_t expected_ns = (i + 1) * NS_PER_SEC;
+		TEST_RES(clock_gettime(CLOCK_MONOTONIC, &now),
+			 _ret == 0 && elapsed_ns(&start, &now) >= expected_ns &&
+				 elapsed_ns(&start, &now) <
+					 expected_ns + MAX_LATENESS_NS);
+
+		struct itimerval state;
+		TEST_RES(getitimer(ITIMER_REAL, &state),
+			 _ret == 0 && state.it_interval.tv_sec == 1 &&
+				 state.it_interval.tv_usec == 0 &&
+				 state.it_value.tv_sec == 0 &&
+				 state.it_value.tv_usec >= 0 &&
+				 state.it_value.tv_usec < 1000000);
 	}
 
-	if (clock_gettime(CLOCK_REALTIME, &start_time) == -1) {
-		perror("Error calling clock_gettime()");
-		return EXIT_FAILURE;
-	}
-
-	while (counter < target_count) {
-		struct itimerval timer_state;
-		if (getitimer(ITIMER_REAL, &timer_state) == -1) {
-			perror("Error calling getitimer()");
-			return EXIT_FAILURE;
-		}
-
-		if (timer_state.it_interval.tv_sec == 1 &&
-		    timer_state.it_value.tv_sec == 0) {
-			sleep(1);
-		} else {
-			perror("Error record time in the timer");
-			return EXIT_FAILURE;
-		}
-	}
-
-	timer.it_value.tv_sec = 0;
-	timer.it_value.tv_usec = 0;
-	timer.it_interval.tv_sec = 0;
-	timer.it_interval.tv_usec = 0;
-	// Stop timer.
-	if (setitimer(ITIMER_REAL, &timer, NULL) == -1) {
-		perror("Error calling setitimer()");
-		return EXIT_FAILURE;
-	}
-
-	if (clock_gettime(CLOCK_REALTIME, &end_time) == -1) {
-		perror("Error calling clock_gettime()");
-		return EXIT_FAILURE;
-	}
-
-	int elapsed_time = (int)(end_time.tv_sec - start_time.tv_sec);
-
-	printf("Timer was set to go off every second for a total of %d times.\n",
-	       target_count);
-	printf("Elapsed time: %d seconds.\n", elapsed_time);
-
-	if (elapsed_time == target_count) {
-		printf("The actual elapsed time matches the expected time.\n");
-	} else {
-		printf("There is a discrepancy between actual and expected time.\n");
-	}
-
-	return EXIT_SUCCESS;
+cleanup:
+	timer = (struct itimerval){ 0 };
+	TEST_SUCC(setitimer(ITIMER_REAL, &timer, NULL));
+	TEST_RES(getitimer(ITIMER_REAL, &timer),
+		 _ret == 0 && timer.it_value.tv_sec == 0 &&
+			 timer.it_value.tv_usec == 0 &&
+			 timer.it_interval.tv_sec == 0 &&
+			 timer.it_interval.tv_usec == 0);
 }
+END_TEST()
+
+FN_SETUP(restore_signal_mask)
+{
+	struct timespec no_wait = { 0 };
+	int signum;
+	do {
+		signum = CHECK_WITH(sigtimedwait(&signals, NULL, &no_wait),
+				    _ret == SIGALRM ||
+					    (_ret == -1 && errno == EAGAIN));
+	} while (signum == SIGALRM);
+	CHECK(sigprocmask(SIG_SETMASK, &old_mask, NULL));
+}
+END_SETUP()
