@@ -1,16 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_util::printer::VmPrinter;
+use core::fmt::{self, Write};
+
+use ostd::mm::FallibleVmWrite;
 
 use super::TidDirOps;
 use crate::{
+    events::IoEvents,
     fs::{
-        file::mkmod,
-        procfs::template::{ProcFile, ProcFileOps},
-        vfs::inode::Inode,
+        file::{AccessMode, PerOpenFileOps, StatusFlags, mkmod},
+        procfs::template::{ProcFile, ProcFileOpsByHandle},
+        vfs::inode::{FileOps, Inode},
     },
     prelude::*,
-    process::posix_thread::{AsPosixThread, SleepingState},
+    process::{
+        posix_thread::{AsPosixThread, SleepingState},
+        signal::{PollHandle, Pollable},
+    },
     thread::Thread,
     vm::vmar::RssType,
 };
@@ -72,15 +78,36 @@ impl StatusFileOps {
     }
 }
 
-impl ProcFileOps for StatusFileOps {
+impl ProcFileOpsByHandle for StatusFileOps {
     fn owner_thread(&self) -> Option<Arc<Thread>> {
         self.0.thread()
     }
 
-    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let mut printer = VmPrinter::new_skip(writer, offset);
+    fn open(
+        &self,
+        _access_mode: AccessMode,
+        _status_flags: StatusFlags,
+    ) -> Result<Box<dyn PerOpenFileOps>> {
+        Ok(Box::new(StatusFileHandle {
+            dir: self.0.clone(),
+            record: Mutex::new(None),
+        }))
+    }
+}
 
-        let Some((thread, process)) = self.0.thread_and_process() else {
+struct StatusFileHandle {
+    dir: TidDirOps,
+    record: Mutex<Option<StatusRecord>>,
+}
+
+impl StatusFileHandle {
+    fn render(&self, offset: usize) -> Result<StatusRecord> {
+        let mut printer = StatusRecord {
+            text: String::new(),
+            next_offset: offset,
+        };
+
+        let Some((thread, process)) = self.dir.thread_and_process() else {
             return_errno_with_message!(Errno::ESRCH, "the thread or the process does not exist");
         };
         let posix_thread = thread.as_posix_thread().unwrap();
@@ -201,17 +228,97 @@ impl ProcFileOps for StatusFileOps {
         )?;
 
         // Use the target thread, including for reads by another process.
-        // Keep mode and count on the same policy snapshot across concurrent TSYNC.
+        // Read mode and count together so concurrent TSYNC cannot split them.
         // Reference: <https://github.com/torvalds/linux/blob/v6.18/fs/proc/array.c>.
-        let seccomp = posix_thread.seccomp_snapshot();
+        let (seccomp_mode, filter_count) = posix_thread.seccomp_status();
         writeln!(
             printer,
             "NoNewPrivs:\t{}",
             u8::from(credentials.no_new_privs())
         )?;
-        writeln!(printer, "Seccomp:\t{}", seccomp.mode())?;
-        writeln!(printer, "Seccomp_filters:\t{}", seccomp.filter_count())?;
+        writeln!(printer, "Seccomp:\t{}", seccomp_mode)?;
+        writeln!(printer, "Seccomp_filters:\t{}", filter_count)?;
 
-        Ok(printer.bytes_written())
+        Ok(printer)
+    }
+}
+
+impl Pollable for StatusFileHandle {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
+        mask & (IoEvents::IN | IoEvents::OUT)
+    }
+}
+
+impl FileOps for StatusFileHandle {
+    fn read_at(
+        &self,
+        offset: usize,
+        writer: &mut VmWriter,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        if !writer.has_avail() {
+            return Ok(0);
+        }
+
+        let mut record = self.record.lock();
+        // Like Linux's single-record seq_file, serve the same text across
+        // sequential reads and render again when the read position changes.
+        let continues_record = record
+            .as_ref()
+            .is_some_and(|record| record.next_offset == offset);
+        if offset == 0 || !continues_record {
+            *record = None;
+            *record = Some(self.render(offset)?);
+        }
+        let record = record.as_mut().unwrap();
+        let Some(bytes) = record.text.as_bytes().get(offset..) else {
+            return Ok(0);
+        };
+        let read_len = match writer.write_fallible(&mut VmReader::from(bytes)) {
+            Ok(len) => len,
+            Err((_, len)) if len != 0 => len,
+            Err((err, _)) => return Err(err.into()),
+        };
+        record.next_offset = offset + read_len;
+        Ok(read_len)
+    }
+
+    fn write_at(
+        &self,
+        _offset: usize,
+        _reader: &mut VmReader,
+        _status_flags: StatusFlags,
+    ) -> Result<usize> {
+        return_errno_with_message!(Errno::EPERM, "the file is not writable");
+    }
+}
+
+impl PerOpenFileOps for StatusFileHandle {
+    fn check_seekable(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn is_offset_aware(&self) -> bool {
+        true
+    }
+}
+
+struct StatusRecord {
+    text: String,
+    next_offset: usize,
+}
+
+impl StatusRecord {
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> Result<()> {
+        Write::write_fmt(self, args)
+            .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate proc status text"))
+    }
+}
+
+impl Write for StatusRecord {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        self.text.try_reserve(text.len()).map_err(|_| fmt::Error)?;
+        self.text.push_str(text);
+        Ok(())
     }
 }

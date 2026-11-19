@@ -119,6 +119,11 @@ impl PosixThread {
         self.seccomp.lock().snapshot()
     }
 
+    /// Returns the mode and filter count from the same seccomp policy.
+    pub(crate) fn seccomp_status(&self) -> (u32, usize) {
+        self.seccomp.lock().status()
+    }
+
     #[cfg(target_arch = "x86_64")]
     pub(crate) fn is_seccomp_strict(&self) -> bool {
         self.seccomp.lock().is_strict()

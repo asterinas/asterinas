@@ -39,6 +39,10 @@ impl ThreadSeccompState {
         self.state.clone()
     }
 
+    pub(crate) fn status(&self) -> (u32, usize) {
+        (self.state.mode(), self.state.filter_count())
+    }
+
     #[cfg(target_arch = "x86_64")]
     pub(crate) fn is_strict(&self) -> bool {
         self.state.is_strict()
@@ -124,7 +128,7 @@ impl SeccompState {
     }
 
     /// Returns the filter count, retaining the last count after thread exit.
-    pub(crate) fn filter_count(&self) -> usize {
+    pub(super) fn filter_count(&self) -> usize {
         if let Policy::Exited { filter_count, .. } = self.policy {
             return filter_count;
         }

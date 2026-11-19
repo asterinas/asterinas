@@ -5,6 +5,35 @@
 
 #define SECCOMP_MODE_DEAD 3
 
+static void read_status(int fd, char *buf, size_t capacity, size_t chunk)
+{
+	size_t used = 0;
+	for (;;) {
+		CHECK_WITH(used, _ret + chunk < capacity);
+		ssize_t len = CHECK(read(fd, buf + used, chunk));
+		if (!len)
+			break;
+		used += len;
+	}
+	buf[used] = '\0';
+}
+
+static void check_status_fields(const char *buf, int nnp, int mode, int filters)
+{
+	const char *names[] = { "NoNewPrivs:", "Seccomp:", "Seccomp_filters:" };
+	int expected[] = { nnp, mode, filters };
+	for (size_t i = 0; i < 3; ++i) {
+		const char *field =
+			CHECK_WITH(strstr(buf, names[i]), _ret != NULL);
+		CHECK_WITH(field == buf || field[-1] == '\n', _ret);
+		CHECK_WITH(strstr(field + 1, names[i]), _ret == NULL);
+		char value[64];
+		snprintf(value, sizeof(value), "%s\t%d\n", names[i],
+			 expected[i]);
+		CHECK_WITH(strncmp(field, value, strlen(value)), _ret == 0);
+	}
+}
+
 static void check_status(pid_t pid, pid_t tid, int nnp, int mode, int filters,
 			 size_t chunk)
 {
@@ -15,27 +44,9 @@ static void check_status(pid_t pid, pid_t tid, int nnp, int mode, int filters,
 	else
 		snprintf(path, sizeof(path), "/proc/%d/status", pid);
 	int fd = CHECK(open(path, O_RDONLY));
-	size_t used = 0;
-	for (;;) {
-		CHECK_WITH(used, _ret + chunk < sizeof(buf));
-		ssize_t len = CHECK(read(fd, buf + used, chunk));
-		if (!len)
-			break;
-		used += len;
-	}
-	buf[used] = '\0';
+	read_status(fd, buf, sizeof(buf), chunk);
 	CHECK(close(fd));
-	const char *names[] = { "NoNewPrivs:", "Seccomp:", "Seccomp_filters:" };
-	int expected[] = { nnp, mode, filters };
-	for (size_t i = 0; i < 3; ++i) {
-		char *field = CHECK_WITH(strstr(buf, names[i]), _ret != NULL);
-		CHECK_WITH(field == buf || field[-1] == '\n', _ret);
-		CHECK_WITH(strstr(field + 1, names[i]), _ret == NULL);
-		char value[64];
-		snprintf(value, sizeof(value), "%s\t%d\n", names[i],
-			 expected[i]);
-		CHECK_WITH(strncmp(field, value, strlen(value)), _ret == 0);
-	}
+	check_status_fields(buf, nnp, mode, filters);
 }
 
 static void check_self(int nnp, int mode, int filters)
@@ -51,6 +62,29 @@ static int allow_filter(unsigned int flags)
 	};
 	struct sock_fprog prog = { .len = 1, .filter = code };
 	return syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, flags, &prog);
+}
+
+static void short_reads_keep_status_snapshot(void)
+{
+	no_new_privs();
+	int fd = CHECK(open("/proc/self/status", O_RDONLY));
+	char buf[8192];
+	size_t used = 0;
+	/* Stop between the mode and filter count before changing the policy. */
+	do {
+		CHECK_WITH(used, _ret + 1 < sizeof(buf));
+		CHECK_WITH(read(fd, buf + used, 1), _ret == 1);
+		buf[++used] = '\0';
+	} while (!strstr(buf, "\nSeccomp:\t0\n"));
+	CHECK(allow_filter(0));
+	check_self(1, SECCOMP_MODE_FILTER, 1);
+
+	read_status(fd, buf + used, sizeof(buf) - used, 7);
+	check_status_fields(buf, 1, SECCOMP_MODE_DISABLED, 0);
+	CHECK_WITH(lseek(fd, 0, SEEK_SET), _ret == 0);
+	read_status(fd, buf, sizeof(buf), 7);
+	check_status_fields(buf, 1, SECCOMP_MODE_FILTER, 1);
+	CHECK(close(fd));
 }
 
 static void modes_and_stacking(void)
@@ -322,6 +356,7 @@ static void kill_process_status(void)
 FN_TEST(proc_status)
 {
 	TEST_RES(run_child(modes_and_stacking, 0), _ret == 0);
+	TEST_RES(run_child(short_reads_keep_status_snapshot, 0), _ret == 0);
 	TEST_RES(run_child(fork_inherits_status, 0), _ret == 0);
 	TEST_RES(run_child(thread_specific_status, 0), _ret == 0);
 	TEST_RES(run_child(synchronized_status, 0), _ret == 0);
