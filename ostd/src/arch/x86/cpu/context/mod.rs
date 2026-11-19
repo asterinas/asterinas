@@ -353,6 +353,11 @@ impl UserContext {
         self.is_tsc_disabled = true;
     }
 
+    /// Returns whether user-mode timestamp instructions are disabled for this context.
+    pub fn is_tsc_disabled(&self) -> bool {
+        self.is_tsc_disabled
+    }
+
     /// Gets the value of the RFLAGS register.
     pub fn rflags(&self) -> usize {
         self.user_context.rflags

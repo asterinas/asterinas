@@ -39,6 +39,11 @@ impl ThreadSeccompState {
         self.state.clone()
     }
 
+    #[cfg(target_arch = "x86_64")]
+    pub(crate) fn is_strict(&self) -> bool {
+        self.state.is_strict()
+    }
+
     pub(crate) fn mark_dead(&mut self) {
         self.state.mark_dead();
     }

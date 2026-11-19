@@ -119,6 +119,11 @@ impl PosixThread {
         self.seccomp.lock().snapshot()
     }
 
+    #[cfg(target_arch = "x86_64")]
+    pub(crate) fn is_seccomp_strict(&self) -> bool {
+        self.seccomp.lock().is_strict()
+    }
+
     pub(crate) fn set_seccomp(&self, state: SeccompState) {
         // Attach before detaching the old policy so a retained listener never
         // temporarily loses its last user during append or TSYNC.

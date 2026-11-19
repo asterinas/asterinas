@@ -69,10 +69,13 @@ pub(crate) fn create_new_user_task(
         }
 
         while !current_thread.is_exited() {
+            // A syscall can enter strict mode. Check until the context carries
+            // the resulting restriction on user-mode timestamp reads.
             #[cfg(target_arch = "x86_64")]
-            if ctx.posix_thread.seccomp_snapshot().is_strict() {
+            if !user_mode.context().is_tsc_disabled() && ctx.posix_thread.is_seccomp_strict() {
                 user_mode.context_mut().disable_tsc();
             }
+
             // Execute the user code
             let return_reason = user_mode.execute(&ctx);
 
