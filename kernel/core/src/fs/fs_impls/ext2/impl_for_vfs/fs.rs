@@ -17,6 +17,7 @@ use crate::{
         },
     },
     prelude::*,
+    vm::page_cache::ErrorRecord,
 };
 
 impl FileSystem for Ext2 {
@@ -30,6 +31,10 @@ impl FileSystem for Ext2 {
             return_errno_with_message!(Errno::EIO, "failed to flush block device");
         }
         Ok(())
+    }
+
+    fn error_record(&self) -> Option<&ErrorRecord> {
+        Some(&self.fs_error_record)
     }
 
     fn root_inode(&self) -> Arc<dyn Inode> {

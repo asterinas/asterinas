@@ -14,7 +14,7 @@ pub(super) use self::block_ptr_tree::{BlockPtrTree, RawBlockPtrs};
 use super::io_range::{IoRange, IoRangeIter};
 use crate::{
     fs::ext2::{fs::Ext2, prelude::*},
-    vm::page_cache::PageRun,
+    vm::page_cache::{ErrorRecord, PageRun},
 };
 
 /// Bridges the inode's logical file view and the physical block device.
@@ -33,15 +33,24 @@ pub(super) struct InodeBlockManager {
     npages: AtomicUsize,
     /// File system handle for indirect I/O and BIO submission.
     fs: Weak<Ext2>,
+    local_error_record: Arc<ErrorRecord>,
+    fs_error_record: Arc<ErrorRecord>,
 }
 
 impl InodeBlockManager {
     /// Creates a new block manager wrapping the given block-pointer tree.
     pub(super) fn new(block_ptr_tree: BlockPtrTree, fs: Weak<Ext2>, npages: usize) -> Self {
+        let fs_error_record = fs
+            .upgrade()
+            .expect("the filesystem must be alive while creating an inode")
+            .fs_error_record
+            .clone();
         Self {
             block_ptr_tree: RwMutex::new(block_ptr_tree),
             npages: AtomicUsize::new(npages),
             fs,
+            local_error_record: Arc::new(ErrorRecord::default()),
+            fs_error_record,
         }
     }
 
@@ -134,6 +143,14 @@ impl InodeBlockManager {
 }
 
 impl BlockAsPageCacheBackend for InodeBlockManager {
+    fn local_error_record(&self) -> Option<&Arc<ErrorRecord>> {
+        Some(&self.local_error_record)
+    }
+
+    fn fs_error_record(&self) -> &Arc<ErrorRecord> {
+        &self.fs_error_record
+    }
+
     fn submit_read_bio(
         &self,
         idx: usize,
@@ -246,6 +263,7 @@ impl BlockAsPageCacheBackend for InodeBlockManager {
                         fs.block_device(),
                         Bid::new(device_range.start as u64),
                         range_len,
+                        self,
                         io_batch,
                     )?;
                 }

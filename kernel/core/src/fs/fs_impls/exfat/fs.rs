@@ -38,7 +38,7 @@ use crate::{
         },
     },
     prelude::*,
-    vm::page_cache::{BlockAsPageCacheBackend, PageCache},
+    vm::page_cache::{BlockAsPageCacheBackend, ErrorRecord, PageCache},
 };
 
 #[derive(Debug)]
@@ -60,6 +60,8 @@ pub(crate) struct ExfatFs {
     //Cache for fat table
     fat_cache: RwLock<LruCache<ClusterID, ClusterID>>,
     meta_cache: PageCache,
+    /// Writeback errors shared by the metadata cache and all inode caches.
+    pub(super) fs_error_record: Arc<ErrorRecord>,
 
     //A global lock, We need to hold the mutex before accessing bitmap or inode, otherwise there will be deadlocks.
     mutex: Mutex<()>,
@@ -79,6 +81,7 @@ impl ExfatFs {
         // Load the super_block
         let super_block = Self::read_super_block(block_device.as_ref())?;
         let fs_size = super_block.num_clusters as usize * super_block.cluster_size as usize;
+        let fs_error_record = Arc::new(ErrorRecord::default());
         let exfat_fs = Arc::new_cyclic(|weak_self| ExfatFs {
             block_device,
             super_block,
@@ -91,6 +94,7 @@ impl ExfatFs {
                 NonZeroUsize::new(FAT_LRU_CACHE_SIZE).unwrap(),
             )),
             meta_cache: PageCache::new_with_backend(fs_size, weak_self.clone() as _).unwrap(),
+            fs_error_record,
             mutex: Mutex::new(()),
             fs_event_subscriber_stats: FsEventSubscriberStats::new(),
         });
@@ -376,6 +380,10 @@ impl ExfatFs {
 }
 
 impl BlockAsPageCacheBackend for ExfatFs {
+    fn fs_error_record(&self) -> &Arc<ErrorRecord> {
+        &self.fs_error_record
+    }
+
     fn submit_read_bio(
         &self,
         idx: usize,

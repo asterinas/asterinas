@@ -6,7 +6,7 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use device_id::DeviceId;
 
 use super::inode::Inode;
-use crate::prelude::*;
+use crate::{prelude::*, vm::page_cache::ErrorRecord};
 
 /// Common interface implemented by each concrete file system instance.
 pub(crate) trait FileSystem: Any + Sync + Send {
@@ -20,6 +20,11 @@ pub(crate) trait FileSystem: Any + Sync + Send {
 
     /// Syncs the file system.
     fn sync(&self) -> Result<()>;
+
+    /// Returns this filesystem's aggregate writeback error record, if exposed.
+    fn error_record(&self) -> Option<&ErrorRecord> {
+        None
+    }
 
     /// Returns the root inode of this file system.
     ///

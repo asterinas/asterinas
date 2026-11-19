@@ -54,18 +54,24 @@ pub(super) fn sys_msync(
         .iter()
         .filter_map(|m| m.inode().cloned())
         .collect::<Vec<_>>();
-    let task_fn = move || {
+    let task_fn = move || -> Result<()> {
+        let mut result = Ok(());
         for inode in inodes {
             // TODO: Sync a necessary range instead of syncing the whole inode.
-            let _ = inode.sync(SyncMode::Full);
+            let current = inode.sync(SyncMode::Full);
+            result = result.and(current);
         }
+        result
     };
 
     // If neither MS_SYNC nor MS_ASYNC is specified, Linux defaults to MS_ASYNC behavior.
     if flags.contains(MsyncFlags::MS_SYNC) {
-        task_fn();
+        task_fn()?;
     } else {
-        ThreadOptions::new(task_fn).spawn();
+        ThreadOptions::new(move || {
+            let _ = task_fn();
+        })
+        .spawn();
     }
 
     Ok(SyscallReturn::Return(0))

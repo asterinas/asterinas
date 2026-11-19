@@ -52,7 +52,7 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    vm::page_cache::{PageCache, Vmo},
+    vm::page_cache::{ErrorRecord, PageCache, Vmo},
 };
 
 /// Represents a cached virtio-fs inode and its kernel-side state.
@@ -60,6 +60,8 @@ pub(super) struct VirtioFsInode {
     nodeid: FuseNodeId,
     generation: FuseGeneration,
     type_: InodeType,
+    local_error_record: Option<Arc<ErrorRecord>>,
+    fs_error_record: Arc<ErrorRecord>,
     lookup_count: LookupCount,
     /// The size of this inode.
     ///
@@ -93,6 +95,7 @@ impl VirtioFsInode {
         fs: Weak<VirtioFs>,
         container_device_id: DeviceId,
         attr_version: AttrVersion,
+        fs_error_record: &Arc<ErrorRecord>,
     ) -> Arc<Self> {
         Self::new(
             FUSE_ROOT_ID,
@@ -102,6 +105,7 @@ impl VirtioFsInode {
             Duration::MAX,
             valid_until(root_entry.attr_valid(), root_entry.attr_valid_nsec()),
             attr_version,
+            fs_error_record,
         )
     }
 
@@ -115,9 +119,11 @@ impl VirtioFsInode {
             valid_until(entry_reply.entry_valid(), entry_reply.entry_valid_nsec()),
             valid_until(entry_reply.attr_valid(), entry_reply.attr_valid_nsec()),
             fs.session().bump_attr_version(),
+            &fs.fs_error_record,
         )
     }
 
+    #[expect(clippy::too_many_arguments)]
     fn new(
         nodeid: FuseNodeId,
         generation: FuseGeneration,
@@ -126,11 +132,17 @@ impl VirtioFsInode {
         entry_valid_until: Duration,
         attr_valid_until: Duration,
         attr_version: AttrVersion,
+        fs_error_record: &Arc<ErrorRecord>,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             nodeid,
             generation,
             type_: metadata.type_,
+            local_error_record: metadata
+                .type_
+                .is_regular_file()
+                .then(|| Arc::new(ErrorRecord::default())),
+            fs_error_record: fs_error_record.clone(),
             lookup_count: LookupCount::initial(),
             size: AtomicUsize::new(metadata.size),
             inner: RwMutex::new(InodeInner {

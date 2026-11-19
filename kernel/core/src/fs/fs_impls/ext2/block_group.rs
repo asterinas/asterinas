@@ -40,7 +40,7 @@ use super::{
 };
 use crate::{
     fs::{file::SyncMode, utils::IdBitmap, vfs::inode::Inode as VfsInode},
-    vm::page_cache::PageRun,
+    vm::page_cache::{ErrorRecord, PageRun},
 };
 
 /// Represents one block group in an ext2 filesystem.
@@ -93,6 +93,7 @@ impl BlockGroup {
         group_idx: usize,
         sb: &SuperBlock,
         block_device: Arc<dyn BlockDevice>,
+        fs_error_record: Arc<ErrorRecord>,
     ) -> Result<Self> {
         let offset = group_idx * size_of::<RawBlockGroup>();
         let raw_group = group_descs
@@ -138,6 +139,7 @@ impl BlockGroup {
             inode_table_bid: group_desc.inode_table_bid,
             raw_inodes_size,
             block_device: block_device.clone(),
+            fs_error_record,
         });
         let inode_table_cache =
             PageCache::new_with_backend(raw_inodes_size, Arc::downgrade(&backend) as _)?;
@@ -740,9 +742,14 @@ struct InodeTableBackend {
     raw_inodes_size: usize,
     /// Block device handle for I/O.
     block_device: Arc<dyn BlockDevice>,
+    fs_error_record: Arc<ErrorRecord>,
 }
 
 impl BlockAsPageCacheBackend for InodeTableBackend {
+    fn fs_error_record(&self) -> &Arc<ErrorRecord> {
+        &self.fs_error_record
+    }
+
     fn submit_read_bio(
         &self,
         idx: usize,
@@ -800,6 +807,6 @@ impl BlockAsPageCacheBackend for InodeTableBackend {
         let bid = Bid::new(self.inode_table_bid as u64) + start_idx as u64;
         let len = pages.len();
 
-        pages.submit_contiguous_write_pages(self.block_device.as_ref(), bid, len, io_batch)
+        pages.submit_contiguous_write_pages(self.block_device.as_ref(), bid, len, self, io_batch)
     }
 }
