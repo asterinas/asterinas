@@ -142,7 +142,14 @@ impl WorkQueue {
             .disable_irq()
             .lock()
             .pending_work_items
-            .push_back(work_item);
+            .push_back(work_item.clone());
+
+        // Publish the item before waking a consumer, and release the queue lock
+        // before entering the scheduler. Idle workers recheck the queue when
+        // registering their waiter, so an enqueue racing with sleep is not lost.
+        if let Some(worker_pool) = self.worker_pool.upgrade() {
+            worker_pool.notify_work(work_item.cpu_affinity());
+        }
 
         true
     }

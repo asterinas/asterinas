@@ -147,6 +147,11 @@ impl WorkerPool {
     }
 
     pub(crate) fn run(&self) {
+        // Keep an initial consumer ready for every supported CPU. Enqueue can
+        // run in interrupt context and cannot create a thread on demand.
+        for local_pool in &self.local_pools {
+            local_pool.add_worker();
+        }
         self.monitor.run();
     }
 
@@ -193,6 +198,27 @@ impl WorkerPool {
 
     pub(super) fn wake_worker(&self, cpu_id: CpuId) -> bool {
         self.local_pool(cpu_id).wake_worker()
+    }
+
+    /// Notifies an idle worker that can execute the newly queued work.
+    pub(super) fn notify_work(&self, cpu_affinity: &CpuSet) {
+        // Prefer the submitting CPU to retain cache locality.
+        let current_cpu = CpuId::current_racy();
+        if self.cpu_set.contains(current_cpu)
+            && cpu_affinity.contains(current_cpu)
+            && self.wake_worker(current_cpu)
+        {
+            return;
+        }
+
+        for local_pool in &self.local_pools {
+            if local_pool.cpu_id != current_cpu
+                && cpu_affinity.contains(local_pool.cpu_id)
+                && local_pool.wake_worker()
+            {
+                break;
+            }
+        }
     }
 
     pub(super) fn add_worker(&self, cpu_id: CpuId) {
