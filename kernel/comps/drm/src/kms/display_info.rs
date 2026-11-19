@@ -16,6 +16,15 @@ pub struct DrmDisplayInfo {
 }
 
 impl DrmDisplayInfo {
+    /// Creates display information from physical dimensions in millimeters.
+    pub fn new(mm_width: u32, mm_height: u32, subpixel_order: SubpixelOrder) -> Self {
+        Self {
+            mm_width,
+            mm_height,
+            subpixel_order,
+        }
+    }
+
     pub fn from_dpi(resolution: DrmSize, dpi: u32, subpixel_order: SubpixelOrder) -> Result<Self> {
         if dpi == 0 {
             return_errno_with_message!(Errno::EINVAL, "the display DPI must be nonzero");
@@ -38,11 +47,11 @@ impl DrmDisplayInfo {
             })
         }
 
-        Ok(Self {
-            mm_width: pixels_to_mm(resolution.width(), dpi)?,
-            mm_height: pixels_to_mm(resolution.height(), dpi)?,
+        Ok(Self::new(
+            pixels_to_mm(resolution.width(), dpi)?,
+            pixels_to_mm(resolution.height(), dpi)?,
             subpixel_order,
-        })
+        ))
     }
 
     pub fn mm_width(&self) -> u32 {

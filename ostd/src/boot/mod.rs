@@ -15,6 +15,9 @@
     expect(dead_code)
 )]
 
+mod framebuffer;
+pub use framebuffer::{BootloaderFramebufferArg, FramebufferRgbLayout};
+
 pub mod memory_region;
 pub mod smp;
 
@@ -68,19 +71,6 @@ pub enum BootloaderAcpiArg {
     Rsdt(usize),
     /// Address of XSDT provided in RSDP v2+.
     Xsdt(usize),
-}
-
-/// The framebuffer arguments.
-#[derive(Clone, Copy, Debug)]
-pub struct BootloaderFramebufferArg {
-    /// The address of the buffer.
-    pub address: usize,
-    /// The width of the buffer.
-    pub width: usize,
-    /// The height of the buffer.
-    pub height: usize,
-    /// Bits per pixel of the buffer.
-    pub bpp: usize,
 }
 
 /*************************** Boot-time information ***************************/
