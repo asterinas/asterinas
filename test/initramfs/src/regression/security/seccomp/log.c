@@ -172,11 +172,17 @@ static void log_flag_combinations(void)
 
 static pthread_barrier_t barrier;
 
+static void rendezvous(void)
+{
+	CHECK_WITH(pthread_barrier_wait(&barrier),
+		   _ret == 0 || _ret == PTHREAD_BARRIER_SERIAL_THREAD);
+}
+
 static void *synced_thread(void *arg)
 {
 	(void)arg;
-	pthread_barrier_wait(&barrier);
-	pthread_barrier_wait(&barrier);
+	rendezvous();
+	rendezvous();
 	CHECK_WITH(syscall(SYS_getppid), _ret == -1 && errno == EBUSY);
 	return NULL;
 }
@@ -188,11 +194,11 @@ static void tsync_propagates_logging(void)
 	CHECK(pthread_barrier_init(&barrier, NULL, 2));
 	pthread_t thread;
 	CHECK(pthread_create(&thread, NULL, synced_thread, NULL));
-	pthread_barrier_wait(&barrier);
+	rendezvous();
 	CHECK(install_action(SECCOMP_RET_ERRNO | EBUSY,
 			     SECCOMP_FILTER_FLAG_LOG |
 				     SECCOMP_FILTER_FLAG_TSYNC));
-	pthread_barrier_wait(&barrier);
+	rendezvous();
 	CHECK(pthread_join(thread, NULL));
 	CHECK(pthread_barrier_destroy(&barrier));
 }
@@ -204,8 +210,8 @@ static void *divergent_thread(void *arg)
 	(void)arg;
 	divergent_tid = syscall(SYS_gettid);
 	CHECK(install_action(SECCOMP_RET_ERRNO | EACCES, 0));
-	pthread_barrier_wait(&barrier);
-	pthread_barrier_wait(&barrier);
+	rendezvous();
+	rendezvous();
 	CHECK_WITH(syscall(SYS_getppid), _ret == -1 && errno == EACCES);
 	return NULL;
 }
@@ -217,7 +223,7 @@ static void failed_tsync_preserves_logging(void)
 	CHECK(pthread_barrier_init(&barrier, NULL, 2));
 	pthread_t thread;
 	CHECK(pthread_create(&thread, NULL, divergent_thread, NULL));
-	pthread_barrier_wait(&barrier);
+	rendezvous();
 	CHECK(install_action(SECCOMP_RET_ERRNO | EBUSY,
 			     SECCOMP_FILTER_FLAG_LOG));
 	CHECK_WITH(install_action(SECCOMP_RET_ALLOW,
@@ -230,7 +236,7 @@ static void failed_tsync_preserves_logging(void)
 					  SECCOMP_FILTER_FLAG_TSYNC_ESRCH),
 		   _ret == -1 && errno == ESRCH);
 	CHECK_WITH(syscall(SYS_getppid), _ret == -1 && errno == EBUSY);
-	pthread_barrier_wait(&barrier);
+	rendezvous();
 	CHECK(pthread_join(thread, NULL));
 	CHECK(pthread_barrier_destroy(&barrier));
 }
