@@ -56,6 +56,15 @@ Supported functionality in SCML:
 ```
 
 `SECCOMP_SET_MODE_STRICT` requires `flags = 0` and a null argument.
+`prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT, ...)` ignores the filter argument.
+Strict and filter modes are mutually exclusive.
+Strict mode permits `read`, `write`, `exit`, and `rt_sigreturn`.
+On x86-64, the allowlist also admits `uretprobe` and `uprobe`,
+which currently return `ENOSYS`.
+A syscall outside the allowlist terminates the calling thread with `SIGKILL`.
+On x86-64, executing `RDTSC` or `RDTSCP` in user mode under strict mode
+raises `SIGSEGV`.
+
 `SECCOMP_GET_ACTION_AVAIL` and `SECCOMP_GET_NOTIF_SIZES` also require `flags = 0`.
 
 By default, `SECCOMP_SET_MODE_FILTER` installs a filter on the calling thread
