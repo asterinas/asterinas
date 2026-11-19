@@ -12,7 +12,6 @@ use aster_pci::{
     common_device::PciCommonDevice,
 };
 use ostd::{
-    bus::BusProbeError,
     error, info,
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
 };
@@ -45,15 +44,15 @@ impl NvmePciTransport {
     /// Creates a PCI NVMe transport for `common_device`.
     ///
     /// Returns `Err` if BAR0 is unusable, too small, cannot be mapped, or MSI-X setup fails.
-    pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, BusProbeError> {
+    pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, aster_device::common::Error> {
         let Some(config_bar) = Self::check_and_acquire_bar0(&common_device) else {
             error!("BAR0 is unusable: missing, not MMIO, map failed, or too small");
-            return Err(BusProbeError::ConfigurationSpaceError);
+            return Err(aster_device::common::Error::InvalidValue);
         };
 
         let Some(msix_manager) = Self::init_msix(&common_device) else {
             error!("MSI-X capability missing or MSI-X setup failed");
-            return Err(BusProbeError::ConfigurationSpaceError);
+            return Err(aster_device::common::Error::ResourceUnavailable);
         };
 
         Ok(Self {

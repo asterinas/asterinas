@@ -34,7 +34,6 @@ macro_rules! __log_prefix {
 pub mod arch;
 
 pub mod boot;
-pub mod bus;
 pub mod console;
 pub mod cpu;
 mod error;

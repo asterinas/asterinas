@@ -2,7 +2,7 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use ostd::{bus::BusProbeError, sync::SpinLock};
+use ostd::sync::SpinLock;
 
 use super::{
     bus::{
@@ -33,7 +33,7 @@ impl MmioDriver for VirtioMmioDriver {
     fn probe(
         &self,
         device: MmioCommonDevice,
-    ) -> Result<Arc<dyn MmioDevice>, (BusProbeError, MmioCommonDevice)> {
+    ) -> Result<Arc<dyn MmioDevice>, (aster_device::common::Error, MmioCommonDevice)> {
         let transport = VirtioMmioTransport::new(device)?;
         let mmio_device = transport.mmio_device().clone();
         self.devices.lock().push(transport);

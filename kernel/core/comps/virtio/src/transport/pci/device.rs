@@ -9,7 +9,6 @@ use aster_pci::{
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use ostd::{
-    bus::BusProbeError,
     info,
     io::IoMem,
     irq::IrqCallbackFunction,
@@ -252,7 +251,7 @@ impl VirtioTransport for VirtioPciModernTransport {
 }
 
 impl VirtioPciModernTransport {
-    pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, BusProbeError> {
+    pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, aster_device::common::Error> {
         let device_id = common_device.device_id().device_id;
         let device_type_value = if device_id <= 0x1040 {
             device_id - 0x1000
@@ -264,7 +263,7 @@ impl VirtioPciModernTransport {
             Ok(device) => device,
             Err(_) => {
                 warn!("Unrecognized virtio-pci device ID: {:x?}", device_id);
-                return Err(BusProbeError::DeviceNotMatch);
+                return Err(aster_device::common::Error::ProbeFailed);
             }
         };
 
