@@ -127,6 +127,7 @@ TEST_TMPDIR=/ext2 TEST_DIRECT=1 ./empty_write/empty_write
 
 ./inotify/inotify_align
 ./inotify/inotify_close
+./inotify/inotify_fdinfo
 ./inotify/inotify_o_path
 ./inotify/inotify_poll
 ./inotify/inotify_unlink
