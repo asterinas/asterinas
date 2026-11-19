@@ -126,7 +126,7 @@ impl Device for BlockFile {
         Some(DevtmpfsNodeMeta::new(self.0.name().to_owned()).unwrap())
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+    fn open(&self, _context: &crate::device::DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>> {
         Ok(Box::new(OpenBlockFile(self.0.clone())))
     }
 }

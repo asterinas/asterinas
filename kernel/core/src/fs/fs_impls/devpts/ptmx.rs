@@ -168,8 +168,12 @@ impl Inode for Ptmx {
         _self_dentry: &Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
+        creation_flags: crate::fs::file::CreationFlags,
     ) -> Option<Result<Box<dyn PerOpenFileOps>>> {
-        Some(self.inner.open())
+        Some(self.inner.open(&crate::device::DeviceOpenContext::new(
+            access_mode,
+            creation_flags,
+        )))
     }
 }
 
@@ -186,7 +190,7 @@ impl Device for Inner {
         None
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+    fn open(&self, _context: &crate::device::DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>> {
         let devpts = self.0.upgrade().unwrap();
         Ok(devpts.create_master_slave_pair()?.0)
     }

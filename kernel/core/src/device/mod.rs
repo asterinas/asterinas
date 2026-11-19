@@ -5,12 +5,14 @@ mod fb;
 mod mem;
 pub(crate) mod misc;
 mod model;
+mod open_context;
 mod pty;
 pub mod registry;
 pub(crate) mod tty;
 
 use device_id::DeviceId;
 pub(crate) use mem::{getrandom, geturandom};
+pub use open_context::DeviceOpenContext;
 pub(crate) use pty::{PtyMaster, PtySlave, new_pty_pair};
 pub(crate) use registry::lookup;
 
@@ -32,7 +34,7 @@ pub trait Device: Send + Sync + 'static {
 
     /// Opens the device, returning a file-like object that the userspace can interact with by
     /// doing I/O.
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>>;
+    fn open(&self, context: &DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>>;
 }
 
 impl Debug for dyn Device {

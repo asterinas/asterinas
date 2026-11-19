@@ -98,7 +98,7 @@ impl Device for TdxGuest {
         Some(DevtmpfsNodeMeta::new("tdx_guest").unwrap())
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+    fn open(&self, _context: &crate::device::DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>> {
         Ok(Box::new(TdxGuestFile))
     }
 }

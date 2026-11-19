@@ -104,7 +104,7 @@ impl Device for MemDevice {
         None
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+    fn open(&self, _context: &crate::device::DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>> {
         Ok(Box::new(*self.payload()))
     }
 }

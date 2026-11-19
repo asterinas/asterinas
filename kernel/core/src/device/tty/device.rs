@@ -39,8 +39,8 @@ impl Device for Tty0Device {
         Some(DevtmpfsNodeMeta::new("tty0").unwrap())
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
-        active_vt().open()
+    fn open(&self, context: &crate::device::DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>> {
+        active_vt().open(context)
     }
 }
 
@@ -62,7 +62,7 @@ impl Device for TtyDevice {
         Some(DevtmpfsNodeMeta::with_mode("tty", mkmod!(a+rw)).unwrap())
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
+    fn open(&self, context: &crate::device::DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>> {
         let Some(terminal) = current!().terminal() else {
             return_errno_with_message!(
                 Errno::ENOTTY,
@@ -70,7 +70,7 @@ impl Device for TtyDevice {
             );
         };
 
-        terminal.open()
+        terminal.open(context)
     }
 }
 
@@ -127,8 +127,8 @@ impl Device for SystemConsole {
         Some(DevtmpfsNodeMeta::new("console").unwrap())
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
-        self.inner.open()
+    fn open(&self, context: &crate::device::DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>> {
+        self.inner.open(context)
     }
 }
 

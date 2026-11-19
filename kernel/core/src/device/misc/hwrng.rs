@@ -9,7 +9,7 @@ use aster_virtio::device::entropy::{self, device::EntropyDevice};
 use device_id::{DeviceId, MinorId};
 
 use crate::{
-    device::{Device, DeviceType, registry::char},
+    device::{Device, DeviceOpenContext, DeviceType, registry::char},
     events::IoEvents,
     fs::{
         devtmpfs::DevtmpfsNodeMeta,
@@ -57,9 +57,11 @@ impl Device for HwRngDevice {
         Some(DevtmpfsNodeMeta::new("hwrng").unwrap())
     }
 
-    fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
-        // TODO: Reject non-read-only opens with `EINVAL`
-        // once device `open` callbacks receive `AccessMode`.
+    fn open(&self, context: &DeviceOpenContext) -> Result<Box<dyn PerOpenFileOps>> {
+        if !context.is_readable() || context.is_writable() {
+            return_errno_with_message!(Errno::EINVAL, "the hardware RNG device is read-only");
+        }
+
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/core.c#L169>.
         Ok(Box::new(HwRngFile))
     }
@@ -132,8 +134,6 @@ impl FileOps for HwRngFile {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        // FIXME: Opening this device with `O_WRONLY` or `O_RDWR` fails on Linux. Therefore, the
-        // write operation should never be reached. See the TODO in `HwRngDevice::open`.
         return_errno_with_message!(
             Errno::EBADF,
             "the hardware RNG device does not support writing"
