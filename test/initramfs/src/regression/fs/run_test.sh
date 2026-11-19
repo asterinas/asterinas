@@ -168,6 +168,7 @@ TEST_TMPDIR=/ext2 ./name_max/name_max
 ./pseudofs/pseudo_inode
 ./pseudofs/pseudo_mount
 
+./ramfs/fallocate
 ./ramfs/readdir
 
 ./rename/permission
