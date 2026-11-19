@@ -6,7 +6,7 @@
 //! <https://github.com/torvalds/linux/blob/v6.18/kernel/seccomp.c>.
 
 use core::{
-    fmt::{self, Display},
+    fmt::Display,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
@@ -25,7 +25,7 @@ use crate::{
     dispatch_ioctl,
     events::IoEvents,
     fs::{
-        file::{AccessMode, CreationFlags, FileCommon, FileLike, StatusFlags, file_table::FdFlags},
+        file::{AccessMode, FileCommon, FileLike, StatusFlags, file_table::FdFlags},
         pseudofs::AnonInodeFs,
         vfs::path::Path,
     },
@@ -508,22 +508,7 @@ impl FileLike for ListenerFile {
     }
 
     fn dump_proc_fdinfo(self: Arc<Self>, fd_flags: FdFlags) -> Box<dyn Display> {
-        struct FdInfo {
-            flags: u32,
-        }
-        impl Display for FdInfo {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                writeln!(f, "pos:\t0")?;
-                writeln!(f, "flags:\t0{:o}", self.flags)?;
-                writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
-                writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())
-            }
-        }
-        let mut flags = self.common.status_flags().bits() | self.common.access_mode() as u32;
-        if fd_flags.contains(FdFlags::CLOEXEC) {
-            flags |= CreationFlags::O_CLOEXEC.bits();
-        }
-        Box::new(FdInfo { flags })
+        AnonInodeFs::fdinfo(&self.common, fd_flags)
     }
 }
 
