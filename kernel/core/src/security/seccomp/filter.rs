@@ -169,6 +169,9 @@ impl SeccompState {
     }
 
     pub(super) fn to_strict(&self) -> Result<Self> {
+        if self.is_terminated() {
+            return_errno_with_message!(Errno::EINVAL, "cannot change a terminated seccomp policy");
+        }
         if !matches!(self.policy, Policy::Disabled | Policy::Strict) {
             return_errno_with_message!(
                 Errno::EINVAL,
