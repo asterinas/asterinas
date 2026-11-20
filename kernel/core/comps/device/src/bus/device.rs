@@ -143,6 +143,10 @@ impl<B: Bus> DeviceInternals for BusDevice<B> {
         &self.base
     }
 
+    fn type_name(&self) -> Option<&'static str> {
+        self.declared.type_name()
+    }
+
     fn attr_groups(&self) -> Vec<TyErasedAttr> {
         self.declared.attr_groups(self.bus.bus().dev_attrs())
     }
@@ -152,7 +156,7 @@ impl<B: Bus> DeviceInternals for BusDevice<B> {
     }
 
     fn append_uevent_vars(&self, vars: &mut UeventVars) -> Result<()> {
-        if let Some(name) = self.declared.type_name() {
+        if let Some(name) = self.type_name() {
             vars.add("DEVTYPE", name)?;
         }
         if let Some(driver) = self.driver() {

@@ -464,6 +464,7 @@ mod test {
     #[ktest]
     fn file_write_enospc_rollback() {
         clocks::init_for_ktest();
+        aster_block::init_for_ktest();
 
         let f = Ext2FixtureBuilder::new(1, 256)
             .with_free_blocks(2, 2)
@@ -499,6 +500,7 @@ mod test {
     #[ktest]
     fn file_sparse_buffered_write_preserves_mmap_dirty_tail() {
         clocks::init_for_ktest();
+        aster_block::init_for_ktest();
 
         let f = Ext2FixtureBuilder::new(1, 256)
             .with_free_blocks(2, 2)
@@ -541,6 +543,7 @@ mod test {
     #[ktest]
     fn falloc_allocate_returns_enospc_after_consuming_blocks() {
         clocks::init_for_ktest();
+        aster_block::init_for_ktest();
 
         let f = Ext2FixtureBuilder::new(1, 256)
             .with_free_blocks(2, 2)

@@ -110,7 +110,7 @@ use core::{
 
 use align_ext::AlignExt;
 use aster_block::{
-    BlockDevice,
+    AnyBlockDevice,
     bio::{BioCompleteFn, BioDirection, BioSegment, BioStatus},
     id::Bid,
 };
@@ -489,7 +489,7 @@ impl<'a> PageRun<'a> {
     /// `len` must not exceed the number of pages remaining in this run.
     pub(crate) fn submit_contiguous_read_pages(
         &mut self,
-        block_device: &dyn BlockDevice,
+        block_device: &dyn AnyBlockDevice,
         start_bid: Bid,
         len: usize,
         io_batch: &mut IoBatch,
@@ -534,7 +534,7 @@ impl<'a> PageRun<'a> {
     /// `len` must not exceed the number of pages remaining in this run.
     pub(crate) fn submit_contiguous_write_pages(
         &mut self,
-        block_device: &dyn BlockDevice,
+        block_device: &dyn AnyBlockDevice,
         start_bid: Bid,
         len: usize,
         io_batch: &mut IoBatch,

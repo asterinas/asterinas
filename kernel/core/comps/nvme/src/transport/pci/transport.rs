@@ -109,6 +109,11 @@ impl NvmePciTransport {
         self.inner.msix_manager_mut()
     }
 
+    /// Returns the PCI device providing this transport.
+    pub(crate) fn pci_device(&self) -> &Arc<PciDevice> {
+        &self.inner.common_device
+    }
+
     /// Returns access to the NVMe registers.
     pub(crate) fn regs(&mut self) -> RegAccess<'_> {
         RegAccess(&self.config_bar)
@@ -134,6 +139,14 @@ pub(crate) struct NvmePciTransportLock {
 
 pub(crate) struct NvmePciTransportGuard<'a> {
     inner: SpinLockGuard<'a, NvmePciTransportInner, LocalIrqDisabled>,
+    config_bar: &'a BarAccess,
+}
+
+impl NvmePciTransportGuard<'_> {
+    /// Returns access to the NVMe registers while the transport is locked.
+    pub(crate) fn regs(&mut self) -> RegAccess<'_> {
+        RegAccess(self.config_bar)
+    }
 }
 
 impl Deref for NvmePciTransportGuard<'_> {
@@ -163,6 +176,7 @@ impl NvmePciTransportLock {
     pub(crate) fn lock(&self) -> NvmePciTransportGuard<'_> {
         NvmePciTransportGuard {
             inner: self.inner.lock(),
+            config_bar: &self.config_bar,
         }
     }
 

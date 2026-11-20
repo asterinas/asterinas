@@ -8,7 +8,7 @@
 //! and shows all of it under `/sys`.
 //! It sits between the hardware components (which enumerate devices and implement drivers)
 //! and the `systree` component (which sysfs displays),
-//! and it owns every node under `/sys/devices`, `/sys/bus`, `/sys/class`, and `/sys/dev`.
+//! and it owns every node under `/sys/devices`, `/sys/bus`, `/sys/class`, `/sys/dev`, and `/sys/block`.
 //!
 //! Navigate to the module that fits the task at hand:
 //!

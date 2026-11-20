@@ -786,6 +786,8 @@ mod test {
 
     #[ktest]
     fn unlink_last_link_deallocates_on_drop() {
+        aster_block::init_for_ktest();
+
         let (f, root) = default_fixture();
 
         let old = create_file(&root, "old");

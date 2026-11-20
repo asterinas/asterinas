@@ -9,7 +9,7 @@ pub(super) use core::{
 
 pub(super) use align_ext::AlignExt;
 pub(super) use aster_block::{
-    BLOCK_SIZE, BlockDevice, SECTOR_SIZE,
+    AnyBlockDevice, BLOCK_SIZE, BlockDevice, SECTOR_SIZE,
     bio::{BioDirection, BioSegment, BioStatus},
     id::Bid,
 };

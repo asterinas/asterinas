@@ -15,6 +15,7 @@ fn roots_exist() {
         "/devices/virtual",
         "/bus",
         "/class",
+        "/block",
         "/dev/char",
         "/dev/block",
     ] {

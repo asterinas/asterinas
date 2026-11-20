@@ -8,7 +8,8 @@ use core::{
 };
 
 use aster_block::{
-    BLOCK_SIZE, BlockDevice, BlockDeviceMeta, SECTOR_SIZE,
+    AnyBlockDevice, BLOCK_SIZE, BlockDevice, BlockDeviceKind, BlockDeviceMeta, SECTOR_SIZE,
+    WholeDisk,
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     id::Bid,
 };
@@ -106,11 +107,18 @@ impl Debug for Ext2MemoryDisk {
     }
 }
 
-impl BlockDevice for Ext2MemoryDisk {
+/// The backend and the fixture each hold an `Arc` to the same `Ext2MemoryDisk`,
+/// so tests can directly read and write the disk image that Ext2 accesses through BIOs.
+#[derive(Debug)]
+struct Ext2BlockDevice {
+    disk: Arc<Ext2MemoryDisk>,
+}
+
+impl AnyBlockDevice for Ext2BlockDevice {
     fn enqueue(&self, bio: SubmittedBio) -> core::result::Result<(), BioEnqueueError> {
         if bio.type_() == BioType::Flush {
-            self.flush_count.fetch_add(1, Ordering::Relaxed);
-            let status = if self.fail_flush.load(Ordering::Relaxed) {
+            self.disk.flush_count.fetch_add(1, Ordering::Relaxed);
+            let status = if self.disk.fail_flush.load(Ordering::Relaxed) {
                 BioStatus::IoError
             } else {
                 BioStatus::Complete
@@ -127,8 +135,9 @@ impl BlockDevice for Ext2MemoryDisk {
                     .dma_slice()
                     .writer()
                     .unwrap()
-                    .write(self.segment.reader().skip(cur_device_ofs)),
+                    .write(self.disk.segment.reader().skip(cur_device_ofs)),
                 BioType::Write => self
+                    .disk
                     .segment
                     .writer()
                     .skip(cur_device_ofs)
@@ -148,7 +157,7 @@ impl BlockDevice for Ext2MemoryDisk {
     fn metadata(&self) -> BlockDeviceMeta {
         BlockDeviceMeta {
             max_nr_segments_per_bio: usize::MAX,
-            nr_sectors: self.segment.size() / SECTOR_SIZE,
+            nr_sectors: self.disk.segment.size() / SECTOR_SIZE,
         }
     }
 
@@ -158,6 +167,17 @@ impl BlockDevice for Ext2MemoryDisk {
 
     fn id(&self) -> DeviceId {
         DeviceId::new(MajorId::new(1), MinorId::new(0))
+    }
+
+    fn kind(&self) -> BlockDeviceKind<'_> {
+        BlockDeviceKind::Disk(self)
+    }
+}
+
+impl WholeDisk for Ext2BlockDevice {
+    fn handle_requests(&self) -> Option<()> {
+        // Requests are handled directly in `enqueue()`.
+        None
     }
 }
 
@@ -502,7 +522,6 @@ pub(super) struct Ext2FixtureBuilder {
     init_root: bool,
     block_bitmap: Option<BlockBitmapInit>,
     inode_bitmap: Option<InodeBitmapInit>,
-    custom_device: Option<Arc<dyn BlockDevice>>,
 }
 
 impl Ext2FixtureBuilder {
@@ -518,7 +537,6 @@ impl Ext2FixtureBuilder {
             init_root: true,
             block_bitmap: None,
             inode_bitmap: None,
-            custom_device: None,
         }
     }
 
@@ -728,9 +746,13 @@ impl Ext2FixtureBuilder {
             write_raw_inode_to_disk(&sb, &descs, ROOT_INO, &root_raw, &disk);
         }
 
-        let device: Arc<dyn BlockDevice> = self
-            .custom_device
-            .unwrap_or_else(|| disk.clone() as Arc<dyn BlockDevice>);
+        let backend = Ext2BlockDevice { disk: disk.clone() };
+        let device = BlockDevice::builder(
+            aster_block::BLOCK_CLASS.get().unwrap(),
+            backend.name().to_string(),
+            Box::new(backend),
+        )
+        .build();
         let ext2 = Ext2::open(device, FsFlags::empty(), None)?;
 
         Ok(Ext2Fixture {

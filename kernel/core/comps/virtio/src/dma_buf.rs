@@ -14,9 +14,14 @@ use ostd::mm::{
 ///
 /// Any type implements this trait should also implements `HasDaddr` trait,
 /// and provides the exact length of DMA area.
-pub(crate) trait DmaBuf: HasDaddr {
+pub trait DmaBuf: HasDaddr {
     /// The length of Dma area, in bytes
     fn len(&self) -> usize;
+
+    /// Returns whether the DMA buffer has zero length.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 macro_rules! impl_dma_buf_for {

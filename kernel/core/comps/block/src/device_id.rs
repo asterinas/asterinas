@@ -94,15 +94,18 @@ impl ExtendedDeviceIdAllocator {
     }
 
     /// Allocates an extended device ID.
-    pub(crate) fn allocate(&self) -> DeviceId {
-        let minor = self.minor_allocator.lock().alloc().unwrap() as u32;
+    pub(crate) fn allocate(&self) -> Result<DeviceId, Error> {
+        let minor = self
+            .minor_allocator
+            .lock()
+            .alloc()
+            .ok_or(Error::IdExhausted)? as u32;
 
-        DeviceId::new(self.major.get(), MinorId::new(minor))
+        Ok(DeviceId::new(self.major.get(), MinorId::new(minor)))
     }
 
     /// Releases an extended device ID.
-    #[expect(dead_code)]
-    pub(crate) fn release(&mut self, id: DeviceId) {
+    pub(crate) fn release(&self, id: DeviceId) {
         if id.major() != self.major.get() {
             return;
         }

@@ -10,7 +10,7 @@ use core::{
 };
 
 use aster_block::{
-    BlockDevice,
+    AnyBlockDevice, BlockDevice,
     bio::{BioCompleteFn, BioSegment},
     id::BlockId,
 };
@@ -43,7 +43,7 @@ use crate::{
 
 #[derive(Debug)]
 pub(crate) struct ExfatFs {
-    block_device: Arc<dyn BlockDevice>,
+    block_device: Arc<BlockDevice>,
     super_block: ExfatSuperBlock,
 
     bitmap: Arc<Mutex<ExfatBitmap>>,
@@ -73,11 +73,11 @@ pub(super) const EXFAT_ROOT_INO: Ino = 1;
 
 impl ExfatFs {
     pub(crate) fn open(
-        block_device: Arc<dyn BlockDevice>,
+        block_device: Arc<BlockDevice>,
         mount_option: ExfatMountOptions,
     ) -> Result<Arc<Self>> {
         // Load the super_block
-        let super_block = Self::read_super_block(block_device.as_ref())?;
+        let super_block = Self::read_super_block(block_device.payload().as_ref())?;
         let fs_size = super_block.num_clusters as usize * super_block.cluster_size as usize;
         let exfat_fs = Arc::new_cyclic(|weak_self| ExfatFs {
             block_device,
@@ -232,12 +232,12 @@ impl ExfatFs {
         Ok(())
     }
 
-    fn verify_boot_region(block_device: &dyn BlockDevice) -> Result<()> {
+    fn verify_boot_region(block_device: &dyn AnyBlockDevice) -> Result<()> {
         // TODO: Check boot signature and boot checksum.
         Ok(())
     }
 
-    fn read_super_block(block_device: &dyn BlockDevice) -> Result<ExfatSuperBlock> {
+    fn read_super_block(block_device: &dyn AnyBlockDevice) -> Result<ExfatSuperBlock> {
         let boot_sector = block_device.read_val::<ExfatBootSector>(0)?;
         /* Check the validity of BOOT */
         if boot_sector.signature != BOOT_SIGNATURE {
@@ -308,8 +308,8 @@ impl ExfatFs {
         Ok(())
     }
 
-    pub(super) fn block_device(&self) -> &dyn BlockDevice {
-        self.block_device.as_ref()
+    pub(super) fn block_device(&self) -> &dyn AnyBlockDevice {
+        self.block_device.payload().as_ref()
     }
 
     pub(super) fn container_device_id(&self) -> DeviceId {

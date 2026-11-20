@@ -21,7 +21,7 @@ use ostd::{
 };
 use spin::Once;
 
-use super::{BlockDevice, id::Sid};
+use super::{AnyBlockDevice, id::Sid};
 use crate::{BLOCK_SIZE, SECTOR_SIZE, impl_block_device::general_complete_fn, prelude::*};
 
 /// The unit for block I/O.
@@ -109,7 +109,7 @@ impl Bio {
     /// The caller must not submit a `Bio` more than once. Otherwise, a panic shall be triggered.
     pub fn submit(
         self,
-        block_device: &dyn BlockDevice,
+        block_device: &dyn AnyBlockDevice,
         io_batch: &mut IoBatch,
     ) -> Result<(), BioEnqueueError> {
         let Self {
@@ -159,7 +159,7 @@ impl Bio {
     /// The caller must not submit a `Bio` more than once. Otherwise, a panic shall be triggered.
     pub fn submit_and_wait(
         self,
-        block_device: &dyn BlockDevice,
+        block_device: &dyn AnyBlockDevice,
     ) -> Result<BioStatus, BioEnqueueError> {
         let mut io_batch = IoBatch::with_capacity(1);
         self.submit(block_device, &mut io_batch)?;
