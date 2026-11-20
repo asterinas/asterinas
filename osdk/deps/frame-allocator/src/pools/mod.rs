@@ -56,6 +56,14 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
     let mut local_pool = local_pool_cell.borrow_mut();
     let mut global_pool = OnDemandGlobalLock::new();
 
+    alloc_from(&mut local_pool, &mut global_pool, layout)
+}
+
+fn alloc_from(
+    local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
+    global_pool: &mut OnDemandGlobalLock,
+    layout: Layout,
+) -> Option<Paddr> {
     let size_order = greater_order_of(layout.size());
     let align_order = greater_order_of(layout.align());
     let order = size_order.max(align_order);
@@ -81,13 +89,13 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
         && let Some(chunk_addr) = chunk_addr
     {
         do_dealloc(
-            &mut local_pool,
-            &mut global_pool,
+            local_pool,
+            global_pool,
             [(chunk_addr + layout.size(), allocated_size - layout.size())].into_iter(),
         );
     }
 
-    balancing::balance(local_pool.deref_mut(), &mut global_pool);
+    balancing::balance(local_pool, global_pool);
 
     chunk_addr
 }
@@ -167,6 +175,60 @@ impl Drop for OnDemandGlobalLock {
         // Updates [`GLOBAL_POOL_SIZE`] if the global pool is locked.
         if let Some(guard) = self.guard.as_ref() {
             GLOBAL_POOL_SIZE.store(guard.total_size(), Ordering::Relaxed);
+        }
+    }
+}
+
+#[cfg(ktest)]
+pub(crate) mod test {
+    use core::alloc::Layout;
+
+    use ostd::{
+        mm,
+        sync::{LocalIrqDisabled, SpinLock},
+    };
+
+    use super::OnDemandGlobalLock;
+    use crate::{chunk, set::BuddySet};
+
+    static TEST_GLOBAL_POOL: SpinLock<BuddySet<{ super::MAX_BUDDY_ORDER }>, LocalIrqDisabled> =
+        SpinLock::new(BuddySet::new_empty());
+
+    pub(crate) struct TestGlobalPool {
+        pub(super) lock: OnDemandGlobalLock,
+    }
+
+    impl TestGlobalPool {
+        pub(crate) fn new() -> Self {
+            Self {
+                lock: OnDemandGlobalLock {
+                    guard: Some(TEST_GLOBAL_POOL.lock()),
+                },
+            }
+        }
+
+        pub(crate) fn attempt(
+            &mut self,
+            local: &mut BuddySet<{ super::MAX_LOCAL_BUDDY_ORDER }>,
+            layout: Layout,
+        ) -> Option<mm::Paddr> {
+            super::alloc_from(local, &mut self.lock, layout)
+        }
+
+        pub(crate) fn total_size(&mut self) -> usize {
+            self.lock.get().total_size()
+        }
+
+        pub(crate) fn alloc_chunk(&mut self, order: chunk::BuddyOrder) -> Option<mm::Paddr> {
+            self.lock.get().alloc_chunk(order)
+        }
+    }
+
+    impl Drop for TestGlobalPool {
+        fn drop(&mut self) {
+            while self.lock.get().alloc_chunk(0).is_some() {}
+            // Leave no guard for OnDemandGlobalLock to publish as the real pool's size.
+            drop(self.lock.guard.take());
         }
     }
 }

@@ -45,18 +45,27 @@ impl<const NR_CONT_FRAMES: usize, const COUNT: usize> CacheArray<NR_CONT_FRAMES,
 
     /// Allocates a segment of frames.
     ///
-    /// It may allocate directly from this cache. If the cache is empty, it
-    /// will fill the cache.
+    /// If the cache is empty, it tries a batch refill before falling back to
+    /// allocating only the requested segment.
     fn alloc(&mut self, guard: &DisabledLocalIrqGuard) -> Option<Paddr> {
+        self.alloc_with(|layout| super::pools::alloc(guard, layout))
+    }
+
+    fn alloc_with(
+        &mut self,
+        mut allocate_fn: impl FnMut(Layout) -> Option<Paddr>,
+    ) -> Option<Paddr> {
         if let Some(frame) = self.pop_front() {
             return Some(frame);
         }
 
         let nr_to_alloc = COUNT * 2 / 3;
-        let allocated = super::pools::alloc(
-            guard,
+        let Some(allocated) = allocate_fn(
             Layout::from_size_align(nr_to_alloc * Self::segment_size(), PAGE_SIZE).unwrap(),
-        )?;
+        ) else {
+            // Fragmentation can prevent a refill even when one segment fits.
+            return allocate_fn(Layout::from_size_align(Self::segment_size(), PAGE_SIZE).unwrap());
+        };
 
         // `rev()` keeps future allocations contiguous from lower to higher
         // addresses. This increases the likelihood that they can be merged,
@@ -154,5 +163,92 @@ pub(super) fn dealloc(guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
         3 => cache.cache3.dealloc(guard, addr),
         4 => cache.cache4.dealloc(guard, addr),
         _ => super::pools::dealloc(guard, [(addr, size)].into_iter()),
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use ostd::{irq, mm, prelude::ktest};
+
+    use super::{CacheArray, CacheOfSizes};
+    use crate::{
+        chunk,
+        pools::test::TestGlobalPool,
+        test::{MockMemoryRegion, TestBuddySet},
+    };
+
+    #[ktest]
+    fn fragmented_refill_returns_requested_segment() {
+        let mut caches = CacheOfSizes::new();
+        assert_fragmented_refill(&mut caches.cache1);
+        assert_fragmented_refill(&mut caches.cache2);
+        assert_fragmented_refill(&mut caches.cache3);
+        assert_fragmented_refill(&mut caches.cache4);
+    }
+
+    #[track_caller]
+    fn assert_fragmented_refill<const SEGMENT_PAGES: usize, const COUNT: usize>(
+        cache: &mut CacheArray<SEGMENT_PAGES, COUNT>,
+    ) {
+        const REGION_PAGES: usize = 32;
+        const STRIDE: usize = 8;
+        const FREE_PAGES: usize = REGION_PAGES - REGION_PAGES / STRIDE;
+
+        let region = MockMemoryRegion::alloc(REGION_PAGES * mm::PAGE_SIZE);
+        let base = region.paddr();
+        let _irq = irq::disable_local();
+        let mut local = TestBuddySet::new_empty();
+        let mut global = TestGlobalPool::new();
+
+        // Regression for #3956: withholding one page in eight leaves 28 free
+        // pages in total, but no contiguous range large enough for any batch.
+        for group in (0..REGION_PAGES).step_by(STRIDE) {
+            let start = base + (group + 1) * mm::PAGE_SIZE;
+            for (addr, order) in chunk::split_to_chunks(start, (STRIDE - 1) * mm::PAGE_SIZE) {
+                local.insert_chunk(addr, order);
+            }
+        }
+        assert_eq!(local.total_size(), FREE_PAGES * mm::PAGE_SIZE);
+
+        let mut attempts = 0;
+        let addr = cache
+            .alloc_with(|layout| {
+                attempts += 1;
+                assert_eq!(layout.align(), mm::PAGE_SIZE);
+                let result = global.attempt(&mut local, layout);
+                if attempts == 1 {
+                    assert!(layout.size() > SEGMENT_PAGES * mm::PAGE_SIZE);
+                    assert_eq!(result, None);
+                } else {
+                    assert_eq!(layout.size(), SEGMENT_PAGES * mm::PAGE_SIZE);
+                }
+                result
+            })
+            .expect("one segment fits between the retained pages");
+        assert_eq!(attempts, 2);
+        assert_eq!(cache.size, 0);
+        assert!(addr.is_multiple_of(mm::PAGE_SIZE));
+        assert_eq!(
+            local.total_size() + global.total_size(),
+            (FREE_PAGES - SEGMENT_PAGES) * mm::PAGE_SIZE
+        );
+
+        // Draining both pools also checks that a three-page request returned
+        // the unused tail of its four-page buddy chunk.
+        let mut seen = [false; REGION_PAGES];
+        let first = (addr - base) / mm::PAGE_SIZE;
+        seen[first..first + SEGMENT_PAGES].fill(true);
+        while let Some(addr) = local.alloc_chunk(0).or_else(|| global.alloc_chunk(0)) {
+            let page = (addr - base) / mm::PAGE_SIZE;
+            assert!(!seen[page]);
+            seen[page] = true;
+        }
+        for (page, used) in seen.into_iter().enumerate() {
+            assert_eq!(used, !page.is_multiple_of(STRIDE));
+        }
+        assert_eq!(
+            cache.alloc_with(|layout| global.attempt(&mut local, layout)),
+            None
+        );
     }
 }

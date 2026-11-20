@@ -23,12 +23,11 @@ pub(crate) fn greater_order_of(size: usize) -> BuddyOrder {
     size.next_power_of_two().trailing_zeros() as BuddyOrder
 }
 
-/// Returns a order that covers at most the given size.
+/// Returns an order that covers at most the given size.
 ///
-/// The size must be larger than 0.
+/// The size must be at least [`PAGE_SIZE`].
 pub(crate) fn lesser_order_of(size: usize) -> BuddyOrder {
-    let size = size / PAGE_SIZE;
-    (usize::BITS - size.leading_zeros() - 1) as BuddyOrder
+    (size / PAGE_SIZE).ilog2() as BuddyOrder
 }
 
 /// Splits a range into chunks.
