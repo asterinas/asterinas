@@ -40,4 +40,5 @@ final: prev:
     edk2 = final.pkgsCross.gnu64.edk2;
     OVMF = final.pkgsCross.gnu64.OVMF;
   };
+  asterinas-rustsbi = final.callPackage ./packages/rustsbi.nix { };
 }
