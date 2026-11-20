@@ -1,13 +1,14 @@
 ENTRY(_start)
 OUTPUT_ARCH(loongarch)
 
-# The physical address where the kernel will start to be loaded.
-KERNEL_LMA = 0x80000000;
+# QEMU reserves the first 2 MiB for boot information and the device tree.
+# Load the kernel after these reservations so the initrd can use high memory.
+# See https://github.com/qemu/qemu/blob/v10.2.1/hw/loongarch/boot.c.
+KERNEL_LMA = 0x00200000;
 
-# The virtual memory of the kernel mapping.
-KERNEL_VMA = 0x9000000080000000;
-
-KERNEL_VMA_OFFSET = KERNEL_VMA - KERNEL_LMA;
+# Must match the cached direct-mapping window (DMW0)
+# configured in ostd/src/arch/loongarch/boot/bsp_boot.S.
+KERNEL_VMA_OFFSET = 0x9000000000000000;
 
 SECTIONS
 {
