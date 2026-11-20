@@ -12,9 +12,11 @@
 1. **General style** — `semantic-line-breaks` (break prose at sentence/clause boundaries),
    `readme-as-crate-doc` (a published crate's `README.md` is its crate-level doc).
 2. **Path-specific doc currency**
-   — `linux-compat-docs`: when a change under `kernel/` alters a user-visible API (a syscall or a kernel parameter),
-   the Linux Compatibility docs (Syscall Flag Coverage + `.scml`, or Kernel Parameters) must be updated in the same change.
-   A code change that should have a matching doc update but does not is a defect you own.
+   — `linux-compat-docs`: require Linux Compatibility doc updates upon changes to Linux feature coverage,
+   e.g., system calls, file systems, sockets, boot protocols, and kernel parameters.
+   Require `.scml` updates only when supported invocation patterns change.
+   Do not update the Linux Compatibility pages when a change fixes a Linux compatibility bug
+   without changing Asterinas's claimed coverage of Linux features.
 
 You activate when the change touches docs, coverage files, or a user-facing API surface.
 You own doc correctness and currency, not code behaviour.

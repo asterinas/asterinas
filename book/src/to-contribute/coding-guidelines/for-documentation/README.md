@@ -15,4 +15,4 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 
 **[Path-Specific](path-specific/)**
 - [`kernel/`](path-specific/kernel.md)
-    - [`linux-compat-docs`](path-specific/kernel.md#linux-compat-docs): When a user-visible API (syscall or kernel parameter) changes, update the Linux Compatibility docs (Syscall Flag Coverage + `.scml`, or Kernel Parameters).
+    - [`linux-compat-docs`](path-specific/kernel.md#linux-compat-docs): Update Linux Compatibility docs upon changes to Linux feature coverage, e.g., system calls, file systems, sockets, boot protocols, and kernel parameters.
