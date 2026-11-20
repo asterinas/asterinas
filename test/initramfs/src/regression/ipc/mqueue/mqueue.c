@@ -126,3 +126,73 @@ FN_TEST(mqueuefs_stat_after_unlink_fails_with_enoent)
 	TEST_ERRNO(stat(MQUEUE_DIR QUEUE_NAME, &st), ENOENT);
 }
 END_TEST()
+
+FN_TEST(mq_getattr_returns_queue_attributes)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct mq_attr attr;
+	TEST_SUCC(mq_getattr(mq, &attr));
+	TEST_RES(attr.mq_flags == 0, _ret == 1);
+	TEST_RES(attr.mq_maxmsg == 10, _ret == 1);
+	TEST_RES(attr.mq_msgsize == 8192, _ret == 1);
+	TEST_RES(attr.mq_curmsgs == 0, _ret == 1);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_setattr_updates_nonblocking_flag)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct mq_attr new_attr = {0};
+	struct mq_attr old_attr;
+	struct mq_attr cur_attr;
+
+	new_attr.mq_flags = O_NONBLOCK;
+	TEST_SUCC(mq_setattr(mq, &new_attr, &old_attr));
+	TEST_RES(old_attr.mq_flags == 0, _ret == 1);
+
+	TEST_SUCC(mq_getattr(mq, &cur_attr));
+	TEST_RES(cur_attr.mq_flags == O_NONBLOCK, _ret == 1);
+
+	new_attr.mq_flags = 0;
+	TEST_SUCC(mq_setattr(mq, &new_attr, &old_attr));
+	TEST_RES(old_attr.mq_flags == O_NONBLOCK, _ret == 1);
+
+	TEST_SUCC(mq_getattr(mq, &cur_attr));
+	TEST_RES(cur_attr.mq_flags == 0, _ret == 1);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_setattr_rejects_unknown_flags)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct mq_attr new_attr = {0};
+	new_attr.mq_flags = 0x2;
+	TEST_ERRNO(mq_setattr(mq, &new_attr, NULL), EINVAL);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_getattr_invalid_fd_fails_with_ebadf)
+{
+	struct mq_attr attr;
+	TEST_ERRNO(mq_getattr(-1, &attr), EBADF);
+}
+END_TEST()
+
+FN_TEST(mq_setattr_invalid_fd_fails_with_ebadf)
+{
+	struct mq_attr attr = {0};
+	TEST_ERRNO(mq_setattr(-1, &attr, NULL), EBADF);
+}
+END_TEST()

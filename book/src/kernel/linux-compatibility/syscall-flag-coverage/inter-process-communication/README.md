@@ -53,6 +53,17 @@ Supported functionality in SCML:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/mq_unlink.2.html).
 
+### `mq_getsetattr`
+
+Supported functionality in SCML:
+
+```c
+{{#include mq_getsetattr.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man3/mq_getattr.3.html).
+
 ## System V semaphore
 
 ### `semget`
