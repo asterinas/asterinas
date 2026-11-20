@@ -145,6 +145,15 @@ pub(crate) fn lookup_queue(name: &str) -> Result<Arc<MqueueQueue>> {
         .ok_or_else(|| Error::new(Errno::ENOENT))
 }
 
+/// Lists all live message queues, sorted by name.
+pub(crate) fn list_queues() -> Vec<(String, Arc<MqueueQueue>)> {
+    queue_table()
+        .lock()
+        .iter()
+        .map(|(name, queue)| (name.clone(), queue.clone()))
+        .collect()
+}
+
 /// Removes a queue by name.
 ///
 /// The `mqueuefs` root directory is sticky, so only the owner of the queue, the

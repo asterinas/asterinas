@@ -2,6 +2,7 @@
 
 #define _GNU_SOURCE
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <mqueue.h>
@@ -51,7 +52,8 @@ END_TEST()
 
 FN_TEST(mq_open_reopens_existing_queue)
 {
-	mqd_t mq1 = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+	mqd_t mq1 =
+		TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
 	TEST_SUCC(mq_close(mq1));
 
 	mqd_t mq2 = TEST_SUCC(mq_open(QUEUE_NAME, O_RDWR));
@@ -159,7 +161,7 @@ FN_TEST(mq_setattr_updates_nonblocking_flag)
 {
 	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
 
-	struct mq_attr new_attr = {0};
+	struct mq_attr new_attr = { 0 };
 	struct mq_attr old_attr;
 	struct mq_attr cur_attr;
 
@@ -186,7 +188,7 @@ FN_TEST(mq_setattr_rejects_unknown_flags)
 {
 	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
 
-	struct mq_attr new_attr = {0};
+	struct mq_attr new_attr = { 0 };
 	new_attr.mq_flags = 0x2;
 	TEST_ERRNO(mq_setattr(mq, &new_attr, NULL), EINVAL);
 
@@ -204,7 +206,7 @@ END_TEST()
 
 FN_TEST(mq_setattr_invalid_fd_fails_with_ebadf)
 {
-	struct mq_attr attr = {0};
+	struct mq_attr attr = { 0 };
 	TEST_ERRNO(mq_setattr(-1, &attr, NULL), EBADF);
 }
 END_TEST()
@@ -222,8 +224,8 @@ FN_TEST(mq_timedsend_and_timedreceive_roundtrip)
 
 	char buf[16];
 	unsigned int recv_prio;
-	ssize_t n = TEST_SUCC(mq_timedreceive(mq, buf, sizeof(buf), &recv_prio,
-					      &ts));
+	ssize_t n = TEST_SUCC(
+		mq_timedreceive(mq, buf, sizeof(buf), &recv_prio, &ts));
 	TEST_RES(n == (ssize_t)strlen(msg), _ret == 1);
 	buf[n] = '\0';
 	TEST_RES(strcmp(buf, msg) == 0, _ret == 1);
@@ -248,7 +250,8 @@ FN_TEST(mq_timedreceive_returns_highest_priority_first)
 
 	char buf[16];
 	unsigned int prio;
-	ssize_t n = TEST_SUCC(mq_timedreceive(mq, buf, sizeof(buf), &prio, &ts));
+	ssize_t n =
+		TEST_SUCC(mq_timedreceive(mq, buf, sizeof(buf), &prio, &ts));
 	buf[n] = '\0';
 	TEST_RES(strcmp(buf, "high") == 0, _ret == 1);
 	TEST_RES(prio == 10, _ret == 1);
@@ -280,8 +283,8 @@ END_TEST()
 
 FN_TEST(mq_timedsend_full_queue_nonblocking_fails_with_eagain)
 {
-	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR | O_NONBLOCK, 0644,
-				     NULL));
+	mqd_t mq = TEST_SUCC(
+		mq_open(QUEUE_NAME, O_CREAT | O_RDWR | O_NONBLOCK, 0644, NULL));
 
 	struct timespec ts;
 	set_infinite_timeout(&ts);
@@ -312,7 +315,8 @@ FN_TEST(mq_timedreceive_empty_queue_times_out)
 
 	char buf[16];
 	unsigned int prio;
-	TEST_ERRNO(mq_timedreceive(mq, buf, sizeof(buf), &prio, &ts), ETIMEDOUT);
+	TEST_ERRNO(mq_timedreceive(mq, buf, sizeof(buf), &prio, &ts),
+		   ETIMEDOUT);
 
 	TEST_SUCC(mq_close(mq));
 	TEST_SUCC(mq_unlink(QUEUE_NAME));
@@ -343,7 +347,7 @@ FN_TEST(mq_notify_delivers_signal)
 	sigset_t set;
 	block_sigusr1(&set);
 
-	struct sigevent sev = {0};
+	struct sigevent sev = { 0 };
 	sev.sigev_notify = SIGEV_SIGNAL;
 	sev.sigev_signo = SIGUSR1;
 	sev.sigev_value.sival_int = 42;
@@ -370,7 +374,7 @@ FN_TEST(mq_notify_cancel_prevents_delivery)
 	sigset_t set;
 	block_sigusr1(&set);
 
-	struct sigevent sev = {0};
+	struct sigevent sev = { 0 };
 	sev.sigev_notify = SIGEV_SIGNAL;
 	sev.sigev_signo = SIGUSR1;
 	TEST_SUCC(mq_notify(mq, &sev));
@@ -393,7 +397,7 @@ FN_TEST(mq_notify_double_register_fails_with_ebusy)
 {
 	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
 
-	struct sigevent sev = {0};
+	struct sigevent sev = { 0 };
 	sev.sigev_notify = SIGEV_SIGNAL;
 	sev.sigev_signo = SIGUSR1;
 	TEST_SUCC(mq_notify(mq, &sev));
@@ -409,7 +413,7 @@ FN_TEST(mq_notify_sigev_none_succeeds)
 {
 	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
 
-	struct sigevent sev = {0};
+	struct sigevent sev = { 0 };
 	sev.sigev_notify = SIGEV_NONE;
 	TEST_SUCC(mq_notify(mq, &sev));
 
@@ -422,7 +426,7 @@ FN_TEST(mq_notify_thread_unsupported)
 {
 	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
 
-	struct sigevent sev = {0};
+	struct sigevent sev = { 0 };
 	sev.sigev_notify = SIGEV_THREAD;
 	TEST_ERRNO(mq_notify(mq, &sev), EINVAL);
 
@@ -435,7 +439,7 @@ FN_TEST(mq_notify_invalid_signal_fails_with_einval)
 {
 	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
 
-	struct sigevent sev = {0};
+	struct sigevent sev = { 0 };
 	sev.sigev_notify = SIGEV_SIGNAL;
 	sev.sigev_signo = 999;
 	TEST_ERRNO(mq_notify(mq, &sev), EINVAL);
@@ -447,8 +451,40 @@ END_TEST()
 
 FN_TEST(mq_notify_invalid_fd_fails_with_ebadf)
 {
-	struct sigevent sev = {0};
+	struct sigevent sev = { 0 };
 	sev.sigev_notify = SIGEV_NONE;
 	TEST_ERRNO(mq_notify(-1, &sev), EBADF);
+}
+END_TEST()
+
+// Returns 1 if `name` is listed in `dir_path`, 0 otherwise.
+static int dir_contains(const char *dir_path, const char *name)
+{
+	DIR *dir = CHECK(opendir(dir_path));
+	struct dirent *ent;
+	int found = 0;
+
+	while ((ent = readdir(dir)) != NULL) {
+		if (strcmp(ent->d_name, name) == 0) {
+			found = 1;
+			break;
+		}
+	}
+	CHECK(closedir(dir));
+	return found;
+}
+
+FN_TEST(mqueuefs_readdir_lists_queue_files)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	// The queue is listed under `/dev/mqueue` without the leading `/`.
+	TEST_RES(dir_contains(MQUEUE_DIR, "test_queue"), _ret == 1);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+
+	// Once unlinked, the queue no longer appears in `readdir`.
+	TEST_RES(!dir_contains(MQUEUE_DIR, "test_queue"), _ret == 1);
 }
 END_TEST()

@@ -139,6 +139,20 @@ impl MqueueRootInode {
     fn parent(&self) -> Option<Arc<dyn Inode>> {
         self.parent.as_ref().and_then(|p| p.upgrade())
     }
+
+    /// Returns the containing `MqueueFs`.
+    ///
+    /// The root inode is only ever created by `MqueueFs`, so the downcast
+    /// cannot fail in practice; the error path exists only as a safeguard.
+    fn mqueuefs(&self) -> Result<Arc<MqueueFs>> {
+        let fs = self.common.fs();
+        Arc::downcast::<MqueueFs>(fs).map_err(|_| {
+            Error::with_message(
+                Errno::ENODEV,
+                "the mqueuefs root inode has an unexpected file system",
+            )
+        })
+    }
 }
 
 impl FileOps for MqueueRootInode {
@@ -163,16 +177,32 @@ impl FileOps for MqueueRootInode {
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let this_inode: Arc<dyn Inode> = self.this();
         let parent_inode = self.parent().unwrap_or_else(|| this_inode.clone());
-        let entries = [(".", this_inode, 1usize), ("..", parent_inode, 2usize)];
+        let fs = self.mqueuefs()?;
 
         let mut iterate_offset = offset;
-        for (name, inode, next_offset) in entries {
+        let mut next_offset = 1usize;
+
+        // `.` and `..` always occupy the first two offsets.
+        for (name, inode) in [(".", this_inode), ("..", parent_inode)] {
             if next_offset <= iterate_offset {
+                next_offset += 1;
                 continue;
             }
-
             visitor.visit(name, inode.ino(), inode.type_(), next_offset)?;
             iterate_offset = next_offset;
+            next_offset += 1;
+        }
+
+        // Queue files follow, sorted by name.
+        for (name, queue) in posix::list_queues() {
+            if next_offset <= iterate_offset {
+                next_offset += 1;
+                continue;
+            }
+            let inode = fs.get_or_create_inode(queue);
+            visitor.visit(&name, inode.ino(), inode.type_(), next_offset)?;
+            iterate_offset = next_offset;
+            next_offset += 1;
         }
 
         Ok(iterate_offset - offset)
@@ -248,14 +278,7 @@ impl Inode for MqueueRootInode {
         }
 
         let queue = posix::lookup_queue(name)?;
-        let fs = self.common.fs();
-        let Ok(fs) = Arc::downcast::<MqueueFs>(fs) else {
-            return_errno_with_message!(
-                Errno::ENODEV,
-                "the mqueuefs root inode has an unexpected file system"
-            );
-        };
-        Ok(fs.get_or_create_inode(queue))
+        Ok(self.mqueuefs()?.get_or_create_inode(queue))
     }
 
     fn rename(
