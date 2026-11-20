@@ -268,13 +268,14 @@ impl SeccompState {
             return_errno_with_message!(Errno::ENOMEM, "seccomp filter chain is too long");
         }
 
+        let latest_listener = listener.as_ref().or(previous_listener).cloned();
         let head = Arc::try_new(FilterNode {
             program,
             previous: self.head().cloned(),
             path_insns,
             logging,
-            latest_listener: listener.as_ref().or(previous_listener).cloned(),
             listener,
+            latest_listener,
         })
         .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate seccomp filter"))?;
 
