@@ -141,6 +141,9 @@ fn do_epoll_pwait2(
         Err(e) if e.error() == Errno::ETIME => {
             return Ok(0);
         }
+        Err(e) if e.error() == Errno::ERESTARTSYS => {
+            return Err(errno!(EINTR, "epoll wait was interrupted"));
+        }
         Err(e) => {
             return Err(e);
         }

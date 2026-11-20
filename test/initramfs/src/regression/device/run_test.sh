@@ -21,6 +21,7 @@ set -e
 ./pty/termios2
 
 ./vt/vt_ioctl
+./vt/vt_waitactive
 
 ./devtmpfs_mode
 ./evdev
