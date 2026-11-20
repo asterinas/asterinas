@@ -82,7 +82,7 @@ static int vt_waitactive(int fd, int vt)
 	return ret;
 }
 
-FN_SETUP(setup_signals)
+FN_SETUP(setup_signals_and_vt)
 {
 	struct sigaction sa;
 
@@ -97,11 +97,7 @@ FN_SETUP(setup_signals)
 	sa.sa_flags = SA_SIGINFO;
 	sigemptyset(&sa.sa_mask);
 	CHECK(sigaction(SIGUSR2, &sa, NULL));
-}
-END_SETUP()
 
-FN_SETUP(open_vt1)
-{
 	vt1_fd = CHECK(open(VT1_PATH, O_RDWR));
 }
 END_SETUP()

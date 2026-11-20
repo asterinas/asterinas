@@ -56,12 +56,6 @@ FN_TEST(readonly_bind_preserves_writable_source)
 }
 END_TEST()
 
-FN_SETUP(remount_source_readonly)
-{
-	CHECK(mount(NULL, SOURCE, NULL, MS_REMOUNT | MS_RDONLY, NULL));
-}
-END_SETUP()
-
 // Existing files on a read-only mount must not be writable,
 // even when their inode permissions allow writes.
 FN_TEST(readonly_rejects_writable_opens_and_truncate)
@@ -81,16 +75,16 @@ FN_TEST(readonly_rejects_writable_opens_and_truncate)
 			O_RDONLY | O_TRUNC,
 		};
 		for (size_t i = 0; i < sizeof(flags) / sizeof(flags[0]); i++) {
-			CHECK_WITH(open(SOURCE "/file", flags[i], 0666),
+			CHECK_WITH(open(ALIAS "/file", flags[i], 0666),
 				   _ret == -1 && errno == EROFS);
 		}
 
-		CHECK_WITH(truncate(SOURCE "/file", 0),
+		CHECK_WITH(truncate(ALIAS "/file", 0),
 			   _ret == -1 && errno == EROFS);
-		CHECK_WITH(truncate(SOURCE "/file", sizeof(CONTENT) - 1),
+		CHECK_WITH(truncate(ALIAS "/file", sizeof(CONTENT) - 1),
 			   _ret == -1 && errno == EROFS);
 
-		int fd = CHECK(open(SOURCE "/file", O_RDONLY));
+		int fd = CHECK(open(ALIAS "/file", O_RDONLY));
 
 		char buf[sizeof(CONTENT)] = { 0 };
 		CHECK_WITH(read(fd, buf, sizeof(buf)),
@@ -118,39 +112,39 @@ FN_TEST(readonly_allows_path_and_special_file_opens)
 {
 	int fd;
 
-	fd = TEST_SUCC(open(SOURCE "/file", O_PATH | O_RDWR | O_TRUNC));
+	fd = TEST_SUCC(open(ALIAS "/file", O_PATH | O_RDWR | O_TRUNC));
 	TEST_SUCC(close(fd));
 
-	fd = TEST_SUCC(open(SOURCE "/file", O_RDONLY | O_CREAT, 0666));
+	fd = TEST_SUCC(open(ALIAS "/file", O_RDONLY | O_CREAT, 0666));
 	TEST_SUCC(close(fd));
 
-	fd = TEST_SUCC(open(SOURCE, O_RDONLY | O_DIRECTORY));
+	fd = TEST_SUCC(open(ALIAS, O_RDONLY | O_DIRECTORY));
 	TEST_SUCC(close(fd));
 
-	fd = TEST_SUCC(open(SOURCE "/fifo", O_RDWR | O_NONBLOCK));
+	fd = TEST_SUCC(open(ALIAS "/fifo", O_RDWR | O_NONBLOCK));
 	TEST_SUCC(close(fd));
 
-	fd = TEST_SUCC(open(SOURCE "/null", O_WRONLY));
+	fd = TEST_SUCC(open(ALIAS "/null", O_WRONLY));
 	TEST_RES(write(fd, "x", 1), _ret == 1);
 	TEST_SUCC(close(fd));
 
-	TEST_ERRNO(open(SOURCE, O_WRONLY), EISDIR);
+	TEST_ERRNO(open(ALIAS, O_WRONLY), EISDIR);
 }
 END_TEST()
 
 FN_TEST(readonly_rejects_xattr_changes)
 {
-	int fd = TEST_SUCC(open(SOURCE "/file", O_RDONLY));
+	int fd = TEST_SUCC(open(ALIAS "/file", O_RDONLY));
 
-	TEST_ERRNO(setxattr(SOURCE "/file", XATTR_NAME, "new", 3, 0), EROFS);
-	TEST_ERRNO(lsetxattr(SOURCE "/file", XATTR_NAME, "new", 3, 0), EROFS);
+	TEST_ERRNO(setxattr(ALIAS "/file", XATTR_NAME, "new", 3, 0), EROFS);
+	TEST_ERRNO(lsetxattr(ALIAS "/file", XATTR_NAME, "new", 3, 0), EROFS);
 	TEST_ERRNO(fsetxattr(fd, XATTR_NAME, "new", 3, 0), EROFS);
-	TEST_ERRNO(removexattr(SOURCE "/file", XATTR_NAME), EROFS);
-	TEST_ERRNO(lremovexattr(SOURCE "/file", XATTR_NAME), EROFS);
+	TEST_ERRNO(removexattr(ALIAS "/file", XATTR_NAME), EROFS);
+	TEST_ERRNO(lremovexattr(ALIAS "/file", XATTR_NAME), EROFS);
 	TEST_ERRNO(fremovexattr(fd, XATTR_NAME), EROFS);
 
 	char value[sizeof(XATTR_VALUE)] = { 0 };
-	TEST_RES(getxattr(SOURCE "/file", XATTR_NAME, value, sizeof(value)),
+	TEST_RES(getxattr(ALIAS "/file", XATTR_NAME, value, sizeof(value)),
 		 _ret == sizeof(XATTR_VALUE) - 1);
 	TEST_RES(memcmp(value, XATTR_VALUE, sizeof(XATTR_VALUE) - 1),
 		 _ret == 0);
@@ -163,7 +157,6 @@ FN_SETUP(remove_fixtures)
 {
 	CHECK(umount(ALIAS));
 
-	CHECK(mount(NULL, SOURCE, NULL, MS_REMOUNT, NULL));
 	CHECK(unlink(SOURCE "/file"));
 	CHECK(unlink(SOURCE "/fifo"));
 	CHECK(unlink(SOURCE "/null"));

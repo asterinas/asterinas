@@ -161,91 +161,40 @@ END_TEST()
 #define OPEN_DIR_TEST_DIR BASE_DIR "/open_dir_test"
 #define OPEN_DIR_TARGET OPEN_DIR_TEST_DIR "/objd"
 
-FN_SETUP(prepare_open_dir)
+FN_TEST(open_dir_errors)
 {
 	ensure_dir(OPEN_DIR_TEST_DIR);
 	ensure_dir(OPEN_DIR_TARGET);
-}
-END_SETUP()
 
-FN_TEST(open_creat_dir_einval)
-{
+	// `O_CREAT | O_DIRECTORY` -> `EINVAL`.
 	TEST_ERRNO(open(OPEN_DIR_TARGET, O_CREAT | O_DIRECTORY | O_RDONLY,
 			0644),
 		   EINVAL);
-}
-END_TEST()
-
-FN_TEST(open_creat_excl_dir_einval)
-{
 	TEST_ERRNO(open(OPEN_DIR_TARGET,
 			O_CREAT | O_EXCL | O_DIRECTORY | O_WRONLY, 0644),
 		   EINVAL);
-}
-END_TEST()
-
-FN_TEST(open_creat_excl_dir_rdwr_einval)
-{
 	TEST_ERRNO(open(OPEN_DIR_TARGET,
 			O_CREAT | O_EXCL | O_DIRECTORY | O_RDWR, 0644),
 		   EINVAL);
-}
-END_TEST()
 
-FN_TEST(open_creat_rdonly_dir_eisdir)
-{
+	// `O_CREAT` -> `EISDIR`.
 	TEST_ERRNO(open(OPEN_DIR_TARGET, O_CREAT | O_RDONLY, 0644), EISDIR);
-}
-END_TEST()
-
-FN_TEST(open_creat_wr_dir_eisdir)
-{
 	TEST_ERRNO(open(OPEN_DIR_TARGET, O_CREAT | O_WRONLY, 0644), EISDIR);
-}
-END_TEST()
-
-FN_TEST(open_creat_rdwr_dir_eisdir)
-{
 	TEST_ERRNO(open(OPEN_DIR_TARGET, O_CREAT | O_RDWR, 0644), EISDIR);
-}
-END_TEST()
 
-FN_TEST(open_creat_excl_rdonly_eexist)
-{
+	// `O_CREAT | O_EXCL` -> `EEXIST`.
 	TEST_ERRNO(open(OPEN_DIR_TARGET, O_CREAT | O_EXCL | O_RDONLY, 0644),
 		   EEXIST);
-}
-END_TEST()
-
-FN_TEST(open_creat_excl_wr_eexist)
-{
 	TEST_ERRNO(open(OPEN_DIR_TARGET, O_CREAT | O_EXCL | O_WRONLY, 0644),
 		   EEXIST);
-}
-END_TEST()
-
-FN_TEST(open_creat_excl_rdwr_eexist)
-{
 	TEST_ERRNO(open(OPEN_DIR_TARGET, O_CREAT | O_EXCL | O_RDWR, 0644),
 		   EEXIST);
-}
-END_TEST()
 
-FN_TEST(open_wr_dir_eisdir)
-{
+	// None above -> `EISDIR`.
 	TEST_ERRNO(open(OPEN_DIR_TARGET, O_WRONLY), EISDIR);
-}
-END_TEST()
-
-FN_TEST(open_rdwr_dir_eisdir)
-{
 	TEST_ERRNO(open(OPEN_DIR_TARGET, O_RDWR), EISDIR);
+
+	TEST_SUCC(rmdir(OPEN_DIR_TARGET));
+	TEST_SUCC(rmdir(OPEN_DIR_TEST_DIR));
 }
 END_TEST()
-
-FN_SETUP(cleanup_open_dir)
-{
-	CHECK(rmdir(OPEN_DIR_TARGET));
-	CHECK(rmdir(OPEN_DIR_TEST_DIR));
-}
-END_SETUP()
