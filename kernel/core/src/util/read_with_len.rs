@@ -44,6 +44,7 @@ impl<T: VmIo + ?Sized> ReadWithLen for T {
 mod test {
     // These tests check cursor advancement and remaining capacity on success and
     // error, including consecutive reads, zero-length reads, and oversized requests.
+
     use ostd::{mm::FrameAllocOptions, prelude::*};
 
     use super::*;
@@ -85,6 +86,20 @@ mod test {
         assert_eq!(buffer, [0xaa, b'a', b'b', b'c']);
     }
 
+    // This source simulates a read that modifies the destination before failing.
+    struct PartialReadError;
+
+    impl VmIo for PartialReadError {
+        fn read(&self, _offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
+            writer.write_val(&0x5au8)?;
+            Err(ostd::Error::IoError)
+        }
+
+        fn write(&self, _offset: usize, _reader: &mut VmReader) -> ostd::Result<()> {
+            unreachable!("the test source is read-only");
+        }
+    }
+
     #[ktest]
     fn zero_length_read_does_not_access_source() {
         for capacity in [0, 4] {
@@ -113,6 +128,14 @@ mod test {
         assert_eq!(error.error(), Errno::EINVAL);
         assert_eq!(writer.cursor(), cursor);
         assert_eq!(writer.avail(), 3);
+
+        let error = source
+            .read_with_len(PAGE_SIZE - 2, &mut writer, 3)
+            .unwrap_err();
+
+        assert_eq!(error.error(), Errno::EINVAL);
+        assert_eq!(writer.cursor(), cursor);
+        assert_eq!(writer.avail(), 3);
         assert_eq!(buffer, [0xaa; 4]);
 
         let (mut writer, cursor) = init_writer(&mut buffer);
@@ -135,19 +158,5 @@ mod test {
         let (mut writer, _) = init_writer(&mut buffer);
 
         let _ = source.read_with_len(0, &mut writer, 2);
-    }
-
-    // This source simulates a read that modifies the destination before failing.
-    struct PartialReadError;
-
-    impl VmIo for PartialReadError {
-        fn read(&self, _offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
-            writer.write_val(&0x5au8)?;
-            Err(ostd::Error::IoError)
-        }
-
-        fn write(&self, _offset: usize, _reader: &mut VmReader) -> ostd::Result<()> {
-            unreachable!("the test source is read-only");
-        }
     }
 }
