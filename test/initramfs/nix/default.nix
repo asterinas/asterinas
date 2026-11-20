@@ -21,6 +21,8 @@ let
       "riscv64-unknown-linux-gnu"
     else if target == "aarch64" then
       "aarch64-unknown-linux-gnu"
+    else if target == "loongarch64" then
+      "loongarch64-unknown-linux-gnu"
     else
       throw "Target arch ${target} not yet supported.";
 

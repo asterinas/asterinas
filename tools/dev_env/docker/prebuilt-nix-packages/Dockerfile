@@ -52,6 +52,10 @@ RUN make aarch64_pkgs VERBOSE=0 \
 RUN make riscv64_pkgs VERBOSE=0 \
     && make nix_gc
 
+# Build loongarch64 packages
+RUN make loongarch64_pkgs VERBOSE=0 \
+    && make nix_gc
+
 # Build x86_64 packages
 RUN make x86_64_pkgs VERBOSE=0 \
     && make nix_gc
