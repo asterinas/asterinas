@@ -168,7 +168,7 @@ impl MqueueQueue {
     ) -> Result<()> {
         let mut notify = self.notify.lock();
         if notify.is_some() {
-            return_errno!(Errno::EBUSY);
+            return Err(errno!(EBUSY));
         }
         *notify = Some(MqNotify { owner, signal });
         Ok(())
@@ -224,7 +224,7 @@ impl MqueueQueue {
         }
 
         if nonblock {
-            return_errno!(Errno::EAGAIN);
+            return Err(errno!(EAGAIN));
         }
 
         // Slow path: block until room is available. The payload is carried
@@ -242,7 +242,7 @@ impl MqueueQueue {
 
         let notify = match res {
             Ok(notify) => notify,
-            Err(err) if err.error() == Errno::ETIME => return_errno!(Errno::ETIMEDOUT),
+            Err(err) if err.error() == Errno::ETIME => return Err(errno!(ETIMEDOUT)),
             Err(err) => return Err(err),
         };
 
@@ -267,18 +267,18 @@ impl MqueueQueue {
                 self.wait_queue.wake_all();
                 return Ok(msg);
             }
-            ReceiveOutcome::TooLarge => return_errno!(Errno::EMSGSIZE),
+            ReceiveOutcome::TooLarge => return Err(errno!(EMSGSIZE)),
             ReceiveOutcome::Empty => {}
         }
 
         if nonblock {
-            return_errno!(Errno::EAGAIN);
+            return Err(errno!(EAGAIN));
         }
 
         let res = self.wait_queue.pause_until_or_timeout(
             || match self.try_receive(msg_len) {
                 ReceiveOutcome::Success(msg) => Some(Ok(msg)),
-                ReceiveOutcome::TooLarge => Some(Err(Error::new(Errno::EMSGSIZE))),
+                ReceiveOutcome::TooLarge => Some(Err(errno!(EMSGSIZE))),
                 ReceiveOutcome::Empty => None,
             },
             timeout,
@@ -290,7 +290,7 @@ impl MqueueQueue {
                 Ok(msg)
             }
             Ok(Err(err)) => Err(err),
-            Err(err) if err.error() == Errno::ETIME => return_errno!(Errno::ETIMEDOUT),
+            Err(err) if err.error() == Errno::ETIME => Err(errno!(ETIMEDOUT)),
             Err(err) => Err(err),
         }
     }

@@ -19,14 +19,14 @@ pub(super) fn sys_mqtimedsend(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     if msg_prio >= MQ_PRIO_MAX {
-        return_errno_with_message!(Errno::EINVAL, "the message priority is too high");
+        return Err(errno!(EINVAL, "the message priority is too high"));
     }
 
     let (queue, nonblock) = MqueueFs::queue_from_fd(mqdes, ctx)?;
 
     let attr = queue.attr();
     if msg_len > attr.mq_msgsize as usize {
-        return_errno!(Errno::EMSGSIZE);
+        return Err(errno!(EMSGSIZE));
     }
 
     let mut payload = vec![0u8; msg_len].into_boxed_slice();
@@ -37,7 +37,7 @@ pub(super) fn sys_mqtimedsend(
     queue
         .send(payload, msg_prio, nonblock, timeout)
         .map_err(|err| match err.error() {
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            Errno::EINTR => errno!(ERESTARTSYS),
             _ => err,
         })?;
 

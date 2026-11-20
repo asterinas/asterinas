@@ -147,8 +147,8 @@ impl MqueueRootInode {
     fn mqueuefs(&self) -> Result<Arc<MqueueFs>> {
         let fs = self.common.fs();
         Arc::downcast::<MqueueFs>(fs).map_err(|_| {
-            Error::with_message(
-                Errno::ENODEV,
+            errno!(
+                ENODEV,
                 "the mqueuefs root inode has an unexpected file system",
             )
         })
@@ -162,7 +162,7 @@ impl FileOps for MqueueRootInode {
         _writer: &mut VmWriter,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
+        Err(errno!(EISDIR))
     }
 
     fn write_at(
@@ -171,7 +171,7 @@ impl FileOps for MqueueRootInode {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        Err(Error::new(Errno::EISDIR))
+        Err(errno!(EISDIR))
     }
 
     fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -230,7 +230,7 @@ impl Inode for MqueueRootInode {
     fn metadata(&self) -> Result<Metadata>;
 
     fn resize(&self, _self_dentry: &Dentry, _new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EISDIR))
+        Err(errno!(EISDIR))
     }
 
     fn type_(&self) -> InodeType {
@@ -244,7 +244,7 @@ impl Inode for MqueueRootInode {
         _type_: InodeType,
         _mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn mknod(
@@ -254,19 +254,19 @@ impl Inode for MqueueRootInode {
         _mode: InodeMode,
         _type_: MknodType,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn link(&self, _self_dentry: &Dentry, _old_dentry: &Dentry, _name: &str) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn unlink(&self, _child_dentry: &Dentry) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn rmdir(&self, _child_dentry: &Dentry) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
@@ -289,7 +289,7 @@ impl Inode for MqueueRootInode {
         _replaced_inode: Option<&Arc<dyn Inode>>,
         _mode: RenameMode,
     ) -> Result<()> {
-        Err(Error::new(Errno::EPERM))
+        Err(errno!(EPERM))
     }
 
     fn revalidation_policy(&self) -> RevalidationPolicy {
@@ -348,7 +348,7 @@ impl FileOps for MqueueInode {
     ) -> Result<usize> {
         // Message queues are accessed via `mq_timedsend` / `mq_timedreceive`,
         // not via `read` / `write`.
-        return_errno!(Errno::EINVAL)
+        Err(errno!(EINVAL))
     }
 
     fn write_at(
@@ -357,7 +357,7 @@ impl FileOps for MqueueInode {
         _reader: &mut VmReader,
         _status_flags: StatusFlags,
     ) -> Result<usize> {
-        return_errno!(Errno::EINVAL)
+        Err(errno!(EINVAL))
     }
 }
 
@@ -392,7 +392,7 @@ impl Inode for MqueueInode {
     }
 
     fn resize(&self, _self_dentry: &Dentry, _new_size: usize) -> Result<()> {
-        Err(Error::new(Errno::EINVAL))
+        Err(errno!(EINVAL))
     }
 
     fn type_(&self) -> InodeType {

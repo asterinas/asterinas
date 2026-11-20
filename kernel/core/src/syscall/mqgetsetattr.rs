@@ -31,7 +31,7 @@ pub(super) fn sys_mqgetsetattr(
     if let Some(new_attr) = &new_attr {
         let nonblock = StatusFlags::O_NONBLOCK.bits() as i64;
         if new_attr.mq_flags & !nonblock != 0 {
-            return_errno_with_message!(Errno::EINVAL, "only O_NONBLOCK can be modified");
+            return Err(errno!(EINVAL, "only O_NONBLOCK can be modified"));
         }
     }
 
@@ -42,12 +42,12 @@ pub(super) fn sys_mqgetsetattr(
     // `mq_getsetattr` only applies to message queue file descriptors.
     let inode_handle = file
         .downcast_ref::<InodeHandle>()
-        .ok_or_else(|| Error::new(Errno::EBADF))?;
+        .ok_or_else(|| errno!(EBADF))?;
     let queue = inode_handle
         .path()
         .inode()
         .downcast_ref::<MqueueInode>()
-        .ok_or_else(|| Error::new(Errno::EBADF))?
+        .ok_or_else(|| errno!(EBADF))?
         .queue();
 
     let old_attr = if omqstat == 0 {

@@ -143,12 +143,12 @@ impl MqueueFs {
         // Only message queue file descriptors carry a queue.
         let inode_handle = file
             .downcast_ref::<InodeHandle>()
-            .ok_or_else(|| Error::new(Errno::EBADF))?;
+            .ok_or_else(|| errno!(EBADF))?;
         let queue = inode_handle
             .path()
             .inode()
             .downcast_ref::<MqueueInode>()
-            .ok_or_else(|| Error::new(Errno::EBADF))?
+            .ok_or_else(|| errno!(EBADF))?
             .queue()
             .clone();
         let nonblock = file.status_flags().contains(StatusFlags::O_NONBLOCK);

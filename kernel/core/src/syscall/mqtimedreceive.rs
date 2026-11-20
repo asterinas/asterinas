@@ -20,7 +20,7 @@ pub(super) fn sys_mqtimedreceive(
         queue
             .receive(msg_len, nonblock, timeout)
             .map_err(|err| match err.error() {
-                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+                Errno::EINTR => errno!(ERESTARTSYS),
                 _ => err,
             })?;
 

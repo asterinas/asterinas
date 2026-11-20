@@ -63,7 +63,7 @@ pub(super) fn sys_mqopen(
     };
 
     let file_table = ctx.thread_local.borrow_file_table();
-    let fd = match file_table.unwrap().lock_and_insert(file_handle, fd_flags) {
+    let fd = match file_table.lock_and_insert(file_handle, fd_flags) {
         Ok(fd) => fd,
         Err(err) => {
             // Undo the queue creation so that a failed `mq_open` (e.g., with

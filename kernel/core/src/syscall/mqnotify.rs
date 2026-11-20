@@ -36,17 +36,14 @@ pub(super) fn sys_mqnotify(
                 // (negative or larger than 255) cannot wrap into a valid
                 // signal number.
                 let Ok(signo) = u8::try_from(sig_event.sigev_signo) else {
-                    return_errno_with_message!(Errno::EINVAL, "invalid signal number");
+                    return Err(errno!(EINVAL, "invalid signal number"));
                 };
                 let signo = SigNum::try_from(signo)?;
                 Some((signo, ctx.process.clone(), sig_event.sigev_value))
             }
             // TODO: Support `SIGEV_THREAD` and `SIGEV_THREAD_ID`.
             SigNotify::SIGEV_THREAD | SigNotify::SIGEV_THREAD_ID => {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "the notification method is not supported"
-                );
+                return Err(errno!(EINVAL, "the notification method is not supported"));
             }
         };
 

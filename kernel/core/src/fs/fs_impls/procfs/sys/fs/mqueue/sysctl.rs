@@ -70,8 +70,7 @@ impl ProcFileOps for MqueueSysctl {
         ))?;
 
         let (value, read_bytes) = read_u64_from(reader)?;
-        let value = i64::try_from(value)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "the value is too large"))?;
+        let value = i64::try_from(value).map_err(|_| errno!(EINVAL, "the value is too large"))?;
         self.set(value)?;
 
         Ok(read_bytes)

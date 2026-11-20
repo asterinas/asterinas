@@ -105,7 +105,7 @@ pub(crate) fn set_msgsize_default(value: i64) -> Result<()> {
 
 fn store_sysctl(sysctl: &AtomicI64, value: i64) -> Result<()> {
     if value < 0 {
-        return_errno_with_message!(Errno::EINVAL, "the sysctl value cannot be negative");
+        return Err(errno!(EINVAL, "the sysctl value cannot be negative"));
     }
     sysctl.store(value, Ordering::Relaxed);
     Ok(())
@@ -117,13 +117,13 @@ fn store_sysctl(sysctl: &AtomicI64, value: i64) -> Result<()> {
 /// before issuing the system call, so the kernel only sees `name`.
 pub(crate) fn validate_name(name: &str) -> Result<()> {
     if name.is_empty() {
-        return_errno_with_message!(Errno::EINVAL, "the queue name cannot be empty");
+        return Err(errno!(EINVAL, "the queue name cannot be empty"));
     }
     if name.len() > NAME_MAX {
-        return_errno_with_message!(Errno::ENAMETOOLONG, "the queue name is too long");
+        return Err(errno!(ENAMETOOLONG, "the queue name is too long"));
     }
     if name.contains('/') {
-        return_errno_with_message!(Errno::EINVAL, "the queue name cannot contain '/'");
+        return Err(errno!(EINVAL, "the queue name cannot contain '/"));
     }
     Ok(())
 }
@@ -139,10 +139,7 @@ pub(crate) fn lookup_queue(name: &str) -> Result<Arc<MqueueQueue>> {
     validate_name(name)?;
 
     let table = queue_table().lock();
-    table
-        .get(name)
-        .cloned()
-        .ok_or_else(|| Error::new(Errno::ENOENT))
+    table.get(name).cloned().ok_or_else(|| errno!(ENOENT))
 }
 
 /// Lists all live message queues, sorted by name.
@@ -172,13 +169,13 @@ pub(crate) fn unlink_queue(name: &str) -> Result<()> {
 
     let mut table = queue_table().lock();
     let Some(queue) = table.get(name) else {
-        return_errno_with_message!(Errno::ENOENT, "the message queue does not exist");
+        return Err(errno!(ENOENT, "the message queue does not exist"));
     };
     if !is_privileged && queue.owner() != fsuid {
-        return_errno_with_message!(
-            Errno::EACCES,
+        return Err(errno!(
+            EACCES,
             "only the owner of the message queue may unlink it"
-        );
+        ));
     }
     table.remove(name);
     Ok(())
@@ -192,11 +189,11 @@ pub(crate) fn create_queue(name: &str, mode: InodeMode, attr: MqAttr) -> Result<
 
     let mut table = queue_table().lock();
     if table.contains_key(name) {
-        return_errno!(Errno::EEXIST);
+        return Err(errno!(EEXIST));
     }
 
     if !is_privileged && table.len() as i64 >= queues_max() {
-        return_errno_with_message!(Errno::ENOSPC, "the message queue limit has been reached");
+        return Err(errno!(ENOSPC, "the message queue limit has been reached"));
     }
 
     validate_attr(attr, is_privileged)?;
@@ -215,7 +212,7 @@ pub(crate) fn create_queue(name: &str, mode: InodeMode, attr: MqAttr) -> Result<
 /// Validates the attributes used to create a new queue.
 fn validate_attr(attr: MqAttr, is_privileged: bool) -> Result<()> {
     if attr.mq_maxmsg <= 0 || attr.mq_msgsize <= 0 {
-        return_errno_with_message!(Errno::EINVAL, "mq_maxmsg and mq_msgsize must be positive");
+        return Err(errno!(EINVAL, "mq_maxmsg and mq_msgsize must be positive"));
     }
 
     // Unprivileged callers are limited by the sysctls, while privileged callers
@@ -226,7 +223,7 @@ fn validate_attr(attr: MqAttr, is_privileged: bool) -> Result<()> {
         (msg_max(), msgsize_max())
     };
     if attr.mq_maxmsg > max_maxmsg || attr.mq_msgsize > max_msgsize {
-        return_errno_with_message!(Errno::EINVAL, "mq_maxmsg or mq_msgsize exceeds the limit");
+        return Err(errno!(EINVAL, "mq_maxmsg or mq_msgsize exceeds the limit"));
     }
 
     Ok(())
