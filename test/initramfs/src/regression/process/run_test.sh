@@ -52,6 +52,7 @@ fi
 if [ "$(uname -m)" = "x86_64" ]; then
     ./ptrace/debugger
     ./ptrace/read_write_regs
+    ./ptrace/syscall_restart
 fi
 
 ./sched/ioprio_permission

@@ -8,6 +8,7 @@ use crate::{
         signal::{
             SigNum,
             constants::SIGKILL,
+            sig_action::{SigAction, SigDefaultAction},
             sig_mask::{SigMask, SigSet},
             signals::Signal,
         },
@@ -125,6 +126,33 @@ impl HandlePendingSignal for PosixThread {
                     .dequeue(mask)
                     .map(DequeuedSignal::FromProcess)
             })
+    }
+}
+
+impl PosixThread {
+    /// A killable wait also ends when a deliverable signal initiates group exit.
+    pub(in crate::process) fn has_pending_fatal_signal(&self) -> bool {
+        let process = self.process();
+        if self.sig_queues().is_empty() && process.sig_queues().is_empty() {
+            return false;
+        }
+        let pending = self.pending_signals() - self.sig_mask();
+        if pending.contains(SIGKILL) {
+            return true;
+        }
+        if pending.is_empty()
+            || self.is_traced()
+            || (process.is_init_process() && !process.status().is_signal_exit_forced())
+        {
+            return false;
+        }
+        let dispositions = process.sig_dispositions().lock();
+        let dispositions = dispositions.lock();
+        dispositions.iter().any(|(num, action)| {
+            pending.contains(num)
+                && matches!(action, SigAction::Dfl)
+                && matches!(SigDefaultAction::from_signum(num), SigDefaultAction::Term)
+        })
     }
 }
 

@@ -10,6 +10,7 @@ use crate::{
         posix_thread::{ContextPthreadAdminApi, ThreadName},
         signal::sig_num::SigNum,
     },
+    security::seccomp,
 };
 
 pub(super) fn sys_prctl(
@@ -61,6 +62,14 @@ pub(super) fn sys_prctl(
             }
             let credentials = ctx.credentials_mut();
             credentials.set_keep_capabilities(keep_cap != 0)?;
+        }
+        PrctlCmd::PR_SET_SECCOMP(mode, fprog_addr) => {
+            seccomp::prctl_set_seccomp(mode, fprog_addr, ctx)?;
+        }
+        PrctlCmd::PR_GET_SECCOMP => {
+            return Ok(SyscallReturn::Return(
+                ctx.posix_thread.seccomp_snapshot().mode() as _,
+            ));
         }
         PrctlCmd::PR_SET_NAME(read_addr) => {
             let user_space = ctx.user_space();
@@ -160,6 +169,8 @@ const PR_GET_KEEPCAPS: i32 = 7;
 const PR_SET_KEEPCAPS: i32 = 8;
 const PR_SET_NAME: i32 = 15;
 const PR_GET_NAME: i32 = 16;
+const PR_GET_SECCOMP: i32 = 21;
+const PR_SET_SECCOMP: i32 = 22;
 const PR_CAPBSET_READ: i32 = 23;
 const PR_CAPBSET_DROP: i32 = 24;
 const PR_GET_SECUREBITS: i32 = 27;
@@ -183,6 +194,8 @@ enum PrctlCmd {
     PR_SET_KEEPCAPS(u32),
     PR_SET_NAME(Vaddr),
     PR_GET_NAME(Vaddr),
+    PR_GET_SECCOMP,
+    PR_SET_SECCOMP(u64, Vaddr),
     PR_CAPBSET_READ(CapSet),
     PR_CAPBSET_DROP(CapSet),
     PR_GET_SECUREBITS,
@@ -226,6 +239,8 @@ impl PrctlCmd {
             PR_SET_KEEPCAPS => Ok(PrctlCmd::PR_SET_KEEPCAPS(arg2 as _)),
             PR_SET_NAME => Ok(PrctlCmd::PR_SET_NAME(arg2 as _)),
             PR_GET_NAME => Ok(PrctlCmd::PR_GET_NAME(arg2 as _)),
+            PR_GET_SECCOMP => Ok(PrctlCmd::PR_GET_SECCOMP),
+            PR_SET_SECCOMP => Ok(PrctlCmd::PR_SET_SECCOMP(arg2, arg3 as Vaddr)),
             PR_CAPBSET_READ => Ok(PrctlCmd::PR_CAPBSET_READ(parse_capability(arg2)?)),
             PR_CAPBSET_DROP => Ok(PrctlCmd::PR_CAPBSET_DROP(parse_capability(arg2)?)),
             PR_GET_SECUREBITS => Ok(PrctlCmd::PR_GET_SECUREBITS),

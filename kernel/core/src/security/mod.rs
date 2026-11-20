@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub mod lsm;
+pub(crate) mod seccomp;
 
 cfg_select! {
     all(target_arch = "x86_64", feature = "cvm_guest") => {
@@ -12,6 +13,7 @@ cfg_select! {
 
 pub(super) fn init() {
     lsm::init();
+    seccomp::init();
 
     #[cfg(target_arch = "x86_64")]
     ostd::if_tdx_enabled!({

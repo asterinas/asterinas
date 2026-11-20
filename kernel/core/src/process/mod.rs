@@ -23,6 +23,9 @@ pub(crate) mod task_set;
 mod term_status;
 mod wait;
 
+#[cfg(ktest)]
+mod test;
+
 pub(crate) use clone::{CloneArgs, CloneFlags, clone_child};
 pub(crate) use credentials::{Credentials, Gid, Uid};
 pub(crate) use execve::do_execve;

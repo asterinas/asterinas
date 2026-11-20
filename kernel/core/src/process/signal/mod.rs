@@ -46,22 +46,54 @@ pub(crate) trait SignalContext {
     fn set_arguments(&mut self, sig_num: SigNum, siginfo_addr: usize, ucontext_addr: usize);
 }
 
+/// Forces a synchronous signal, resetting an ignored or blocked disposition.
+pub(crate) fn force_signal(info: siginfo_t, ctx: &Context) {
+    let sig_num = SigNum::from_u8(info.si_signo as u8);
+    {
+        let dispositions = ctx.process.sig_dispositions().lock();
+        let mut dispositions = dispositions.lock();
+        let mask = ctx.posix_thread.sig_mask();
+        if mask.contains(sig_num) || matches!(dispositions.get(sig_num), SigAction::Ign) {
+            dispositions.set_default(sig_num);
+            ctx.set_sig_mask(mask - sig_num);
+        }
+        // Like Linux force_sig_info_to_task(), leave a traced init protected.
+        if matches!(dispositions.get(sig_num), SigAction::Dfl) && !ctx.posix_thread.is_traced() {
+            ctx.process.status().force_signal_exit();
+        }
+    }
+    ctx.posix_thread
+        .enqueue_signal(Box::new(signals::raw::RawSignal::new(info)));
+}
+
 /// Handles a pending signal for the current process.
 pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
+    // Linux only applies restart rules on its signal/restart path. A plain
+    // seccomp ERRNO(512/513) or a tracer-supplied result must survive when no
+    // signal was processed. Preserve real interruption requests even if a
+    // sibling consumes the process-directed signal before we dequeue it.
+    // See arch_do_signal_or_restart() in Linux arch/x86/kernel/signal.c.
+    let restart_requested = ctx.thread_local.take_syscall_restart_request();
+    match deliver_pending_signal(user_ctx, ctx) {
+        SignalDelivery::WithHandler => {}
+        SignalDelivery::WithoutHandler => restart_syscall(user_ctx, ctx, None),
+        SignalDelivery::NoSignal if restart_requested => restart_syscall(user_ctx, ctx, None),
+        SignalDelivery::NoSignal => {}
+    }
+}
+
+enum SignalDelivery {
+    NoSignal,
+    WithoutHandler,
+    WithHandler,
+}
+
+/// Delivers a signal and identifies whether syscall restart rules apply.
+fn deliver_pending_signal(user_ctx: &mut UserContext, ctx: &Context) -> SignalDelivery {
     // FIXME: This function may handle or suppress only one signal per trap, delaying
     // other pending unmasked signals until the next trap. Consider a looped scan.
     //
     // For details, see <https://github.com/asterinas/asterinas/pull/2984/#discussion_r3137275994>.
-    let syscall_restart = if let Some(orig_syscall_ret) = ctx.thread_local.orig_syscall_ret()
-        && user_ctx.syscall_ret() == -(Errno::ERESTARTSYS as i32) as usize
-    {
-        // We should never return `ERESTARTSYS` to the userspace.
-        user_ctx.set_syscall_ret(-(Errno::EINTR as i32) as usize);
-        Some(orig_syscall_ret)
-    } else {
-        None
-    };
-
     let mut restore_sig_mask = ctx
         .thread_local
         .sig_mask_saved()
@@ -73,7 +105,7 @@ pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
     } else {
         // Fast path: There is no signal mask to restore.
         if restore_sig_mask.is_none() {
-            return;
+            return SignalDelivery::NoSignal;
         }
         // Restore the signal mask first.
         let _ = restore_sig_mask.take();
@@ -82,7 +114,7 @@ pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
         if let Some(dequeued_signal) = dequeue_pending_signal(ctx) {
             dequeued_signal
         } else {
-            return;
+            return SignalDelivery::NoSignal;
         }
     };
 
@@ -101,12 +133,12 @@ pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
                     //
                     // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/kernel/signal.c#L2770>
                     requeue_signal(ctx, dequeued);
-                    return;
+                    return SignalDelivery::WithoutHandler;
                 }
 
                 (dequeued.unwrap(), get_sig_action(ctx, sig_num))
             }
-            PtraceStopResult::Continued(None) => return,
+            PtraceStopResult::Continued(None) => return SignalDelivery::WithoutHandler,
             PtraceStopResult::Interrupted => {
                 match dequeue_pending_signal(ctx) {
                     Some((dequeued, action)) if dequeued.num() == SIGKILL => {
@@ -114,7 +146,7 @@ pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
                     }
                     // SIGKILL was consumed by a sibling thread; this thread will be
                     // terminated as part of the process-wide exit.
-                    _ => return,
+                    _ => return SignalDelivery::WithoutHandler,
                 }
             }
             PtraceStopResult::NotTraced(dequeued) => (dequeued.unwrap().unwrap(), sig_action),
@@ -143,22 +175,7 @@ pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
                 sig_dispositions.set_default(sig_num);
             }
 
-            if let Some(orig_syscall_ret) = syscall_restart
-                && flags.contains(SigActionFlags::SA_RESTART)
-            {
-                #[cfg(target_arch = "x86_64")]
-                const SYSCALL_INSTR_LEN: usize = 2; // syscall
-                #[cfg(target_arch = "riscv64")]
-                const SYSCALL_INSTR_LEN: usize = 4; // ecall
-                #[cfg(target_arch = "loongarch64")]
-                const SYSCALL_INSTR_LEN: usize = 4; // syscall
-                #[cfg(target_arch = "aarch64")]
-                const SYSCALL_INSTR_LEN: usize = 4; // svc
-
-                user_ctx.set_syscall_ret(orig_syscall_ret);
-                user_ctx
-                    .set_instruction_pointer(user_ctx.instruction_pointer() - SYSCALL_INSTR_LEN);
-            }
+            restart_syscall(user_ctx, ctx, Some(flags));
 
             if let Err(e) = handle_user_signal(
                 ctx,
@@ -180,8 +197,11 @@ pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
                 // This can be observed in LTP test `signal06`.
                 do_exit_group(TermStatus::Killed(SIGSEGV), ctx, user_ctx);
             }
+            return SignalDelivery::WithHandler;
         }
-        SigAction::Dfl if ctx.process.is_init_process() => {
+        SigAction::Dfl
+            if ctx.process.is_init_process() && !ctx.process.status().is_signal_exit_forced() =>
+        {
             // From Linux man pages "kill(2)":
             // "The only signals that can be sent to process ID 1, the init process, are those for
             // which init has explicitly installed signal handlers."
@@ -206,6 +226,41 @@ pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
             }
         }
     }
+    SignalDelivery::WithoutHandler
+}
+
+/// Applies Linux syscall restart rules after ptrace has had a chance to edit registers.
+fn restart_syscall(user_ctx: &mut UserContext, ctx: &Context, flags: Option<SigActionFlags>) {
+    let Some(orig_syscall_ret) = ctx.thread_local.orig_syscall_ret() else {
+        return;
+    };
+    // On x86, orig_rax == -1 tells Linux that this is no longer a syscall,
+    // including when a tracer cancels a restart at a signal-delivery stop.
+    #[cfg(target_arch = "x86_64")]
+    if orig_syscall_ret as i32 == -1 {
+        return;
+    }
+    let ret = user_ctx.syscall_ret();
+    if ret == -(Errno::ERESTARTSYS as i32) as usize {
+        if flags.is_some_and(|flags| !flags.contains(SigActionFlags::SA_RESTART)) {
+            user_ctx.set_syscall_ret(-(Errno::EINTR as i32) as usize);
+            return;
+        }
+    } else if ret != -(Errno::ERESTARTNOINTR as i32) as usize {
+        return;
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    const SYSCALL_INSTR_LEN: usize = 2; // syscall
+    #[cfg(any(
+        target_arch = "riscv64",
+        target_arch = "loongarch64",
+        target_arch = "aarch64"
+    ))]
+    const SYSCALL_INSTR_LEN: usize = 4; // ecall, syscall, svc
+
+    user_ctx.set_syscall_ret(orig_syscall_ret);
+    user_ctx.set_instruction_pointer(user_ctx.instruction_pointer() - SYSCALL_INSTR_LEN);
 }
 
 /// A guard that restores the signal mask on drop.
@@ -239,7 +294,12 @@ fn dequeue_pending_signal(ctx: &Context) -> Option<(DequeuedSignal, SigAction)> 
     let sig_dispositions = ctx.process.sig_dispositions().lock();
     let sig_dispositions = sig_dispositions.lock();
 
-    let sig_mask = posix_thread.sig_mask();
+    // Fatal group-exit signals take precedence over a thread-local trap.
+    let sig_mask = if ctx.has_pending_sigkill() {
+        SigMask::new_full() - SIGKILL
+    } else {
+        posix_thread.sig_mask()
+    };
     let (signal, sig_num, sig_action) = loop {
         let signal = ctx.dequeue_signal(&sig_mask)?;
         let sig_num = signal.num();

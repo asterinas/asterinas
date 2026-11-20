@@ -58,6 +58,15 @@ struct PolleeInner {
     state: AtomicIsize,
 }
 
+impl PolleeInner {
+    fn new() -> Self {
+        Self {
+            subject: SyncSubject::new(),
+            state: AtomicIsize::new(INV_STATE),
+        }
+    }
+}
+
 impl Default for Pollee {
     fn default() -> Self {
         Self::new()
@@ -67,13 +76,16 @@ impl Default for Pollee {
 impl Pollee {
     /// Creates a new pollee.
     pub(crate) fn new() -> Self {
-        let inner = PolleeInner {
-            subject: SyncSubject::new(),
-            state: AtomicIsize::new(INV_STATE),
-        };
         Self {
-            inner: Arc::new(inner),
+            inner: Arc::new(PolleeInner::new()),
         }
+    }
+
+    /// Creates a pollee or returns `ENOMEM` if its state cannot be allocated.
+    pub(crate) fn try_new() -> Result<Self> {
+        let inner = Arc::try_new(PolleeInner::new())
+            .map_err(|_| Error::with_message(Errno::ENOMEM, "cannot allocate poll state"))?;
+        Ok(Self { inner })
     }
 
     /// Returns the current events filtered by the given event mask.

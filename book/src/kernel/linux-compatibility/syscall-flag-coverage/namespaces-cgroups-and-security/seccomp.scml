@@ -1,0 +1,15 @@
+// Enter strict mode. Flags must be zero.
+seccomp(op = SECCOMP_SET_MODE_STRICT, flags, args = NULL);
+
+// Install a filter. See the coverage page for flag combination constraints.
+seccomp(
+    op = SECCOMP_SET_MODE_FILTER,
+    flags = SECCOMP_FILTER_FLAG_TSYNC | SECCOMP_FILTER_FLAG_LOG |
+            SECCOMP_FILTER_FLAG_SPEC_ALLOW | SECCOMP_FILTER_FLAG_NEW_LISTENER |
+            SECCOMP_FILTER_FLAG_TSYNC_ESRCH | SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV,
+    filter
+);
+
+// Query availability of a filter action or the notification ABI sizes. Flags must be zero.
+seccomp(op = SECCOMP_GET_ACTION_AVAIL, flags, action);
+seccomp(op = SECCOMP_GET_NOTIF_SIZES, flags, sizes);

@@ -19,6 +19,7 @@ use super::{
         signals::Signal,
     },
     status::ProcessStatus,
+    sync::CredGuardMutex,
     task_set::TaskSet,
 };
 use crate::{
@@ -95,6 +96,8 @@ pub struct Process {
     // Mutable Part
     /// The threads
     tasks: Mutex<TaskSet>,
+    /// Serializes exec credential calculation and seccomp TSYNC.
+    cred_guard: CredGuardMutex,
     /// Process status
     status: ProcessStatus,
     /// Parent process
@@ -249,6 +252,7 @@ impl Process {
                 children_wait_queue,
                 pidfile_pollee: Pollee::new(),
                 tasks: Mutex::new(TaskSet::new()),
+                cred_guard: CredGuardMutex::new(),
                 status: ProcessStatus::default(),
                 parent: ParentProcess::new(Weak::new()),
                 children: Mutex::new(Some(BTreeMap::new())),
@@ -308,6 +312,10 @@ impl Process {
 
     pub(crate) fn tasks(&self) -> &Mutex<TaskSet> {
         &self.tasks
+    }
+
+    pub(crate) fn cred_guard(&self) -> &CredGuardMutex {
+        &self.cred_guard
     }
 
     pub(crate) fn resource_limits(&self) -> &ResourceLimits {

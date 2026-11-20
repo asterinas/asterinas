@@ -24,6 +24,7 @@ use crate::{
         posix_thread::ptrace::TraceeStatus,
         signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
+    security::seccomp::{SeccompState, ThreadSeccompState},
     thread::{Thread, Tid},
     time::{Timer, TimerManager, clocks::ProfClock, timer::TimerFn},
 };
@@ -41,7 +42,7 @@ mod thread_local;
 
 pub(crate) use builder::PosixThreadBuilder;
 pub(super) use exit::sigkill_other_threads;
-pub(crate) use exit::{do_exit, do_exit_group};
+pub(crate) use exit::{do_exit, do_exit_group, do_seccomp_exit_group, do_seccomp_exit_thread};
 pub(crate) use personality::Personality;
 pub use posix_thread_ext::AsPosixThread;
 pub(crate) use robust_list::RobustListHead;
@@ -97,6 +98,9 @@ pub struct PosixThread {
     /// The default timer slack value for this thread.
     default_timer_slack_ns: AtomicU64,
 
+    /// The effective per-thread syscall filtering policy.
+    seccomp: Mutex<ThreadSeccompState>,
+
     // Ptrace
     /// Status of being traced.
     tracee_status: Once<TraceeStatus>,
@@ -111,6 +115,40 @@ pub struct PosixThread {
 }
 
 impl PosixThread {
+    pub(crate) fn seccomp_snapshot(&self) -> SeccompState {
+        self.seccomp.lock().snapshot()
+    }
+
+    /// Returns the mode and filter count from the same seccomp policy.
+    pub(crate) fn seccomp_status(&self) -> (u32, usize) {
+        self.seccomp.lock().status()
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    pub(crate) fn is_seccomp_strict(&self) -> bool {
+        self.seccomp.lock().is_strict()
+    }
+
+    pub(crate) fn set_seccomp(&self, state: SeccompState) {
+        // Attach before detaching the old policy so a retained listener never
+        // temporarily loses its last user during append or TSYNC.
+        let state = ThreadSeccompState::new(state);
+        let previous = core::mem::replace(&mut *self.seccomp.lock(), state);
+        drop(previous);
+    }
+
+    /// Inherits a thread's seccomp policy and its monotonic privilege restriction.
+    ///
+    /// The caller must hold the source process's task-set lock to exclude TSYNC.
+    /// The destination must be an unpublished child or a validated TSYNC target;
+    /// TSYNC must also hold the credential guard to exclude concurrent exec.
+    pub(crate) fn inherit_seccomp(&self, source: &Self) {
+        if source.credentials.no_new_privs() {
+            self.credentials.set_no_new_privs();
+        }
+        self.set_seccomp(source.seccomp_snapshot());
+    }
+
     pub(crate) fn process(&self) -> Arc<Process> {
         self.process.upgrade().unwrap()
     }
@@ -243,6 +281,7 @@ impl PosixThread {
             (Some((_, PauseReason::Sleep)), true) => SleepingState::Interruptible,
             (Some((_, PauseReason::StopBySignal)), true) => SleepingState::StopBySignal,
             (Some((_, PauseReason::StopByPtrace)), true) => SleepingState::StopByPtrace,
+            (Some((_, PauseReason::Killable)), true) => SleepingState::Uninterruptible,
             (None, true) => SleepingState::Uninterruptible,
             (_, false) => SleepingState::Running,
         }

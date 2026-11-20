@@ -15,7 +15,11 @@ use crate::{
         TermStatus,
         exit::{drop_after, exit_process},
         pid_table,
-        signal::{constants::SIGKILL, signals::kernel::KernelSignal},
+        signal::{
+            constants::{SIGKILL, SIGSYS},
+            sig_num::SigNum,
+            signals::kernel::KernelSignal,
+        },
         task_set::TaskSet,
     },
     thread::{AsThread, Tid},
@@ -27,7 +31,7 @@ use crate::{
 ///
 /// If the current thread is not a POSIX thread, this method will panic.
 pub(crate) fn do_exit(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContext) {
-    exit_internal(term_status, false, ctx, user_ctx);
+    exit_internal(term_status, ExitScope::Thread, ctx, user_ctx);
 }
 
 /// Kills all threads and exits the current POSIX process.
@@ -36,7 +40,31 @@ pub(crate) fn do_exit(term_status: TermStatus, ctx: &Context, user_ctx: &mut Use
 ///
 /// If the current thread is not a POSIX thread, this method will panic.
 pub(crate) fn do_exit_group(term_status: TermStatus, ctx: &Context, user_ctx: &mut UserContext) {
-    exit_internal(term_status, true, ctx, user_ctx);
+    exit_internal(term_status, ExitScope::Group, ctx, user_ctx);
+}
+
+/// Terminates the process with `SIGSYS` using the normal group-exit arbitration.
+pub(crate) fn do_seccomp_exit_group(ctx: &Context, user_ctx: &mut UserContext) {
+    do_seccomp_exit(SIGSYS, ExitScope::Group, ctx, user_ctx);
+}
+
+/// Terminates the current thread after a fatal seccomp decision.
+pub(crate) fn do_seccomp_exit_thread(signal: SigNum, ctx: &Context, user_ctx: &mut UserContext) {
+    do_seccomp_exit(signal, ExitScope::Thread, ctx, user_ctx);
+}
+
+fn do_seccomp_exit(signal: SigNum, scope: ExitScope, ctx: &Context, user_ctx: &mut UserContext) {
+    {
+        // Publish the dead mode before the ptrace exit stop and serialize it with TSYNC.
+        let _tasks = ctx.process.tasks().lock();
+        ctx.posix_thread.seccomp.lock().mark_dead();
+    }
+    exit_internal(TermStatus::Killed(signal), scope, ctx, user_ctx);
+}
+
+enum ExitScope {
+    Thread,
+    Group,
 }
 
 /// Exits the current POSIX thread or process.
@@ -46,33 +74,44 @@ pub(crate) fn do_exit_group(term_status: TermStatus, ctx: &Context, user_ctx: &m
 // register state and may later restore tracer-updated registers.
 fn exit_internal(
     term_status: TermStatus,
-    is_exiting_group: bool,
+    scope: ExitScope,
     ctx: &Context,
     user_ctx: &mut UserContext,
 ) {
-    let exit_code = term_status.as_u32();
-    ctx.posix_thread
-        .ptrace_may_stop_on(PtraceEvent::Exit(exit_code), ctx, user_ctx);
-
     let current_task = Task::current().unwrap();
     let current_thread = current_task.as_thread().unwrap();
     let posix_thread = current_thread.as_posix_thread().unwrap();
     let thread_local = current_task.as_thread_local().unwrap();
     let posix_process = posix_thread.process();
 
+    // Linux commits do_group_exit() before reporting PTRACE_EVENT_EXIT.
+    // Otherwise a tracer could leave siblings running while the fatal thread
+    // is stopped. Exec and group exit must arbitrate under the same lock.
+    let exit_code = {
+        let mut tasks = posix_process.tasks().lock();
+        match scope {
+            ExitScope::Thread => term_status.as_u32(),
+            ExitScope::Group if tasks.has_exited_group() => posix_process.status().exit_code(),
+            ExitScope::Group if tasks.in_execve() => 0,
+            ExitScope::Group => {
+                let exit_code = term_status.as_u32();
+                posix_process.status().set_exit_code(exit_code);
+                tasks.set_exited_group();
+                sigkill_other_threads(&current_task, &tasks);
+                exit_code
+            }
+        }
+    };
+
+    ctx.posix_thread
+        .ptrace_may_stop_on(PtraceEvent::Exit(exit_code), ctx, user_ctx);
+
     let is_last_thread = {
         let mut tasks = posix_process.tasks().lock();
-        let has_exited_group = tasks.has_exited_group();
-        let in_evecve = tasks.in_execve();
-
-        if is_exiting_group && !has_exited_group && !in_evecve {
-            sigkill_other_threads(&current_task, &tasks);
-            tasks.set_exited_group();
-        }
 
         // According to Linux's behavior, the last thread's exit code will become the process's
         // exit code, so here we should just overwrite the old value (if any).
-        if !has_exited_group && !in_evecve {
+        if !tasks.has_exited_group() && !tasks.in_execve() {
             posix_process.status().set_exit_code(exit_code);
         }
 
@@ -98,6 +137,9 @@ fn exit_internal(
         tracer.process().children_wait_queue().wake_all();
     }
 
+    // Release the listener before waking a joiner, and retain zombie status.
+    // The task has already been removed from the set considered by TSYNC.
+    posix_thread.set_seccomp(posix_thread.seccomp_snapshot().exited());
     wake_clear_ctid(thread_local);
 
     wake_robust_list(thread_local, posix_thread.tid());

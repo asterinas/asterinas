@@ -10,7 +10,7 @@ use ostd_pod::{FromZeros, IntoBytes};
 use spin::Once;
 use x86::bits64::segmentation::{rdfsbase, rdgsbase, swapgs, wrfsbase, wrgsbase};
 use x86_64::registers::{
-    control::{Cr0, Cr0Flags},
+    control::{Cr0, Cr0Flags, Cr4, Cr4Flags},
     rflags::RFlags,
     xcontrol::XCr0,
 };
@@ -61,6 +61,7 @@ pub const USER_MODIFIABLE_RFLAGS: usize = (RFlags::CARRY_FLAG.bits()
 pub struct UserContext {
     user_context: RawUserContext,
     exception: Option<CpuException>,
+    is_tsc_disabled: bool,
 }
 
 impl Default for UserContext {
@@ -79,6 +80,7 @@ impl Default for UserContext {
                 error_code: 0,
             },
             exception: None,
+            is_tsc_disabled: false,
         }
     }
 }
@@ -344,6 +346,18 @@ impl UserContext {
 
     // Architecture-specific methods.
 
+    /// Disables user-mode `RDTSC` and `RDTSCP` for this context.
+    ///
+    /// Executing either instruction will cause a general-protection fault.
+    pub fn disable_tsc(&mut self) {
+        self.is_tsc_disabled = true;
+    }
+
+    /// Returns whether user-mode timestamp instructions are disabled for this context.
+    pub fn is_tsc_disabled(&self) -> bool {
+        self.is_tsc_disabled
+    }
+
     /// Gets the value of the RFLAGS register.
     pub fn rflags(&self) -> usize {
         self.user_context.rflags
@@ -369,7 +383,23 @@ impl UserContextApiInternal for UserContext {
 
             let irq_guard = crate::irq::disable_local();
             hooks.pre_user_run(&irq_guard);
+            let kernel_cr4 = Cr4::read();
+            let change_tsd =
+                kernel_cr4.contains(Cr4Flags::TIMESTAMP_DISABLE) != self.is_tsc_disabled;
+            if change_tsd {
+                let mut user_cr4 = kernel_cr4;
+                user_cr4.set(Cr4Flags::TIMESTAMP_DISABLE, self.is_tsc_disabled);
+                // SAFETY: Only CR4.TSD changes. It restricts timestamp instructions
+                // at CPL > 0 without affecting kernel execution or memory safety.
+                // IRQs remain disabled through entry and on return, so migration
+                // cannot separate the update, user execution, and restoration.
+                unsafe { Cr4::write(user_cr4) };
+            }
             self.user_context.run(&irq_guard);
+            if change_tsd {
+                // SAFETY: Restores this CPU's CR4 before IRQs or preemption resume.
+                unsafe { Cr4::write(kernel_cr4) };
+            }
 
             let exception =
                 CpuException::new(self.user_context.trap_num, self.user_context.error_code);

@@ -49,6 +49,8 @@ pub(crate) fn do_execve(
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_NR_STRING_ARGS, MAX_LEN_STRING_ARG, ctx)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_NR_STRING_ARGS, MAX_LEN_STRING_ARG, ctx)?;
 
+    // TSYNC must not change no_new_privs between credential calculation and commit.
+    let cred_guard = ctx.process.cred_guard().lock_for_exec()?;
     let fs_ref = ctx.thread_local.borrow_fs();
     let path_resolver = fs_ref.resolver().read();
 
@@ -94,6 +96,8 @@ pub(crate) fn do_execve(
         &elf_load_info,
         exec_cred,
     );
+
+    drop(cred_guard);
 
     if res.is_ok() {
         ctx.posix_thread

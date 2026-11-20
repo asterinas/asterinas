@@ -34,6 +34,8 @@ stdenv.mkDerivation rec {
     hash = "sha256-7Ie6f1aNvBo6ipoS/no+IkVhQ/C9bedzQCUoYwM4ED4=";
   };
 
+  patches = [ ./kselftest-seccomp-stop-on-failed-prerequisites.patch ];
+
   # Explicit allowlist of selftest subsystems Asterinas exercises today.
   # Keeping this small (rather than building "all") means
   # a regression in an unlisted subsystem upstream cannot silently change our conformance surface.
@@ -43,6 +45,7 @@ stdenv.mkDerivation rec {
     "exec"
     "lsm"
     "proc"
+    "seccomp"
     "signal"
     "splice"
     "timers"

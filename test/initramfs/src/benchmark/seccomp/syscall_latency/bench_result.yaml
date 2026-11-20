@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MPL-2.0
+
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: getppid with one 64-instruction parameter filter
+  legend: Average syscall latency on {system}
+  title: '[Security] Seccomp syscall latency'
+  unit: ns
+result_extraction:
+  result_index: 4
+  search_pattern: 'Seccomp syscall ns: +[0-9.]+'

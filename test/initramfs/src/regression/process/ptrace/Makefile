@@ -9,7 +9,8 @@ ifneq ($(HOST_PLATFORM), x86_64-linux)
 C_OBJS_FILTER += \
 	debuggee \
 	debugger \
-	read_write_regs
+	read_write_regs \
+	syscall_restart
 endif
 
 include ../../common/Makefile

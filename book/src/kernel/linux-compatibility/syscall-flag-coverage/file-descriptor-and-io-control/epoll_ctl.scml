@@ -1,6 +1,6 @@
 struct epoll_event = {
     events = EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLPRI | EPOLLERR | EPOLLHUP |
-             EPOLLET | EPOLLONESHOT,
+             EPOLLWRNORM | EPOLLET | EPOLLONESHOT,
     ..
 };
 

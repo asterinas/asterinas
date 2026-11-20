@@ -22,6 +22,7 @@ use crate::{
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
     sched::{Nice, SchedPolicy},
+    security::seccomp::{SeccompState, ThreadSeccompState},
     thread::{Thread, Tid, task},
     time::{TimerManager, clocks::ProfClock},
     vm::vmar::VmarHandle,
@@ -149,6 +150,31 @@ impl PosixThreadBuilder {
     }
 
     pub(crate) fn build(self) -> Arc<Task> {
+        self.build_with_task(task::create_new_user_task)
+    }
+
+    /// Builds a POSIX task that runs a kernel test instead of entering user mode.
+    #[cfg(ktest)]
+    pub(in crate::process) fn build_for_test(
+        self,
+        entry: impl FnOnce() + Send + 'static,
+    ) -> Arc<Task> {
+        self.build_with_task(|_, thread, thread_local| {
+            ostd::task::TaskOptions::new(move || {
+                let _ = crate::thread::oops::catch_panics_as_oops(entry);
+                current_thread!().exit();
+            })
+            .data(thread)
+            .local_data(thread_local)
+            .build()
+            .unwrap()
+        })
+    }
+
+    fn build_with_task(
+        self,
+        build_task_fn: impl FnOnce(Box<UserContext>, Arc<Thread>, ThreadLocal) -> Task,
+    ) -> Arc<Task> {
         let Self {
             tid,
             user_ctx,
@@ -202,6 +228,7 @@ impl PosixThreadBuilder {
                     ns_proxy: Mutex::new(Some(ns_proxy.clone())),
                     timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
                     default_timer_slack_ns: AtomicU64::new(default_timer_slack_ns),
+                    seccomp: Mutex::new(ThreadSeccompState::new(SeccompState::default())),
                     tracee_status: Once::new(),
                     tracees: Once::new(),
                     exit_code: AtomicU32::new(0),
@@ -228,7 +255,7 @@ impl PosixThreadBuilder {
                 ns_proxy,
             );
 
-            task::create_new_user_task(user_ctx, thread, thread_local)
+            build_task_fn(user_ctx, thread, thread_local)
         })
     }
 }

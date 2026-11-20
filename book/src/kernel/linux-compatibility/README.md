@@ -337,6 +337,7 @@ which are summarized in the table below.
 | 314     | sched_setattr          | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#sched_getattr-and-sched_setattr) |
 | 315     | sched_getattr          | ✅             | [⚠️](syscall-flag-coverage/process-and-thread-management/#sched_getattr-and-sched_setattr) |
 | 316     | renameat2              | ✅             | [⚠️](syscall-flag-coverage/file-and-directory-operations/#renameat2) |
+| 317     | seccomp                | ✅             | [⚠️](syscall-flag-coverage/namespaces-cgroups-and-security/#seccomp) |
 | 318     | getrandom              | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#getrandom) |
 | 319     | memfd_create           | ✅             | [⚠️](syscall-flag-coverage/file-descriptor-and-io-control/#memfd_create) |
 | 322     | execveat               | ✅             | 💯 |
@@ -377,6 +378,18 @@ Here is the list of supported file systems:
 * Ext2
 * Procfs
 * Ramfs
+
+Procfs exposes `NoNewPrivs`, `Seccomp`, and `Seccomp_filters`
+in `/proc/[pid]/status` and `/proc/[pid]/task/[tid]/status`.
+The process path reports the main thread's state.
+The task path reports the selected thread's state.
+`NoNewPrivs` is set when `execve()` is prevented from granting the thread new privileges.
+`Seccomp` reports `0` for disabled, `1` for strict, `2` for filter,
+and `3` for a thread exiting after a fatal seccomp decision.
+Mode `3` covers strict violations and the thread that triggers
+`SECCOMP_RET_KILL_THREAD` or `SECCOMP_RET_KILL_PROCESS`.
+`Seccomp_filters` counts the filters in that thread's policy chain.
+These fields remain available for a zombie until it is reaped.
 
 ## Sockets
 

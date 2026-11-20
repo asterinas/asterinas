@@ -16,13 +16,15 @@ use crate::process::{WaitOptions, signal::sig_num::SigNum};
 /// 2. Whether the process is the vfork child, which shares the user-space virtual memory
 ///    with its parent process;
 /// 3. The exit code of the process;
-/// 4. Whether the process is stopped by a signal.
+/// 4. Whether the process is stopped by a signal;
+/// 5. Whether a forced signal has disabled init's immunity to default actions.
 #[derive(Debug)]
 pub(crate) struct ProcessStatus {
     is_zombie: AtomicBool,
     is_vfork_child: AtomicBool,
     exit_code: AtomicU32,
     stop_status: StopStatus,
+    signal_exit_forced: AtomicBool,
 }
 
 impl Default for ProcessStatus {
@@ -32,11 +34,21 @@ impl Default for ProcessStatus {
             is_vfork_child: AtomicBool::new(false),
             exit_code: AtomicU32::new(0),
             stop_status: StopStatus::new(),
+            signal_exit_forced: AtomicBool::new(false),
         }
     }
 }
 
 impl ProcessStatus {
+    /// Allows a synchronous fatal signal to terminate even the init process.
+    pub(in crate::process) fn force_signal_exit(&self) {
+        self.signal_exit_forced.store(true, Ordering::Relaxed);
+    }
+
+    pub(in crate::process) fn is_signal_exit_forced(&self) -> bool {
+        self.signal_exit_forced.load(Ordering::Relaxed)
+    }
+
     /// Returns whether the process is a zombie process.
     pub(crate) fn is_zombie(&self) -> bool {
         // Use the `Acquire` memory order to make the exit code visible.

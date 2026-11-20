@@ -142,7 +142,6 @@ impl SigSet {
         SigSet { bits: !0 }
     }
 
-    #[expect(dead_code)]
     pub(crate) const fn is_empty(&self) -> bool {
         self.bits == 0
     }

@@ -15,7 +15,22 @@ pub(crate) use clock_gettime::ClockId;
 use ostd::arch::cpu::context::UserContext;
 pub(crate) use timer_create::create_timer_for_clock;
 
-use crate::{cpu::LinuxAbi, prelude::*};
+use crate::{
+    cpu::LinuxAbi,
+    prelude::*,
+    process::{
+        posix_thread,
+        posix_thread::ptrace::PtraceStopResult,
+        signal::{
+            HandlePendingSignal,
+            constants::{SIGKILL, SIGSYS},
+        },
+    },
+    security::{
+        self,
+        seccomp::{NotificationReply, SeccompData, SeccompDecision},
+    },
+};
 
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86.rs")]
 #[cfg_attr(target_arch = "riscv64", path = "arch/riscv.rs")]
@@ -144,6 +159,7 @@ mod sched_setattr;
 mod sched_setparam;
 mod sched_setscheduler;
 mod sched_yield;
+mod seccomp;
 mod select;
 mod semctl;
 mod semget;
@@ -371,18 +387,140 @@ enum SyscallReturn {
 }
 
 impl SyscallArgument {
-    fn new_from_context(user_ctx: &UserContext) -> Self {
-        let syscall_number = user_ctx.syscall_num() as u64;
+    fn new_from_context(user_ctx: &UserContext, syscall_number: usize) -> Self {
         let args = user_ctx.syscall_args().map(|x| x as u64);
         Self {
-            syscall_number,
+            syscall_number: syscall_number as u64,
             args,
         }
     }
 }
 
+fn read_syscall_number(ctx: &Context, user_ctx: &UserContext) -> usize {
+    // Linux x86 dispatch uses an int syscall number. Ptrace can change
+    // orig_rax independently of the return register.
+    if cfg!(target_arch = "x86_64") {
+        ctx.thread_local.orig_syscall_ret().unwrap_or(usize::MAX) as i32 as usize
+    } else {
+        user_ctx.syscall_num()
+    }
+}
+
+/// Checks the native ABI's fixed strict-mode syscall set.
+pub(crate) fn strict_seccomp_allows(number: i32) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    if matches!(number as u64, arch::SYS_URETPROBE | arch::SYS_UPROBE) {
+        return true;
+    }
+    matches!(
+        number as u64,
+        arch::SYS_READ | arch::SYS_WRITE | arch::SYS_EXIT | arch::SYS_RT_SIGRETURN
+    )
+}
+
 pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
-    let syscall_frame = SyscallArgument::new_from_context(user_ctx);
+    let mut syscall_number = read_syscall_number(ctx, user_ctx);
+    let mut has_traced = false;
+
+    loop {
+        let policy = ctx.posix_thread.seccomp_snapshot();
+        let data = SeccompData::from_context(user_ctx, syscall_number as i32);
+        let evaluation = policy.evaluate(&data);
+        // Do not retain a snapshot across a ptrace stop or a blocking syscall.
+        drop(policy);
+
+        // TRACE and USER_NOTIF are logged only when they skip the syscall,
+        // not when the tracer or supervisor permits it to continue.
+        let decision = evaluation.decision();
+        if !matches!(
+            decision,
+            SeccompDecision::Trace(_) | SeccompDecision::UserNotification(_)
+        ) {
+            evaluation.log(ctx, &data);
+        }
+        match decision {
+            SeccompDecision::Allow => break,
+            SeccompDecision::Errno(errno) => {
+                user_ctx.set_syscall_ret((-(*errno as isize)) as usize);
+                return;
+            }
+            SeccompDecision::Trap(reason) => {
+                security::seccomp::trap(ctx, user_ctx, syscall_number as i32, *reason);
+                return;
+            }
+            SeccompDecision::Trace(_) if has_traced => break,
+            SeccompDecision::Trace(reason) => {
+                match ctx
+                    .posix_thread
+                    .ptrace_may_stop_on_seccomp(*reason, ctx, user_ctx)
+                {
+                    PtraceStopResult::NotTraced(_) => {
+                        evaluation.log(ctx, &data);
+                        user_ctx.set_syscall_ret((-(Errno::ENOSYS as isize)) as usize);
+                        return;
+                    }
+                    PtraceStopResult::Interrupted => {
+                        evaluation.log(ctx, &data);
+                        return;
+                    }
+                    PtraceStopResult::Continued(_) => {}
+                }
+                if ctx.has_pending_sigkill() {
+                    evaluation.log(ctx, &data);
+                    return;
+                }
+
+                syscall_number = read_syscall_number(ctx, user_ctx);
+                // A negative number skips the syscall without filtering again.
+                if (syscall_number as i32) < 0 {
+                    evaluation.log(
+                        ctx,
+                        &SeccompData::from_context(user_ctx, syscall_number as i32),
+                    );
+                    return;
+                }
+                // Linux rechecks modified registers, but a second TRACE result
+                // must not report another event for the same syscall.
+                // See __seccomp_filter() in Linux kernel/seccomp.c.
+                has_traced = true;
+            }
+            SeccompDecision::UserNotification(notification) => {
+                match notification.resolve(ctx, &data) {
+                    // CONTINUE executes the already filtered call without rechecking.
+                    Ok(NotificationReply::Continue) => break,
+                    Ok(NotificationReply::Return(value)) => user_ctx.set_syscall_ret(value),
+                    Err(error) => {
+                        if error.error() == Errno::ERESTARTSYS {
+                            ctx.thread_local.request_syscall_restart();
+                        }
+                        user_ctx.set_syscall_ret((-(error.error() as isize)) as usize);
+                    }
+                }
+                evaluation.log(ctx, &data);
+                return;
+            }
+            SeccompDecision::KillThread => {
+                posix_thread::do_seccomp_exit_thread(SIGSYS, ctx, user_ctx);
+                return;
+            }
+            SeccompDecision::StrictViolation => {
+                posix_thread::do_seccomp_exit_thread(SIGKILL, ctx, user_ctx);
+                return;
+            }
+            SeccompDecision::KillProcess => {
+                posix_thread::do_seccomp_exit_group(ctx, user_ctx);
+                return;
+            }
+        }
+    }
+    // A tracer can skip an x86 syscall with orig_rax = -1 and supply its
+    // result in rax. Seccomp still observes the skipped syscall number.
+    #[cfg(target_arch = "x86_64")]
+    if syscall_number == usize::MAX {
+        return;
+    }
+
+    let syscall_frame = SyscallArgument::new_from_context(user_ctx, syscall_number);
     let syscall_return = arch::syscall_dispatch(
         syscall_frame.syscall_number,
         syscall_frame.args,
@@ -398,6 +536,9 @@ pub(crate) fn handle_syscall(ctx: &Context, user_ctx: &mut UserContext) {
         }
         Err(err) => {
             debug!("syscall return error: {:?}", err);
+            if matches!(err.error(), Errno::ERESTARTSYS | Errno::ERESTARTNOINTR) {
+                ctx.thread_local.request_syscall_restart();
+            }
             let errno = err.error() as i32;
             user_ctx.set_syscall_ret((-errno) as usize)
         }

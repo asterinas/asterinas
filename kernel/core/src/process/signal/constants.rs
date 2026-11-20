@@ -15,6 +15,7 @@ pub(super) const COUNT_ALL_SIGS: usize = 64;
 
 pub(crate) const SIG_DFL: usize = 0;
 pub(crate) const SIG_IGN: usize = 1;
+pub(crate) const SYS_SECCOMP: i32 = 1;
 
 use super::sig_num::SigNum;
 

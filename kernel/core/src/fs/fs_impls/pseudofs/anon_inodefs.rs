@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::fmt::{self, Display};
+
 use spin::Once;
 
 use crate::{
     fs::{
-        file::mkmod,
+        file::{CreationFlags, FileCommon, file_table::FdFlags, mkmod},
         pseudofs::{NaivePseudoFs, PseudoInodeType},
         vfs::{
             inode::Inode,
@@ -39,6 +41,26 @@ impl AnonInodeFs {
             Self::shared_inode().clone(),
             name_fn,
         )
+    }
+
+    /// Formats the common fields for a file description backed by the shared inode.
+    pub(crate) fn fdinfo(common: &FileCommon, fd_flags: FdFlags) -> Box<dyn Display> {
+        struct FdInfo(u32);
+
+        impl Display for FdInfo {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                writeln!(f, "pos:\t0")?;
+                writeln!(f, "flags:\t0{:o}", self.0)?;
+                writeln!(f, "mnt_id:\t{}", AnonInodeFs::mount_node().id())?;
+                writeln!(f, "ino:\t{}", AnonInodeFs::shared_inode().ino())
+            }
+        }
+
+        let mut flags = common.status_flags().bits() | common.access_mode() as u32;
+        if fd_flags.contains(FdFlags::CLOEXEC) {
+            flags |= CreationFlags::O_CLOEXEC.bits();
+        }
+        Box::new(FdInfo(flags))
     }
 
     /// Returns the pseudo mount node of the anonymous inode file system.
