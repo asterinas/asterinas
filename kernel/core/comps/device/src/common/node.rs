@@ -282,6 +282,12 @@ impl SysNode for Dir {
     }
 
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> aster_systree::Result<usize> {
+        if reader.remain() == 0 {
+            if !self.fields.attr_set().contains(name) {
+                return Err(aster_systree::Error::IsDead);
+            }
+            return Ok(0);
+        }
         let ops = self.ops.get().ok_or(aster_systree::Error::NotFound)?;
         let (text, len) = read_text(reader)?;
         ops.store(name, &text)?;
