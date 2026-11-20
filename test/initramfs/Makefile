@@ -194,6 +194,16 @@ aarch64_pkgs:
 		-A conformance.ltp \
 		-A regression.package
 
+# Prebuild loongarch64 packages
+loongarch64_pkgs:
+	@nix-build \
+		nix/default.nix \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+		$(NIX_QUIET) \
+		--argstr target loongarch64 \
+		--out-link $(PREBUILT_ROOT)/loongarch64-pkgs \
+		-A busybox
+
 install_host_pkgs:
 	@nix-env \
 		--file nix/default.nix \
