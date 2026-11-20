@@ -45,6 +45,9 @@ ioctl(
     ..
 );
 
+// Control Device Mapper
+ioctl(fd, op = DM_VERSION, ..);
+
 // Control block devices
 ioctl(fd, op = BLKGETSIZE64 | BLKSSZGET, ..);
 

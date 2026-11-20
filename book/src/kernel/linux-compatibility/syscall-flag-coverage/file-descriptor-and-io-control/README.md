@@ -144,6 +144,11 @@ Supported functionality in SCML:
 {{#include ioctl.scml}}
 ```
 
+Device Mapper control through `/dev/mapper/control` currently supports only
+`DM_VERSION`, reporting interface version 4.48.0.
+It requires `CAP_SYS_ADMIN` in the initial user namespace.
+Other Device Mapper commands are not supported.
+
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/ioctl.2.html).
 
