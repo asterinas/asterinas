@@ -5,14 +5,25 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <mqueue.h>
+#include <string.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "../../common/test.h"
 
 #define MQUEUE_DIR "/dev/mqueue"
 #define QUEUE_NAME "/test_queue"
+
+// glibc marks `mq_timedsend` and `mq_timedreceive` with `__nonnull((2, 5))`,
+// so a literal `NULL` timeout cannot be passed even though POSIX permits it.
+// Use a far-future absolute timeout to stand in for an infinite wait.
+static void set_infinite_timeout(struct timespec *ts)
+{
+	clock_gettime(CLOCK_REALTIME, ts);
+	ts->tv_sec += 3600;
+}
 
 FN_SETUP(setup_mqueuefs)
 {
@@ -194,5 +205,115 @@ FN_TEST(mq_setattr_invalid_fd_fails_with_ebadf)
 {
 	struct mq_attr attr = {0};
 	TEST_ERRNO(mq_setattr(-1, &attr, NULL), EBADF);
+}
+END_TEST()
+
+FN_TEST(mq_timedsend_and_timedreceive_roundtrip)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct timespec ts;
+	set_infinite_timeout(&ts);
+
+	const char *msg = "hello";
+	unsigned int prio = 5;
+	TEST_SUCC(mq_timedsend(mq, msg, strlen(msg), prio, &ts));
+
+	char buf[16];
+	unsigned int recv_prio;
+	ssize_t n = TEST_SUCC(mq_timedreceive(mq, buf, sizeof(buf), &recv_prio,
+					      &ts));
+	TEST_RES(n == (ssize_t)strlen(msg), _ret == 1);
+	buf[n] = '\0';
+	TEST_RES(strcmp(buf, msg) == 0, _ret == 1);
+	TEST_RES(recv_prio == prio, _ret == 1);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_timedreceive_returns_highest_priority_first)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct timespec ts;
+	set_infinite_timeout(&ts);
+
+	const char *low = "low";
+	const char *high = "high";
+	TEST_SUCC(mq_timedsend(mq, low, strlen(low), 1, &ts));
+	TEST_SUCC(mq_timedsend(mq, high, strlen(high), 10, &ts));
+
+	char buf[16];
+	unsigned int prio;
+	ssize_t n = TEST_SUCC(mq_timedreceive(mq, buf, sizeof(buf), &prio, &ts));
+	buf[n] = '\0';
+	TEST_RES(strcmp(buf, "high") == 0, _ret == 1);
+	TEST_RES(prio == 10, _ret == 1);
+
+	n = TEST_SUCC(mq_timedreceive(mq, buf, sizeof(buf), &prio, &ts));
+	buf[n] = '\0';
+	TEST_RES(strcmp(buf, "low") == 0, _ret == 1);
+	TEST_RES(prio == 1, _ret == 1);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_timedsend_oversized_message_fails_with_emsgsize)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct timespec ts;
+	set_infinite_timeout(&ts);
+
+	char msg[8193];
+	TEST_ERRNO(mq_timedsend(mq, msg, sizeof(msg), 0, &ts), EMSGSIZE);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_timedsend_full_queue_nonblocking_fails_with_eagain)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR | O_NONBLOCK, 0644,
+				     NULL));
+
+	struct timespec ts;
+	set_infinite_timeout(&ts);
+
+	char msg[16] = "x";
+	for (int i = 0; i < 10; i++) {
+		TEST_SUCC(mq_timedsend(mq, msg, 1, 0, &ts));
+	}
+
+	TEST_ERRNO(mq_timedsend(mq, msg, 1, 0, &ts), EAGAIN);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_timedreceive_empty_queue_times_out)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct timespec ts;
+	TEST_SUCC(clock_gettime(CLOCK_REALTIME, &ts));
+	ts.tv_nsec += 100 * 1000 * 1000;
+	if (ts.tv_nsec >= 1000000000) {
+		ts.tv_sec += 1;
+		ts.tv_nsec -= 1000000000;
+	}
+
+	char buf[16];
+	unsigned int prio;
+	TEST_ERRNO(mq_timedreceive(mq, buf, sizeof(buf), &prio, &ts), ETIMEDOUT);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
 }
 END_TEST()

@@ -918,8 +918,8 @@ mprotect05
 # mq_notify02
 # mq_notify03
 mq_open01
-# mq_timedreceive01
-# mq_timedsend01
+mq_timedreceive01
+mq_timedsend01
 mq_unlink01
 
 mremap01

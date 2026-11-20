@@ -82,6 +82,8 @@ use super::{
     mprotect::sys_mprotect,
     mqgetsetattr::sys_mqgetsetattr,
     mqopen::sys_mqopen,
+    mqtimedreceive::sys_mqtimedreceive,
+    mqtimedsend::sys_mqtimedsend,
     mqunlink::sys_mqunlink,
     mremap::sys_mremap,
     msync::sys_msync,
@@ -369,6 +371,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_UTIMES = 235           => sys_utimes(args[..2]);
     SYS_MQ_OPEN = 240          => sys_mqopen(args[..4]);
     SYS_MQ_UNLINK = 241        => sys_mqunlink(args[..1]);
+    SYS_MQ_TIMEDSEND = 242     => sys_mqtimedsend(args[..5]);
+    SYS_MQ_TIMEDRECEIVE = 243  => sys_mqtimedreceive(args[..5]);
     SYS_MQ_GETSETATTR = 245    => sys_mqgetsetattr(args[..3]);
     SYS_WAITID = 247           => sys_waitid(args[..5]);
     SYS_IOPRIO_SET = 251       => sys_ioprio_set(args[..3]);

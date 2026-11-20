@@ -13,7 +13,10 @@ use super::{
 };
 use crate::{
     fs::{
-        file::{AccessMode, FileLike, InodeHandle, StatusFlags},
+        file::{
+            AccessMode, FileLike, InodeHandle, StatusFlags,
+            file_table::{FileDesc, get_file_fast},
+        },
         pseudofs::AnonDeviceId,
         vfs::{
             file_system::{FileSystem, FsEventSubscriberStats, SuperBlock},
@@ -129,6 +132,28 @@ impl MqueueFs {
             format!("mqueue:[{}]", inode.ino())
         });
         Ok(Arc::new(InodeHandle::new(path, access_mode, status_flags)?))
+    }
+
+    /// Looks up the queue behind `mqdes` together with its non-blocking flag.
+    pub(crate) fn queue_from_fd(mqdes: i32, ctx: &Context) -> Result<(Arc<MqueueQueue>, bool)> {
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
+        let fd = FileDesc::try_from(mqdes)?;
+        let file = get_file_fast!(&mut file_table, fd);
+
+        // Only message queue file descriptors carry a queue.
+        let inode_handle = file
+            .downcast_ref::<InodeHandle>()
+            .ok_or_else(|| Error::new(Errno::EBADF))?;
+        let queue = inode_handle
+            .path()
+            .inode()
+            .downcast_ref::<MqueueInode>()
+            .ok_or_else(|| Error::new(Errno::EBADF))?
+            .queue()
+            .clone();
+        let nonblock = file.status_flags().contains(StatusFlags::O_NONBLOCK);
+
+        Ok((queue, nonblock))
     }
 }
 

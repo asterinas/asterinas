@@ -64,6 +64,17 @@ Supported functionality in SCML:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man3/mq_getattr.3.html).
 
+### `mq_timedsend` and `mq_timedreceive`
+
+Supported functionality in SCML:
+
+```c
+{{#include mq_timedsend_and_timedreceive.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man3/mq_timedreceive.3.html).
+
 ## System V semaphore
 
 ### `semget`

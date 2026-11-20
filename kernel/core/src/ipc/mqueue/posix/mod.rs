@@ -4,8 +4,12 @@
 
 mod queue;
 
-use core::sync::atomic::{AtomicI64, Ordering};
+use core::{
+    sync::atomic::{AtomicI64, Ordering},
+    time::Duration,
+};
 
+use ostd::mm::VmIo;
 pub(crate) use queue::{MqAttr, MqueueQueue};
 use spin::Once;
 
@@ -16,6 +20,7 @@ use crate::{
         Gid, Uid, UserNamespace, credentials::capabilities::CapSet, posix_thread::AsPosixThread,
     },
     security::lsm::hooks as lsm_hooks,
+    time::{clocks::RealTimeClock, timer::Timeout, timespec_t, wait::ManagedTimeout},
 };
 
 /// Maximum length of a queue name, excluding the leading `/`.
@@ -254,4 +259,25 @@ fn current_fsgid() -> Gid {
         .unwrap()
         .credentials()
         .fsgid()
+}
+
+/// Parses an absolute timeout (`abs_timeout`).
+///
+/// `abs_timeout` is interpreted against `CLOCK_REALTIME`, matching the POSIX
+/// semantics of `mq_timedsend` / `mq_timedreceive`.
+pub(crate) fn parse_timeout(
+    ctx: &Context,
+    abs_timeout: Vaddr,
+) -> Result<Option<ManagedTimeout<'static>>> {
+    if abs_timeout == 0 {
+        return Ok(None);
+    }
+
+    let time_spec: timespec_t = ctx.user_space().read_val(abs_timeout)?;
+    let duration = Duration::try_from(time_spec)?;
+
+    Ok(Some(ManagedTimeout::new_with_manager(
+        Timeout::When(duration),
+        RealTimeClock::timer_manager(),
+    )))
 }

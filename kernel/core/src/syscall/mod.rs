@@ -100,6 +100,8 @@ mod move_mount;
 mod mprotect;
 mod mqgetsetattr;
 mod mqopen;
+mod mqtimedreceive;
+mod mqtimedsend;
 mod mqunlink;
 mod mremap;
 mod msync;
