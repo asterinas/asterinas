@@ -99,6 +99,7 @@ impl TryFrom<RawFileDesc> for FileDesc {
 /// A file table is created within an [`RwArc`] and remains within it (see [`Self::new`] and
 /// [`Self::fork_from`]). The file table's address is used as a [`RangeLockOwner`], so users should
 /// not try to move the file table to a different address.
+// COUPLED: scripts/gdb/helper/kernel.py
 pub(crate) struct FileTable {
     table: SlotVec<FileTableEntry>,
 }

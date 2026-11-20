@@ -74,6 +74,7 @@ pub(super) fn init_in_first_kthread() {
 }
 
 /// A thread is a wrapper on top of a task.
+// COUPLED: scripts/gdb/helper/kernel.py
 #[derive(Debug)]
 pub(crate) struct Thread {
     // Immutable part:
