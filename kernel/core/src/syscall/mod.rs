@@ -99,6 +99,7 @@ mod mount;
 mod move_mount;
 mod mprotect;
 mod mqgetsetattr;
+mod mqnotify;
 mod mqopen;
 mod mqtimedreceive;
 mod mqtimedsend;

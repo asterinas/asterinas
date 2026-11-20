@@ -75,6 +75,21 @@ Supported functionality in SCML:
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man3/mq_timedreceive.3.html).
 
+### `mq_notify`
+
+Supported functionality in SCML:
+
+```c
+{{#include mq_notify.scml}}
+```
+
+Unsupported notification methods:
+* `SIGEV_THREAD`
+* `SIGEV_THREAD_ID`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man3/mq_notify.3.html).
+
 ## System V semaphore
 
 ### `semget`

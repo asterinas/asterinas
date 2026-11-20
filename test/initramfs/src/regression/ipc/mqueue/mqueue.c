@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <mqueue.h>
+#include <signal.h>
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
@@ -315,5 +316,139 @@ FN_TEST(mq_timedreceive_empty_queue_times_out)
 
 	TEST_SUCC(mq_close(mq));
 	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+// Blocks SIGUSR1 so a notification can be observed synchronously via
+// `sigpending` instead of relying on an asynchronous signal handler.
+static void block_sigusr1(sigset_t *set)
+{
+	sigemptyset(set);
+	sigaddset(set, SIGUSR1);
+	CHECK(sigprocmask(SIG_BLOCK, set, NULL));
+}
+
+// Discards any pending SIGUSR1 so the default action cannot terminate the
+// test process after the signal mask is restored.
+static void discard_sigusr1(sigset_t *set)
+{
+	signal(SIGUSR1, SIG_IGN);
+	CHECK(sigprocmask(SIG_UNBLOCK, set, NULL));
+}
+
+FN_TEST(mq_notify_delivers_signal)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	sigset_t set;
+	block_sigusr1(&set);
+
+	struct sigevent sev = {0};
+	sev.sigev_notify = SIGEV_SIGNAL;
+	sev.sigev_signo = SIGUSR1;
+	sev.sigev_value.sival_int = 42;
+	TEST_SUCC(mq_notify(mq, &sev));
+
+	// The queue transitions from empty to non-empty, firing the notification.
+	char msg = 'x';
+	TEST_SUCC(mq_send(mq, &msg, 1, 0));
+
+	sigset_t pending;
+	TEST_SUCC(sigpending(&pending));
+	TEST_RES(sigismember(&pending, SIGUSR1), _ret == 1);
+
+	discard_sigusr1(&set);
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_notify_cancel_prevents_delivery)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	sigset_t set;
+	block_sigusr1(&set);
+
+	struct sigevent sev = {0};
+	sev.sigev_notify = SIGEV_SIGNAL;
+	sev.sigev_signo = SIGUSR1;
+	TEST_SUCC(mq_notify(mq, &sev));
+	TEST_SUCC(mq_notify(mq, NULL));
+
+	char msg = 'x';
+	TEST_SUCC(mq_send(mq, &msg, 1, 0));
+
+	sigset_t pending;
+	TEST_SUCC(sigpending(&pending));
+	TEST_RES(!sigismember(&pending, SIGUSR1), _ret == 1);
+
+	discard_sigusr1(&set);
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_notify_double_register_fails_with_ebusy)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct sigevent sev = {0};
+	sev.sigev_notify = SIGEV_SIGNAL;
+	sev.sigev_signo = SIGUSR1;
+	TEST_SUCC(mq_notify(mq, &sev));
+	TEST_ERRNO(mq_notify(mq, &sev), EBUSY);
+
+	TEST_SUCC(mq_notify(mq, NULL));
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_notify_sigev_none_succeeds)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct sigevent sev = {0};
+	sev.sigev_notify = SIGEV_NONE;
+	TEST_SUCC(mq_notify(mq, &sev));
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_notify_thread_unsupported)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct sigevent sev = {0};
+	sev.sigev_notify = SIGEV_THREAD;
+	TEST_ERRNO(mq_notify(mq, &sev), EINVAL);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_notify_invalid_signal_fails_with_einval)
+{
+	mqd_t mq = TEST_SUCC(mq_open(QUEUE_NAME, O_CREAT | O_RDWR, 0644, NULL));
+
+	struct sigevent sev = {0};
+	sev.sigev_notify = SIGEV_SIGNAL;
+	sev.sigev_signo = 999;
+	TEST_ERRNO(mq_notify(mq, &sev), EINVAL);
+
+	TEST_SUCC(mq_close(mq));
+	TEST_SUCC(mq_unlink(QUEUE_NAME));
+}
+END_TEST()
+
+FN_TEST(mq_notify_invalid_fd_fails_with_ebadf)
+{
+	struct sigevent sev = {0};
+	sev.sigev_notify = SIGEV_NONE;
+	TEST_ERRNO(mq_notify(-1, &sev), EBADF);
 }
 END_TEST()
