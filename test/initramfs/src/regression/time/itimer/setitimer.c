@@ -35,17 +35,14 @@ FN_TEST(periodic_timer_delivery)
 	struct itimerval timer = { .it_value = { .tv_sec = 1 },
 				   .it_interval = { .tv_sec = 1 } };
 
-	if (TEST_SUCC(clock_gettime(CLOCK_MONOTONIC, &start)) < 0)
-		goto cleanup;
-	if (TEST_SUCC(setitimer(ITIMER_REAL, &timer, NULL)) < 0)
-		goto cleanup;
+	TEST_SUCC(clock_gettime(CLOCK_MONOTONIC, &start));
+	TEST_SUCC(setitimer(ITIMER_REAL, &timer, NULL));
 
 	for (int i = 0; i < TARGET_COUNT; i++) {
 		/* Blocking SIGALRM avoids handler races; a missing tick is bounded. */
 		struct timespec timeout = { .tv_sec = 2 };
-		if (TEST_RES(sigtimedwait(&signals, NULL, &timeout),
-			     _ret == SIGALRM) != SIGALRM)
-			break;
+		TEST_RES(sigtimedwait(&signals, NULL, &timeout),
+			 _ret == SIGALRM);
 
 		struct timespec now;
 		int64_t expected_ns = (i + 1) * NS_PER_SEC;
@@ -63,7 +60,6 @@ FN_TEST(periodic_timer_delivery)
 				 state.it_value.tv_usec < 1000000);
 	}
 
-cleanup:
 	timer = (struct itimerval){ 0 };
 	TEST_SUCC(setitimer(ITIMER_REAL, &timer, NULL));
 	TEST_RES(getitimer(ITIMER_REAL, &timer),
@@ -73,16 +69,3 @@ cleanup:
 			 timer.it_interval.tv_usec == 0);
 }
 END_TEST()
-
-FN_SETUP(restore_signal_mask)
-{
-	struct timespec no_wait = { 0 };
-	int signum;
-	do {
-		signum = CHECK_WITH(sigtimedwait(&signals, NULL, &no_wait),
-				    _ret == SIGALRM ||
-					    (_ret == -1 && errno == EAGAIN));
-	} while (signum == SIGALRM);
-	CHECK(sigprocmask(SIG_SETMASK, &old_mask, NULL));
-}
-END_SETUP()
