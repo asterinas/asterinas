@@ -1,0 +1,14 @@
+// Register a notification for the message queue
+mq_notify(
+    mqdes,
+    notification = {
+        sigev_notify = SIGEV_NONE | SIGEV_SIGNAL,
+        ..
+    }
+);
+
+// Cancel the notification for the message queue
+mq_notify(
+    mqdes,
+    notification = NULL
+);
