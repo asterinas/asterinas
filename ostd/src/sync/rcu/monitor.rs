@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::VecDeque;
+use alloc::collections::LinkedList;
 use core::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
 use crate::{
@@ -97,12 +97,12 @@ impl State {
     fn new() -> Self {
         Self {
             current_gp: GracePeriod::new(),
-            next_callbacks: VecDeque::new(),
+            next_callbacks: Callbacks::new(),
         }
     }
 }
 
-type Callbacks = VecDeque<Box<dyn FnOnce() + Send + 'static>>;
+type Callbacks = LinkedList<Box<dyn FnOnce() + Send + 'static>>;
 
 struct GracePeriod {
     callbacks: Callbacks,
@@ -139,5 +139,52 @@ impl GracePeriod {
         self.is_complete = false;
         self.cpu_mask.store(&CpuSet::new_empty(), Relaxed);
         self.callbacks = callbacks;
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use core::sync::atomic::Ordering::Relaxed;
+
+    use super::RcuMonitor;
+    use crate::{
+        cpu::{PinCurrentCpu, all_cpus},
+        prelude::*,
+        sync::SpinLock,
+        task::atomic_mode::AsAtomicModeGuard,
+    };
+
+    #[ktest]
+    fn callbacks_run_in_fifo_order_past_page_boundary() {
+        const CALLBACK_COUNT: usize = 600;
+
+        let monitor = RcuMonitor::new();
+        let order = Arc::new(SpinLock::new(Vec::with_capacity(CALLBACK_COUNT)));
+
+        for index in 0..CALLBACK_COUNT {
+            let order = Arc::clone(&order);
+            monitor.after_grace_period(move || {
+                order.disable_irq().lock().push(index);
+            });
+        }
+
+        for _ in 0..2 {
+            {
+                let mut state = monitor.state.disable_irq().lock();
+                let cur_cpu = state.as_atomic_mode_guard().current_cpu();
+                for cpu in all_cpus().filter(|&cpu| cpu != cur_cpu) {
+                    state.current_gp.finish_grace_period(cpu);
+                }
+            }
+            // SAFETY: No RCU read-side critical section is held on this private test monitor.
+            unsafe {
+                monitor.finish_grace_period();
+            }
+        }
+
+        assert!(!monitor.is_monitoring.load(Relaxed));
+        let recorded = order.disable_irq().lock();
+        assert_eq!(recorded.len(), CALLBACK_COUNT);
+        assert!(recorded.iter().copied().eq(0..CALLBACK_COUNT));
     }
 }
