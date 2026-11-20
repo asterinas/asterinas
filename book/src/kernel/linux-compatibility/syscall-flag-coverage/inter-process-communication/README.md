@@ -3,6 +3,7 @@
 <!--
 Put system calls such as
 msgget, msgsnd, msgrcv, msgctl, semget, semop, semctl, shmget, shmat, shmctl
+mq_open, mq_unlink, mq_getsetattr, mq_timedsend, mq_timedreceive, mq_notify
 futex, set_robust_list, and get_robust_list
 under this category.
 -->
@@ -24,6 +25,33 @@ Unsupported operations:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/futex.2.html).
+
+## POSIX message queue
+
+### `mq_open`
+
+Supported functionality in SCML:
+
+```c
+{{#include mq_open.scml}}
+```
+
+Unsupported flags:
+* `O_NOFOLLOW`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/mq_open.2.html).
+
+### `mq_unlink`
+
+Supported functionality in SCML:
+
+```c
+{{#include mq_unlink.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/mq_unlink.2.html).
 
 ## System V semaphore
 

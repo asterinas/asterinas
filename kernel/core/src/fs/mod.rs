@@ -10,11 +10,6 @@ pub mod utils;
 pub mod vfs;
 
 pub use fs_impls::devtmpfs;
-// TODO: Remove this once `mq_open` uses `mqueuefs`.
-#[expect(
-    unused_imports,
-    reason = "`mqueuefs` is used by the `mq_open` syscall added in a later commit"
-)]
 pub(crate) use fs_impls::{
     cgroupfs, configfs, devpts, exfat, ext2, mqueuefs, procfs, pseudofs, ramfs, sysfs, tmpfs,
 };

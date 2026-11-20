@@ -80,6 +80,8 @@ use super::{
     mount::sys_mount,
     move_mount::sys_move_mount,
     mprotect::sys_mprotect,
+    mqopen::sys_mqopen,
+    mqunlink::sys_mqunlink,
     mremap::sys_mremap,
     msync::sys_msync,
     munmap::sys_munmap,
@@ -364,6 +366,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EPOLL_CTL = 233        => sys_epoll_ctl(args[..4]);
     SYS_TGKILL = 234           => sys_tgkill(args[..3]);
     SYS_UTIMES = 235           => sys_utimes(args[..2]);
+    SYS_MQ_OPEN = 240          => sys_mqopen(args[..4]);
+    SYS_MQ_UNLINK = 241        => sys_mqunlink(args[..1]);
     SYS_WAITID = 247           => sys_waitid(args[..5]);
     SYS_IOPRIO_SET = 251       => sys_ioprio_set(args[..3]);
     SYS_IOPRIO_GET = 252       => sys_ioprio_get(args[..2]);

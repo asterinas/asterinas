@@ -98,6 +98,8 @@ mod mmap;
 mod mount;
 mod move_mount;
 mod mprotect;
+mod mqopen;
+mod mqunlink;
 mod mremap;
 mod msync;
 mod munmap;
