@@ -3,7 +3,7 @@
 use core::fmt;
 
 use ostd::{
-    arch::cpu::context::{CpuExceptionInfo, UserContext},
+    arch::cpu::context::{CpuException, CpuExceptionInfo, UserContext},
     cpu::PinCurrentCpu,
     task::DisabledPreemptGuard,
     user::UserContextApi,
@@ -148,7 +148,10 @@ impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
     fn try_from(value: &CpuExceptionInfo) -> Result<Self, ()> {
         use loongArch64::register::estat::Exception;
 
-        let required_perms = match value.cpu_exception() {
+        let CpuException::Other(exception) = value.cpu_exception() else {
+            return Err(());
+        };
+        let required_perms = match exception {
             Exception::FetchPageFault => VmPerms::EXEC,
             Exception::LoadPageFault => VmPerms::READ,
             Exception::StorePageFault => VmPerms::WRITE,
