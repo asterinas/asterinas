@@ -5,7 +5,7 @@ use core::fmt::Debug;
 
 use aster_pci::{
     bus::{PciDevice, PciDeviceExt},
-    cfg_space::BarAccess,
+    cfg_space::{BarAccess, PciGeneralDeviceCfgOffset},
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use ostd::{
@@ -18,6 +18,7 @@ use ostd::{
 
 use super::{
     common_cfg::{VirtioPciCfgU64Ext, VirtioPciCommonCfg},
+    driver,
     msix::VirtioMsixManager,
 };
 use crate::{
@@ -253,16 +254,24 @@ impl VirtioTransport for VirtioPciModernTransport {
 impl VirtioPciModernTransport {
     pub(super) fn new(common_device: Arc<PciDevice>) -> Result<Self, aster_device::common::Error> {
         let device_id = common_device.device_id().device_id;
-        let device_type_value = if device_id <= 0x1040 {
-            device_id - 0x1000
+        let virtio_id = if device_id < driver::MODERN_DEVICE_ID_MIN {
+            // Transitional functions report the VirtIO device ID in the PCI subsystem ID.
+            common_device
+                .location()
+                .read16(PciGeneralDeviceCfgOffset::SubsystemId as u16)
         } else {
-            device_id - 0x1040
+            device_id - driver::MODERN_DEVICE_ID_MIN
         };
 
-        let device_type = match VirtioDeviceType::try_from(device_type_value as u8) {
-            Ok(device) => device,
-            Err(_) => {
-                warn!("Unrecognized virtio-pci device ID: {:x?}", device_id);
+        let device_type = match u8::try_from(virtio_id)
+            .ok()
+            .and_then(|id| VirtioDeviceType::try_from(id).ok())
+        {
+            Some(device_type) if device_type != VirtioDeviceType::Invalid => device_type,
+            _ => {
+                warn!(
+                    "unrecognized VirtIO device ID {virtio_id:#06x} for PCI device {device_id:#06x}"
+                );
                 return Err(aster_device::common::Error::ProbeFailed);
             }
         };
