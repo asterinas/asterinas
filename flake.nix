@@ -63,6 +63,7 @@
         qemu = pkgs.asterinas-qemu;
         grub = pkgs.asterinas-grub;
         ovmf = pkgs.asterinas-ovmf;
+        vdso = pkgs.asterinas-vdso;
 
         gvisor-syscall-tests = pkgs.pkgsCross.gnu64.callPackage ./test/initramfs/nix/conformance/gvisor { };
       });
