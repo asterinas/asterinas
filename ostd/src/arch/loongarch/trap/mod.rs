@@ -5,12 +5,19 @@
 #[expect(clippy::module_inception)]
 mod trap;
 
-use loongArch64::register::estat::{self, Exception, Interrupt, Trap};
+use loongArch64::register::{
+    estat::{self, Exception, Interrupt, Trap},
+    prmd::Prmd,
+};
 pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
 use crate::{
-    arch::{cpu::context::CpuExceptionInfo, irq::HwIrqLine, mm::tlb_flush_addr},
+    arch::{
+        cpu::context::CpuExceptionInfo,
+        irq::{HwIrqLine, disable_local, enable_local},
+        mm::tlb_flush_addr,
+    },
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
 };
@@ -37,15 +44,32 @@ pub(crate) unsafe fn init_on_cpu() {
 // SAFETY: The name does not collide with other symbols.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
+    fn enable_local_if(cond: bool) {
+        if cond {
+            enable_local();
+        }
+    }
+
+    fn disable_local_if(cond: bool) {
+        if cond {
+            disable_local();
+        }
+    }
+
     let cause = estat::read().cause();
     let badi = loongArch64::register::badi::read().raw();
     let badv = loongArch64::register::badv::read().vaddr();
     let era = loongArch64::register::era::read().raw();
 
+    // Page fault handling may wait for TLB shootdowns, so preserve the IRQ state
+    // from before the exception.
+    let was_irq_enabled = Prmd::from(f.prmd).pie();
+
     match cause {
         Trap::Exception(exception) => match exception {
             Exception::LoadPageFault
             | Exception::StorePageFault
+            | Exception::PageModifyFault
             | Exception::FetchPageFault
             | Exception::PageNonReadableFault
             | Exception::PageNonExecutableFault
@@ -54,6 +78,7 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
                 crate::debug!(
                     "Page fault occurred in kernel: {exception:?}, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
                 );
+                enable_local_if(was_irq_enabled);
                 crate::mm::fault::handle_user_page_fault(
                     f,
                     &CpuExceptionInfo {
@@ -63,8 +88,8 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
                     },
                     badv,
                 );
+                disable_local_if(was_irq_enabled);
             }
-            Exception::PageModifyFault => unimplemented!(),
             Exception::FetchInstructionAddressError => todo!(),
             Exception::MemoryAccessAddressError => todo!(),
             Exception::AddressNotAligned => todo!(),
