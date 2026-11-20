@@ -80,6 +80,17 @@ pub(super) fn init() -> Result<(), I8042ControllerError> {
 pub static I8042_CONTROLLER: ...
 ```
 
+This also applies to types declared inside macros:
+
+```rust
+// Bad — flags used only within this module should be private
+bitflags::bitflags! {
+    pub struct LocalFlags: u32 {
+        const ENABLED = 1;
+    }
+}
+```
+
 The `asterinas` assembler crate does not expose any `pub` Rust items.
 
 ### Visibility modifiers encode intent, not just effect (`encode-intent-in-vis`) {#encode-intent-in-vis}

@@ -43,9 +43,9 @@ and avoids fragmented prose.
 ### Wrap identifiers in backticks (`backtick-identifiers`) {#backtick-identifiers}
 
 Type names, method names,
-and code identifiers in doc comments
-should be wrapped in backticks for rustdoc rendering.
-When referring to types,
+and code identifiers in ordinary and doc comments
+should be wrapped in backticks.
+In doc comments, when referring to types,
 prefer rustdoc links (`[TypeName]`) where possible.
 
 ```rust

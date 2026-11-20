@@ -107,12 +107,9 @@ If the name alone does not explain where the value comes from,
 add a short comment or cite the relevant specification.
 
 Do not introduce names for numbers
-whose meaning is already obvious locally,
-such as `0`, `1`, or `2`
-in ordinary arithmetic,
-indexing,
-small ranges,
-or direct comparisons.
+whose purpose is obvious from the expression,
+such as `0` in `count == 0` or `1` in `index + 1`.
+Numbers that set limits, thresholds, or default ratios still need names.
 
 ### Use assertion-style boolean names (`bool-names`) {#bool-names}
 
