@@ -16,7 +16,7 @@ use crate::transport::VirtioTransport;
 const VIRTIO_PCI_VENDOR_ID: u16 = 0x1af4;
 const TRANSITIONAL_DEVICE_ID_MIN: u16 = 0x1000;
 const TRANSITIONAL_DEVICE_ID_MAX: u16 = 0x103f;
-const MODERN_DEVICE_ID_MIN: u16 = 0x1040;
+pub(super) const MODERN_DEVICE_ID_MIN: u16 = 0x1040;
 const MODERN_DEVICE_ID_MAX: u16 = 0x107f;
 
 pub(crate) struct VirtioPciDriver;
