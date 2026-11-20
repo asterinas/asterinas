@@ -7,6 +7,7 @@ set -e
 ./futex/futex_requeue
 
 ./mqueue/mqueue
+./mqueue/mqueue_sysctl.sh
 
 ./pipe/pipe_err
 ./pipe/process_pipe_available
