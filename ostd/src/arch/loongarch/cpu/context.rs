@@ -2,9 +2,11 @@
 
 //! CPU execution context control.
 
-use core::fmt::Debug;
+use alloc::boxed::Box;
+use core::{arch::asm, fmt::Debug};
 
 use loongArch64::register::estat::{Exception, Interrupt, Trap};
+use ostd_pod::IntoBytes;
 
 use crate::{
     arch::{
@@ -63,7 +65,7 @@ pub struct GeneralRegs {
 #[derive(Clone, Copy, Debug)]
 pub struct CpuExceptionInfo {
     /// The type of the exception.
-    pub code: Exception,
+    pub code: CpuException,
     /// The page fault address.
     pub page_fault_addr: usize,
     /// The error code associated with the exception.
@@ -73,7 +75,7 @@ pub struct CpuExceptionInfo {
 impl Default for CpuExceptionInfo {
     fn default() -> Self {
         CpuExceptionInfo {
-            code: Exception::AddressNotAligned,
+            code: CpuException::Other(Exception::AddressNotAligned),
             page_fault_addr: 0,
             error_code: 0,
         }
@@ -136,9 +138,9 @@ impl UserContext {
         self.set_tp(tls)
     }
 
-    /// Enables floating-point unit.
+    /// Enables the floating-point and SIMD units supported by this CPU.
     pub fn enable_fpu(&mut self) {
-        self.user_context.euen = 0x1;
+        self.user_context.euen = supported_fpu_units();
     }
 }
 
@@ -151,7 +153,8 @@ impl UserContextApiInternal for UserContext {
             hooks.pre_user_run(&irq_guard);
             self.user_context.run(&irq_guard);
 
-            let cause = loongArch64::register::estat::read().cause();
+            let estat = loongArch64::register::estat::read();
+            let cause = estat.cause();
             let badv = loongArch64::register::badv::read().raw();
             let badi = loongArch64::register::badi::read().raw();
             let era = loongArch64::register::era::read().raw();
@@ -172,7 +175,7 @@ impl UserContextApiInternal for UserContext {
                         // Handle page fault
                         tlb_flush_addr(badv);
                         self.cpu_exception_info = Some(CpuExceptionInfo {
-                            code: exception,
+                            code: CpuException::Other(exception),
                             page_fault_addr: badv,
                             error_code: 0, // TODO: Set error code if needed
                         });
@@ -184,23 +187,17 @@ impl UserContextApiInternal for UserContext {
                     | Exception::BoundsCheckFault
                     | Exception::Breakpoint
                     | Exception::InstructionNotExist
-                    | Exception::InstructionPrivilegeIllegal => {
+                    | Exception::InstructionPrivilegeIllegal
+                    | Exception::FloatingPointUnavailable => {
                         // Handle other exceptions
                         self.cpu_exception_info = Some(CpuExceptionInfo {
-                            code: exception,
+                            code: CpuException::Other(exception),
                             page_fault_addr: 0,
                             error_code: 0, // TODO: Set error code if needed
                         });
                         crate::debug!(
                             "Exception {exception:?} occurred, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
                         );
-                        break ReturnReason::UserException;
-                    }
-                    Exception::FloatingPointUnavailable => {
-                        crate::debug!(
-                            "Floating point unit is not available, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
-                        );
-                        // TODO: Add FPU support and enable it at proper time
                         break ReturnReason::UserException;
                     }
                     Exception::TLBRFill => unreachable!(),
@@ -233,6 +230,35 @@ impl UserContextApiInternal for UserContext {
                 Trap::MachineError(machine_error) => panic!(
                     "Machine error: {machine_error:?}, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
                 ),
+                Trap::Unknown if estat.ecode() == ECODE_FPE => {
+                    // loongArch64 0.2.6 does not decode floating-point arithmetic exceptions.
+                    // Capture FCSR before another task can replace the user register state.
+                    let fcsr: u32;
+                    // SAFETY: FPE can only occur with the FPU enabled. IRQs remain disabled,
+                    // and reading FCSR does not modify the floating-point registers.
+                    unsafe { asm!("movfcsr2gr {}, $fcsr0", out(reg) fcsr, options(nostack)) };
+
+                    // Clear the delivered causes, following Linux's do_fpe(), so they do not
+                    // remain pending in the saved user state.
+                    // Reference: https://github.com/torvalds/linux/blob/v6.17/arch/loongarch/kernel/traps.c
+                    const FCSR_CAUSE_SHIFT: u32 = 24;
+                    const FCSR_ENABLE_MASK: u32 = 0x1f;
+                    let enabled_causes = (fcsr & FCSR_ENABLE_MASK) << FCSR_CAUSE_SHIFT;
+                    // SAFETY: The FPU is enabled and IRQs are disabled. Clearing exception
+                    // causes cannot affect kernel memory safety or enable another unit.
+                    unsafe {
+                        asm!(
+                            "movgr2fcsr $fcsr0, {}",
+                            in(reg) fcsr & !enabled_causes,
+                            options(nostack),
+                        )
+                    };
+                    self.cpu_exception_info = Some(CpuExceptionInfo {
+                        code: CpuException::FloatingPoint { fcsr },
+                        ..Default::default()
+                    });
+                    break ReturnReason::UserException;
+                }
                 Trap::Unknown => {
                     panic!("Unknown trap, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}")
                 }
@@ -329,33 +355,121 @@ cpu_context_impl_getter_setter!(
 );
 
 /// CPU exception.
-pub type CpuException = Exception;
+#[derive(Clone, Copy, Debug)]
+pub enum CpuException {
+    /// An exception other than a floating-point arithmetic exception.
+    Other(Exception),
+    /// A floating-point arithmetic exception.
+    FloatingPoint {
+        /// The floating-point control and status register at the fault.
+        fcsr: u32,
+    },
+}
 
-/// The FPU context of user task.
-/// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/sigcontext.h#L37>
-// FIXME: Implement FPU context on LoongArch64 platforms.
+const ECODE_FPE: usize = 0x12;
+
+/// The floating-point and SIMD context of a user task.
 #[derive(Clone, Debug, Default)]
-pub struct FpuContext;
+pub struct FpuContext {
+    registers: Box<FpSimdRegisters>,
+}
+
+const LOONGARCH_CSR_EUEN: usize = 0x2;
+const EUEN_FPE: usize = 1 << 0;
+const EUEN_SXE: usize = 1 << 1;
+const EUEN_ASXE: usize = 1 << 2;
+
+/// Returns the EUEN bits for the floating-point and SIMD units supported by this CPU.
+pub(in crate::arch) fn supported_fpu_units() -> usize {
+    const CPUCFG_FEATURES: usize = 2;
+    const FP_BIT: usize = 0;
+    const LSX_BIT: usize = 6;
+    const LASX_BIT: usize = 7;
+
+    let config = loongArch64::cpu::CPUCFG::read(CPUCFG_FEATURES);
+    assert!(
+        config.get_bit(FP_BIT),
+        "LoongArch floating-point support is required"
+    );
+
+    let mut units = EUEN_FPE;
+    if config.get_bit(LSX_BIT) {
+        units |= EUEN_SXE;
+    }
+    if config.get_bit(LASX_BIT) {
+        units |= EUEN_ASXE;
+    }
+    units
+}
 
 impl FpuContext {
     /// Creates a new FPU context.
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
-    /// Saves CPU's current FPU context to this instance, if needed.
-    pub fn save(&mut self) {}
+    /// Saves CPU's current FPU context to this instance.
+    pub fn save(&mut self) {
+        let _irq_guard = crate::irq::disable_local();
+        // SAFETY: The allocation covers the complete register image written by the assembly.
+        // Interrupts are disabled while the assembly temporarily changes EUEN.
+        unsafe { save_fpu_context(self.registers.as_mut(), supported_fpu_units()) };
+    }
 
-    /// Loads CPU's FPU context from this instance, if needed.
-    pub fn load(&self) {}
+    /// Loads CPU's FPU context from this instance.
+    pub fn load(&self) {
+        let _irq_guard = crate::irq::disable_local();
+        // SAFETY: The allocation covers the complete register image read by the assembly.
+        // Interrupts are disabled while the assembly temporarily changes EUEN.
+        // Restoring user FPU state cannot affect the kernel's memory safety.
+        unsafe { load_fpu_context(self.registers.as_ref(), supported_fpu_units()) };
+    }
 
     /// Returns the FPU context as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
-        &[]
+        self.registers.as_bytes()
     }
 
     /// Returns the FPU context as a mutable byte slice.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        &mut []
+        self.registers.as_mut_bytes()
     }
+}
+
+// FP, LSX and LASX registers overlap.
+#[padding_struct]
+#[repr(C, align(32))]
+#[derive(Clone, Copy, Debug, Default, Pod)]
+struct FpSimdRegisters {
+    registers: [[u64; 4]; 32],
+    fcc: [u8; 8],
+    fcsr: u32,
+}
+
+core::arch::global_asm!(
+    include_str!("fpu.S"),
+    LOONGARCH_CSR_EUEN = const LOONGARCH_CSR_EUEN,
+    EUEN_SXE = const EUEN_SXE,
+    EUEN_ASXE = const EUEN_ASXE,
+    REGISTER_STRIDE = const size_of::<[u64; 4]>(),
+    FCC_OFFSET = const core::mem::offset_of!(FpSimdRegisters, fcc),
+    FCSR_OFFSET = const core::mem::offset_of!(FpSimdRegisters, fcsr),
+);
+
+unsafe extern "C" {
+    /// Saves the current floating-point and SIMD register state.
+    ///
+    /// # Safety
+    ///
+    /// `registers` must point to a writable, initialized `FpSimdRegisters` allocation.
+    /// Local IRQs must be disabled, and the CPU must support `units`.
+    unsafe fn save_fpu_context(registers: *mut FpSimdRegisters, units: usize);
+
+    /// Restores floating-point and SIMD register state.
+    ///
+    /// # Safety
+    ///
+    /// `registers` must point to a readable, initialized `FpSimdRegisters` allocation.
+    /// Local IRQs must be disabled, and the CPU must support `units`.
+    unsafe fn load_fpu_context(registers: *const FpSimdRegisters, units: usize);
 }

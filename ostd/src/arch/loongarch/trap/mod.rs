@@ -10,7 +10,11 @@ pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
 use crate::{
-    arch::{cpu::context::CpuExceptionInfo, irq::HwIrqLine, mm::tlb_flush_addr},
+    arch::{
+        cpu::context::{CpuException, CpuExceptionInfo},
+        irq::HwIrqLine,
+        mm::tlb_flush_addr,
+    },
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
 };
@@ -57,7 +61,7 @@ unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
                 crate::mm::fault::handle_user_page_fault(
                     f,
                     &CpuExceptionInfo {
-                        code: exception,
+                        code: CpuException::Other(exception),
                         page_fault_addr: badv,
                         error_code: 0,
                     },

@@ -2,7 +2,7 @@
 
 use loongArch64::register::estat::Exception;
 use ostd::{
-    arch::cpu::context::{CpuExceptionInfo, UserContext},
+    arch::cpu::context::{CpuException, CpuExceptionInfo, UserContext},
     user::UserContextApi,
 };
 
@@ -25,7 +25,36 @@ impl ToFaultSignal for CpuExceptionInfo {
 
         let era = user_ctx.instruction_pointer() as u64;
 
-        let (num, code, addr) = match self.code {
+        let exception = match self.code {
+            CpuException::Other(exception) => exception,
+            CpuException::FloatingPoint { fcsr } => {
+                // Reference: https://github.com/torvalds/linux/blob/v6.17/arch/loongarch/kernel/traps.c
+                const FCSR_CAUSE_SHIFT: u32 = 24;
+                const INVALID: u32 = 1 << 4;
+                const DIVIDE_BY_ZERO: u32 = 1 << 3;
+                const OVERFLOW: u32 = 1 << 2;
+                const UNDERFLOW: u32 = 1 << 1;
+                const INEXACT: u32 = 1 << 0;
+                let causes = (fcsr >> FCSR_CAUSE_SHIFT) & fcsr;
+                let code = if causes & INVALID != 0 {
+                    FPE_FLTINV
+                } else if causes & DIVIDE_BY_ZERO != 0 {
+                    FPE_FLTDIV
+                } else if causes & OVERFLOW != 0 {
+                    FPE_FLTOVF
+                } else if causes & UNDERFLOW != 0 {
+                    FPE_FLTUND
+                } else if causes & INEXACT != 0 {
+                    FPE_FLTRES
+                } else {
+                    // No enabled cause is recorded.
+                    SI_KERNEL
+                };
+                return Some(FaultSignal::new(SIGFPE, code, Some(era)));
+            }
+        };
+
+        let (num, code, addr) = match exception {
             Exception::LoadPageFault | Exception::StorePageFault | Exception::FetchPageFault => {
                 // FIXME: The code should be `SEGV_ACCERR` for faults within an existing mapping.
                 (SIGSEGV, SEGV_MAPERR, Some(self.page_fault_addr as u64))
@@ -58,10 +87,7 @@ impl ToFaultSignal for CpuExceptionInfo {
                 // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/loongarch/kernel/traps.c#L877>
                 (SIGILL, SI_KERNEL, None)
             }
-            Exception::FloatingPointUnavailable => {
-                // TODO: Support FPU in LoongArch64.
-                (SIGFPE, FPE_FLTINV, Some(era))
-            }
+            Exception::FloatingPointUnavailable => (SIGFPE, FPE_FLTINV, Some(era)),
 
             Exception::Syscall | Exception::TLBRFill => return None,
         };

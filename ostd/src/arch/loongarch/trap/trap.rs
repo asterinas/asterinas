@@ -76,7 +76,7 @@ impl Default for RawUserContext {
             general: GeneralRegs::default(),
             prmd: 0b111, // User mode, enable interrupt
             era: 0,
-            euen: 0,
+            euen: crate::arch::cpu::context::supported_fpu_units(),
         }
     }
 }
