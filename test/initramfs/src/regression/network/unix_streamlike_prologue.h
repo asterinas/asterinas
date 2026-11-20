@@ -13,13 +13,49 @@
 
 #include "../common/test.h"
 
-FN_SETUP(general)
-{
-	signal(SIGPIPE, SIG_IGN);
-}
-END_SETUP()
+static int sk_unbound;
+static int sk_bound;
+static int sk_listen;
+static int sk_connected;
+static int sk_accepted;
+
+#define UNIX_ADDR(path) \
+	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = path })
 
 #define PATH_OFFSET offsetof(struct sockaddr_un, sun_path)
+
+#define UNNAMED_ADDR UNIX_ADDR("")
+#define UNNAMED_ADDRLEN PATH_OFFSET
+
+#define BOUND_ADDR UNIX_ADDR("//tmp/B0")
+#define BOUND_ADDRLEN (PATH_OFFSET + 9)
+
+#define LISTEN_ADDR UNIX_ADDR("/tmp//L0")
+#define LISTEN_ADDRLEN (PATH_OFFSET + 9)
+
+#define LISTEN_ADDR2 UNIX_ADDR("/tmp/L0")
+#define LISTEN_ADDRLEN2 (PATH_OFFSET + 8)
+
+FN_SETUP(setup)
+{
+	signal(SIGPIPE, SIG_IGN);
+
+	sk_unbound = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
+
+	sk_bound = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
+	CHECK(bind(sk_bound, (struct sockaddr *)&BOUND_ADDR, BOUND_ADDRLEN));
+
+	sk_listen = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
+	CHECK(bind(sk_listen, (struct sockaddr *)&LISTEN_ADDR, LISTEN_ADDRLEN));
+	CHECK(listen(sk_listen, 1));
+
+	sk_connected = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
+	CHECK(connect(sk_connected, (struct sockaddr *)&LISTEN_ADDR2,
+		      LISTEN_ADDRLEN2));
+
+	sk_accepted = CHECK(accept(sk_listen, NULL, NULL));
+}
+END_SETUP()
 
 FN_TEST(socket_addresses)
 {
@@ -99,66 +135,6 @@ FN_TEST(socket_addresses)
 	TEST_SUCC(close(sk));
 }
 END_TEST()
-
-static int sk_unbound;
-static int sk_bound;
-static int sk_listen;
-static int sk_connected;
-static int sk_accepted;
-
-#define UNIX_ADDR(path) \
-	((struct sockaddr_un){ .sun_family = AF_UNIX, .sun_path = path })
-
-#define UNNAMED_ADDR UNIX_ADDR("")
-#define UNNAMED_ADDRLEN PATH_OFFSET
-
-#define BOUND_ADDR UNIX_ADDR("//tmp/B0")
-#define BOUND_ADDRLEN (PATH_OFFSET + 9)
-
-#define LISTEN_ADDR UNIX_ADDR("/tmp//L0")
-#define LISTEN_ADDRLEN (PATH_OFFSET + 9)
-
-#define LISTEN_ADDR2 UNIX_ADDR("/tmp/L0")
-#define LISTEN_ADDRLEN2 (PATH_OFFSET + 8)
-
-FN_SETUP(unbound)
-{
-	sk_unbound = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
-}
-END_SETUP()
-
-FN_SETUP(bound)
-{
-	sk_bound = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
-
-	CHECK(bind(sk_bound, (struct sockaddr *)&BOUND_ADDR, BOUND_ADDRLEN));
-}
-END_SETUP()
-
-FN_SETUP(listen)
-{
-	sk_listen = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
-
-	CHECK(bind(sk_listen, (struct sockaddr *)&LISTEN_ADDR, LISTEN_ADDRLEN));
-
-	CHECK(listen(sk_listen, 1));
-}
-END_SETUP()
-
-FN_SETUP(connected)
-{
-	sk_connected = CHECK(socket(PF_UNIX, SOCK_TYPE | SOCK_NONBLOCK, 0));
-
-	CHECK(connect(sk_connected, (struct sockaddr *)&LISTEN_ADDR2,
-		      LISTEN_ADDRLEN2));
-}
-END_SETUP()
-
-FN_SETUP(accepted)
-{
-	sk_accepted = CHECK(accept(sk_listen, NULL, NULL));
-}
-END_SETUP()
 
 FN_TEST(getsockname)
 {

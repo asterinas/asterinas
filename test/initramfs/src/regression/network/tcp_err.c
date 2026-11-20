@@ -16,68 +16,42 @@ static struct sockaddr_in sk_addr;
 #define C_PORT htons(0x1234)
 #define S_PORT htons(0x1235)
 
-FN_SETUP(general)
-{
-	sk_addr.sin_family = AF_INET;
-	sk_addr.sin_port = htons(8080);
-	CHECK(inet_aton("127.0.0.1", &sk_addr.sin_addr));
-
-	signal(SIGPIPE, SIG_IGN);
-}
-END_SETUP()
-
 static int sk_unbound;
 static int sk_bound;
 static int sk_listen;
 static int sk_connected;
 static int sk_accepted;
 
-FN_SETUP(unbound)
+FN_SETUP(setup)
 {
+	signal(SIGPIPE, SIG_IGN);
+
+	sk_addr.sin_family = AF_INET;
+	sk_addr.sin_port = htons(8080);
+	CHECK(inet_aton("127.0.0.1", &sk_addr.sin_addr));
+
 	sk_unbound = CHECK(socket(PF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0));
-}
-END_SETUP()
 
-FN_SETUP(bound)
-{
 	sk_bound = CHECK(socket(PF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0));
-
 	sk_addr.sin_port = C_PORT;
 	CHECK(bind(sk_bound, (struct sockaddr *)&sk_addr, sizeof(sk_addr)));
-}
-END_SETUP()
 
-FN_SETUP(listen)
-{
 	sk_listen = CHECK(socket(PF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0));
-
 	sk_addr.sin_port = S_PORT;
 	CHECK(bind(sk_listen, (struct sockaddr *)&sk_addr, sizeof(sk_addr)));
-
 	CHECK(listen(sk_listen, 2));
-}
-END_SETUP()
 
-FN_SETUP(connected)
-{
 	sk_connected = CHECK(socket(PF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0));
-
 	sk_addr.sin_port = S_PORT;
 	CHECK_WITH(connect(sk_connected, (struct sockaddr *)&sk_addr,
 			   sizeof(sk_addr)),
 		   _ret < 0 && errno == EINPROGRESS);
-}
-END_SETUP()
 
-FN_SETUP(accpected)
-{
 	struct sockaddr addr;
 	socklen_t addrlen = sizeof(addr);
 	struct pollfd pfd = { .fd = sk_listen, .events = POLLIN };
-
 	CHECK_WITH(poll(&pfd, 1, 1000),
 		   _ret >= 0 && ((pfd.revents & (POLLIN | POLLOUT)) & POLLIN));
-
 	sk_accepted = CHECK(accept(sk_listen, &addr, &addrlen));
 }
 END_SETUP()
@@ -420,26 +394,6 @@ FN_TEST(async_connect)
 }
 END_TEST()
 
-static void set_blocking(int sockfd, int is_blocking)
-{
-	int flags = CHECK(fcntl(sockfd, F_GETFL, 0));
-
-	if (is_blocking) {
-		flags &= ~O_NONBLOCK;
-	} else {
-		flags |= O_NONBLOCK;
-	}
-
-	CHECK(fcntl(sockfd, F_SETFL, flags));
-}
-
-FN_SETUP(enter_blocking_mode)
-{
-	set_blocking(sk_connected, 1);
-	set_blocking(sk_bound, 1);
-}
-END_SETUP()
-
 FN_TEST(sendmsg_and_recvmsg)
 {
 	struct msghdr msg = { 0 };
@@ -649,6 +603,12 @@ FN_TEST(listen_at_the_same_address)
 }
 END_TEST()
 
+void set_nonblocking(int sockfd)
+{
+	int flags = CHECK(fcntl(sockfd, F_GETFL, 0));
+	CHECK(fcntl(sockfd, F_SETFL, flags | O_NONBLOCK));
+}
+
 FN_TEST(bind_and_connect_same_address)
 {
 	int sk_listen;
@@ -688,7 +648,7 @@ FN_TEST(bind_and_connect_same_address)
 
 	// For non-blocking sockets, conflict addresses also result in `EADDRNOTAVAIL`.
 	// (`EINPROGRESS` should _not_ be returned in this case.)
-	set_blocking(sk_connect2, 0);
+	set_nonblocking(sk_connect2);
 	TEST_ERRNO(connect(sk_connect2, (struct sockaddr *)&sk_addr,
 			   sizeof(sk_addr)),
 		   EADDRNOTAVAIL);
@@ -917,3 +877,13 @@ FN_TEST(connect_ipv4_unspecified)
 	TEST_SUCC(close(listener));
 }
 END_TEST()
+
+FN_SETUP(cleanup)
+{
+	CHECK(close(sk_unbound));
+	CHECK(close(sk_bound));
+	CHECK(close(sk_listen));
+	CHECK(close(sk_connected));
+	CHECK(close(sk_accepted));
+}
+END_SETUP()

@@ -5,6 +5,17 @@
 #include <unistd.h>
 #include <sys/poll.h>
 
+static void on_sigalrm(int sig)
+{
+	// Do nothing.
+}
+
+FN_SETUP(set_sigalrm)
+{
+	CHECK(signal(SIGALRM, &on_sigalrm));
+}
+END_SETUP()
+
 FN_TEST(poll_nval)
 {
 	int fildes[2];
@@ -50,17 +61,6 @@ FN_TEST(select_bafd)
 #endif
 }
 END_TEST()
-
-static void on_sigalrm(int sig)
-{
-	// Do nothing.
-}
-
-FN_SETUP(set_sigalrm)
-{
-	CHECK(signal(SIGALRM, &on_sigalrm));
-}
-END_SETUP()
 
 FN_TEST(poll_eintr)
 {

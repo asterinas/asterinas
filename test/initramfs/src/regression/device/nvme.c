@@ -22,7 +22,7 @@
 static char *nvme_write_buf;
 static char *nvme_read_buf;
 
-FN_SETUP(mount_nvme_ext2)
+FN_SETUP(setup_nvme)
 {
 	if (mkdir(MOUNT_POINT, 0755) != 0 && errno != EEXIST) {
 		fprintf(stderr,
@@ -43,11 +43,7 @@ FN_SETUP(mount_nvme_ext2)
 			DEVICE_PATH, strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-}
-END_SETUP()
 
-FN_SETUP(alloc_nvme_buffers)
-{
 	CHECK_WITH(posix_memalign((void **)&nvme_write_buf, ALIGNMENT,
 				  BUFFER_SIZE),
 		   _ret == 0);
