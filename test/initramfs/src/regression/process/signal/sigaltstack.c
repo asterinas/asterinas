@@ -83,8 +83,16 @@ void signal_handler(int sig, siginfo_t *info, void *ucontext)
 	recursion_level--;
 }
 
-FN_SETUP(malloc_stack)
+FN_SETUP(setup)
 {
+	struct sigaction sa;
+
+	memset(&sa, 0, sizeof(struct sigaction));
+	sa.sa_sigaction = signal_handler;
+	sa.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESTART | SA_NODEFER;
+
+	CHECK(sigaction(SIGUSR1, &sa, NULL));
+
 	g_alt_stack_base = CHECK(malloc(ALT_STACK_SIZE));
 }
 END_SETUP()
@@ -98,19 +106,7 @@ FN_TEST(default_stack)
 		 default_stack.ss_size == 0 && default_stack.ss_sp == 0 &&
 			 default_stack.ss_flags == SS_DISABLE);
 }
-END_SETUP()
-
-FN_SETUP(sig_action)
-{
-	struct sigaction sa;
-
-	memset(&sa, 0, sizeof(struct sigaction));
-	sa.sa_sigaction = signal_handler;
-	sa.sa_flags = SA_SIGINFO | SA_ONSTACK | SA_RESTART | SA_NODEFER;
-
-	CHECK(sigaction(SIGUSR1, &sa, NULL));
-}
-END_SETUP()
+END_TEST()
 
 FN_TEST(raise_with_sigstack_disabled)
 {
@@ -153,8 +149,8 @@ FN_TEST(flag_ss_disable)
 
 	memset(&alt_stack, 0, sizeof(alt_stack));
 	TEST_RES(sigaltstack(NULL, &alt_stack),
-		 alt_stack.ss_flags = SS_DISABLE && alt_stack.ss_size == 0 &&
-				      alt_stack.ss_sp == 0);
+		 alt_stack.ss_flags == SS_DISABLE && alt_stack.ss_size == 0 &&
+			 alt_stack.ss_sp == 0);
 }
 END_TEST()
 
@@ -173,9 +169,9 @@ FN_TEST(flag_ss_autodisarm)
 	TEST_RES(raise(SIGUSR1), old_stack.ss_flags == SS_DISABLE);
 	memset(&alt_stack, 0, sizeof(alt_stack));
 	TEST_RES(sigaltstack(NULL, &alt_stack),
-		 alt_stack.ss_flags = SS_AUTODISARM &&
-				      alt_stack.ss_size == ALT_STACK_SIZE &&
-				      alt_stack.ss_sp == g_alt_stack_base);
+		 alt_stack.ss_flags == SS_AUTODISARM &&
+			 alt_stack.ss_size == ALT_STACK_SIZE &&
+			 alt_stack.ss_sp == g_alt_stack_base);
 }
 END_TEST()
 

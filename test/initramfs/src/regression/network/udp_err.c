@@ -14,39 +14,25 @@ static struct sockaddr_in sk_addr;
 
 #define C_PORT htons(0x1234)
 
-FN_SETUP(general)
-{
-	sk_addr.sin_family = AF_INET;
-	sk_addr.sin_port = htons(8080);
-	CHECK(inet_aton("127.0.0.1", &sk_addr.sin_addr));
-
-	signal(SIGPIPE, SIG_IGN);
-}
-END_SETUP()
-
 static int sk_unbound;
 static int sk_bound;
 static int sk_connected;
 
-FN_SETUP(unbound)
+FN_SETUP(setup)
 {
+	signal(SIGPIPE, SIG_IGN);
+
+	sk_addr.sin_family = AF_INET;
+	sk_addr.sin_port = htons(8080);
+	CHECK(inet_aton("127.0.0.1", &sk_addr.sin_addr));
+
 	sk_unbound = CHECK(socket(PF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0));
-}
-END_SETUP()
 
-FN_SETUP(bound)
-{
 	sk_bound = CHECK(socket(PF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0));
-
 	sk_addr.sin_port = C_PORT;
 	CHECK(bind(sk_bound, (struct sockaddr *)&sk_addr, sizeof(sk_addr)));
-}
-END_SETUP()
 
-FN_SETUP(connected)
-{
 	sk_connected = CHECK(socket(PF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0));
-
 	sk_addr.sin_port = C_PORT;
 	CHECK(connect(sk_connected, (struct sockaddr *)&sk_addr,
 		      sizeof(sk_addr)));
@@ -264,19 +250,6 @@ FN_TEST(connect)
 }
 END_TEST()
 
-void set_blocking(int sockfd)
-{
-	int flags = CHECK(fcntl(sockfd, F_GETFL, 0));
-	CHECK(fcntl(sockfd, F_SETFL, flags & (~O_NONBLOCK)));
-}
-
-FN_SETUP(enter_blocking_mode)
-{
-	set_blocking(sk_connected);
-	set_blocking(sk_bound);
-}
-END_SETUP()
-
 FN_TEST(sendmsg_and_recvmsg)
 {
 	struct sockaddr_in saddr;
@@ -325,19 +298,6 @@ FN_TEST(sendmsg_and_recvmsg)
 		 _ret == strlen(message) && strcmp(message, buffer) == 0);
 }
 END_TEST()
-
-void set_nonblocking(int sockfd)
-{
-	int flags = CHECK(fcntl(sockfd, F_GETFL, 0));
-	CHECK(fcntl(sockfd, F_SETFL, flags | O_NONBLOCK));
-}
-
-FN_SETUP(enter_nonblocking_mode)
-{
-	set_nonblocking(sk_connected);
-	set_nonblocking(sk_bound);
-}
-END_SETUP()
 
 FN_TEST(sendmsg_and_recvmsg_bad_buffer)
 {
@@ -551,3 +511,11 @@ FN_TEST(connect_ipv6_unspecified)
 }
 END_TEST()
 #endif
+
+FN_SETUP(cleanup)
+{
+	CHECK(close(sk_unbound));
+	CHECK(close(sk_bound));
+	CHECK(close(sk_connected));
+}
+END_SETUP()

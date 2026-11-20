@@ -83,19 +83,19 @@ static void sig_handler(int sig, siginfo_t *si, void *ctx)
 		return;
 
 	int saved_errno = errno;
-	long long now = monotonic_ns();
+
 	sig_val += si->si_value.sival_int;
 	sig_tid += gettid();
-	atomic_store(&delivery_ns, now);
+	atomic_store(&delivery_ns, monotonic_ns());
+
 	errno = saved_errno;
 }
 
 static void sig_function(union sigval val)
 {
-	long long now = monotonic_ns();
 	sig_val += val.sival_int;
 	sig_tid += gettid();
-	atomic_store(&delivery_ns, now);
+	atomic_store(&delivery_ns, monotonic_ns());
 }
 
 static pid_t tid;
@@ -131,6 +131,7 @@ static struct itimerspec timerspec = { .it_value = { .tv_nsec = DELAY_NS } };
 #define FIRE_TIMER(prefix, sev)                                                \
 	do {                                                                   \
 		timer_t timerid;                                               \
+		long long start_ns, lateness_ns;                               \
                                                                                \
 		TEST_SUCC(                                                     \
 			prefix##_timer_create(CLOCK_REALTIME, sev, &timerid)); \
@@ -138,14 +139,16 @@ static struct itimerspec timerspec = { .it_value = { .tv_nsec = DELAY_NS } };
 		sig_val = 0;                                                   \
 		sig_tid = 0;                                                   \
 		atomic_store(&delivery_ns, 0);                                 \
-		long long start_ns = CHECK(monotonic_ns());                    \
+		start_ns = TEST_SUCC(monotonic_ns());                          \
+                                                                               \
 		TEST_SUCC(                                                     \
 			prefix##_timer_settime(timerid, 0, &timerspec, NULL)); \
-		usleep(DELAY_US * 4);                                          \
+                                                                               \
+		usleep(DELAY_US * 2);                                          \
                                                                                \
 		TEST_SUCC(prefix##_timer_delete(timerid));                     \
-		long long observed_ns = atomic_load(&delivery_ns);             \
-		long long lateness_ns = observed_ns - start_ns - DELAY_NS;     \
+                                                                               \
+		lateness_ns = atomic_load(&delivery_ns) - start_ns - DELAY_NS; \
 		printf("%s timer delivery lateness: %lld ns\n", #prefix,       \
 		       lateness_ns);                                           \
 		TEST_RES(lateness_ns, _ret >= 0 && _ret < MAX_LATENESS_NS);    \
@@ -202,7 +205,7 @@ FN_TEST(timer_thread)
 	TEST_RES(sig_tid, _ret != 0 && _ret != tid);
 
 	// SIGEV_THREAD is implemented by glibc.
-	// The RAW syscall treats it the same as SIGEV_SIGNAL.
+	// The raw syscall treats it the same as SIGEV_SIGNAL.
 	sev.sigev_notify = SIGEV_THREAD;
 	sev.sigev_signo = SIGRTMIN;
 	FIRE_TIMER(RAW, &sev);
