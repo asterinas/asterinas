@@ -34,9 +34,17 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 - [`log-prefix`](observability.md#log-prefix): Define a crate `__log_prefix` at the crate root before any `mod`.
 
 **[Testing](testing.md)**
-- [`add-regression-tests`](testing.md#add-regression-tests): Every bug fix ships a test that would have caught it, referencing the issue.
+- [`add-regression-tests`](testing.md#add-regression-tests): Every bug fix ships a test that would have caught it; record the issue reference in the commit message or PR description.
 - [`test-visible-behavior`](testing.md#test-visible-behavior): Test observable behavior through public APIs; name tests after behavior, not internals.
 - [`use-assertions`](testing.md#use-assertions): Use assertion macros (clear failure messages), not print-and-eyeball.
-- [`test-cleanup`](testing.md#test-cleanup): Clean up after every test (fds, temp files, child processes) to avoid flakiness.
 
-No **path-specific** guidelines yet.
+**[Path-Specific](path-specific/)**
+- [`test/initramfs/src/regression/`](path-specific/regression.md)
+    - [`use-test-framework`](path-specific/regression.md#use-test-framework): Use `common/test.h` for C regression tests.
+    - [`test-assertion-context`](path-specific/regression.md#test-assertion-context): Prefer `TEST_*` in the main test thread; use `CHECK*` in setup, cleanup, child processes, and worker threads.
+    - [`complete-test-results`](path-specific/regression.md#complete-test-results): Check every result needed to verify the behavior, including return values, output, and expected errors.
+    - [`combine-test-assertions`](path-specific/regression.md#combine-test-assertions): Keep each operation and its result checks in one assertion.
+    - [`verify-linux-behavior`](path-specific/regression.md#verify-linux-behavior): Run assertions on Linux; consider fixing Asterinas differences, or assert both behaviors with `#ifdef __asterinas__`.
+    - [`explain-test-differences`](path-specific/regression.md#explain-test-differences): Explain both platform behaviors in a `FIXME` comment above `#ifdef __asterinas__`.
+    - [`avoid-test-skips`](path-specific/regression.md#avoid-test-skips): Skip only when a required feature or resource is unavailable and no supported alternative can exercise the behavior.
+    - [`test-cleanup`](path-specific/regression.md#test-cleanup): Release each test's resources after use; clean up shared fixtures after their last test.

@@ -25,3 +25,11 @@ For long functions,
 add a one-line summary comment
 at the start of each paragraph
 when the paragraph intent is not obvious.
+
+In a test, use blank lines to separate setup, the operations being tested, and cleanup.
+Keep each operation together with the assertions that check its result.
+Separate independent cases with blank lines as well,
+so readers can see where one case ends and the next begins.
+
+See also:
+PR [#4090](https://github.com/asterinas/asterinas/pull/4090#discussion_r4439266461).
