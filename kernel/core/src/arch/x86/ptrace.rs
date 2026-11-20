@@ -21,7 +21,7 @@ use crate::{prelude::*, process::posix_thread::SuppUserContext};
 
 /// The system-wide mask of valid MXCSR bits, detected on the boot CPU.
 ///
-/// Assumes that every CPU supports all bits in this mask.
+/// We assume that every CPU supports all bits in this mask.
 static MXCSR_MASK: Once<u32> = Once::new();
 
 pub(super) fn init() {
@@ -44,7 +44,7 @@ pub(super) fn init() {
 // Public ABI mirror.
 // =====================================================================
 
-/// Mirror of Linux's `struct user_regs_struct` for x86-64.
+/// `struct user_regs_struct` in Linux.
 //
 // Reference: <https://elixir.bootlin.com/linux/v6.16.5/source/arch/x86/include/asm/user_64.h#L66-L97>
 #[repr(C)]

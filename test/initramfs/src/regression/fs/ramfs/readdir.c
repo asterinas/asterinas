@@ -60,21 +60,22 @@ FN_TEST(getdents_with_faulting_buffer)
 	 * because it maps a page of an ext2 file whose data is not in the page
 	 * cache: `O_DIRECT` writes bypass the page cache.
 	 */
-	int buf_fd =
-		CHECK(open(UNCACHED_FILE, O_RDWR | O_CREAT | O_DIRECT, 0644));
-	CHECK_WITH(pwrite(buf_fd, page, PAGE_SIZE, 0), _ret == PAGE_SIZE);
-	char *buf = CHECK_WITH(mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE,
-				    MAP_SHARED, buf_fd, 0),
-			       _ret != MAP_FAILED);
-	CHECK(close(buf_fd));
+	int buf_fd = TEST_SUCC(
+		open(UNCACHED_FILE, O_RDWR | O_CREAT | O_DIRECT, 0644));
+	TEST_RES(pwrite(buf_fd, page, PAGE_SIZE, 0), _ret == PAGE_SIZE);
+	char *buf = TEST_SUCC(mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE,
+				   MAP_SHARED, buf_fd, 0));
+	TEST_SUCC(close(buf_fd));
 
 	TEST_SUCC(mkdir(TEST_DIR, 0755));
 	int dir_fd = TEST_SUCC(open(TEST_DIR, O_RDONLY | O_DIRECTORY));
+
 	TEST_RES(syscall(SYS_getdents64, dir_fd, buf, PAGE_SIZE), _ret > 0);
 
 	TEST_SUCC(close(dir_fd));
 	TEST_SUCC(rmdir(TEST_DIR));
-	CHECK(munmap(buf, PAGE_SIZE));
-	CHECK(unlink(UNCACHED_FILE));
+
+	TEST_SUCC(munmap(buf, PAGE_SIZE));
+	TEST_SUCC(unlink(UNCACHED_FILE));
 }
 END_TEST()
