@@ -41,6 +41,7 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 - [`explain-why`](comments.md#explain-why): Comments explain intent (why), not what the code does; if you must explain "what", rewrite the code.
 - [`design-decisions`](comments.md#design-decisions): Document non-obvious choices, with rationale and alternatives considered.
 - [`cite-sources`](comments.md#cite-sources): Cite the source (POSIX, Linux man page, hardware manual, paper) for spec/algorithm behavior.
+- [`useful-issue-links`](comments.md#useful-issue-links): Include issue numbers or links only when they add useful context; explain why readers should open linked issues.
 
 **[Rust-Specific](rust-specific/)**
 - [Naming](rust-specific/naming.md)
