@@ -111,3 +111,37 @@ impl Drop for MockMemoryRegion {
         drop(seg);
     }
 }
+
+/// A test pool that releases free-head metadata even if an assertion unwinds.
+/// Declare the backing region first so it outlives this pool.
+pub(crate) struct TestBuddySet<const MAX_ORDER: crate::chunk::BuddyOrder> {
+    set: crate::set::BuddySet<MAX_ORDER>,
+}
+
+impl<const MAX_ORDER: crate::chunk::BuddyOrder> TestBuddySet<MAX_ORDER> {
+    pub(crate) fn new_empty() -> Self {
+        Self {
+            set: crate::set::BuddySet::new_empty(),
+        }
+    }
+}
+
+impl<const MAX_ORDER: crate::chunk::BuddyOrder> core::ops::Deref for TestBuddySet<MAX_ORDER> {
+    type Target = crate::set::BuddySet<MAX_ORDER>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.set
+    }
+}
+
+impl<const MAX_ORDER: crate::chunk::BuddyOrder> core::ops::DerefMut for TestBuddySet<MAX_ORDER> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.set
+    }
+}
+
+impl<const MAX_ORDER: crate::chunk::BuddyOrder> Drop for TestBuddySet<MAX_ORDER> {
+    fn drop(&mut self) {
+        while self.set.alloc_chunk(0).is_some() {}
+    }
+}
