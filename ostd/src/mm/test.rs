@@ -17,6 +17,8 @@ use crate::{
 };
 
 mod io {
+    use ostd_pod::IntoBytes;
+
     use super::*;
 
     /// A dummy Pod struct for testing complex types.
@@ -223,14 +225,14 @@ mod io {
     /// Tests the `read_once` and `write_once` methods in Infallible mode.
     #[ktest]
     fn read_write_once_infallible() {
-        let mut buffer = [0u8; 8];
-        let mut writer_infallible = VmWriter::from(&mut buffer[..]);
+        let mut buffer = 0u64;
+        let mut writer_infallible = VmWriter::from(buffer.as_mut_bytes());
 
         let val: u64 = 0x1122334455667788;
         writer_infallible.write_once(&val).unwrap();
 
         // Reads back the value
-        let mut reader_infallible = VmReader::from(&buffer[..]);
+        let mut reader_infallible = VmReader::from(buffer.as_bytes());
 
         let read_val: u64 = reader_infallible.read_once().unwrap();
         assert_eq!(val, read_val);
