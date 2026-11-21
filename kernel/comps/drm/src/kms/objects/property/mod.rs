@@ -5,7 +5,7 @@ use alloc::{sync::Arc, vec, vec::Vec};
 use aster_core::prelude::*;
 use aster_util::fixed_str::FixedCStr;
 
-use crate::kms::objects::{DrmKmsObjectType, KmsObjectId, plane::DrmPlaneType};
+use crate::kms::objects::{DrmKmsObjectType, KmsObjectId, OwnedKmsObjectId, plane::DrmPlaneType};
 
 pub(crate) mod blob;
 pub(crate) mod in_formats;
@@ -25,7 +25,7 @@ pub(super) type KmsObjectPropValue = u64;
 /// while immutable or static properties may rely on their attached value directly.
 #[derive(Debug)]
 pub(crate) struct DrmProperty {
-    id: KmsObjectId,
+    id: OwnedKmsObjectId,
     name: FixedCStr<DRM_PROP_NAME_LEN>,
     value_type: DrmPropertyValueType,
     is_immutable: bool,
@@ -34,7 +34,7 @@ pub(crate) struct DrmProperty {
 
 impl DrmProperty {
     pub(crate) fn id(&self) -> KmsObjectId {
-        self.id
+        self.id.value()
     }
 
     pub(crate) fn name(&self) -> &FixedCStr<DRM_PROP_NAME_LEN> {
@@ -61,7 +61,7 @@ impl DrmProperty {
     }
 
     fn new(
-        id: KmsObjectId,
+        id: OwnedKmsObjectId,
         name: &str,
         flags: DrmPropertyFlags,
         value_type: DrmPropertyValueType,
@@ -75,12 +75,12 @@ impl DrmProperty {
         }
     }
 
-    fn new_blob(id: KmsObjectId, name: &str, flags: DrmPropertyFlags) -> Self {
+    fn new_blob(id: OwnedKmsObjectId, name: &str, flags: DrmPropertyFlags) -> Self {
         Self::new(id, name, flags, DrmPropertyValueType::Blob)
     }
 
     fn new_object(
-        id: KmsObjectId,
+        id: OwnedKmsObjectId,
         name: &str,
         flags: DrmPropertyFlags,
         object_type: DrmKmsObjectType,
@@ -88,12 +88,12 @@ impl DrmProperty {
         Self::new(id, name, flags, DrmPropertyValueType::Object(object_type))
     }
 
-    fn new_bool(id: KmsObjectId, name: &str, flags: DrmPropertyFlags) -> Self {
+    fn new_bool(id: OwnedKmsObjectId, name: &str, flags: DrmPropertyFlags) -> Self {
         Self::new_range(id, name, flags, 0, 1)
     }
 
     fn new_signed_range(
-        id: KmsObjectId,
+        id: OwnedKmsObjectId,
         name: &str,
         flags: DrmPropertyFlags,
         min: i64,
@@ -107,12 +107,18 @@ impl DrmProperty {
         )
     }
 
-    fn new_range(id: KmsObjectId, name: &str, flags: DrmPropertyFlags, min: u64, max: u64) -> Self {
+    fn new_range(
+        id: OwnedKmsObjectId,
+        name: &str,
+        flags: DrmPropertyFlags,
+        min: u64,
+        max: u64,
+    ) -> Self {
         Self::new(id, name, flags, DrmPropertyValueType::Range { min, max })
     }
 
     fn new_enum(
-        id: KmsObjectId,
+        id: OwnedKmsObjectId,
         name: &str,
         flags: DrmPropertyFlags,
         enums: Vec<DrmPropertyEnum>,
@@ -132,7 +138,7 @@ impl DrmProperty {
 /// The insertion order is preserved
 /// so property IDs and values can be reported to userspace as corresponding arrays.
 ///
-/// Attachments share ownership of each property with the object store
+/// Attachments share ownership of each property with the KMS object collection,
 /// so the property remains alive for as long as it is attached to a KMS object.
 #[derive(Debug, Default)]
 pub(crate) struct DrmPropertyAttachments {
@@ -210,7 +216,7 @@ pub(super) enum DrmStandardProperty {
 }
 
 impl DrmStandardProperty {
-    pub(super) fn create_property(self, id: KmsObjectId) -> DrmProperty {
+    pub(super) fn create_property(self, id: OwnedKmsObjectId) -> DrmProperty {
         match self {
             Self::PlaneType => DrmProperty::new_enum(
                 id,
