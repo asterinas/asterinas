@@ -34,7 +34,7 @@ pub(in overlayfs) use self::options::XinoMode;
 use self::{
     capabilities::UpperFilesystemCapabilities,
     layer_parts::MountRoots,
-    options::{MountOptions, UuidMode},
+    options::{MountOptions, ProcOptionsRecorder, UuidMode},
     policy::MountPolicy,
 };
 use super::OverlayFs;
@@ -58,7 +58,7 @@ impl OverlayFs {
         let upper_workdir = roots.claim_upper_workdir(&options)?;
         let layer_stack = roots.into_layer_stack()?;
 
-        let xino_mode = options.xino_mode.unwrap_or(XinoMode::Auto);
+        let xino_mode = options.xino_mode.unwrap_or_default();
         let xattr_namespace = options.xattr_namespace;
 
         let mut upper_workdir_inuse = None;
@@ -66,8 +66,9 @@ impl OverlayFs {
         let mut uuid = None;
         let whiteout_cache;
 
+        let mut uuid_mode: UuidMode = options.unpublished_uuid_mode();
+
         if let Some(mut inuse_pair) = upper_workdir {
-            let uuid_mode = options.uuid_mode.unwrap_or(UuidMode::Auto);
             if !is_effective_read_only {
                 inuse_pair.prepare_workdir()?;
 
@@ -80,14 +81,16 @@ impl OverlayFs {
                         "the upper filesystem cannot report directory entry types"
                     ));
                 }
-                let is_uuid_effective = capabilities.validate_uuid_support(uuid_mode)?;
+                let is_uuid_effective =
+                    capabilities.validate_uuid_support(options.requested_uuid_mode())?;
 
                 if is_uuid_effective {
                     match inuse_pair.persist_identity(xattr_namespace) {
                         Ok(persisted) => {
                             uuid = Some(persisted);
+                            uuid_mode = UuidMode::On;
                         }
-                        Err(persist_err) => match uuid_mode {
+                        Err(persist_err) => match options.requested_uuid_mode() {
                             UuidMode::On => {
                                 return Err(errno!(
                                     EOPNOTSUPP,
@@ -143,12 +146,17 @@ impl OverlayFs {
             &policy,
         );
 
+        let mut recorder = ProcOptionsRecorder::default();
+        options.render_proc_options(&mut recorder, uuid_mode, identity.mode());
+        let mount_options = recorder.into_string();
+
         let inodes = InodeCache::new();
 
         let overlay_fs = Arc::new_cyclic(move |weak| OverlayFs {
             layer_stack,
             policy,
             identity,
+            mount_options,
             upper_workdir_inuse,
             whiteout_cache,
             inodes,

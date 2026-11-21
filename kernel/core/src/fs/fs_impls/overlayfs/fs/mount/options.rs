@@ -13,11 +13,17 @@
 //! raw-intent key records an explicitly requested feature that is not
 //! implemented: the request is accepted, and the verify phase warns once at
 //! mount time that the mount proceeds without that feature.
+//!
+//! It also renders the options a mount effectively settled on into the one
+//! `/proc` options-field segment the mount publishes.
 
 #![short_vis_path::add(overlayfs)]
 
 use crate::{
-    fs::vfs::{file_system::FsFlags, xattr::XattrNamespace},
+    fs::{
+        fs_impls::overlayfs::inode::IdentityMode,
+        vfs::{file_system::FsFlags, xattr::XattrNamespace},
+    },
     prelude::*,
 };
 
@@ -49,7 +55,7 @@ pub(super) struct MountOptions {
     is_nooverride_creds_seen: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) enum UuidMode {
     /// UUID-blind mode: no persistent overlay UUID is written or matched.
     Off,
@@ -58,40 +64,52 @@ pub(super) enum UuidMode {
     /// Requires a persistent UUID: reuse the upper's, else create and persist one.
     On,
     /// Reuses an existing UUID, else upgrades to `On`; persistence failure degrades to `Null`.
+    #[default]
     Auto,
 }
 
 /// The `xino` option: whether the overlay publishes its own device ID with a layer-encoded ino.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(in overlayfs) enum XinoMode {
     /// Never encode; a non-directory publishes the underlying dev/ino.
     Off,
     /// Encode when the layers span several filesystems and the mount keeps a `st_ino`.
+    #[default]
     Auto,
     /// Forces the encoding attempt; objects that do not fit fall back to xino-off.
     On,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum RedirectDirMode {
     Off,
+    #[default]
     Follow,
     NoFollow,
     On,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum VerityMode {
+    #[default]
     Off,
     On,
     Require,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum FsyncMode {
     Volatile,
+    #[default]
     Auto,
     Strict,
+}
+
+/// A recorder for one escaped `/proc` mount-options segment.
+#[derive(Debug, Default)]
+pub(super) struct ProcOptionsRecorder {
+    /// The segment under construction; empty, or comma-separated keys with no edge comma.
+    rendered: String,
 }
 
 impl MountOptions {
@@ -408,6 +426,135 @@ impl MountOptions {
             warn!("`default_permissions`: inert; the mount already behaves as requested");
         }
         Ok(())
+    }
+
+    /// Returns the `uuid` mode the caller requested, applying the default.
+    pub(super) fn requested_uuid_mode(&self) -> UuidMode {
+        self.uuid_mode.unwrap_or_default()
+    }
+
+    /// Returns the `uuid` mode this mount settles on when it publishes no UUID.
+    pub(super) fn unpublished_uuid_mode(&self) -> UuidMode {
+        match self.requested_uuid_mode() {
+            UuidMode::Off => UuidMode::Off,
+            UuidMode::Null => UuidMode::Null,
+            // Linux `params.c:898-903`: `uuid=on` without an upper falls back to `uuid=null`.
+            UuidMode::On => UuidMode::Null,
+            UuidMode::Auto if self.upper_dir.is_some() => UuidMode::Null,
+            UuidMode::Auto => UuidMode::Auto,
+        }
+    }
+
+    /// Renders this mount's effective options into `recorder` in `/proc` order.
+    pub(super) fn render_proc_options(
+        &self,
+        recorder: &mut ProcOptionsRecorder,
+        uuid_mode: UuidMode,
+        identity_mode: IdentityMode,
+    ) {
+        if self.is_lowerdir_plus_seen {
+            for lower_dir in self.lower_dirs.iter() {
+                recorder.push_option("lowerdir+", lower_dir);
+            }
+        } else {
+            let lower_dirs = self.lower_dirs.join(":");
+            recorder.push_option("lowerdir", &lower_dirs);
+        }
+        recorder.push_optional_option("upperdir", self.upper_dir.as_deref());
+        recorder.push_optional_option("workdir", self.work_dir.as_deref());
+        if self.is_default_permissions {
+            recorder.push_bare_option("default_permissions");
+        }
+        recorder.push_optional_option("uuid", uuid_mode.option_value());
+        recorder.push_optional_option("xino", self.xino_option_value(identity_mode));
+        if self.xattr_namespace == XattrNamespace::User {
+            recorder.push_bare_option("userxattr");
+        }
+    }
+
+    /// Returns the `xino=` value the settled projection reports, or `None` when suppressed.
+    fn xino_option_value(&self, identity_mode: IdentityMode) -> Option<&'static str> {
+        match identity_mode {
+            // Every layer is on one filesystem, so there is no encoding to report.
+            IdentityMode::SameFs => None,
+            IdentityMode::Xino { .. } => match self.xino_mode.unwrap_or_default() {
+                XinoMode::On => Some("on"),
+                // `Auto` equals the default, so it is suppressed.
+                XinoMode::Auto => None,
+                // An `off` projection is written only when it differs from the default.
+                XinoMode::Off => match XinoMode::default() {
+                    XinoMode::Off => None,
+                    _ => Some("off"),
+                },
+            },
+            // The fallback's effective value is `off`; the same default comparison applies.
+            IdentityMode::Fallback => match XinoMode::default() {
+                XinoMode::Off => None,
+                _ => Some("off"),
+            },
+        }
+    }
+}
+
+impl UuidMode {
+    /// Returns the `uuid=` value this mode is spelled with, or `None` for the default.
+    fn option_value(self) -> Option<&'static str> {
+        match self {
+            Self::On => Some("on"),
+            Self::Off => Some("off"),
+            Self::Null => Some("null"),
+            // `Auto` is the option default and is omitted.
+            Self::Auto => None,
+        }
+    }
+}
+
+impl ProcOptionsRecorder {
+    /// Appends `name=value`, escaping the value and separating entries with `,`.
+    fn push_option(&mut self, name: &str, value: &str) {
+        if !self.rendered.is_empty() {
+            self.rendered.push(',');
+        }
+        self.rendered.push_str(name);
+        self.rendered.push('=');
+        self.rendered
+            .push_str(&Self::escape_mount_option_value(value));
+    }
+
+    /// Appends `name=value` when `value` is `Some`.
+    fn push_optional_option(&mut self, name: &str, value: Option<&str>) {
+        if let Some(value) = value {
+            self.push_option(name, value);
+        }
+    }
+
+    /// Appends the valueless key `name`.
+    fn push_bare_option(&mut self, name: &str) {
+        if !self.rendered.is_empty() {
+            self.rendered.push(',');
+        }
+        self.rendered.push_str(name);
+    }
+
+    /// Returns the accumulated segment.
+    pub(super) fn into_string(self) -> String {
+        self.rendered
+    }
+
+    /// Escapes an option value for the `/proc` options field.
+    fn escape_mount_option_value(value: &str) -> String {
+        let mut escaped = String::with_capacity(value.len());
+        for character in value.chars() {
+            match character {
+                ',' => escaped.push_str("\\054"),
+                ' ' => escaped.push_str("\\040"),
+                '\t' => escaped.push_str("\\011"),
+                '\n' => escaped.push_str("\\012"),
+                '\\' => escaped.push_str("\\134"),
+                _ => escaped.push(character),
+            }
+        }
+        escaped
     }
 }
 

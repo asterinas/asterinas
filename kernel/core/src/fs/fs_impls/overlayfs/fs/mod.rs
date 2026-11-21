@@ -37,6 +37,8 @@ pub(super) struct OverlayFs {
     layer_stack: LayerStack,
     policy: MountPolicy,
     identity: IdentityPolicy,
+    /// The rendered, escaped `/proc` options segment this mount reports.
+    mount_options: String,
     upper_workdir_inuse: Option<UpperWorkdirInuse>,
     whiteout_cache: WhiteoutCache,
     inodes: InodeCache,
@@ -146,6 +148,11 @@ impl FileSystem for OverlayFs {
             return Err(errno!(EINVAL, "unsupported overlayfs remount delta"));
         }
         Ok(())
+    }
+
+    /// Returns the `/proc` options segment this mount settled on.
+    fn mount_options(&self) -> Option<&str> {
+        Some(&self.mount_options)
     }
 
     fn fs_event_subscriber_stats(&self) -> &FsEventSubscriberStats {
