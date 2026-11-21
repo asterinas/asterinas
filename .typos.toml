@@ -4,6 +4,9 @@
 [default]
 extend-ignore-re = [ "sha256 = \"([a-zA-Z0-9]+)\";" ]
 
+[default.extend-identifiers]
+gl_pathc = "gl_pathc"
+
 # Words listed below are marked as valid, not mistakes.
 [default.extend-words]
 rela = "rela"
