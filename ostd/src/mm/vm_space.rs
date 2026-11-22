@@ -14,7 +14,7 @@ use super::{AnyUFrameMeta, PagingLevel, page_table::PageTableConfig};
 use crate::{
     Error,
     arch::mm::{PageTableEntry, PagingConsts, current_page_table_paddr},
-    cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
+    cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu, local::CpuLocalPtr},
     cpu_local_cell,
     io::IoMem,
     mm::{
@@ -127,7 +127,7 @@ impl VmSpace {
         let preempt_guard = disable_preempt();
         let cpu = preempt_guard.current_cpu();
 
-        let last_ptr = ACTIVATED_VM_SPACE.load();
+        let last_ptr = ACTIVATED_VM_SPACE.load().as_ptr();
 
         if last_ptr == Arc::as_ptr(self) {
             return;
@@ -138,7 +138,7 @@ impl VmSpace {
         self.cpus.add(cpu, Ordering::Acquire);
 
         let self_ptr = Arc::into_raw(Arc::clone(self)) as *mut VmSpace;
-        ACTIVATED_VM_SPACE.store(self_ptr);
+        ACTIVATED_VM_SPACE.store(CpuLocalPtr::new(self_ptr));
 
         if !last_ptr.is_null() {
             // SAFETY: The pointer is cast from an `Arc` when it's activated
@@ -581,12 +581,12 @@ cpu_local_cell! {
     // TODO: If we are enabling ASID, we need to maintain the TLB state of each
     // CPU, rather than merely the activated `VmSpace`. When ASID is enabled,
     // the non-active `VmSpace`s can still have their TLB entries in the CPU!
-    static ACTIVATED_VM_SPACE: *const VmSpace = core::ptr::null();
+    static ACTIVATED_VM_SPACE: CpuLocalPtr<VmSpace> = CpuLocalPtr::null();
 }
 
 #[cfg(ktest)]
 pub(super) fn get_activated_vm_space() -> *const VmSpace {
-    ACTIVATED_VM_SPACE.load()
+    ACTIVATED_VM_SPACE.load().as_ptr()
 }
 
 /// The result of a query over the VM space.

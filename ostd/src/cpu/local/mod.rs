@@ -48,6 +48,7 @@ use core::{alloc::Layout, marker::PhantomData, ops::Deref};
 
 use align_ext::AlignExt;
 pub use cell::CpuLocalCell;
+pub(crate) use cell::CpuLocalPtr;
 pub use dyn_cpu_local::DynCpuLocalChunk;
 use dyn_cpu_local::DynamicStorage;
 use spin::Once;
