@@ -6,6 +6,7 @@
 #include <linux/kd.h>
 #include <linux/vt.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -144,6 +145,22 @@ FN_TEST(kd_and_keyboard_mode_validation)
 	TEST_SUCC(ioctl(vt1_fd, KDGETMODE, &gfx_mode));
 	TEST_SUCC(ioctl(vt1_fd, KDSETMODE, gfx_mode));
 	TEST_ERRNO(ioctl(vt1_fd, KDSETMODE, 0x7fffffff), EINVAL);
+}
+END_TEST()
+
+FN_TEST(kd_fontop_rejects_zero_charcount)
+{
+	static uint8_t dummy[16];
+	struct console_font_op op;
+
+	memset(&op, 0, sizeof(op));
+	op.op = KD_FONT_OP_SET_TALL;
+	op.width = 8;
+	op.height = 16;
+	op.charcount = 0;
+	op.data = dummy;
+
+	TEST_ERRNO(ioctl(vt1_fd, KDFONTOP, &op), EINVAL);
 }
 END_TEST()
 

@@ -63,6 +63,7 @@ impl VtDriver {
             || *height == 0
             || *width > CFontOp::MAX_WIDTH
             || *height > CFontOp::MAX_HEIGHT
+            || *charcount == 0
             || *charcount > CFontOp::MAX_CHARCOUNT
             || *height > vpitch
         {
