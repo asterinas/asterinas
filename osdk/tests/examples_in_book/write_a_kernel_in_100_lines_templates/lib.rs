@@ -28,7 +28,7 @@ use ostd::user::{DummyUserHooks, ReturnReason, UserMode};
 #[ostd::main]
 pub fn main() {
     let vm_space = Arc::new(create_vm_space(PROGRAM_BINARY));
-    vm_space.activate();
+    vm_space.activate(&ostd::irq::disable_local());
     let user_task = create_user_task(vm_space);
     user_task.start();
 }

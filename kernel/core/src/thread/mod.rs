@@ -40,7 +40,7 @@ fn pre_schedule_handler(irq_guard: &DisabledLocalIrqGuard) {
     thread_local.supp_user_context().before_schedule(irq_guard);
 }
 
-fn post_schedule_handler() {
+fn post_schedule_handler(irq_guard: &DisabledLocalIrqGuard) {
     // No races because preemption shouldn't happen in pre-/post-schedule handlers.
     CONTEXT_SWITCH_COUNTER
         .get()
@@ -51,13 +51,13 @@ fn post_schedule_handler() {
     if let Some(thread_local) = task.as_thread_local() {
         let vmar = thread_local.vmar().borrow();
         if let Some(vmar) = vmar.as_ref() {
-            vmar.vm_space().activate()
+            vmar.vm_space().activate(irq_guard)
         }
     } else if let Some(vmar) = task
         .as_kernel_thread()
         .and_then(|kernel_thread| kernel_thread.vmar())
     {
-        vmar.vm_space().activate();
+        vmar.vm_space().activate(irq_guard);
     }
 }
 

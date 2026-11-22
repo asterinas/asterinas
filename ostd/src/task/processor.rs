@@ -116,8 +116,13 @@ fn before_switching_to(next_task: &Task, irq_guard: &DisabledLocalIrqGuard) {
 ///
 /// # Safety
 ///
-/// This function must be called only once after switching to a task.
+/// This function must be called only once after switching to a task, before local IRQs
+/// are re-enabled.
 pub(super) unsafe fn after_switching_to() {
+    // SAFETY: `switch_to_task` leaves IRQs disabled and forgets its guard. This function
+    // takes over re-enabling them once the scheduling cleanup is complete.
+    let irq_guard = unsafe { DisabledLocalIrqGuard::assume_disabled() };
+
     // Release the previous task.
     let prev = PREVIOUS_TASK_PTR.load().as_ptr();
     let prev = if !prev.is_null() {
@@ -137,11 +142,10 @@ pub(super) unsafe fn after_switching_to() {
     };
 
     if let Some(handler) = POST_SCHEDULE_HANDLER.get() {
-        handler();
+        handler(&irq_guard);
     }
 
-    // See `switch_to_task`, where we forgot an IRQ guard.
-    crate::arch::irq::enable_local();
+    drop(irq_guard);
 
     // It was forgotten using `Arc::into_raw` at `switch_to_task`.
     // We drop it after enabling the IRQ in case dropping user-provided

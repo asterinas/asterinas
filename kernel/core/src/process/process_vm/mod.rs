@@ -16,7 +16,7 @@ use core::ops::Range;
 #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use ostd::task::disable_preempt;
+use ostd::irq;
 
 pub(crate) use self::{
     heap::{Heap, LockedHeap},
@@ -283,16 +283,15 @@ pub(super) fn activate_vmar<'a>(
 
     let mut vmar_guard = ctx.process.lock_vmar();
 
-    // Disable preemption because `thread_local::vmar()` will be borrowed during a context switch.
     let old_vmar = {
-        let _preempt_guard = disable_preempt();
+        let irq_guard = irq::disable_local();
         let old_vmar = ctx
             .thread_local
             .vmar()
             .borrow_mut()
             .replace(new_vmar)
             .unwrap();
-        vmar_arc.vm_space().activate();
+        vmar_arc.vm_space().activate(&irq_guard);
         old_vmar
     };
     vmar_guard.set_vmar(Some(vmar_arc));

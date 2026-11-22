@@ -17,6 +17,7 @@ use crate::{
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu, local::CpuLocalPtr},
     cpu_local_cell,
     io::IoMem,
+    irq::DisabledLocalIrqGuard,
     mm::{
         Frame, HasPaddrRange, PAGE_SIZE, PageProperty, PrivilegedPageFlags, UFrame, VmReader,
         VmWriter,
@@ -123,9 +124,10 @@ impl VmSpace {
     }
 
     /// Activates the page table on the current CPU.
-    pub fn activate(self: &Arc<Self>) {
-        let preempt_guard = disable_preempt();
-        let cpu = preempt_guard.current_cpu();
+    ///
+    /// Local IRQs must remain disabled for the duration of this operation.
+    pub fn activate(self: &Arc<Self>, irq_guard: &DisabledLocalIrqGuard) {
+        let cpu = irq_guard.current_cpu();
 
         let last_ptr = ACTIVATED_VM_SPACE.load().as_ptr();
 
@@ -142,12 +144,13 @@ impl VmSpace {
 
         if !last_ptr.is_null() {
             // SAFETY: The pointer is cast from an `Arc` when it's activated
-            // the last time, so it can be restored and only restored once.
+            // the last time. Local IRQs are disabled, so no other activation
+            // on this CPU can restore the same pointer before we replace it.
             let last = unsafe { Arc::from_raw(last_ptr) };
             last.cpus.remove(cpu, Ordering::Relaxed);
         }
 
-        self.pt.activate();
+        self.pt.activate(irq_guard);
     }
 
     /// Creates a reader to read data from the user space of the current task.

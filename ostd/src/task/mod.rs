@@ -35,7 +35,7 @@ use crate::{
 
 static PRE_SCHEDULE_HANDLER: Once<fn(&DisabledLocalIrqGuard)> = Once::new();
 
-static POST_SCHEDULE_HANDLER: Once<fn()> = Once::new();
+static POST_SCHEDULE_HANDLER: Once<fn(&DisabledLocalIrqGuard)> = Once::new();
 
 /// Injects a handler to be executed before scheduling.
 pub fn inject_pre_schedule_handler(handler: fn(&DisabledLocalIrqGuard)) {
@@ -43,7 +43,9 @@ pub fn inject_pre_schedule_handler(handler: fn(&DisabledLocalIrqGuard)) {
 }
 
 /// Injects a handler to be executed after scheduling.
-pub fn inject_post_schedule_handler(handler: fn()) {
+///
+/// The handler runs with local IRQs disabled and receives a reference to the IRQ guard.
+pub fn inject_post_schedule_handler(handler: fn(&DisabledLocalIrqGuard)) {
     POST_SCHEDULE_HANDLER.call_once(|| handler);
 }
 

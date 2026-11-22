@@ -41,6 +41,7 @@ pub(in crate::mm) use self::{
 };
 use super::{PageTableConfig, PteTrait, nr_subpage_per_huge};
 use crate::{
+    irq::DisabledLocalIrqGuard,
     mm::{
         FrameAllocOptions, HasPaddr, Infallible, PagingConstsTrait, PagingLevel, VmReader,
         frame::{Frame, FrameRef, meta::AnyFrameMeta},
@@ -91,7 +92,7 @@ impl<C: PageTableConfig> PageTableNode<C> {
     /// # Panics
     ///
     /// Only top-level page tables can be activated using this function.
-    pub(super) unsafe fn activate(&self) {
+    pub(super) unsafe fn activate(&self, _irq_guard: &DisabledLocalIrqGuard) {
         use crate::arch::mm::{activate_page_table, current_page_table_paddr};
 
         assert_eq!(self.level(), C::NR_LEVELS);
@@ -106,6 +107,8 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
         // Restore and drop the last activated page table.
         // SAFETY: The physical address is valid and points to a forgotten page table node.
+        // Local IRQs are disabled, so no other activation on this CPU can restore
+        // the same node between reading and replacing the active page table.
         drop(unsafe { Self::from_raw(last_activated_paddr) });
     }
 
