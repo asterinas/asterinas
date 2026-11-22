@@ -6,24 +6,25 @@ use core::{ptr::NonNull, sync::atomic::Ordering};
 use super::{POST_SCHEDULE_HANDLER, PRE_SCHEDULE_HANDLER, Task};
 use crate::{
     arch::task::{context_switch, first_context_switch},
+    cpu::local::CpuLocalPtr,
     cpu_local_cell,
     irq::DisabledLocalIrqGuard,
 };
 
 cpu_local_cell! {
     /// The `Arc<Task>` (casted by [`Arc::into_raw`]) that is the current task.
-    static CURRENT_TASK_PTR: *const Task = core::ptr::null();
+    static CURRENT_TASK_PTR: CpuLocalPtr<Task> = CpuLocalPtr::null();
     /// The previous task on the processor before switching to the current task.
     /// It is used for delayed resource release since it would be the current
     /// task's job to recycle the previous resources.
-    static PREVIOUS_TASK_PTR: *const Task = core::ptr::null();
+    static PREVIOUS_TASK_PTR: CpuLocalPtr<Task> = CpuLocalPtr::null();
 }
 
 /// Returns a pointer to the current task running on the processor.
 ///
 /// It returns `None` if the function is called in the bootstrap context.
 pub(super) fn current_task() -> Option<NonNull<Task>> {
-    NonNull::new(CURRENT_TASK_PTR.load().cast_mut())
+    NonNull::new(CURRENT_TASK_PTR.load().as_ptr().cast_mut())
 }
 
 /// Calls this function to switch to other task
@@ -53,10 +54,10 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     // CPU, its context can be used exclusively.
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
 
-    let current_task_ptr = CURRENT_TASK_PTR.load();
-    CURRENT_TASK_PTR.store(Arc::into_raw(next_task));
-    debug_assert!(PREVIOUS_TASK_PTR.load().is_null());
-    PREVIOUS_TASK_PTR.store(current_task_ptr);
+    let current_task_ptr = CURRENT_TASK_PTR.load().as_ptr();
+    CURRENT_TASK_PTR.store(CpuLocalPtr::new(Arc::into_raw(next_task)));
+    debug_assert!(PREVIOUS_TASK_PTR.load().as_ptr().is_null());
+    PREVIOUS_TASK_PTR.store(CpuLocalPtr::new(current_task_ptr));
 
     // We must disable IRQs when switching, see `after_switching_to`.
     core::mem::forget(irq_guard);
@@ -118,9 +119,9 @@ fn before_switching_to(next_task: &Task, irq_guard: &DisabledLocalIrqGuard) {
 /// This function must be called only once after switching to a task.
 pub(super) unsafe fn after_switching_to() {
     // Release the previous task.
-    let prev = PREVIOUS_TASK_PTR.load();
+    let prev = PREVIOUS_TASK_PTR.load().as_ptr();
     let prev = if !prev.is_null() {
-        PREVIOUS_TASK_PTR.store(core::ptr::null());
+        PREVIOUS_TASK_PTR.store(CpuLocalPtr::null());
 
         // SAFETY: The pointer is set by `switch_to_task` and is guaranteed to
         // be built with `Arc::into_raw`. We couldn't do it twice since we set

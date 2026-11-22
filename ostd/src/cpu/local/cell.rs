@@ -2,7 +2,7 @@
 
 //! The implementation of CPU-local variables that have inner mutability.
 
-use core::cell::UnsafeCell;
+use core::{cell::UnsafeCell, fmt};
 
 use super::{__cpu_local_end, __cpu_local_start, single_instr::*};
 use crate::{arch, mm::PAGE_SIZE};
@@ -26,21 +26,20 @@ use crate::{arch, mm::PAGE_SIZE};
 ///
 /// cpu_local_cell! {
 ///     static FOO: u32 = 1;
-///     pub static BAR: *const usize = core::ptr::null();
+///     pub static BAR: usize = 0;
 /// }
 ///
 /// fn not_an_atomic_function() {
-///     let bar_var: usize = 1;
-///     BAR.store(&bar_var as *const _);
-///     // Note that the value of `BAR` here doesn't necessarily equal to the address
-///     // of `bar_var`, since the task may be preempted and moved to another CPU.
+///     BAR.store(1);
+///     // Note that the value of `BAR` here doesn't necessarily equal to `1`,
+///     // since the task may be preempted and moved to another CPU.
 ///     // You can avoid this by disabling interrupts (and preemption, if needed).
 ///     println!("BAR VAL: {:?}", BAR.load());
 ///
 ///     let _irq_guard = ostd::irq::disable_local();
-///     println!("1st FOO VAL: {:?}", FOO.load());
+///     let first_foo = FOO.load();
 ///     // No surprises here, the two accesses must result in the same value.
-///     println!("2nd FOO VAL: {:?}", FOO.load());
+///     assert_eq!(FOO.load(), first_foo);
 /// }
 /// ```
 #[macro_export]
@@ -140,9 +139,11 @@ impl<T: 'static> CpuLocalCell<T> {
     }
 }
 
-// SAFETY: At any given time, only one task can access the inner value T
-// of a cpu-local variable even if `T` is not `Sync`.
-unsafe impl<T: 'static> Sync for CpuLocalCell<T> {}
+// SAFETY: At any given time, only one task can access the inner value `T` of a
+// CPU-local variable, so `T` does not have to be `Sync`. However, a value stored
+// by one task can be obtained by another task, which may run on a different CPU.
+// Therefore, `T` must be `Send`.
+unsafe impl<T: Send + 'static> Sync for CpuLocalCell<T> {}
 
 // Prevent valid instances of CpuLocalCell from being copied to any memory
 // area outside the `.cpu_local` section.
@@ -260,5 +261,65 @@ impl<T: 'static + SingleInstructionStore> CpuLocalCell<T> {
         unsafe {
             T::store(offset, val);
         }
+    }
+}
+
+/// A raw pointer that can be stored in a [`CpuLocalCell`].
+///
+/// Raw pointers are not `Send`, so they cannot be the inner value of a
+/// [`CpuLocalCell`] directly. This wrapper retains their single-instruction
+/// load and store operations.
+#[repr(transparent)]
+pub(crate) struct CpuLocalPtr<T>(*const T);
+
+impl<T> CpuLocalPtr<T> {
+    /// Creates a new instance from a raw pointer.
+    pub(crate) const fn new(ptr: *const T) -> Self {
+        Self(ptr)
+    }
+
+    /// Creates a new instance with a null pointer.
+    pub(crate) const fn null() -> Self {
+        Self(core::ptr::null())
+    }
+
+    /// Returns the raw pointer.
+    pub(crate) const fn as_ptr(self) -> *const T {
+        self.0
+    }
+}
+
+impl<T> Clone for CpuLocalPtr<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for CpuLocalPtr<T> {}
+
+impl<T> fmt::Debug for CpuLocalPtr<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("CpuLocalPtr").field(&self.0).finish()
+    }
+}
+
+// SAFETY: Transferring a raw pointer between tasks is harmless by itself.
+// Dereferencing it requires `unsafe`, whose caller must ensure that the access
+// is free of data races.
+unsafe impl<T> Send for CpuLocalPtr<T> {}
+
+impl<T> SingleInstructionLoad for CpuLocalPtr<T> {
+    unsafe fn load(offset: usize) -> Self {
+        // SAFETY: `CpuLocalPtr<T>` has the same layout as `*const T`, and the
+        // caller upholds the safety requirements.
+        Self(unsafe { <*const T as SingleInstructionLoad>::load(offset) })
+    }
+}
+
+impl<T> SingleInstructionStore for CpuLocalPtr<T> {
+    unsafe fn store(offset: usize, val: Self) {
+        // SAFETY: `CpuLocalPtr<T>` has the same layout as `*const T`, and the
+        // caller upholds the safety requirements.
+        unsafe { <*const T as SingleInstructionStore>::store(offset, val.0) };
     }
 }
