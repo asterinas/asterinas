@@ -309,7 +309,7 @@ where
 
             debug_assert_eq!(next_mut.prev, Some(current));
             next_mut.prev = prev_ptr;
-            self.current = Some(NonNull::from(next_mut));
+            self.current = Some(*next);
         } else {
             self.list.back = prev_ptr;
             self.current = None;
@@ -336,7 +336,10 @@ where
         debug_assert!(frame.meta_mut().prev.is_none());
         debug_assert_eq!(frame.slot().in_list.load(Ordering::Relaxed), 0);
 
-        let frame_ptr = NonNull::from(frame.meta_mut());
+        // SAFETY: `frame.slot()` is a valid reference to the frame's
+        // `MetaSlot`, so `as_meta_ptr()` returns a non-null pointer to its
+        // metadata storage.
+        let frame_ptr = unsafe { NonNull::new_unchecked(frame.slot().as_meta_ptr()) };
 
         if let Some(current) = &mut self.current {
             // SAFETY: We own the current node by `&mut self` and the node is
