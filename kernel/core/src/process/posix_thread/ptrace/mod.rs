@@ -7,7 +7,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use ostd::{arch::cpu::context::UserContext, sync::Waiter};
 
 use super::{AsPosixThread, PosixThread};
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
 use crate::arch::ptrace as arch_ptrace;
 use crate::{
     prelude::*,
@@ -171,7 +171,7 @@ impl PosixThread {
     /// # Errors
     ///
     /// Returns `ESRCH` if this thread is not ptrace-stopped.
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
     pub(crate) fn ptrace_get_regset(
         &self,
         regset: arch_ptrace::Regset,
@@ -186,7 +186,7 @@ impl PosixThread {
     /// # Errors
     ///
     /// Returns `ESRCH` if this thread is not ptrace-stopped.
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
     pub(crate) fn ptrace_set_regset(
         &self,
         regset: arch_ptrace::Regset,
@@ -420,9 +420,6 @@ impl TraceeStatus {
         ctx: &Context,
         user_ctx: &mut UserContext,
     ) -> PtraceStopResult {
-        #[cfg(not(target_arch = "x86_64"))]
-        let _ = user_ctx;
-
         // Hold the lock first to avoid race conditions.
         let state = self.state.lock();
 
@@ -506,14 +503,14 @@ impl TraceeStatus {
         ctx: &Context,
         user_ctx: &mut UserContext,
     ) -> PtraceStopResult {
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(not(any(target_arch = "riscv64", target_arch = "x86_64")))]
         let _ = user_ctx;
 
         debug_assert!(!self.is_ptrace_stopped());
 
         state.signal.stop(signal, wait_status);
         state.event = event;
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
         {
             state.arch_state = Some(arch_ptrace::PtraceState::new(
                 user_ctx,
@@ -544,7 +541,7 @@ impl TraceeStatus {
             let mut state = self.state.lock();
             state.signal.clear();
             state.event = None;
-            #[cfg(target_arch = "x86_64")]
+            #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
             {
                 state.arch_state = None;
             }
@@ -557,7 +554,7 @@ impl TraceeStatus {
         let signal = state.signal.clear();
         state.event = None;
 
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
         {
             let arch_state = state.arch_state.take().unwrap();
             ctx.thread_local
@@ -658,7 +655,7 @@ impl TraceeStatus {
         state.arch_state.as_mut().unwrap().set_user_regs(regs)
     }
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
     fn get_regset(&self, regset: arch_ptrace::Regset, writer: &mut VmWriter) -> Result<()> {
         let state = self.state.lock();
         self.check_ptrace_stopped(&state)?;
@@ -670,7 +667,7 @@ impl TraceeStatus {
             .get_regset(regset, writer)
     }
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
     fn set_regset(&self, regset: arch_ptrace::Regset, reader: &mut VmReader) -> Result<()> {
         let mut state = self.state.lock();
         self.check_ptrace_stopped(&state)?;
@@ -773,7 +770,7 @@ struct TraceeState {
     /// Whether the tracee should stop at the next syscall enter or exit.
     is_tracing_syscall: bool,
     /// Architecture-specific register state captured at the current ptrace-stop.
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
     arch_state: Option<arch_ptrace::PtraceState>,
 }
 
@@ -785,7 +782,7 @@ impl TraceeState {
             event: None,
             options: PtraceOptions::empty(),
             is_tracing_syscall: false,
-            #[cfg(target_arch = "x86_64")]
+            #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
             arch_state: None,
         }
     }

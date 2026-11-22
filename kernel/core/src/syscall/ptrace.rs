@@ -3,7 +3,7 @@
 use ostd::mm::VmIo;
 
 use super::SyscallReturn;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
 use crate::{arch::ptrace as arch_ptrace, util::UserIoVec};
 use crate::{
     prelude::*,
@@ -109,7 +109,7 @@ pub(super) fn sys_ptrace(
                 .read_val::<arch_ptrace::CUserRegsStruct>(data)?;
             tracee.ptrace_set_regs(regs)?;
         }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
         PtraceRequest::PTRACE_GETREGSET => {
             let tracee = ctx.posix_thread.get_tracee(tid)?;
             let tracee = tracee.as_posix_thread().unwrap();
@@ -128,7 +128,7 @@ pub(super) fn sys_ptrace(
 
             user_space.write_val(data + core::mem::offset_of!(UserIoVec, len), &len)?;
         }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
         PtraceRequest::PTRACE_SETREGSET => {
             let tracee = ctx.posix_thread.get_tracee(tid)?;
             let tracee = tracee.as_posix_thread().unwrap();
@@ -257,10 +257,10 @@ enum PtraceRequest {
     /// Gets the `siginfo` of the last ptrace-stop.
     PTRACE_GETSIGINFO = 0x4202,
     /// Gets the register set selected by the ELF note type in `addr`.
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
     PTRACE_GETREGSET = 0x4204,
     /// Sets the register set selected by the ELF note type in `addr`.
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
     PTRACE_SETREGSET = 0x4205,
     // TODO: Support other operations.
     // /// Gets all floating-point registers used by the thread.

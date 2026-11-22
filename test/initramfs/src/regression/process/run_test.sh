@@ -53,6 +53,8 @@ if [ "$(uname -m)" = "x86_64" ]; then
     ./ptrace/debugger
     ./ptrace/read_write_regs
     ./ptrace/regset
+elif [ "$(uname -m)" = "riscv64" ]; then
+    ./ptrace/regset_riscv
 fi
 
 ./sched/ioprio_permission

@@ -45,7 +45,7 @@ pub(crate) use exit::{do_exit, do_exit_group};
 pub(crate) use personality::Personality;
 pub use posix_thread_ext::AsPosixThread;
 pub(crate) use robust_list::RobustListHead;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
 pub(crate) use thread_local::SuppUserContext;
 pub(crate) use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 

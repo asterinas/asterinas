@@ -52,6 +52,9 @@ pub(crate) fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) {
     // other pending unmasked signals until the next trap. Consider a looped scan.
     //
     // For details, see <https://github.com/asterinas/asterinas/pull/2984/#discussion_r3137275994>.
+
+    // FIXME: When deciding whether to restart a syscall that returned -ERESTARTSYS,
+    // account for register changes the tracer makes during the signal-delivery stop.
     let syscall_restart = if let Some(orig_syscall_ret) = ctx.thread_local.orig_syscall_ret()
         && user_ctx.syscall_ret() == -(Errno::ERESTARTSYS as i32) as usize
     {
