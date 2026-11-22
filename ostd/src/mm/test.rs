@@ -5,6 +5,7 @@ use alloc::vec;
 use crate::{
     Error,
     io::IoMem,
+    irq,
     mm::{
         CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
         UFrame, VmSpace,
@@ -653,14 +654,15 @@ mod vmspace {
     #[ktest]
     fn vmspace_activate() {
         let vmspace = Arc::new(VmSpace::new());
+        let irq_guard = irq::disable_local();
 
         // Activates the VmSpace.
-        vmspace.activate();
+        vmspace.activate(&irq_guard);
         assert_eq!(get_activated_vm_space(), Arc::as_ptr(&vmspace));
 
         // Deactivates the VmSpace.
         let vmspace2 = Arc::new(VmSpace::new());
-        vmspace2.activate();
+        vmspace2.activate(&irq_guard);
         assert_eq!(get_activated_vm_space(), Arc::as_ptr(&vmspace2));
     }
 
@@ -734,7 +736,7 @@ mod vmspace {
         assert!(writer_result.is_err());
 
         // Activates the VmSpace.
-        vmspace.activate();
+        vmspace.activate(&irq::disable_local());
 
         // Attempts to create a reader.
         let reader_result = vmspace.reader(0x4000, 0x1000);

@@ -51,6 +51,20 @@ impl !Sync for DisabledLocalIrqGuard {}
 unsafe impl InAtomicMode for DisabledLocalIrqGuard {}
 
 impl DisabledLocalIrqGuard {
+    /// Creates a guard for already-disabled local IRQs.
+    ///
+    /// Dropping this guard enables local IRQs.
+    ///
+    /// # Safety
+    ///
+    /// Local IRQs must already be disabled.
+    /// The caller must ensure that it is safe to enable them when the guard is dropped,
+    /// including that no other live guard requires them to remain disabled at that point.
+    pub(crate) unsafe fn assume_disabled() -> Self {
+        debug_assert!(!arch_irq::is_local_enabled());
+        Self { was_enabled: true }
+    }
+
     fn new() -> Self {
         let was_enabled = arch_irq::is_local_enabled();
         if was_enabled {
@@ -73,5 +87,29 @@ impl Drop for DisabledLocalIrqGuard {
         if self.was_enabled {
             arch_irq::enable_local();
         }
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use super::*;
+    use crate::prelude::*;
+
+    #[ktest]
+    fn assumed_guard_restores_irqs() {
+        assert!(arch_irq::is_local_enabled());
+        core::mem::forget(disable_local());
+
+        // SAFETY: We just disabled IRQs and forgot the only guard responsible for
+        // re-enabling them. No other guard requires IRQs to remain disabled.
+        let guard = unsafe { DisabledLocalIrqGuard::assume_disabled() };
+        assert!(!arch_irq::is_local_enabled());
+
+        let nested_guard = disable_local();
+        drop(nested_guard);
+        assert!(!arch_irq::is_local_enabled());
+
+        drop(guard);
+        assert!(arch_irq::is_local_enabled());
     }
 }

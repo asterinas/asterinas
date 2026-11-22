@@ -24,6 +24,7 @@ use super::{
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
+    irq::DisabledLocalIrqGuard,
     mm::page_prop::PageTableFlags,
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt},
 };
@@ -330,11 +331,11 @@ pub(crate) struct PageTable<C: PageTableConfig> {
 }
 
 impl PageTable<UserPtConfig> {
-    pub(in crate::mm) fn activate(&self) {
+    pub(in crate::mm) fn activate(&self, irq_guard: &DisabledLocalIrqGuard) {
         // SAFETY: The user mode page table is safe to activate since the kernel
         // mappings are shared.
         unsafe {
-            self.root.activate();
+            self.root.activate(irq_guard);
         }
     }
 }
