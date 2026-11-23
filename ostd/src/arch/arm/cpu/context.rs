@@ -364,7 +364,7 @@ cpu_context_impl_getter_setter!(
     [x30, set_x30]
 );
 
-/// The FPU context of user task.
+/// The FPU context of a user task.
 #[derive(Clone, Debug)]
 pub struct FpuContext {
     fpsimd: Box<FpSimdContext>,
@@ -389,15 +389,12 @@ impl FpuContext {
 
     /// Saves CPU's current FPU context to this instance.
     pub fn save(&mut self) {
-        // SAFETY: It is safe to save FPU registers.
-        unsafe { save_fpsimd_context(self.fpsimd.as_mut()) };
+        save_fpsimd_context(self.fpsimd.as_mut());
     }
 
     /// Loads CPU's FPU context from this instance.
     pub fn load(&self) {
-        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
-        // memory safety.
-        unsafe { load_fpsimd_context(self.fpsimd.as_ref()) };
+        load_fpsimd_context(self.fpsimd.as_ref());
     }
 
     /// Returns the FPU context as a byte slice.
@@ -433,7 +430,15 @@ struct FpSimdContext {
 
 core::arch::global_asm!(include_str!("fpu.S"));
 
+// SAFETY:
+// 1. The assembly routines correctly save and load the FPU registers.
+// 2. The FPU registers do not affect the kernel's memory safety.
+// 3. FPU instructions are always enabled during kernel boot, so these functions do not require
+//    additional safety requirements.
 unsafe extern "C" {
-    unsafe fn save_fpsimd_context(ctx: *mut FpSimdContext);
-    unsafe fn load_fpsimd_context(ctx: *const FpSimdContext);
+    /// Saves the current floating-point and SIMD registers.
+    safe fn save_fpsimd_context(ctx: &mut FpSimdContext);
+
+    /// Restores the floating-point and SIMD registers.
+    safe fn load_fpsimd_context(ctx: &FpSimdContext);
 }

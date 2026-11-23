@@ -3,7 +3,7 @@
 .macro SAVE_FPU_CONTEXT base, store_insn, reg_size
     # Enable FPU
     li t1, {SSTATUS_FS_MASK}
-	csrs sstatus, t1
+    csrs sstatus, t1
 
     .if \reg_size == 16
         # Q extension - use manual encoding
@@ -88,7 +88,7 @@
 .macro LOAD_FPU_CONTEXT base, load_insn, reg_size
     # Enable FPU
     li t1, {SSTATUS_FS_MASK}
-	csrs sstatus, t1
+    csrs sstatus, t1
 
     .if \reg_size == 16
         # Q extension - use manual encoding

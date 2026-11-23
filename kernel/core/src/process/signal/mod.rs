@@ -391,8 +391,7 @@ pub(crate) fn handle_user_signal(
             // Reference:
             // <https://elixir.bootlin.com/linux/v6.17.5/source/arch/riscv/include/uapi/asm/ptrace.h#L94-L98>,
             // <https://elixir.bootlin.com/linux/v6.17.5/source/arch/riscv/include/uapi/asm/ptrace.h#L69-L77>.
-            const FP_STATE_SIZE: usize =
-                size_of::<ostd::arch::cpu::context::QFpuContext>() + 3 * size_of::<u32>();
+            const FP_STATE_SIZE: usize = FpuContext::MAX_SIZE + 3 * size_of::<u32>();
 
             let ucontext_addr = alloc_aligned_in_user_stack(
                 stack_pointer,

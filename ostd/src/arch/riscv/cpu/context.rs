@@ -308,9 +308,14 @@ cpu_context_impl_getter_setter!(
     [t6, set_t6]
 );
 
-/// The FPU context of user task.
+/// The FPU context of a user task.
 #[derive(Clone, Debug)]
-pub enum FpuContext {
+pub struct FpuContext {
+    inner: FpuContextInner,
+}
+
+#[derive(Clone, Debug)]
+enum FpuContextInner {
     /// FPU context for F extension (32-bit floating point).
     F(Box<FFpuContext>),
     /// FPU context for D extension (64-bit floating point).
@@ -322,56 +327,77 @@ pub enum FpuContext {
 }
 
 impl FpuContext {
+    /// The maximum size of an FPU context in bytes.
+    ///
+    /// [`Self::as_bytes`] and [`Self::as_bytes_mut`] are guaranteed to return
+    /// a slice of a length that is equal to or less than this value.
+    pub const MAX_SIZE: usize = size_of::<QFpuContext>();
+
     /// Creates a new FPU context.
     pub fn new() -> Self {
-        if has_extensions(IsaExtensions::Q) {
-            Self::Q(Box::default())
+        let inner = if has_extensions(IsaExtensions::Q) {
+            FpuContextInner::Q(Box::default())
         } else if has_extensions(IsaExtensions::D) {
-            Self::D(Box::default())
+            FpuContextInner::D(Box::default())
         } else if has_extensions(IsaExtensions::F) {
-            Self::F(Box::default())
+            FpuContextInner::F(Box::default())
         } else {
-            Self::None
-        }
+            FpuContextInner::None
+        };
+        Self { inner }
     }
 
     /// Saves CPU's current FPU context to this instance.
     pub fn save(&mut self) {
-        match self {
-            Self::F(ctx) => ctx.save(),
-            Self::D(ctx) => ctx.save(),
-            Self::Q(ctx) => ctx.save(),
-            Self::None => {}
+        let _irq_guard = crate::irq::disable_local();
+
+        // SAFETY:
+        // 1. Local IRQs are disabled while `_irq_guard` is alive.
+        // 2. The FPU extension is available, as was checked when constructing `self`.
+        unsafe {
+            match &mut self.inner {
+                FpuContextInner::F(ctx) => save_fpu_context_f(ctx.as_mut()),
+                FpuContextInner::D(ctx) => save_fpu_context_d(ctx.as_mut()),
+                FpuContextInner::Q(ctx) => save_fpu_context_q(ctx.as_mut()),
+                FpuContextInner::None => {}
+            }
         }
     }
 
     /// Loads CPU's FPU context from this instance.
     pub fn load(&self) {
-        match self {
-            Self::F(ctx) => ctx.load(),
-            Self::D(ctx) => ctx.load(),
-            Self::Q(ctx) => ctx.load(),
-            Self::None => {}
+        let _irq_guard = crate::irq::disable_local();
+
+        // SAFETY:
+        // 1. Local IRQs are disabled while `_irq_guard` is alive.
+        // 2. The FPU extension is available, as was checked when constructing `self`.
+        unsafe {
+            match &self.inner {
+                FpuContextInner::F(ctx) => load_fpu_context_f(ctx.as_ref()),
+                FpuContextInner::D(ctx) => load_fpu_context_d(ctx.as_ref()),
+                FpuContextInner::Q(ctx) => load_fpu_context_q(ctx.as_ref()),
+                FpuContextInner::None => {}
+            }
         }
     }
 
     /// Returns the FPU context as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
-        match self {
-            Self::F(ctx) => ctx.as_bytes(),
-            Self::D(ctx) => ctx.as_bytes(),
-            Self::Q(ctx) => ctx.as_bytes(),
-            Self::None => &[],
+        match &self.inner {
+            FpuContextInner::F(ctx) => ctx.as_bytes(),
+            FpuContextInner::D(ctx) => ctx.as_bytes(),
+            FpuContextInner::Q(ctx) => ctx.as_bytes(),
+            FpuContextInner::None => &[],
         }
     }
 
     /// Returns the FPU context as a mutable byte slice.
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
-        match self {
-            Self::F(ctx) => ctx.as_mut_bytes(),
-            Self::D(ctx) => ctx.as_mut_bytes(),
-            Self::Q(ctx) => ctx.as_mut_bytes(),
-            Self::None => &mut [],
+        match &mut self.inner {
+            FpuContextInner::F(ctx) => ctx.as_mut_bytes(),
+            FpuContextInner::D(ctx) => ctx.as_mut_bytes(),
+            FpuContextInner::Q(ctx) => ctx.as_mut_bytes(),
+            FpuContextInner::None => &mut [],
         }
     }
 }
@@ -385,7 +411,7 @@ impl Default for FpuContext {
 /// FPU context for F extension (32-bit floating point).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct FFpuContext {
+struct FFpuContext {
     f: [u32; 32],
     fcsr: u32,
 }
@@ -394,7 +420,7 @@ pub struct FFpuContext {
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Pod)]
-pub struct DFpuContext {
+struct DFpuContext {
     f: [u64; 32],
     fcsr: u32,
 }
@@ -403,7 +429,7 @@ pub struct DFpuContext {
 #[padding_struct]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
-pub struct QFpuContext {
+struct QFpuContext {
     f: [u64; 64],
     fcsr: u32,
 }
@@ -424,52 +450,54 @@ impl Default for QFpuContext {
     }
 }
 
-impl FFpuContext {
-    fn save(&mut self) {
-        // SAFETY: It is safe to save FPU registers.
-        unsafe { save_fpu_context_f(self as *mut _) };
-    }
-
-    fn load(&self) {
-        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
-        // memory safety.
-        unsafe { load_fpu_context_f(self as *const _) };
-    }
-}
-
-impl DFpuContext {
-    fn save(&mut self) {
-        // SAFETY: It is safe to save FPU registers.
-        unsafe { save_fpu_context_d(self as *mut _) };
-    }
-
-    fn load(&self) {
-        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
-        // memory safety.
-        unsafe { load_fpu_context_d(self as *const _) };
-    }
-}
-
-impl QFpuContext {
-    fn save(&mut self) {
-        // SAFETY: It is safe to save FPU registers.
-        unsafe { save_fpu_context_q(self as *mut _) };
-    }
-
-    fn load(&self) {
-        // SAFETY: It is safe to load FPU registers, as the FPU state does not affect the kernel's
-        // memory safety.
-        unsafe { load_fpu_context_q(self as *const _) };
-    }
-}
-
 global_asm!(include_str!("fpu.S"), SSTATUS_FS_MASK = const SSTATUS_FS_MASK);
 
+// SAFETY:
+// 1. The assembly routines correctly save and load the FPU registers.
+// 2. The FPU registers do not affect the kernel's memory safety.
+// 3. Since these functions temporarily enable FPU instructions in the kernel, they must only be
+//    called while local IRQs are disabled and when the CPU supports the corresponding FPU
+//    extension.
 unsafe extern "C" {
-    unsafe fn save_fpu_context_f(ctx: *mut FFpuContext);
-    unsafe fn load_fpu_context_f(ctx: *const FFpuContext);
-    unsafe fn save_fpu_context_d(ctx: *mut DFpuContext);
-    unsafe fn load_fpu_context_d(ctx: *const DFpuContext);
-    unsafe fn save_fpu_context_q(ctx: *mut QFpuContext);
-    unsafe fn load_fpu_context_q(ctx: *const QFpuContext);
+    /// Saves the current single-precision floating-point register state.
+    ///
+    /// # Safety
+    ///
+    /// Local IRQs must be disabled and the CPU must support F extension.
+    unsafe fn save_fpu_context_f(ctx: &mut FFpuContext);
+
+    /// Restores the single-precision floating-point register state.
+    ///
+    /// # Safety
+    ///
+    /// Local IRQs must be disabled and the CPU must support F extension.
+    unsafe fn load_fpu_context_f(ctx: &FFpuContext);
+
+    /// Saves the current double-precision floating-point register state.
+    ///
+    /// # Safety
+    ///
+    /// Local IRQs must be disabled and the CPU must support D extension.
+    unsafe fn save_fpu_context_d(ctx: &mut DFpuContext);
+
+    /// Restores the double-precision floating-point register state.
+    ///
+    /// # Safety
+    ///
+    /// Local IRQs must be disabled and the CPU must support D extension.
+    unsafe fn load_fpu_context_d(ctx: &DFpuContext);
+
+    /// Saves the current quad-precision floating-point register state.
+    ///
+    /// # Safety
+    ///
+    /// Local IRQs must be disabled and the CPU must support Q extension.
+    unsafe fn save_fpu_context_q(ctx: &mut QFpuContext);
+
+    /// Restores the quad-precision floating-point register state.
+    ///
+    /// # Safety
+    ///
+    /// Local IRQs must be disabled and the CPU must support Q extension.
+    unsafe fn load_fpu_context_q(ctx: &QFpuContext);
 }
