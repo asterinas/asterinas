@@ -6,6 +6,7 @@ mod event_file;
 mod events;
 mod io_events;
 mod observer;
+pub(crate) mod perf;
 mod subject;
 
 pub use self::io_events::IoEvents;
