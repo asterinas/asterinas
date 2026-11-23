@@ -186,10 +186,14 @@ impl<M: AnyFrameMeta + ?Sized> TryFrom<Frame<M>> for UniqueFrame<M> {
     ///
     /// If the reference count is not 1, the frame is returned back.
     fn try_from(frame: Frame<M>) -> Result<Self, Self::Error> {
+        // `Acquire` pairs with the `Release` decrement in `Frame::drop`. It
+        // ensures that the accesses to the frame made through the other handles
+        // before they were dropped happen before the accesses made through the
+        // returned unique frame, as in `Arc::try_unwrap` and `Arc::get_mut`.
         match frame.slot().ref_count.compare_exchange(
             1,
             REF_COUNT_UNIQUE,
-            Ordering::Relaxed,
+            Ordering::Acquire,
             Ordering::Relaxed,
         ) {
             Ok(_) => {
