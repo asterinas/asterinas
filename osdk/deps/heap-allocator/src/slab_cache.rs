@@ -45,8 +45,8 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
         // Try to allocate from the partial slabs first.
         if !self.partial.is_empty() {
             let mut cursor = self.partial.cursor_back_mut();
-            let current = cursor.current_meta().unwrap();
-            let allocated = current.alloc().unwrap();
+            let mut current = cursor.pin_current_meta().unwrap();
+            let allocated = current.as_mut().alloc().unwrap();
             if current.nr_allocated() == current.capacity() {
                 self.full.push_front(cursor.take_current().unwrap());
             }
@@ -56,7 +56,7 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
         // If no partial slab is available, try to get an empty slab.
         if !self.empty.is_empty() {
             let mut slab = self.empty.pop_front().unwrap();
-            let allocated = slab.meta_mut().alloc().unwrap();
+            let allocated = slab.pin_meta().project().alloc().unwrap();
             self.add_slab(slab);
             return Ok(allocated);
         }
@@ -66,7 +66,7 @@ impl<const SLOT_SIZE: usize> SlabCache<SLOT_SIZE> {
             log::error!("Failed to allocate a new slab");
             return Err(AllocError);
         };
-        let allocated = allocated_empty.meta_mut().alloc().unwrap();
+        let allocated = allocated_empty.pin_meta().project().alloc().unwrap();
         self.add_slab(allocated_empty);
 
         // Allocate more empty slabs and push them into the cache.
