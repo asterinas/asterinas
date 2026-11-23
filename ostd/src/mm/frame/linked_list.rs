@@ -7,6 +7,7 @@
 
 use core::{
     ops::{Deref, DerefMut},
+    pin::Pin,
     ptr::NonNull,
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -262,16 +263,34 @@ where
         };
     }
 
-    /// Gets the mutable reference to the current frame's metadata.
-    pub fn current_meta(&mut self) -> Option<&mut M> {
+    /// Gets a mutable reference to the current frame's metadata.
+    ///
+    /// Returns `None` at the ghost non-element.
+    /// Only the inner metadata is exposed,
+    /// so callers cannot change the links maintained by the list.
+    ///
+    /// Address-sensitive metadata (`M: !Unpin`) requires [`Self::pin_current_meta`].
+    pub fn current_meta(&mut self) -> Option<&mut M>
+    where
+        M: Unpin,
+    {
+        self.pin_current_meta().map(Pin::get_mut)
+    }
+
+    /// Gets a pinned mutable reference to the current frame's metadata.
+    ///
+    /// Returns `None` at the ghost non-element.
+    /// Only the inner metadata is exposed,
+    /// so callers cannot change the links maintained by the list.
+    ///
+    /// Supports address-sensitive metadata (`M: !Unpin`).
+    /// For `M: Unpin`, [`Self::current_meta`] provides an unpinned reference.
+    pub fn pin_current_meta(&mut self) -> Option<Pin<&mut M>> {
         self.current.map(|current| {
-            // SAFETY: `&mut self` ensures we have exclusive access to the
-            // frame metadata.
-            let link_mut = unsafe { &mut *current.as_ptr() };
-            // We should not allow `&mut Link<M>` to modify the original links,
-            // which would break the linked list. So we just return the
-            // inner metadata `M`.
-            &mut link_mut.meta
+            // SAFETY: The list exclusively owns the frame and `&mut self` excludes
+            // other accesses. Insertion and removal only change links; metadata
+            // stays in its slot until dropped in place by the frame owner.
+            unsafe { Pin::new_unchecked(&mut *current.as_ptr()) }.project()
         })
     }
 
@@ -290,8 +309,10 @@ where
             unsafe { UniqueFrame::<Link<M>>::from_raw(paddr) }
         };
 
-        let next_ptr = frame.meta().next;
-        if let Some(prev) = &mut frame.meta_mut().prev {
+        // SAFETY: Only the unpinned links are modified; `meta` stays in its slot.
+        let link = unsafe { frame.pin_meta().get_unchecked_mut() };
+        let next_ptr = link.next;
+        if let Some(prev) = &mut link.prev {
             // SAFETY: We own the previous node by `&mut self` and the node is
             // initialized.
             let prev_mut = unsafe { prev.as_mut() };
@@ -301,8 +322,8 @@ where
         } else {
             self.list.front = next_ptr;
         }
-        let prev_ptr = frame.meta().prev;
-        if let Some(next) = &mut frame.meta_mut().next {
+        let prev_ptr = link.prev;
+        if let Some(next) = &mut link.next {
             // SAFETY: We own the next node by `&mut self` and the node is
             // initialized.
             let next_mut = unsafe { next.as_mut() };
@@ -315,8 +336,8 @@ where
             self.current = None;
         }
 
-        frame.meta_mut().next = None;
-        frame.meta_mut().prev = None;
+        link.next = None;
+        link.prev = None;
 
         frame.slot().in_list.store(0, Ordering::Relaxed);
 
@@ -332,14 +353,17 @@ where
     pub fn insert_before(&mut self, mut frame: UniqueFrame<Link<M>>) {
         // The frame can't possibly be in any linked lists since the list will
         // own the frame so there can't be any unique pointers to it.
-        debug_assert!(frame.meta_mut().next.is_none());
-        debug_assert!(frame.meta_mut().prev.is_none());
+        debug_assert!(frame.meta().next.is_none());
+        debug_assert!(frame.meta().prev.is_none());
         debug_assert_eq!(frame.slot().in_list.load(Ordering::Relaxed), 0);
 
         // SAFETY: `frame.slot()` is a valid reference to the frame's
         // `MetaSlot`, so `as_meta_ptr()` returns a non-null pointer to its
         // metadata storage.
         let frame_ptr = unsafe { NonNull::new_unchecked(frame.slot().as_meta_ptr()) };
+
+        // SAFETY: Only the unpinned links are modified; `meta` stays in its slot.
+        let link = unsafe { frame.pin_meta().get_unchecked_mut() };
 
         if let Some(current) = &mut self.current {
             // SAFETY: We own the current node by `&mut self` and the node is
@@ -354,12 +378,12 @@ where
                 debug_assert_eq!(prev_mut.next, Some(*current));
                 prev_mut.next = Some(frame_ptr);
 
-                frame.meta_mut().prev = Some(*prev);
-                frame.meta_mut().next = Some(*current);
+                link.prev = Some(*prev);
+                link.next = Some(*current);
                 *prev = frame_ptr;
             } else {
                 debug_assert_eq!(self.list.front, Some(*current));
-                frame.meta_mut().next = Some(*current);
+                link.next = Some(*current);
                 current_mut.prev = Some(frame_ptr);
                 self.list.front = Some(frame_ptr);
             }
@@ -371,7 +395,7 @@ where
                     debug_assert!(back.as_mut().next.is_none());
                     back.as_mut().next = Some(frame_ptr);
                 }
-                frame.meta_mut().prev = Some(*back);
+                link.prev = Some(*back);
                 self.list.back = Some(frame_ptr);
             } else {
                 debug_assert_eq!(self.list.front, None);
@@ -434,7 +458,7 @@ impl<M> Deref for Link<M> {
     }
 }
 
-impl<M> DerefMut for Link<M> {
+impl<M: Unpin> DerefMut for Link<M> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.meta
     }
@@ -449,19 +473,34 @@ impl<M> Link<M> {
             meta,
         }
     }
+
+    /// Gets a pinned mutable reference to the inner metadata.
+    ///
+    /// This projection guarantees that pinning a `Link<M>` also pins its inner `M`.
+    pub fn project(self: Pin<&mut Self>) -> Pin<&mut M> {
+        // SAFETY: `Link<M>` implements `Unpin` only when `M` does, and `DerefMut`
+        // exposes `&mut M` only in that case. Link updates never move `meta`,
+        // and the default destructor drops it in place. These properties keep
+        // `meta` pinned while `Link<M>` is pinned.
+        unsafe { self.map_unchecked_mut(|link| &mut link.meta) }
+    }
 }
 
 // SAFETY: If `M::on_drop` reads the page using the provided `VmReader`,
 // the safety is upheld by the one who implements `AnyFrameMeta` for `M`.
+// Structural pinning preserves the inner metadata's address dependencies.
 unsafe impl<M> AnyFrameMeta for Link<M>
 where
     M: AnyFrameMeta,
 {
-    unsafe fn on_drop(&mut self, reader: &mut crate::mm::VmReader<crate::mm::Infallible>) {
+    unsafe fn on_drop(
+        self: Pin<&mut Self>,
+        reader: &mut crate::mm::VmReader<crate::mm::Infallible>,
+    ) {
         // SAFETY: The inner metadata belongs to the same frame. The caller
         // guarantees exclusive teardown, the reader's validity, and destruction
         // in place; this is the only forwarding call for this metadata value.
-        unsafe { self.meta.on_drop(reader) };
+        unsafe { self.project().on_drop(reader) };
     }
 
     fn is_untyped(&self) -> bool {

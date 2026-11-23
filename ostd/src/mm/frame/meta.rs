@@ -44,6 +44,7 @@ use core::{
     fmt::Debug,
     mem::{ManuallyDrop, MaybeUninit},
     ops::Range,
+    pin::Pin,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -146,6 +147,22 @@ const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 ///
 /// If `on_drop` reads the page using the provided `VmReader`, the
 /// implementer must ensure that the frame is safe to read.
+///
+/// ## Address-sensitive frame metadata
+///
+/// Metadata is [address-sensitive] if moving it would invalidate assumptions
+/// about its own address or its association with a physical frame.
+/// Such types must not implement [`Unpin`] and must establish address dependencies only
+/// after installation and pinning in their final metadata slot.
+///
+/// Once pinned, the metadata and any structurally pinned fields must remain
+/// in place through `on_drop` and ordinary [`Drop`].
+///
+/// [`Pin::set`] runs ordinary `Drop` but does not invoke `on_drop`.
+/// Implementations must preserve their safety invariants under replacement
+/// or prevent safe callers from constructing replacement values.
+///
+/// [address-sensitive]: core::pin#address-sensitive-values-aka-when-we-need-pinning
 pub unsafe trait AnyFrameMeta: Any + Send + Sync {
     /// Runs frame-specific teardown before the metadata is dropped in place.
     ///
@@ -168,7 +185,7 @@ pub unsafe trait AnyFrameMeta: Any + Send + Sync {
     ///
     /// If the callback panics, the caller must not release or reuse the frame,
     /// retry the callback, or resume ordinary access to the metadata.
-    unsafe fn on_drop(&mut self, _reader: &mut VmReader<Infallible>) {}
+    unsafe fn on_drop(self: Pin<&mut Self>, _reader: &mut VmReader<Infallible>) {}
 
     /// Whether the metadata's associated frame is untyped.
     ///
@@ -353,6 +370,7 @@ impl MetaSlot {
     ///
     /// The returned pointer should not be dereferenced as mutable unless having
     /// exclusive access to the metadata slot.
+    /// Mutable access must preserve the pinning of the installed metadata.
     pub(super) unsafe fn dyn_meta_ptr(&self) -> *mut dyn AnyFrameMeta {
         // SAFETY: The page metadata is valid to be borrowed immutably, since
         // it will never be borrowed mutably after initialization.
@@ -375,7 +393,8 @@ impl MetaSlot {
     ///    valid;
     ///  - the initialized metadata is of type `M`;
     ///  - the returned pointer should not be dereferenced as mutable unless
-    ///    having exclusive access to the metadata slot.
+    ///    having exclusive access to the metadata slot;
+    ///  - mutable access must preserve the pinning of the installed metadata.
     pub(super) fn as_meta_ptr<M: AnyFrameMeta>(&self) -> *mut M {
         self.storage.get() as *mut M
     }
@@ -384,7 +403,9 @@ impl MetaSlot {
     ///
     /// # Safety
     ///
-    /// The caller should have exclusive access to the metadata slot's fields.
+    /// The caller must have exclusive access to the metadata slot's fields.
+    /// The slot must be unused, or its previous metadata must have completed
+    /// teardown and in-place destruction successfully.
     pub(super) unsafe fn write_meta<M: AnyFrameMeta>(&self, metadata: M) {
         const { assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE) };
         const { assert!(align_of::<M>() <= FRAME_METADATA_MAX_ALIGN) };
@@ -454,15 +475,19 @@ impl MetaSlot {
 
         unsafe {
             // SAFETY: `meta_ptr` points to initialized metadata with the correct
-            // vtable, and the caller guarantees exclusive access. This is the
-            // first teardown attempt. The reader covers the associated frame
-            // from its beginning, and only in-place destruction follows. Both
-            // allocations stay live; the caller abandons them if either step panics.
-            (*meta_ptr).on_drop(&mut reader);
+            // vtable, and the caller guarantees exclusive access. The metadata
+            // stays in its allocated slot until it is dropped in place.
+            let pinned_metadata = Pin::new_unchecked(&mut *meta_ptr);
 
-            // SAFETY: The metadata is still initialized and exclusively owned,
-            // and the callback's mutable borrow has ended. The same valid pointer
-            // is used for in-place destruction, which performs its final access.
+            // SAFETY: This is the first teardown attempt under exclusive ownership.
+            // The reader starts at the beginning of the associated frame and covers
+            // it entirely. Only in-place destruction follows, with both allocations
+            // kept live. The caller abandons them if either step panics.
+            pinned_metadata.on_drop(&mut reader);
+
+            // SAFETY: The metadata is still initialized and exclusively owned, and
+            // the callback's mutable borrow has ended. Dropping it through the same
+            // valid pointer preserves pinning and performs its final access.
             core::ptr::drop_in_place(meta_ptr);
         }
     }

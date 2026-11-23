@@ -60,7 +60,7 @@ macro_rules! impl_untyped_frame_meta_for {
         // SAFETY: Untyped frames can be safely read.
         unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {
             unsafe fn on_drop(
-                &mut self,
+                self: core::pin::Pin<&mut Self>,
                 _reader: &mut $crate::mm::VmReader<$crate::mm::Infallible>,
             ) {
                 // A safe associated method preserves `Self` in the supplied body

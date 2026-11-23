@@ -2,7 +2,7 @@
 
 //! The unique frame pointer that is not shared with others.
 
-use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
+use core::{marker::PhantomData, mem::ManuallyDrop, pin::Pin, sync::atomic::Ordering};
 
 use super::{
     AnyFrameMeta, Frame, MetaSlot,
@@ -13,7 +13,9 @@ use crate::mm::{HasPaddr, HasSize, PAGE_SIZE, Paddr, PagingConsts, PagingLevel, 
 /// An owning frame pointer.
 ///
 /// Unlike [`Frame`], the frame pointed to by this pointer is not shared with
-/// others. So a mutable reference to the metadata is available for the frame.
+/// others.
+/// Mutable metadata access is available through [`Self::pin_meta`],
+/// or [`Self::meta_mut`] for metadata that implements [`Unpin`].
 #[repr(transparent)]
 pub struct UniqueFrame<M: AnyFrameMeta + ?Sized> {
     ptr: *const MetaSlot,
@@ -48,10 +50,26 @@ impl<M: AnyFrameMeta> UniqueFrame<M> {
     }
 
     /// Gets the mutable metadata of this page.
-    pub fn meta_mut(&mut self) -> &mut M {
+    ///
+    /// Address-sensitive metadata requires [`Self::pin_meta`].
+    pub fn meta_mut(&mut self) -> &mut M
+    where
+        M: Unpin,
+    {
+        self.pin_meta().get_mut()
+    }
+
+    /// Gets a pinned mutable reference to this frame's metadata.
+    ///
+    /// Supports address-sensitive metadata that does not implement [`Unpin`].
+    /// Moving or converting a frame handle does not move its metadata.
+    pub fn pin_meta(&mut self) -> Pin<&mut M> {
         // SAFETY: The type is tracked by the type system.
         // And we have the exclusive access to the metadata.
-        unsafe { &mut *self.slot().as_meta_ptr::<M>() }
+        let meta = unsafe { &mut *self.slot().as_meta_ptr::<M>() };
+        // SAFETY: Metadata stays in its slot until dropped in place. All mutable
+        // access paths preserve pinning, and teardown precedes release or reuse.
+        unsafe { Pin::new_unchecked(meta) }
     }
 }
 
@@ -75,13 +93,27 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
         unsafe { &*self.slot().dyn_meta_ptr() }
     }
 
-    /// Gets the dynamically-typed metadata of this frame.
+    /// Gets the mutable dynamically-typed metadata of this frame.
     ///
-    /// If the type is known at compile time, use [`Frame::meta`] instead.
-    pub fn dyn_meta_mut(&mut self) -> &mut dyn AnyFrameMeta {
+    /// Requires proof that the metadata is [`Unpin`] before erasing its type.
+    /// An already-erased frame must use [`Self::pin_dyn_meta`] instead.
+    pub fn dyn_meta_mut(&mut self) -> &mut dyn AnyFrameMeta
+    where
+        M: Unpin,
+    {
         // SAFETY: The metadata is initialized and valid. We have the exclusive
         // access to the frame.
         unsafe { &mut *self.slot().dyn_meta_ptr() }
+    }
+
+    /// Gets the pinned dynamically-typed metadata of this frame.
+    ///
+    /// Supports address-sensitive metadata that does not implement [`Unpin`].
+    /// A pinned trait object cannot be converted to `&mut dyn Any` for downcasting.
+    pub fn pin_dyn_meta(&mut self) -> Pin<&mut dyn AnyFrameMeta> {
+        // SAFETY: We exclusively own valid metadata. It stays in its slot until
+        // dropped in place, and all mutable access paths preserve pinning.
+        unsafe { Pin::new_unchecked(&mut *self.slot().dyn_meta_ptr()) }
     }
 
     /// Repurposes the frame with a new metadata.

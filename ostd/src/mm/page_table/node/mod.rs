@@ -32,6 +32,7 @@ use core::{
     cell::SyncUnsafeCell,
     marker::PhantomData,
     ops::Deref,
+    pin::Pin,
     sync::atomic::{AtomicU8, Ordering},
 };
 
@@ -293,9 +294,11 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
 // be valid `C::Item`s. The soundness of the following `on_drop` implementation must
 // be reasoned in conjunction with the `page_table/cursor` implementation.
 unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
-    unsafe fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
-        let nr_children = self.nr_children.get_mut();
-        if *nr_children == 0 {
+    unsafe fn on_drop(self: Pin<&mut Self>, reader: &mut VmReader<Infallible>) {
+        // SAFETY: Teardown exclusively owns the frame, so there are no other
+        // accesses to the child count. Reading it does not move pinned fields.
+        let nr_children = unsafe { *self.nr_children.get() };
+        if nr_children == 0 {
             return;
         }
 
