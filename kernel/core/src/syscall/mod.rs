@@ -104,6 +104,7 @@ mod munmap;
 mod nanosleep;
 mod open;
 mod pause;
+mod perf_event_open;
 mod personality;
 mod pidfd_getfd;
 mod pidfd_open;

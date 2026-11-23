@@ -2,6 +2,8 @@
 
 #![short_vis_path::add(procfs)]
 
+use ostd::pmu;
+
 use crate::{
     fs::{
         file::{InodeType, mkmod},
@@ -11,6 +13,7 @@ use crate::{
                 cap_last_cap::CapLastCapFileOps,
                 overflow_gid::OverflowGidFileOps,
                 overflow_uid::OverflowUidFileOps,
+                perf_event_paranoid::PerfEventParanoidFileOps,
                 pid_max::PidMaxFileOps,
                 tainted::TaintedFileOps,
                 uts::{DomainnameFileOps, HostnameFileOps, OsReleaseFileOps, VersionFileOps},
@@ -30,6 +33,7 @@ use crate::{
 mod cap_last_cap;
 mod overflow_gid;
 mod overflow_uid;
+mod perf_event_paranoid;
 mod pid_max;
 mod tainted;
 mod uts;
@@ -45,6 +49,8 @@ impl KernelDirOps {
         // <https://elixir.bootlin.com/linux/v6.16.5/source/fs/proc/proc_sysctl.c#L978>
         ProcDir::new(Self, parent, mkmod!(a+rx))
     }
+
+    const PERF_EVENT_PARANOID: &str = "perf_event_paranoid";
 
     const STATIC_ENTRIES: &'static [StaticEntry] = &[
         (
@@ -83,6 +89,12 @@ impl ProcDirOps for KernelDirOps {
             return Ok(YamaDirOps::new_inode(this_dir.this_weak().clone()));
         }
 
+        if name == Self::PERF_EVENT_PARANOID && pmu::HAS_BACKEND {
+            return Ok(PerfEventParanoidFileOps::new_inode(
+                this_dir.this_weak().clone(),
+            ));
+        }
+
         Err(errno!(ENOENT, "the file does not exist"))
     }
 
@@ -90,11 +102,15 @@ impl ProcDirOps for KernelDirOps {
     where
         F: FnMut(ReaddirEntry<'a>) -> Result<()>,
     {
+        let perf_entry =
+            pmu::HAS_BACKEND.then(|| ListedEntry::new(Self::PERF_EVENT_PARANOID, InodeType::File));
         let yama_entry = is_yama_enabled().then(|| ListedEntry::new("yama", InodeType::Dir));
 
         visit_listed_entries(
             offset,
-            listed_entries_from_table(Self::STATIC_ENTRIES).chain(yama_entry),
+            listed_entries_from_table(Self::STATIC_ENTRIES)
+                .chain(perf_entry)
+                .chain(yama_entry),
             visit_fn,
         )
     }

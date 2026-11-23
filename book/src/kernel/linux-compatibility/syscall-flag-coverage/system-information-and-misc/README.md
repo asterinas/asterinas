@@ -87,6 +87,36 @@ The `totalswap` and `freeswap` fields are reported as zero because swap is not s
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/sysinfo.2.html).
 
+### `perf_event_open`
+
+Supported functionality in SCML:
+
+```c
+{{#include perf_event_open.scml}}
+```
+
+On x86-64, `perf_event_open` supports per-thread counting of CPU cycles and retired instructions
+with a supported Intel or AMD PMU.
+
+Supported counting arguments:
+* `pid = 0` or a positive thread ID
+* `cpu = -1` for an event available on every logical CPU, or an explicit logical CPU
+* `group_fd = -1`, with at most one open event of each kind per target thread
+
+Supported attributes:
+* Version 0 (`size = 0` or `PERF_ATTR_SIZE_VER0`) or a larger layout up to one page with zero extension bytes
+* `disabled`, `enable_on_exec`, `exclude_user`, and `exclude_kernel`,
+  with at least one privilege level included
+
+Silently-ignored flags:
+* `exclude_hv`, `exclude_idle`, and `exclude_guest`
+
+Unsupported functionality:
+* Sampling, inheritance, event groups, and system-wide counting
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/perf_event_open.2.html).
+
 ## POSIX clocks
 
 ### `clock_gettime`

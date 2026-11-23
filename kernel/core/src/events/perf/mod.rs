@@ -1,19 +1,35 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Per-thread hardware performance counting backed by OSTD's CPU-local PMU.
+//!
+//! The kernel translates a `perf_event_open` request into an [`EventSpec`].
+//! The resulting [`PerfEventFile`] attaches the event to the target thread's [`PerfContext`]
+//! and exposes its counts and controls through the file interface.
+//!
+//! The context carries counts across scheduling intervals
+//! and uses OSTD counters only while the target is scheduled.
+//! Schedule-out settles the current count and releases the hardware
+//! so another thread can use it.
+//! Live reads sample the counter on its owner CPU.
+//! An open event file keeps the accumulated count readable after thread exit.
 
 mod activity;
 mod context;
 mod credentials;
 mod enabled_time;
+mod file;
 mod observation;
+pub(crate) mod policy;
 mod record;
 mod remote;
 
 use ostd::pmu::{self, PmuError};
 
 use self::context::{Operation, Snapshot};
-pub(crate) use self::context::{EventSpec, PerfContext};
+pub(crate) use self::{
+    context::{EventSpec, PerfContext},
+    file::{PerfEventFile, ReadFormat},
+};
 use crate::{prelude::*, thread::Thread};
 
 /// Probes the CPU-local PMU before its timer callbacks begin running.
