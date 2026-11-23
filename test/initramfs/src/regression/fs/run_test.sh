@@ -190,4 +190,6 @@ fi
 
 ./tmpfile/tmpfile
 
+./tmpfs/mount_options
+
 ./utimensat/utimensat
