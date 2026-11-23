@@ -576,7 +576,7 @@ cpu_context_impl_getter_setter!(
     [rip, set_rip]
 );
 
-/// The FPU context of user task.
+/// The FPU context of a user task.
 ///
 /// This could be used for saving both legacy and modern state format.
 #[derive(Debug)]
