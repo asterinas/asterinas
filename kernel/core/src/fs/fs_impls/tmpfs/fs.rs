@@ -2,6 +2,7 @@
 
 use crate::{
     fs::{
+        file::{InodeMode, mkmod},
         fs_impls::ramfs::{self, RamFs},
         pseudofs::AnonDeviceId,
         vfs::{
@@ -11,6 +12,7 @@ use crate::{
         },
     },
     prelude::*,
+    process::{Gid, Uid},
 };
 
 const TMPFS_MAGIC: u64 = 0x0102_1994;
@@ -26,14 +28,23 @@ pub(crate) type TmpFs = RamFs;
 impl TmpFs {
     /// Creates a tmpfs filesystem instance.
     pub(in crate::fs) fn new_tmpfs() -> Arc<Self> {
-        Self::new_tmpfs_backing("tmpfs", RevalidationPolicy::empty())
+        Self::new_tmpfs_backing(
+            "tmpfs",
+            RevalidationPolicy::empty(),
+            mkmod!(a+rx, u+w),
+            Uid::new_root(),
+            Gid::new_root(),
+        )
     }
 
-    /// Creates a tmpfs-backed filesystem instance with a custom filesystem name
-    /// and directory-entry revalidation policy.
+    /// Creates a tmpfs-backed filesystem instance with a custom filesystem name,
+    /// directory-entry revalidation policy, and root directory mode and owner.
     pub(in crate::fs) fn new_tmpfs_backing(
         name: &'static str,
         revalidation_policy: RevalidationPolicy,
+        root_mode: InodeMode,
+        root_uid: Uid,
+        root_gid: Gid,
     ) -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for tmpfs");
         let sb = {
@@ -52,7 +63,15 @@ impl TmpFs {
             super_block.ffree = max_inodes;
             super_block
         };
-        Self::new_with_sb(name, anon_device_id, sb, revalidation_policy)
+        Self::new_with_sb(
+            name,
+            anon_device_id,
+            sb,
+            revalidation_policy,
+            root_mode,
+            root_uid,
+            root_gid,
+        )
     }
 }
 

@@ -6,6 +6,7 @@ use spin::Once;
 
 use crate::{
     fs::{
+        file::mkmod,
         tmpfs::TmpFs,
         vfs::{
             file_system::FileSystem,
@@ -14,6 +15,7 @@ use crate::{
         },
     },
     prelude::*,
+    process::{Gid, Uid},
 };
 
 pub(in crate::fs) fn singleton() -> &'static Arc<TmpFs> {
@@ -27,6 +29,9 @@ pub(in crate::fs) fn singleton() -> &'static Arc<TmpFs> {
         TmpFs::new_tmpfs_backing(
             "devtmpfs",
             RevalidationPolicy::REVALIDATE_EXISTS | RevalidationPolicy::REVALIDATE_ABSENT,
+            mkmod!(a+rx, u+w),
+            Uid::new_root(),
+            Gid::new_root(),
         )
     })
 }
