@@ -25,6 +25,12 @@ pub(super) fn sys_openat(
     mode: u16,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
+    let creation_flags = CreationFlags::from_bits_truncate(flags);
+    // Linux rejects this flag combination before it reads the pathname.
+    // O_PATH ignores O_CREAT, so it must not trigger the early rejection.
+    if !StatusFlags::from_bits_truncate(flags).contains(StatusFlags::O_PATH) {
+        creation_flags.check_create_directory()?;
+    }
     let path = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!(
         "dirfd = {}, path = {:?}, flags = {}, mode = {}",
@@ -53,12 +59,11 @@ pub(super) fn sys_openat(
 
     let fd = {
         let file_table = ctx.thread_local.borrow_file_table();
-        let fd_flags =
-            if CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC) {
-                FdFlags::CLOEXEC
-            } else {
-                FdFlags::empty()
-            };
+        let fd_flags = if creation_flags.contains(CreationFlags::O_CLOEXEC) {
+            FdFlags::CLOEXEC
+        } else {
+            FdFlags::empty()
+        };
         file_table.lock_and_insert(file_handle.clone(), fd_flags)?
     };
     fs::vfs::notify::on_open(file_handle.common());

@@ -39,13 +39,8 @@ impl OpenArgs {
                     "O_TMPFILE and O_CREAT are mutually exclusive"
                 ));
             }
-        } else if creation_flags.contains(CreationFlags::O_CREAT)
-            && creation_flags.contains(CreationFlags::O_DIRECTORY)
-        {
-            return Err(errno!(
-                EINVAL,
-                "O_CREAT and O_DIRECTORY cannot be specified together"
-            ));
+        } else {
+            creation_flags.check_create_directory()?;
         }
 
         Ok(Self {
