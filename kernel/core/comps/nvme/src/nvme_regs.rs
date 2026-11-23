@@ -68,6 +68,8 @@ pub(crate) enum NvmeRegs64 {
 pub(crate) const NVME_BAR0_FIXED_REGS_END: u64 = NvmeRegs64::Pmrmsc as u64 + 8;
 
 impl NvmeRegs64 {
+    /// CAP.MQES bit mask (maximum queue entries supported, 0-based).
+    pub(crate) const CAP_MQES_MASK: u64 = 0xffff;
     /// CAP.DSTRD bit shift.
     pub(crate) const CAP_DSTRD_SHIFT: u32 = 32;
     /// CAP.DSTRD bit mask.

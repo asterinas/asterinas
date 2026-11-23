@@ -14,7 +14,7 @@ use ostd::mm::dma::DmaCoherent;
 #[derive(Clone, Copy, Debug, Pod)]
 pub(crate) struct NvmeCommand {
     /// Opcode.
-    opcode: u8,
+    pub(crate) opcode: u8,
     /// Flags.
     flags: u8,
     /// Command ID.
