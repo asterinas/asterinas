@@ -237,6 +237,10 @@ fn do_execve_no_return(
     // Restore the process exit signal to SIGCHLD.
     process.set_exit_signal(SIGCHLD);
 
+    if let Some(perf) = ctx.thread.perf() {
+        perf.on_exec();
+    }
+
     Ok(())
 }
 
