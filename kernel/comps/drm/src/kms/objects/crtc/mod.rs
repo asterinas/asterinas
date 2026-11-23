@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
+use alloc::sync::{Arc, Weak};
 
 use crate::kms::objects::{
-    KmsObjectId, KmsObjectIndex, OwnedKmsObjectId, plane::DrmPlane,
+    KmsObjectId, KmsObjectIndex, OwnedKmsObjectId, crtc::vblank::DrmVblank, plane::DrmPlane,
     property::DrmPropertyAttachments,
 };
 
@@ -16,6 +16,7 @@ pub(crate) struct DrmCrtc {
     index: KmsObjectIndex,
     config: DrmCrtcConfig,
     properties: DrmPropertyAttachments,
+    vblank: Arc<DrmVblank>,
 }
 
 impl DrmCrtc {
@@ -30,6 +31,7 @@ impl DrmCrtc {
             index,
             config,
             properties,
+            vblank: Arc::default(),
         }
     }
 
@@ -51,6 +53,10 @@ impl DrmCrtc {
 
     pub(crate) fn properties(&self) -> &DrmPropertyAttachments {
         &self.properties
+    }
+
+    pub(crate) fn vblank(&self) -> &Arc<DrmVblank> {
+        &self.vblank
     }
 }
 
