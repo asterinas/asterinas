@@ -989,6 +989,9 @@ impl RamInode {
         if self.typ != InodeType::File {
             return Err(errno!(EINVAL, "the inode is not a regular file"));
         }
+        if new_size > MAX_FILE_SIZE {
+            return Err(errno!(EFBIG, "the file size exceeds the maximum"));
+        }
 
         let mut page_cache = self.inner.as_file().unwrap().lock();
         let mut inode_meta = self.metadata.lock();
@@ -1063,6 +1066,10 @@ impl FileOps for RamInode {
 
                 let mut inode_meta = self.metadata.lock();
                 let file_size = inode_meta.size;
+                if offset >= MAX_FILE_SIZE {
+                    return Err(errno!(EFBIG, "the file size exceeds the maximum"));
+                }
+                let write_len = write_len.min(MAX_FILE_SIZE - offset);
                 let new_size = offset + write_len;
                 let should_expand_size = new_size > file_size;
                 let new_size_aligned = new_size.align_up(BLOCK_SIZE);
@@ -1077,7 +1084,10 @@ impl FileOps for RamInode {
                 if should_expand_size {
                     page_cache.resize(new_size_aligned, file_size)?;
                 }
-                page_cache.write(offset, reader)?;
+                let mut limited_reader = reader.clone();
+                let result = page_cache.write(offset, limited_reader.limit(write_len));
+                reader.skip(write_len - limited_reader.remain());
+                result?;
 
                 write_len
             }

@@ -326,15 +326,28 @@ impl FileLike for InodeHandle {
 
         let mut offset = self.offset.lock();
 
+        if offset
+            .checked_add(reader.remain())
+            .is_none_or(|end| end > isize::MAX as usize)
+        {
+            return Err(errno!(
+                EINVAL,
+                "the write range exceeds the signed file offset limit"
+            ));
+        }
+
+        let mut write_offset = *offset;
         // FIXME: How can we deal with the `O_APPEND` flag if `open_file` is set?
         if status_flags.contains(StatusFlags::O_APPEND) && self.open_file.is_none() {
             // FIXME: `O_APPEND` should ensure that new content is appended even if another process
             // is writing to the file concurrently.
-            *offset = self.path().size();
+            write_offset = self.path().size();
         }
 
-        let len = file_ops.write_at(*offset, reader, status_flags)?;
-        *offset += len;
+        let len = file_ops.write_at(write_offset, reader, status_flags)?;
+        if len > 0 {
+            *offset = write_offset + len;
+        }
 
         Ok(len)
     }
