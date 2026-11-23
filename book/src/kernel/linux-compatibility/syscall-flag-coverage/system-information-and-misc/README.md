@@ -87,6 +87,64 @@ The `totalswap` and `freeswap` fields are reported as zero because swap is not s
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/sysinfo.2.html).
 
+### `perf_event_open`
+
+On x86-64, `perf_event_open` (syscall 298) supports per-thread hardware counting
+of CPU cycles and retired instructions with a supported Intel or AMD PMU.
+
+Pass `pid = 0` for the caller or a positive thread ID for another thread.
+Pass `cpu = -1` to count on whichever CPU runs the thread.
+In this mode, the requested event must be supported on every logical CPU.
+An explicit CPU number restricts counting to execution on that CPU.
+Use `group_fd = -1` for a standalone event.
+Each target thread supports one open event of each kind.
+Opening a second event of the same kind returns `EBUSY`, even with a different privilege filter.
+`/proc/sys/kernel/perf_event_paranoid` controls access to new events.
+Writing the setting requires `CAP_SYS_ADMIN` in the initial user namespace.
+The default is `3`, which requires `CAP_PERFMON` or `CAP_SYS_ADMIN` for any event.
+At level `2`, callers without those capabilities can count user-mode execution.
+Levels `1` and below also allow them to count kernel-mode execution.
+Cross-process attachment always checks access to the target.
+Changes apply to subsequent event opens.
+
+```c
+{{#include perf_event_open.scml}}
+```
+
+The version 0 attribute layout is supported.
+A zero size selects that layout.
+Larger layouts up to a page are accepted if their extension bytes are zero.
+An unsupported size or nonzero extension returns `E2BIG` and writes the supported size back.
+The `disabled` flag leaves the event disabled at creation.
+The `enable_on_exec` flag enables the event after the target next successfully executes a program.
+The `exclude_user` and `exclude_kernel` flags select which privilege levels to count.
+At least one of user and kernel mode must be included.
+The `exclude_hv`, `exclude_idle`, and `exclude_guest` flags are accepted for compatibility.
+The sample period must be zero.
+`PERF_SAMPLE_IDENTIFIER` is accepted as counting metadata.
+
+`read` returns a 64-bit count.
+The `read_format` flags append optional fields in the order below.
+
+1. `PERF_FORMAT_TOTAL_TIME_ENABLED` returns the time, in nanoseconds,
+   when the event was enabled and the target was scheduled.
+2. `PERF_FORMAT_TOTAL_TIME_RUNNING` returns the time, in nanoseconds,
+   when the event occupied a running hardware counter.
+3. `PERF_FORMAT_ID` returns the event ID.
+
+The event descriptor supports `PERF_EVENT_IOC_ENABLE`, `PERF_EVENT_IOC_DISABLE`,
+`PERF_EVENT_IOC_RESET`, and `PERF_EVENT_IOC_ID`.
+The first three commands take an argument of zero.
+
+The counting subset supports this invocation of the Linux perf tool.
+
+```sh
+perf stat --no-inherit -e cycles:u,instructions:u -- command
+```
+
+Sampling, inheritance, event groups, and system-wide counting are currently
+unsupported. See [the Linux manual](https://man7.org/linux/man-pages/man2/perf_event_open.2.html).
+
 ## POSIX clocks
 
 ### `clock_gettime`

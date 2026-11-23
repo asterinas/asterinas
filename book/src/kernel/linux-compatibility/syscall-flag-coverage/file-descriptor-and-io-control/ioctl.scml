@@ -53,3 +53,7 @@ ioctl(fd, op = TDX_CMD_GET_REPORT0, ..);
 
 // Control socket and network interface settings
 ioctl(fd, op = <socket_ops>, ..);
+
+// Control standalone hardware counting events on x86-64.
+ioctl(fd, op = PERF_EVENT_IOC_ENABLE | PERF_EVENT_IOC_DISABLE | PERF_EVENT_IOC_RESET, ..);
+ioctl(fd, op = PERF_EVENT_IOC_ID, ..);

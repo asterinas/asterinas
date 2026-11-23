@@ -86,6 +86,7 @@ use super::{
     nanosleep::{sys_clock_nanosleep, sys_nanosleep},
     open::{sys_creat, sys_open, sys_openat},
     pause::sys_pause,
+    perf_event_open::sys_perf_event_open,
     personality::sys_personality,
     pidfd_getfd::sys_pidfd_getfd,
     pidfd_open::sys_pidfd_open,
@@ -404,6 +405,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_INOTIFY_INIT1 = 294     => sys_inotify_init1(args[..1]);
     SYS_PREADV = 295           => sys_preadv(args[..5]);
     SYS_PWRITEV = 296          => sys_pwritev(args[..5]);
+    SYS_PERF_EVENT_OPEN = 298   => sys_perf_event_open(args[..5]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
     SYS_SYNCFS = 306           => sys_syncfs(args[..1]);
     SYS_SENDMMSG = 307         => sys_sendmmsg(args[..4]);
