@@ -14,7 +14,7 @@
 use core::marker::PhantomData;
 
 use super::{__cpu_local_end, __cpu_local_start, AnyStorage, CpuLocal};
-use crate::{arch, cpu::CpuId, irq::DisabledLocalIrqGuard, util::id_set::Id};
+use crate::{arch, cpu::CpuId, irq::DisabledLocalIrqGuard, mm::PAGE_SIZE, util::id_set::Id};
 
 /// Defines a statically-allocated CPU-local variable.
 ///
@@ -24,6 +24,10 @@ use crate::{arch, cpu::CpuId, irq::DisabledLocalIrqGuard, util::id_set::Id};
 /// [`CpuLocal::get_on_cpu`]. Also if you intend to access the inner object
 /// on the current CPU, you can use [`CpuLocal::get_with`]. The latter
 /// accessors can be used even if the inner object is not `Sync`.
+///
+/// The alignment of the type of each variable must not exceed
+/// [`PAGE_SIZE`](crate::mm::PAGE_SIZE). Otherwise, the definition does not
+/// compile.
 ///
 /// # Example
 ///
@@ -146,6 +150,10 @@ impl<T: 'static> CpuLocal<T, StaticStorage<T>> {
     /// behavior is undefined.
     #[doc(hidden)]
     pub const unsafe fn __new_static(val: T) -> Self {
+        // The copies of the `.cpu_local` section for the APs are only
+        // page-aligned (see `copy_bsp_for_ap`), so an object keeps its
+        // alignment on the APs only if the alignment is at most `PAGE_SIZE`.
+        const { assert!(align_of::<T>() <= PAGE_SIZE) };
         Self {
             storage: StaticStorage(val),
             phantom: PhantomData,

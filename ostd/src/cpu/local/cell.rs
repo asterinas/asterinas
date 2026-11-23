@@ -5,7 +5,7 @@
 use core::cell::UnsafeCell;
 
 use super::{__cpu_local_end, __cpu_local_start, single_instr::*};
-use crate::arch;
+use crate::{arch, mm::PAGE_SIZE};
 
 /// Defines an inner-mutable CPU-local variable.
 ///
@@ -14,6 +14,10 @@ use crate::arch;
 /// It should be noted that if the interrupts or preemption is enabled, two
 /// operations on the same CPU-local cell variable may access different objects
 /// since the task may live on different CPUs.
+///
+/// The alignment of the type of each variable must not exceed
+/// [`PAGE_SIZE`](crate::mm::PAGE_SIZE). Otherwise, the definition does not
+/// compile.
 ///
 /// # Example
 ///
@@ -92,6 +96,10 @@ impl<T: 'static> CpuLocalCell<T> {
     /// behavior is undefined.
     #[doc(hidden)]
     pub const unsafe fn __new(val: T) -> Self {
+        // The copies of the `.cpu_local` section for the APs are only
+        // page-aligned (see `copy_bsp_for_ap`), so an object keeps its
+        // alignment on the APs only if the alignment is at most `PAGE_SIZE`.
+        const { assert!(align_of::<T>() <= PAGE_SIZE) };
         Self(UnsafeCell::new(val))
     }
 
