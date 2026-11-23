@@ -10,6 +10,7 @@ pub(crate) mod iommu;
 pub mod irq;
 pub mod kernel;
 pub(crate) mod mm;
+pub(crate) mod pmu;
 pub mod power;
 pub mod serial;
 pub(crate) mod task;
