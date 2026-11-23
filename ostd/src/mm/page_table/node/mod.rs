@@ -293,7 +293,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
 // be valid `C::Item`s. The soundness of the following `on_drop` implementation must
 // be reasoned in conjunction with the `page_table/cursor` implementation.
 unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
-    fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
+    unsafe fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
         let nr_children = self.nr_children.get_mut();
         if *nr_children == 0 {
             return;

@@ -38,6 +38,9 @@ pub type UFrame = Frame<dyn AnyUFrameMeta>;
 /// Makes a structure usable as untyped frame metadata.
 ///
 /// If this macro is used for built-in typed frame metadata, it won't compile.
+///
+/// A custom teardown body still requires explicit `unsafe` blocks for unsafe
+/// operations, even though the generated callback is unsafe to call.
 #[macro_export]
 macro_rules! impl_untyped_frame_meta_for {
     // Implement without specifying the drop behavior.
@@ -56,8 +59,23 @@ macro_rules! impl_untyped_frame_meta_for {
     ($t:ty, $body:expr) => {
         // SAFETY: Untyped frames can be safely read.
         unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {
-            fn on_drop(&mut self, reader: &mut $crate::mm::VmReader<$crate::mm::Infallible>) {
-                $body
+            unsafe fn on_drop(
+                &mut self,
+                _reader: &mut $crate::mm::VmReader<$crate::mm::Infallible>,
+            ) {
+                // A safe associated method preserves `Self` in the supplied body
+                // without granting unsafe privileges or shadowing free functions.
+                // Item names in declarative macros are not hygienic, so reserve
+                // distinctive internal names instead of capturing caller traits.
+                trait __OstdFrameMetaDropBody {
+                    fn __ostd_frame_meta_drop_body();
+                }
+                impl __OstdFrameMetaDropBody for $t {
+                    fn __ostd_frame_meta_drop_body() {
+                        $body
+                    }
+                }
+                <Self as __OstdFrameMetaDropBody>::__ostd_frame_meta_drop_body();
             }
 
             fn is_untyped(&self) -> bool {

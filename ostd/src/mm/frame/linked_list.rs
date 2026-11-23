@@ -457,8 +457,11 @@ unsafe impl<M> AnyFrameMeta for Link<M>
 where
     M: AnyFrameMeta,
 {
-    fn on_drop(&mut self, reader: &mut crate::mm::VmReader<crate::mm::Infallible>) {
-        self.meta.on_drop(reader);
+    unsafe fn on_drop(&mut self, reader: &mut crate::mm::VmReader<crate::mm::Infallible>) {
+        // SAFETY: The inner metadata belongs to the same frame. The caller
+        // guarantees exclusive teardown, the reader's validity, and destruction
+        // in place; this is the only forwarding call for this metadata value.
+        unsafe { self.meta.on_drop(reader) };
     }
 
     fn is_untyped(&self) -> bool {

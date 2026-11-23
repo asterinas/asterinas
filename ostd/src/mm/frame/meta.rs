@@ -132,10 +132,10 @@ const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 
 /// All frame metadata types must implement this trait.
 ///
-/// If a frame type needs specific drop behavior, it should specify
-/// when implementing this trait. When we drop the last handle to
-/// this frame, the `on_drop` method will be called. The `on_drop`
-/// method is called with the physical address of the frame.
+/// Implement [`Self::on_drop`] for cleanup that needs access to the associated
+/// frame.
+/// The frame owner calls it with a reader for that frame before dropping
+/// the metadata in place, including when repurposing or resetting the frame.
 ///
 /// The implemented structure should have a size less than or equal to
 /// [`FRAME_METADATA_MAX_SIZE`] and an alignment less than or equal to
@@ -147,8 +147,28 @@ const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 /// If `on_drop` reads the page using the provided `VmReader`, the
 /// implementer must ensure that the frame is safe to read.
 pub unsafe trait AnyFrameMeta: Any + Send + Sync {
-    /// Called when the last handle to the frame is dropped.
-    fn on_drop(&mut self, _reader: &mut VmReader<Infallible>) {}
+    /// Runs frame-specific teardown before the metadata is dropped in place.
+    ///
+    /// The frame owner invokes this when releasing, repurposing, or resetting
+    /// the frame.
+    ///
+    /// # Safety
+    ///
+    /// The caller must exclusively own the frame associated with `self` and
+    /// be tearing down its installed metadata.
+    /// This callback must not have been invoked for this metadata value before.
+    ///
+    /// `reader` must cover the entire associated frame, positioned at its beginning.
+    /// The frame and metadata slot must remain allocated throughout the callback
+    /// and the subsequent in-place destruction of the metadata.
+    ///
+    /// After the callback returns, the metadata may only be dropped in place;
+    /// it must not be accessed again except by its destructor.
+    /// The frame may be released or reused only after that destructor returns successfully.
+    ///
+    /// If the callback panics, the caller must not release or reuse the frame,
+    /// retry the callback, or resume ordinary access to the metadata.
+    unsafe fn on_drop(&mut self, _reader: &mut VmReader<Infallible>) {}
 
     /// Whether the metadata's associated frame is untyped.
     ///
@@ -389,6 +409,7 @@ impl MetaSlot {
     /// The caller should ensure that:
     ///  - the reference count is `0` (so we are the sole owner of the frame);
     ///  - the metadata is initialized;
+    ///  - teardown has not previously been attempted for this metadata.
     pub(super) unsafe fn drop_last_in_place(&self) {
         // This should be guaranteed as a safety requirement.
         debug_assert_eq!(self.ref_count.load(Ordering::Relaxed), 0);
@@ -411,6 +432,10 @@ impl MetaSlot {
     /// The caller should ensure that:
     ///  - the reference count is `0` or [`REF_COUNT_UNIQUE`] (so we are the sole owner of the frame);
     ///  - the metadata is initialized;
+    ///  - teardown has not previously been attempted for this metadata.
+    ///
+    /// If teardown panics, the caller must abandon the frame and its metadata
+    /// without releasing, reusing, or accessing them again.
     pub(super) unsafe fn drop_meta_in_place(&self) {
         let paddr = self.frame_paddr();
 
@@ -427,13 +452,17 @@ impl MetaSlot {
         let mut reader =
             unsafe { VmReader::from_kernel_space(paddr_to_vaddr(paddr) as *const u8, PAGE_SIZE) };
 
-        // SAFETY: `ptr` points to the metadata storage which is valid to be mutably borrowed under
-        // `vtable_ptr` because the metadata is valid, the vtable is correct, and we have the exclusive
-        // access to the frame metadata.
         unsafe {
-            // Invoke the custom `on_drop` handler.
+            // SAFETY: `meta_ptr` points to initialized metadata with the correct
+            // vtable, and the caller guarantees exclusive access. This is the
+            // first teardown attempt. The reader covers the associated frame
+            // from its beginning, and only in-place destruction follows. Both
+            // allocations stay live; the caller abandons them if either step panics.
             (*meta_ptr).on_drop(&mut reader);
-            // Drop the frame metadata.
+
+            // SAFETY: The metadata is still initialized and exclusively owned,
+            // and the callback's mutable borrow has ended. The same valid pointer
+            // is used for in-place destruction, which performs its final access.
             core::ptr::drop_in_place(meta_ptr);
         }
     }
