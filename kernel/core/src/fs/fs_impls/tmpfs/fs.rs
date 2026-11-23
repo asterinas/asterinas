@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use super::options::{DEFAULT_ROOT_MODE, MountOptions};
 use crate::{
     fs::{
-        file::{InodeMode, mkmod},
+        file::InodeMode,
         fs_impls::ramfs::{self, RamFs},
         pseudofs::AnonDeviceId,
         vfs::{
@@ -19,21 +20,26 @@ const TMPFS_MAGIC: u64 = 0x0102_1994;
 
 /// The temporary file system (tmpfs) structure.
 //
-// TODO: `TmpFs` currently aliases `RamFs` and relies on `RamFs::new_tmpfs()`
+// TODO: `TmpFs` currently aliases `RamFs` and relies on `RamFs::new_tmpfs_backing()`
 // to create tmpfs-flavored ramfs instances. In the future we need to
 // implement a dedicated tmpfs with tmpfs-specific features such as memory
 // limits and swap support.
 pub(crate) type TmpFs = RamFs;
 
 impl TmpFs {
-    /// Creates a tmpfs filesystem instance.
+    /// Creates a tmpfs filesystem instance whose root directory is owned by root.
     pub(in crate::fs) fn new_tmpfs() -> Arc<Self> {
+        Self::new_tmpfs_with_root(DEFAULT_ROOT_MODE, Uid::new_root(), Gid::new_root())
+    }
+
+    /// Creates a tmpfs filesystem instance whose root directory has the given mode and owner.
+    fn new_tmpfs_with_root(root_mode: InodeMode, root_uid: Uid, root_gid: Gid) -> Arc<Self> {
         Self::new_tmpfs_backing(
             "tmpfs",
             RevalidationPolicy::empty(),
-            mkmod!(a+rx, u+w),
-            Uid::new_root(),
-            Gid::new_root(),
+            root_mode,
+            root_uid,
+            root_gid,
         )
     }
 
@@ -98,8 +104,13 @@ impl FsType for TmpFsType {
         FsProperties::empty()
     }
 
-    fn create(&self, _fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
-        Ok(TmpFs::new_tmpfs())
+    fn create(&self, fs_creation_ctx: &mut FsCreationCtx) -> Result<Arc<dyn FileSystem>> {
+        let options = MountOptions::parse(fs_creation_ctx.args())?;
+        Ok(TmpFs::new_tmpfs_with_root(
+            options.root_mode,
+            options.root_uid,
+            options.root_gid,
+        ))
     }
 
     fn sysnode(&self) -> Option<Arc<dyn aster_systree::SysNode>> {
