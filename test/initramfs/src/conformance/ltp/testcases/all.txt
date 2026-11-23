@@ -1857,7 +1857,7 @@ writev05
 writev06
 # writev07
 
-# perf_event_open01
+perf_event_open01
 # perf_event_open02
 
 # futex_cmp_requeue01
