@@ -48,7 +48,7 @@ impl ExfatBitmap {
         )?;
         let mut buf = vec![0; dentry.size as usize];
 
-        fs.read_meta_at(chain.physical_cluster_start_offset(), &mut buf)?;
+        fs.read_meta_at(chain.physical_cluster_start_offset()?, &mut buf)?;
         let mut free_cluster_num = 0;
         for idx in 0..fs.super_block().num_clusters - EXFAT_RESERVED_CLUSTERS {
             if (buf[idx as usize / BITS_PER_BYTE] & (1 << (idx % BITS_PER_BYTE as u32))) == 0 {
@@ -344,7 +344,7 @@ impl ExfatBitmap {
 
         let pos = self.chain.walk_to_cluster_at_offset(start_byte_off)?;
 
-        let phys_offset = pos.0.physical_cluster_start_offset() + pos.1;
+        let phys_offset = pos.0.physical_cluster_start_offset()? + pos.1;
         self.fs().write_meta_at(phys_offset, byte_chunk)?;
 
         let byte_range = phys_offset..phys_offset + byte_chunk.len();
