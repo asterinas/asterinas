@@ -49,3 +49,10 @@ distro/etc_nixos/_config_for_test.nix
 
 # RustRover
 .idea
+
+# Python bytecode cache from the GDB helper scripts
+__pycache__/
+*.py[cod]
+
+# Local GDB configuration
+.gdbinit
