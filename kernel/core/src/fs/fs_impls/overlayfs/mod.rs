@@ -7,7 +7,7 @@
 //!
 //! | Submodule | Responsibility |
 //! |---|---|
-//! | [`fs`] | [`OverlayFs`](fs::OverlayFs), the per-mount filesystem object, its VFS-facing superblock surface, and the `overlay` registration |
+//! | [`fs`] | [`OverlayFs`](fs::OverlayFs), the filesystem object, its VFS-facing superblock surface, and the `overlay` registration |
 //! | [`inode`] | [`OverlayInode`](inode::OverlayInode), the logical object the VFS sees, with the dev/ino identity system and the namespace mutations |
 //! | [`layer`] | [`Layer`](layer::Layer) and [`LayerStack`](layer::LayerStack), the layer-model types |
 //! | [`real`] | [`RealObject`](real::RealObject) and [`RealObjectStack`](real::RealObjectStack), the references to the underlying objects |

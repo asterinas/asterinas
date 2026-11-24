@@ -4,7 +4,7 @@
 //!
 //! The upper-filesystem capabilities are measured during mount construction
 //! and published here as fixed state; the policy performs no probing itself.
-//! The per-mount filesystem options are settled with the policy and rendered
+//! The filesystem options are settled with the policy and rendered
 //! from it on demand.
 
 #![short_vis_path::add(overlayfs)]
@@ -19,7 +19,7 @@ use crate::{
     prelude::*,
 };
 
-/// The per-mount state a mount settles once during construction, including its filesystem options.
+/// The per-filesystem state settled once during construction, including its filesystem options.
 pub(in overlayfs) struct MountPolicy {
     /// Mutating permission checks fail with `EROFS` while set; covers read-only mounts and uppers.
     is_effective_read_only: bool,
@@ -29,11 +29,11 @@ pub(in overlayfs) struct MountPolicy {
     upper_capabilities: Option<UpperFilesystemCapabilities>,
     /// The xattr namespace for the overlay's own records; kept even for read-only mounts.
     xattr_namespace: XattrNamespace,
-    /// The per-mount filesystem options this mount records and reports for `/proc`.
+    /// The filesystem options this filesystem records and reports for `/proc`.
     fs_options: FsOptionsRecorder,
 }
 
-/// The per-mount filesystem options recorded at construction and rendered for `/proc` on demand.
+/// The filesystem options recorded at construction and rendered for `/proc` on demand.
 struct FsOptionsRecorder {
     /// The `lowerdir`/`lowerdir+` layer paths in merge order, topmost first.
     lower_dirs: Vec<String>,
