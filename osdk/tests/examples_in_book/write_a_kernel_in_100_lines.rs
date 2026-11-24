@@ -54,6 +54,11 @@ fn write_a_kernel_in_100_lines() {
     let new_file_content = manifest.to_string();
     fs::write(os_dir.join("Cargo.toml"), new_file_content).unwrap();
 
+    cargo_osdk(["clippy", "--lib", "--", "-D", "warnings"])
+        .current_dir(&os_dir)
+        .ok()
+        .unwrap();
+
     // Runs the kernel
     let output = cargo_osdk(["run"]).current_dir(&os_dir).ok().unwrap();
     let stdout = std::str::from_utf8(&output.stdout).unwrap();
