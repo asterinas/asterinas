@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! AppArmor policy management.
+//! AppArmor policy management and task labels.
 //!
-//! The LSM exposes policy loading, removal, and queries through securityfs.
-//! It accepts a subset of ABI v5 but does not yet attach profiles to tasks
-//! or enforce access rules.
+//! This component decodes, validates, and stores AppArmor ABI v5 profiles.
+//! Exec attachment supplies immutable task labels, queried through procfs.
+//! Access-rule enforcement is not implemented yet.
 
 #![no_std]
 #![deny(unsafe_code)]
@@ -15,7 +15,7 @@ extern crate alloc;
 use aster_core::{
     prelude::*,
     security::lsm::{
-        LsmFlags, LsmModule,
+        CurrentAttrReader, ExecStatePreparer, LsmFlags, LsmModule,
         hooks::{LsmAlienAccessHook, LsmCapabilityHook},
     },
 };
@@ -28,6 +28,7 @@ macro_rules! __log_prefix {
     };
 }
 
+mod label;
 mod policy;
 mod securityfs;
 
@@ -42,6 +43,14 @@ impl LsmModule for AppArmorLsm {
 
     fn flags(&self) -> LsmFlags {
         LsmFlags::LEGACY_MAJOR | LsmFlags::EXCLUSIVE
+    }
+
+    fn current_attr_reader(&self) -> Option<CurrentAttrReader> {
+        Some(label::read_current)
+    }
+
+    fn exec_state_preparer(&self) -> Option<ExecStatePreparer> {
+        Some(label::prepare_exec)
     }
 
     fn init(&self) -> Result<()> {

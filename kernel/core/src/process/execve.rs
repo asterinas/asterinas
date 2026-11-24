@@ -12,7 +12,7 @@ use ostd::{
 
 use super::process_vm::activate_vmar;
 use crate::{
-    fs::vfs::path::{Path, PerMountFlags},
+    fs::vfs::path::{AbsPathResult, Path, PerMountFlags},
     prelude::*,
     process::{
         ContextUnshareAdminApi, Credentials, Process,
@@ -30,8 +30,14 @@ use crate::{
             signals::kernel::KernelSignal,
         },
     },
+    security::lsm::{LsmTaskState, task_state},
     vm::vmar::VmarHandle,
 };
+
+struct PreparedExec {
+    credentials: ExecCred,
+    lsm_state: Option<Arc<dyn LsmTaskState>>,
+}
 
 pub(crate) fn do_execve(
     executable: UndetectedExecutable,
@@ -49,6 +55,19 @@ pub(crate) fn do_execve(
     let argv = read_cstring_vec(argv_ptr_ptr, MAX_NR_STRING_ARGS, MAX_LEN_STRING_ARG, ctx)?;
     let envp = read_cstring_vec(envp_ptr_ptr, MAX_NR_STRING_ARGS, MAX_LEN_STRING_ARG, ctx)?;
 
+    let prepare_lsm_fn = task_state::exec_state_preparer();
+    let security_resolver = prepare_lsm_fn.map(|_| {
+        let mount_ns = ctx
+            .posix_thread
+            .ns_proxy()
+            .lock()
+            .as_ref()
+            .unwrap()
+            .mnt_ns()
+            .clone();
+        mount_ns.new_path_resolver()
+    });
+
     let fs_ref = ctx.thread_local.borrow_fs();
     let path_resolver = fs_ref.resolver().read();
 
@@ -61,7 +80,22 @@ pub(crate) fn do_execve(
 
     let executable_path = executable.path().clone();
     let program_to_load = ProgramToLoad::from_executable(executable, &path_resolver, argv, envp)?;
-    let exec_cred = prepare_exec_cred(program_to_load.elf_path(), ctx)?;
+    let credentials = prepare_exec_cred(program_to_load.elf_path(), ctx)?;
+    let lsm_state = if let (Some(prepare_fn), Some(resolver)) = (prepare_lsm_fn, security_resolver)
+    {
+        let path = resolver.make_abs_path(&executable_path);
+        let path = match &path {
+            AbsPathResult::Reachable(path) => Some(path.as_str()),
+            AbsPathResult::Unreachable(_) => None,
+        };
+        prepare_fn(ctx.posix_thread, path)?
+    } else {
+        None
+    };
+    let prepared_exec = PreparedExec {
+        credentials,
+        lsm_state,
+    };
 
     let new_vmar = VmarHandle::new(ProcessVm::new(executable_path.clone()));
     let elf_load_info = program_to_load.load_to_vmar(&new_vmar, &path_resolver)?;
@@ -92,7 +126,7 @@ pub(crate) fn do_execve(
         thread_name,
         new_vmar,
         &elf_load_info,
-        exec_cred,
+        prepared_exec,
     );
 
     if res.is_ok() {
@@ -190,7 +224,7 @@ fn do_execve_no_return(
     thread_name: ThreadName,
     new_vmar: VmarHandle,
     elf_load_info: &ElfLoadInfo,
-    exec_cred: ExecCred,
+    prepared_exec: PreparedExec,
 ) -> Result<()> {
     let Context {
         process,
@@ -209,7 +243,8 @@ fn do_execve_no_return(
     // This prevents race conditions when checking access permissions while opening
     // `/proc/[pid]/mem` or `/proc/[pid]/maps`.
     let (vmar_guard, old_vmar) = activate_vmar(ctx, new_vmar);
-    apply_exec_cred(process, &ctx.credentials_mut(), exec_cred)?;
+    apply_exec_cred(process, &ctx.credentials_mut(), prepared_exec.credentials)?;
+    posix_thread.set_lsm_state(prepared_exec.lsm_state);
     drop(vmar_guard);
     drop(old_vmar);
 

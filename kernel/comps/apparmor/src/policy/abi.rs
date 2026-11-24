@@ -2,20 +2,20 @@
 
 //! Decoding of AppArmor ABI v5 policy data.
 //!
-//! Only a single profile with a name, supported mode, and zero capability words
-//! is accepted. Other policy fields are rejected, even if valid in the full ABI.
-//! The format follows the [AppArmor 5.0.2 serializer][parser] and
-//! the [Linux policy decoder][linux].
+//! Type tags and profile field order follow AppArmor 5.0.2's [`sd_code` and
+//! `sd_serialize_profile`][parser] and Linux's [`unpack_profile`][linux].
+//! This subset accepts a profile name, flags, zero capability words, and ordinary
+//! attachment DFAs. File-rule DFAs and other unsupported fields are rejected.
 //!
 //! [parser]: https://gitlab.com/apparmor/apparmor/-/blob/v5.0.2/parser/parser_interface.c
 //! [linux]: https://github.com/torvalds/linux/blob/db2ddb87143519e20a95aa36c60b36107b736a58/security/apparmor/policy_unpack.c
 
 use alloc::{string::String, vec::Vec};
-use core::str;
+use core::{ops::Range, str};
 
 use aster_core::prelude::*;
 
-use super::{Profile, ProfileMode};
+use super::{Attachment, Profile, ProfileMode, dfa};
 
 const SUPPORTED_ABI_VERSION: u32 = 5;
 
@@ -26,7 +26,7 @@ pub(super) fn decode(blob: Vec<u8>) -> Result<Profile> {
 
     let mut cursor = Cursor::new(&blob);
     decode_header(&mut cursor)?;
-    let (name, mode) = decode_profile(&mut cursor)?;
+    let (name, mode, attachment) = decode_profile(&mut cursor)?;
     if !cursor.is_eof() {
         return if cursor.peek_name()? == Some(b"version") {
             Err(unsupported_error())
@@ -34,7 +34,7 @@ pub(super) fn decode(blob: Vec<u8>) -> Result<Profile> {
             Err(protocol_error())
         };
     }
-    Profile::new(name, mode, blob)
+    Profile::new(name, mode, blob, attachment)
 }
 
 fn decode_header(cursor: &mut Cursor<'_>) -> Result<()> {
@@ -47,21 +47,35 @@ fn decode_header(cursor: &mut Cursor<'_>) -> Result<()> {
     Ok(())
 }
 
-fn decode_profile(cursor: &mut Cursor<'_>) -> Result<(String, ProfileMode)> {
+fn decode_profile(cursor: &mut Cursor<'_>) -> Result<(String, ProfileMode, Option<Attachment>)> {
     cursor.named_struct(b"profile")?;
     let name = validate_profile_name(cursor.string()?)?;
+    let attachment = if cursor.peek_name()? == Some(b"aadfa") {
+        let range = cursor.dfa_blob()?;
+        dfa::validate_attachment(&cursor.bytes[range.clone()])?;
+        let minimum_len = cursor.u32()? as usize;
+        if minimum_len > range.len() {
+            return Err(protocol_error());
+        }
+        Some(Attachment { range, minimum_len })
+    } else {
+        None
+    };
     let mode = decode_flags(cursor)?;
     if cursor.peek_name()? == Some(b"path_flags") {
         return Err(unsupported_error());
     }
     decode_zero_capabilities(cursor)?;
     decode_zero_caps64(cursor)?;
+    if cursor.peek_name()? == Some(b"aadfa") {
+        return Err(unsupported_error());
+    }
     if cursor.peek_name()?.is_some() {
         return Err(unsupported_error());
     }
     cursor.expect_code(Code::StructEnd)?;
 
-    Ok((name, mode))
+    Ok((name, mode, attachment))
 }
 
 pub(super) fn validate_profile_name(raw: &[u8]) -> Result<String> {
@@ -245,6 +259,17 @@ impl<'a> Cursor<'a> {
     fn named_struct(&mut self, name: &[u8]) -> Result<()> {
         self.expect_name(name)?;
         self.expect_code(Code::Struct)
+    }
+
+    fn dfa_blob(&mut self) -> Result<Range<usize>> {
+        self.expect_name(b"aadfa")?;
+        self.expect_code(Code::Blob)?;
+        let len = self.u32_le()? as usize;
+        // The parser aligns the DFA relative to the entire policy stream.
+        let padding = (8 - self.pos % 8) % 8;
+        let start = self.pos;
+        self.take(len)?.get(padding..).ok_or_else(protocol_error)?;
+        Ok(start + padding..start + len)
     }
 
     fn peek_name(&self) -> Result<Option<&'a [u8]>> {

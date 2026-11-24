@@ -79,6 +79,10 @@ impl ModuleRegistry {
             return Err(errno!(EINVAL, "invalid LSM module name"));
         }
 
+        if module.exec_state_preparer().is_some() && !module.flags().contains(LsmFlags::EXCLUSIVE) {
+            return Err(errno!(EINVAL, "task-state providers must be exclusive"));
+        }
+
         if ALL_BUILTIN_MODULES
             .iter()
             .chain(self.modules.iter())
@@ -116,15 +120,16 @@ fn build_modules_by_name(
     modules_by_name
 }
 
+pub(super) fn registered_modules() -> &'static BTreeMap<&'static str, &'static dyn LsmModule> {
+    ALL_MODULES_BY_NAME.call_once(|| {
+        let extensions = MODULE_REGISTRY.lock().seal();
+        build_modules_by_name(extensions)
+    })
+}
+
 pub(super) fn active_modules() -> &'static [&'static dyn LsmModule] {
     ACTIVE_MODULES
-        .call_once(|| {
-            let modules_by_name = ALL_MODULES_BY_NAME.call_once(|| {
-                let extensions = MODULE_REGISTRY.lock().seal();
-                build_modules_by_name(extensions)
-            });
-            ModuleSelection::select_from_boot_params(modules_by_name).into_modules()
-        })
+        .call_once(|| ModuleSelection::select_from_boot_params(registered_modules()).into_modules())
         .as_ref()
 }
 

@@ -7,13 +7,14 @@
 //! finish a query while profiles are loaded or removed.
 
 use alloc::{string::String, sync::Arc, vec::Vec};
-use core::fmt::Write;
+use core::{fmt::Write, ops::Range};
 
 use aster_core::prelude::*;
 use aster_systree::{SysNodeId, SysStr};
 use ostd::sync::Mutex;
 
 mod abi;
+mod dfa;
 
 pub(super) const MAX_POLICY_BLOB_SIZE: usize = 1024 * 1024;
 const MAX_LOADED_PROFILES: usize = 1024;
@@ -53,6 +54,13 @@ pub(super) struct Profile {
     raw_data: Vec<u8>,
     id: SysNodeId,
     directory_name: SysStr,
+    attachment: Option<Attachment>,
+}
+
+#[derive(Debug)]
+struct Attachment {
+    range: Range<usize>,
+    minimum_len: usize,
 }
 
 impl Profile {
@@ -76,7 +84,12 @@ impl Profile {
         &self.directory_name
     }
 
-    fn new(name: String, mode: ProfileMode, raw_data: Vec<u8>) -> Result<Self> {
+    fn new(
+        name: String,
+        mode: ProfileMode,
+        raw_data: Vec<u8>,
+        attachment: Option<Attachment>,
+    ) -> Result<Self> {
         let id = SysNodeId::new();
         let mut directory_name = String::new();
         directory_name
@@ -103,7 +116,21 @@ impl Profile {
             raw_data,
             id,
             directory_name: directory_name.into(),
+            attachment,
         })
+    }
+
+    fn attachment_match(&self, path: &str) -> Result<Option<(usize, usize)>> {
+        let Some(attachment) = &self.attachment else {
+            return Ok((self.name.starts_with('/') && self.name == path)
+                .then_some((usize::MAX, usize::MAX)));
+        };
+        let Some(prefix_len) =
+            dfa::match_attachment(&self.raw_data[attachment.range.clone()], path.as_bytes())?
+        else {
+            return Ok(None);
+        };
+        Ok(Some((prefix_len, attachment.minimum_len)))
     }
 }
 
@@ -120,11 +147,12 @@ impl PolicySet {
 
     fn try_insert(current: Option<&Self>, profile: Profile, charge: usize) -> Result<Self> {
         let current_profiles = current.map_or(&[][..], |set| set.profiles.as_slice());
-        let index =
-            match current_profiles.binary_search_by(|current| current.name().cmp(profile.name())) {
-                Ok(_) => return Err(Error::new(Errno::EEXIST)),
-                Err(index) => index,
-            };
+        if current_profiles
+            .iter()
+            .any(|current| current.name() == profile.name())
+        {
+            return Err(Error::new(Errno::EEXIST));
+        }
 
         let current_len = current.map_or(0, |set| set.profiles.len());
         let total_len = current_len
@@ -142,8 +170,9 @@ impl PolicySet {
         profiles
             .try_reserve_exact(total_len)
             .map_err(|_| Error::new(Errno::ENOMEM))?;
+        // Linux visits the most recently loaded profile first when selecting attachments.
+        profiles.push(try_new_arc(profile)?);
         profiles.extend_from_slice(current_profiles);
-        profiles.insert(index, try_new_arc(profile)?);
 
         Ok(Self {
             profiles,
@@ -181,8 +210,9 @@ impl PolicyStore {
         let current = guard.as_ref().ok_or_else(|| Error::new(Errno::ENOENT))?;
         let index = current
             .profiles
-            .binary_search_by(|profile| profile.name().cmp(&name))
-            .map_err(|_| Error::new(Errno::ENOENT))?;
+            .iter()
+            .position(|profile| profile.name() == name)
+            .ok_or_else(|| Error::new(Errno::ENOENT))?;
         if current.profiles.len() == 1 {
             *guard = None;
             return Ok(());
@@ -210,6 +240,38 @@ impl PolicyStore {
         Self {
             current: Mutex::new(None),
         }
+    }
+
+    pub(super) fn contains(&self, profile: &Profile) -> bool {
+        let Some(snapshot) = self.snapshot() else {
+            return false;
+        };
+        snapshot
+            .profiles
+            .iter()
+            .any(|current| current.name() == profile.name() && current.id() == profile.id())
+    }
+
+    pub(super) fn find_attachment(&self, path: &str) -> Result<Option<Arc<Profile>>> {
+        let Some(snapshot) = self.snapshot() else {
+            return Ok(None);
+        };
+        let mut selected = None;
+        let mut priority = None;
+        let mut ambiguous = false;
+        for profile in snapshot.profiles() {
+            let Some((prefix_len, minimum_len)) = profile.attachment_match(path)? else {
+                continue;
+            };
+            if priority.is_none_or(|current| prefix_len > current) {
+                priority = Some(prefix_len.max(minimum_len));
+                selected = Some(profile.clone());
+                ambiguous = false;
+            } else if priority == Some(prefix_len) {
+                ambiguous = true;
+            }
+        }
+        Ok(if ambiguous { None } else { selected })
     }
 }
 

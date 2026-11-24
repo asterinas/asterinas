@@ -24,6 +24,7 @@ use crate::{
         posix_thread::ptrace::TraceeStatus,
         signal::{PauseReason, PollHandle, sig_mask::SigMask},
     },
+    security::lsm::LsmTaskState,
     thread::{Thread, Tid},
     time::{Timer, TimerManager, clocks::ProfClock, timer::TimerFn},
 };
@@ -61,6 +62,9 @@ pub struct PosixThread {
 
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
     credentials: Credentials,
+
+    /// Immutable state supplied by the selected exclusive security module.
+    lsm_state: RwLock<Option<Arc<dyn LsmTaskState>>>,
 
     /// The file system information of the thread.
     fs: RwMutex<Option<Arc<ThreadFsInfo>>>,
@@ -296,6 +300,15 @@ impl PosixThread {
     /// Gets the read-only credentials of the thread.
     pub(crate) fn credentials(&self) -> Credentials<ReadOp> {
         self.credentials.dup().restrict()
+    }
+
+    /// Returns a snapshot of this task's committed LSM state.
+    pub fn lsm_state(&self) -> Option<Arc<dyn LsmTaskState>> {
+        self.lsm_state.read().clone()
+    }
+
+    pub(super) fn set_lsm_state(&self, state: Option<Arc<dyn LsmTaskState>>) {
+        *self.lsm_state.write() = state;
     }
 
     /// Gets the duplicatable read-only credentials of the thread.

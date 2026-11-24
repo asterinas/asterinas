@@ -12,6 +12,11 @@
 
 pub mod hooks;
 mod modules;
+pub(crate) mod proc_attr;
+pub(crate) mod task_state;
+
+pub use proc_attr::CurrentAttrReader;
+pub use task_state::{ExecStatePreparer, LsmTaskState};
 
 pub(crate) mod yama {
     pub(crate) use super::modules::yama::{YamaScope, get_scope, set_scope};
@@ -38,6 +43,21 @@ pub trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
 
     /// Returns the module flags.
     fn flags(&self) -> LsmFlags;
+
+    /// Returns the module's current task attribute reader, if supported.
+    ///
+    /// This declaration must remain unchanged after registration. It also determines
+    /// whether procfs exposes a module-specific attribute directory.
+    fn current_attr_reader(&self) -> Option<CurrentAttrReader> {
+        None
+    }
+
+    /// Returns the exclusive module's immutable task-state provider.
+    ///
+    /// This declaration must remain unchanged after registration.
+    fn exec_state_preparer(&self) -> Option<ExecStatePreparer> {
+        None
+    }
 
     /// Initializes the module after it has been selected.
     fn init(&self) -> Result<()> {
