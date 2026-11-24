@@ -6,6 +6,7 @@
 #include <sched.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/sysmacros.h>
 #include <sys/wait.h>
 #include <sys/xattr.h>
@@ -35,6 +36,10 @@ FN_SETUP(mount_fixtures)
 	CHECK(setxattr(SOURCE "/file", XATTR_NAME, XATTR_VALUE,
 		       sizeof(XATTR_VALUE) - 1, 0));
 
+	fd = CHECK(open(SOURCE "/private", O_CREAT | O_RDONLY, 0400));
+	CHECK(fchmod(fd, 0400));
+	CHECK(close(fd));
+
 	CHECK(mkfifo(SOURCE "/fifo", 0666));
 	CHECK(mknod(SOURCE "/null", S_IFCHR | 0666, makedev(1, 3)));
 
@@ -43,6 +48,44 @@ FN_SETUP(mount_fixtures)
 	CHECK(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY, NULL));
 }
 END_SETUP()
+
+FN_TEST(readonly_access_checks_mount)
+{
+	TEST_SUCC(access(SOURCE "/file", W_OK));
+	TEST_SUCC(access(ALIAS "/file", F_OK));
+	TEST_SUCC(access(ALIAS "/file", R_OK));
+
+	TEST_ERRNO(access(ALIAS "/file", W_OK), EROFS);
+	TEST_ERRNO(access(ALIAS "/file", R_OK | W_OK), EROFS);
+	TEST_ERRNO(faccessat(AT_FDCWD, ALIAS "/file", W_OK, 0), EROFS);
+	TEST_ERRNO(syscall(SYS_faccessat2, AT_FDCWD, ALIAS "/file", W_OK,
+			   AT_EACCESS),
+		   EROFS);
+	TEST_ERRNO(access(ALIAS, W_OK), EROFS);
+
+	TEST_SUCC(access(ALIAS "/fifo", W_OK));
+	TEST_SUCC(access(ALIAS "/null", W_OK));
+}
+END_TEST()
+
+FN_TEST(readonly_access_checks_permissions_first)
+{
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		CHECK(setgid(1000));
+		CHECK(setuid(1000));
+
+		CHECK_WITH(access(ALIAS "/private", W_OK),
+			   _ret == -1 && errno == EACCES);
+		exit(EXIT_SUCCESS);
+	}
+
+	int status;
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+}
+END_TEST()
 
 FN_TEST(readonly_bind_preserves_writable_source)
 {
@@ -158,6 +201,7 @@ FN_SETUP(remove_fixtures)
 	CHECK(umount(ALIAS));
 
 	CHECK(unlink(SOURCE "/file"));
+	CHECK(unlink(SOURCE "/private"));
 	CHECK(unlink(SOURCE "/fifo"));
 	CHECK(unlink(SOURCE "/null"));
 	CHECK(umount(SOURCE));
