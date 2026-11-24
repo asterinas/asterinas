@@ -243,6 +243,10 @@ fn build_kernel_elf(
     } else if matches!(arch, Arch::RiscV64) {
         // Enable the Zicbom extension for RISC-V to support cache block operations.
         rustflags.push("-C target-feature=+zicbom");
+
+        // Generate `.eh_frame_hdr`, which is disabled by default for bare-metal RISC-V,
+        // so unwinding can use binary search instead of scanning every frame entry.
+        rustflags.push("-C link-arg=--eh-frame-hdr");
     }
 
     let mut command = cargo();
