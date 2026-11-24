@@ -5,9 +5,14 @@ use crate::{
     fs::{
         file::{Permission, file_table::RawFileDesc},
         utils::PATH_MAX,
-        vfs::path::{AT_FDCWD, EmptyPathStr, FsPath, PerMountFlags},
+        vfs::{
+            inode::PermissionCredentials,
+            path::{AT_FDCWD, EmptyPathStr, FsPath, PerMountFlags},
+        },
     },
     prelude::*,
+    process::credentials::{SecureBits, capabilities::CapSet},
+    security::lsm::hooks as lsm_hooks,
 };
 
 pub(super) fn sys_faccessat(
@@ -107,6 +112,36 @@ fn do_faccessat(
         dirfd, path_name, mode, flags
     );
 
+    let creds = ctx.posix_thread.credentials();
+    let (uid, gid, capabilities) = if flags.contains(FaccessatFlags::AT_EACCESS) {
+        (creds.fsuid(), creds.fsgid(), creds.effective_capset())
+    } else {
+        // Linux uses real IDs and adjusts effective capabilities for access queries.
+        // Reference: <https://github.com/torvalds/linux/blob/v6.17/fs/open.c#L394-L418>.
+        let capabilities = if creds.securebits().contains(SecureBits::NO_SETUID_FIXUP) {
+            creds.effective_capset()
+        } else if creds.ruid().is_root() {
+            creds.permitted_capset()
+        } else {
+            CapSet::empty()
+        };
+        (creds.ruid(), creds.rgid(), capabilities)
+    };
+    let capabilities = {
+        let user_ns = ctx.thread_local.borrow_user_ns();
+        let mut allowed = CapSet::empty();
+        for capability in [CapSet::DAC_OVERRIDE, CapSet::DAC_READ_SEARCH] {
+            let check =
+                lsm_hooks::CapableContext::new(user_ns.as_ref(), ctx.posix_thread, capability)
+                    .with_effective_capset(capabilities);
+            if lsm_hooks::on_capable(check).is_ok() {
+                allowed |= capability;
+            }
+        }
+        allowed
+    };
+    let credentials = PermissionCredentials::new(uid, gid, creds.groups().clone(), capabilities);
+
     let path = {
         let path_name = path_name.to_string_lossy();
         let fs_path =
@@ -114,11 +149,11 @@ fn do_faccessat(
 
         let fs_ref = ctx.thread_local.borrow_fs();
         let path_resolver = fs_ref.resolver().read();
-        if flags.contains(FaccessatFlags::AT_SYMLINK_NOFOLLOW) {
-            path_resolver.lookup_no_follow(&fs_path)?
-        } else {
-            path_resolver.lookup(&fs_path)?
-        }
+        path_resolver.lookup_with_credentials(
+            &fs_path,
+            !flags.contains(FaccessatFlags::AT_SYMLINK_NOFOLLOW),
+            &credentials,
+        )?
     };
 
     let inode = path.inode();
@@ -142,7 +177,7 @@ fn do_faccessat(
     // So we can skip the permission check, which is not free.
     let permission = mode.required_permission();
     if !permission.is_empty() {
-        inode.check_permission(permission)?;
+        inode.check_permission_with(permission, &credentials)?;
     }
 
     Ok(SyscallReturn::Return(0))

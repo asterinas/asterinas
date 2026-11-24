@@ -28,15 +28,10 @@ impl LsmCapabilityHook for CapabilityLsm {
     fn on_capable(&self, context: &CapableContext) -> Result<()> {
         // Since creating new user namespaces is not supported at the moment,
         // there is effectively only one user namespace in the entire system.
-        // Therefore, the thread has a single set of capabilities used for permission checks.
+        // Use the effective capabilities selected by the check context.
         // FIXME: Once support for creating new user namespaces is added,
         // we should verify the thread's capabilities within the relevant user namespace.
-        if context
-            .posix_thread()
-            .credentials()
-            .effective_capset()
-            .contains(context.required_cap())
-        {
+        if context.effective_capset().contains(context.required_cap()) {
             return Ok(());
         }
 

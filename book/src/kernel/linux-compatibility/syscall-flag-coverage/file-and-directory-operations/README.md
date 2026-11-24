@@ -110,8 +110,9 @@ Supported functionality in SCML:
 {{#include faccessat2.scml}}
 ```
 
-Silently-ignored flags:
-* `AT_EACCESS`
+By default, access checks use the caller's real user and group IDs.
+With `AT_EACCESS`, they use the filesystem IDs and effective capabilities.
+The selected credentials apply to both pathname traversal and the final check.
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/faccessat2.2.html).

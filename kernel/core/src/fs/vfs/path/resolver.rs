@@ -12,7 +12,10 @@ use crate::{
             file_table::{FileDesc, RawFileDesc, get_file_fast},
         },
         utils::{PATH_MAX, SYMLINKS_MAX},
-        vfs::{inode::SymbolicLink, path::MountNamespace},
+        vfs::{
+            inode::{PermissionCredentials, SymbolicLink},
+            path::MountNamespace,
+        },
     },
     prelude::*,
     process::{
@@ -625,9 +628,24 @@ impl PathResolver {
 impl PathResolver {
     /// Looks up a child entry with `name` within a directory `path`.
     pub(crate) fn lookup_at_path(&self, path: &Path, name: &str) -> Result<Path> {
-        let dir_dentry = path.dentry.as_dir_dentry_or_err()?;
+        self.lookup_at_path_with(path, name, None)
+    }
 
-        if path.inode().check_permission(Permission::MAY_EXEC).is_err() {
+    fn lookup_at_path_with(
+        &self,
+        path: &Path,
+        name: &str,
+        credentials: Option<&PermissionCredentials>,
+    ) -> Result<Path> {
+        let dir_dentry = path.dentry.as_dir_dentry_or_err()?;
+        let permission = if let Some(credentials) = credentials {
+            path.inode()
+                .check_permission_with(Permission::MAY_EXEC, credentials)
+        } else {
+            path.inode().check_permission(Permission::MAY_EXEC)
+        };
+
+        if permission.is_err() {
             return Err(errno!(EACCES, "the path cannot be looked up"));
         }
         let target_path = if super::is_dot(name) {
@@ -665,7 +683,7 @@ impl PathResolver {
     ///
     /// Symlinks are always followed.
     pub(crate) fn lookup_unresolved(&self, fs_path: &FsPath) -> Result<LookupResult> {
-        self.lookup_inner(fs_path, true)
+        self.lookup_inner(fs_path, true, None)
     }
 
     /// Lookups the target `Path` according to the `fs_path` and leaves
@@ -677,16 +695,35 @@ impl PathResolver {
     ///
     /// If the last component is a symlink, it will not be followed.
     pub(crate) fn lookup_unresolved_no_follow(&self, fs_path: &FsPath) -> Result<LookupResult> {
-        self.lookup_inner(fs_path, false)
+        self.lookup_inner(fs_path, false, None)
     }
 
-    fn lookup_inner(&self, fs_path: &FsPath, follow_tail_link: bool) -> Result<LookupResult> {
+    /// Resolves a path using explicit credentials for every directory search.
+    pub(crate) fn lookup_with_credentials(
+        &self,
+        fs_path: &FsPath,
+        follow_tail_link: bool,
+        credentials: &PermissionCredentials,
+    ) -> Result<Path> {
+        self.lookup_inner(fs_path, follow_tail_link, Some(credentials))?
+            .into_path()
+    }
+
+    fn lookup_inner(
+        &self,
+        fs_path: &FsPath,
+        follow_tail_link: bool,
+        credentials: Option<&PermissionCredentials>,
+    ) -> Result<LookupResult> {
         let lookup_res = match fs_path.inner {
-            FsPathInner::Absolute(path) => {
-                self.lookup_from_parent(&self.root, path.trim_start_matches('/'), follow_tail_link)?
-            }
+            FsPathInner::Absolute(path) => self.lookup_from_parent(
+                &self.root,
+                path.trim_start_matches('/'),
+                follow_tail_link,
+                credentials,
+            )?,
             FsPathInner::CwdRelative(path) => {
-                self.lookup_from_parent(&self.cwd, path, follow_tail_link)?
+                self.lookup_from_parent(&self.cwd, path, follow_tail_link, credentials)?
             }
             FsPathInner::Cwd => LookupResult::Resolved(self.cwd.clone()),
             FsPathInner::FdRelative(fd, path) => {
@@ -696,7 +733,7 @@ impl PathResolver {
                     let file = get_file_fast!(&mut file_table, fd);
                     file.path().clone()
                 };
-                self.lookup_from_parent(&parent, path, follow_tail_link)?
+                self.lookup_from_parent(&parent, path, follow_tail_link, credentials)?
             }
             FsPathInner::Fd(fd) => {
                 let task = Task::current().unwrap();
@@ -726,6 +763,7 @@ impl PathResolver {
         parent: &Path,
         relative_path: &str,
         follow_tail_link: bool,
+        credentials: Option<&PermissionCredentials>,
     ) -> Result<LookupResult> {
         debug_assert!(!relative_path.starts_with('/'));
 
@@ -754,7 +792,7 @@ impl PathResolver {
 
             // Iterate next path
             let next_is_tail = path_remain.is_empty();
-            let next_path = match self.lookup_at_path(&current_path, next_name) {
+            let next_path = match self.lookup_at_path_with(&current_path, next_name, credentials) {
                 Ok(child) => child,
                 Err(e) => {
                     if next_is_tail && e.error() == Errno::ENOENT {
