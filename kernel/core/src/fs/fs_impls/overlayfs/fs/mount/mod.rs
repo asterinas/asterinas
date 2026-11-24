@@ -3,7 +3,7 @@
 //! Mount construction: the one-shot preparation of an overlay filesystem's
 //! published state.
 //!
-//! Construction runs once per mount, before the overlay filesystem object
+//! Construction runs once per mount operation, before the overlay filesystem object
 //! is published: options are parsed, the original roots are resolved and
 //! validated, the upper/workdir pair is claimed, the layer stack is built,
 //! the staging workspace is prepared, upper-filesystem capabilities are
@@ -17,7 +17,7 @@
 //! | [`layer_parts`] | the root resolution, the overlap checks, and the layer-stack build |
 //! | [`inuse`] | the exclusive upper/workdir claim and the overlay uuid |
 //! | [`capabilities`] | the upper-filesystem capability probes |
-//! | [`policy`] | the per-mount decisions settled after the probes, published as fixed state |
+//! | [`policy`] | the per-filesystem decisions settled after the probes, published as fixed state |
 
 #![short_vis_path::add(overlayfs)]
 

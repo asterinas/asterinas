@@ -2,7 +2,7 @@
 
 //! The overlay filesystem object and its VFS-facing superblock surface.
 //!
-//! [`OverlayFs`] is the per-mount overlay filesystem object. Its [`FileSystem`]
+//! [`OverlayFs`] is the overlay filesystem object. Its [`FileSystem`]
 //! impl forwards the superblock surface to the underlying real filesystem.
 //!
 //! The `overlay` registration and the mount requests answered under it live in
