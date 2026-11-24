@@ -1,8 +1,8 @@
 # AppArmor kernel regression tests
 
 The AppArmor 5.0.2 upstream regression directory is packaged from the same
-source as the parser. The M1 runner selects the original `e2e.sh` and runs it
-twice in one guest, retaining its assertions and checking its results.
+source as the parser. The runner invokes the original `e2e.sh` twice and uses
+the original `introspect.c` helper for locally orchestrated lifecycle tests.
 
 Run in the Asterinas development environment:
 
@@ -10,8 +10,9 @@ Run in the Asterinas development environment:
 make run_kernel AUTO_TEST=conformance CONFORMANCE_TEST_SUITE=apparmor CMDLINE="lsm=apparmor,yama"
 ```
 
-Only the e2e script is selected in M1. The other packaged scripts and their
-helpers require additional functionality and dependencies and are not claimed
-to run. The e2e test exercises empty-profile loading, querying, raw-data
-reading and removal; it does not verify policy enforcement or malformed ABI.
-`CONFORMANCE_TEST_SELECTOR` may be empty, `e2e`, or `e2e.sh`.
+The default selection runs both e2e and lifecycle tests. Set
+`CONFORMANCE_TEST_SELECTOR` to `e2e` or `lifecycle` to run either separately.
+The lifecycle checks attachment matching, task inheritance and current-label
+queries, including removal and reloading. Profiles containing file rules are
+rejected until file-rule enforcement is implemented. The full upstream
+`introspect.sh` generates file rules and is therefore not selected.
