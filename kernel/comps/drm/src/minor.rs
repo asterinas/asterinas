@@ -22,7 +22,7 @@ use crate::{
     gem::object::DrmGemObject,
 };
 
-const DRM_MAJOR_ID: u16 = 226;
+pub(crate) const DRM_MAJOR_ID: u16 = 226;
 const PRIMARY_MINOR_BASE: u32 = 0;
 const RENDER_MINOR_BASE: u32 = 128;
 

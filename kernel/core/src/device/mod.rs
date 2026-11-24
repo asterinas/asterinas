@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod dm;
 mod evdev;
 mod fb;
 mod mem;
@@ -11,7 +12,7 @@ pub(crate) mod tty;
 
 use device_id::DeviceId;
 pub(crate) use mem::{getrandom, geturandom};
-pub(crate) use pty::{PtyMaster, PtySlave, new_pty_pair};
+pub(crate) use pty::{PtyDriver, PtyMaster, PtySlave, new_pty_pair};
 pub(crate) use registry::lookup;
 
 use crate::{

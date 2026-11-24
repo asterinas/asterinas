@@ -3,6 +3,7 @@
 use alloc::format;
 
 use aster_console::AnyConsoleDevice;
+use device_id::{MajorId, MinorId};
 use ostd::mm::Infallible;
 use spin::Once;
 
@@ -78,7 +79,14 @@ pub(super) fn init_in_first_process() -> Result<()> {
         let hvc0 = Tty::new(0, driver);
 
         HVC0.call_once(|| hvc0.clone());
+        static HVC_REGION: Once<char::DeviceRegionOwner> = Once::new();
+        let region = char::acquire_minor(
+            MajorId::new(HvcDriver::DEVICE_MAJOR_ID as u16),
+            MinorId::new(0),
+            "hvc",
+        )?;
         char::register(hvc0.clone())?;
+        HVC_REGION.call_once(|| region);
 
         virtio_console.register_callback(Box::leak(Box::new(
             move |mut reader: VmReader<Infallible>| {

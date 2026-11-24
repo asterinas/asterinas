@@ -152,7 +152,29 @@ impl FsType for DevPtsType {
 }
 
 pub(super) fn init() {
+    use crate::device::registry::char;
+
+    // The registration describes the driver, not a particular devpts mount or
+    // an allocated PTY pair. This implementation uses one slave major.
+    static REGIONS: spin::Once<[char::DeviceRegionOwner; 2]> = spin::Once::new();
+    let regions = [
+        char::acquire_minor(
+            device_id::MajorId::new(ptmx::PTMX_MAJOR_NUM),
+            device_id::MinorId::new(ptmx::PTMX_MINOR_NUM),
+            "/dev/ptmx",
+        )
+        .unwrap(),
+        char::acquire_region(
+            device_id::MajorId::new(
+                <crate::device::PtyDriver as crate::device::tty::TtyDriver>::DEVICE_MAJOR_ID as u16,
+            ),
+            0..MAX_PTY_NUM as u32,
+            "pts",
+        )
+        .unwrap(),
+    ];
     crate::fs::vfs::registry::register(&DevPtsType).unwrap();
+    REGIONS.call_once(|| regions);
 }
 
 struct RootInode {

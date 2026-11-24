@@ -82,14 +82,16 @@ impl<'a, 'b> VmPrinter<'a, 'b> {
         }
 
         let mut reader = VmReader::from(bytes_to_write);
-        let written_len = self
-            .writer
-            .write_fallible(&mut reader)
-            .map_err(|_| VmPrinterError::PageFault)?;
-
-        self.bytes_written += written_len;
-
-        Ok(())
+        match self.writer.write_fallible(&mut reader) {
+            Ok(written_len) => {
+                self.bytes_written += written_len;
+                Ok(())
+            }
+            Err((_, written_len)) => {
+                self.bytes_written += written_len;
+                Err(VmPrinterError::PageFault)
+            }
+        }
     }
 }
 

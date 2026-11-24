@@ -33,6 +33,7 @@ members = [
     "kernel/comps/uart",
     "kernel/core",
     "kernel/core/comps/block",
+    "kernel/core/comps/dm",
     "kernel/core/comps/cmdline",
     "kernel/core/comps/console",
     "kernel/core/comps/device",
@@ -88,6 +89,7 @@ default-members = [
     "kernel/comps/uart",
     "kernel/core",
     "kernel/core/comps/block",
+    "kernel/core/comps/dm",
     "kernel/core/comps/cmdline",
     "kernel/core/comps/console",
     "kernel/core/comps/device",
@@ -175,6 +177,7 @@ aster-uart = { path = "kernel/comps/uart" }
 
 # Crates under kernel/core/comps
 aster-block = { path = "kernel/core/comps/block" }
+aster-dm = { path = "kernel/core/comps/dm" }
 aster-cmdline = { path = "kernel/core/comps/cmdline" }
 aster-console = { path = "kernel/core/comps/console" }
 aster-device = { path = "kernel/core/comps/device" }
