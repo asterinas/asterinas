@@ -33,12 +33,22 @@
 //! [`UFrame`]: crate::mm::UFrame
 //! [`GuestContext`]: crate::arch::vm::GuestContext
 
+#[cfg(target_arch = "x86_64")]
 pub mod gpm_space;
 mod guest_mode;
 
+#[cfg(target_arch = "x86_64")]
 pub use self::{
     gpm_space::GuestPhysMemSpace,
     guest_mode::{DummyGuestHooks, GuestMode, GuestModeHooks, GuestReturnReason},
+};
+
+#[cfg(target_arch = "riscv64")]
+pub mod temp_riscv_gpm;
+#[cfg(target_arch = "riscv64")]
+pub use self::{
+    temp_riscv_gpm::GuestPhysMemSpace,
+    guest_mode::{GuestMode, GuestModeHooks, GuestReturnReason},
 };
 
 /// A guest physical address.
