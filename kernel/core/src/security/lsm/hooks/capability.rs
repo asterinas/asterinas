@@ -20,6 +20,7 @@ pub struct CapableContext<'a> {
     target_user_ns: &'a UserNamespace,
     posix_thread: &'a PosixThread,
     required_cap: CapSet,
+    effective_capset: Option<CapSet>,
 }
 
 impl<'a> CapableContext<'a> {
@@ -33,7 +34,20 @@ impl<'a> CapableContext<'a> {
             target_user_ns,
             posix_thread,
             required_cap,
+            effective_capset: None,
         }
+    }
+
+    /// Uses an explicit effective capability set for a task-synchronous query.
+    pub(crate) fn with_effective_capset(mut self, capabilities: CapSet) -> Self {
+        self.effective_capset = Some(capabilities);
+        self
+    }
+
+    /// Returns the effective capabilities selected for this check.
+    pub(crate) fn effective_capset(&self) -> CapSet {
+        self.effective_capset
+            .unwrap_or_else(|| self.posix_thread().credentials().effective_capset())
     }
 
     /// Returns the user namespace against which the capability is checked.
@@ -45,7 +59,7 @@ impl<'a> CapableContext<'a> {
         self.target_user_ns
     }
 
-    /// Returns the thread whose credentials are checked.
+    /// Returns the thread associated with this capability check.
     pub(crate) const fn posix_thread(&self) -> &PosixThread {
         self.posix_thread
     }
