@@ -15,7 +15,7 @@ jobs:
   basic-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/kernel-dev:0.19.0-20261012
+      image: asterinas/kernel-dev:0.19.0-20261119
       options: -v /dev:/dev --privileged
       volumes:
         # Map the following directories on the host into the container so that
@@ -57,7 +57,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ['asterinas/kernel-dev:0.19.0-20261012', 'asterinas/osdk-dev:0.19.0-20261012']
+        image: ['asterinas/kernel-dev:0.19.0-20261119', 'asterinas/osdk-dev:0.19.0-20261119']
     steps:
       - name: Free disk space
         # Remove unused packages from the host to save disk space.
@@ -73,7 +73,7 @@ jobs:
   boot-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/kernel-dev:0.19.0-20261012
+      image: asterinas/kernel-dev:0.19.0-20261119
       options: -v /dev:/dev --privileged
     strategy:
       fail-fast: false
@@ -98,7 +98,7 @@ jobs:
   regression-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/kernel-dev:0.19.0-20261012
+      image: asterinas/kernel-dev:0.19.0-20261119
       options: -v /dev:/dev --privileged
       volumes:
         # Map the following directories on the host into the container so that
@@ -132,7 +132,7 @@ jobs:
   conformance-test:
     runs-on: ubuntu-latest
     container:
-      image: asterinas/kernel-dev:0.19.0-20261012
+      image: asterinas/kernel-dev:0.19.0-20261119
       options: -v /dev:/dev --privileged
       volumes:
         # Map the following directories on the host into the container so that
@@ -186,7 +186,7 @@ jobs:
         include:
           - name: arm-cross-boot
             runs_on: ubuntu-24.04-arm
-            image: asterinas/kernel-dev:0.19.0-20261012
+            image: asterinas/kernel-dev:0.19.0-20261119
             auto_test: boot
             enable_kvm: false
     runs-on: ${{ matrix.runs_on }}
@@ -205,7 +205,7 @@ jobs:
     name: xfstests (${{ matrix.fs_type }})
     runs-on: ubuntu-latest
     container:
-      image: asterinas/kernel-dev:0.19.0-20261012
+      image: asterinas/kernel-dev:0.19.0-20261119
       options: -v /dev:/dev --privileged
       volumes:
         - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
@@ -249,7 +249,7 @@ jobs:
     name: pjdfstest (${{ matrix.fs_type }})
     runs-on: ubuntu-latest
     container:
-      image: asterinas/kernel-dev:0.19.0-20261012
+      image: asterinas/kernel-dev:0.19.0-20261119
       options: -v /dev:/dev --privileged
       volumes:
         - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk

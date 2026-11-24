@@ -81,7 +81,7 @@ since `distro/README.md` references them -->
                 --network=host \
                 -v /dev:/dev \
                 -v $(pwd)/asterinas:/root/asterinas \
-                asterinas/dev:0.19.0-20261012
+                asterinas/dev:0.19.0-20261119
     ```
 
     Alternatively, if you use VS Code with the
