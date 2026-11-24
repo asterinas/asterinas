@@ -45,6 +45,11 @@ fn write_a_hypervisor_in_100_lines() {
         .ok()
         .unwrap();
 
+    cargo_osdk(["clippy", "--lib", "--", "-D", "warnings"])
+        .current_dir(&os_dir)
+        .ok()
+        .unwrap();
+
     let output = cargo_osdk(["run"])
         .current_dir(&os_dir)
         .timeout(Duration::from_secs(300))

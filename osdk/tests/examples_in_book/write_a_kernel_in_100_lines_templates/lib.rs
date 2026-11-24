@@ -83,7 +83,7 @@ fn create_user_task(vm_space: Arc<VmSpace>) -> Arc<Task> {
             let user_context = user_mode.context_mut();
             if ReturnReason::UserSyscall == return_reason {
                 let vm_space = current.data().downcast_ref::<Arc<VmSpace>>().unwrap();
-                handle_syscall(user_context, &vm_space);
+                handle_syscall(user_context, vm_space);
             }
         }
     }
