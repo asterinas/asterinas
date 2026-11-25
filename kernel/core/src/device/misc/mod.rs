@@ -32,7 +32,7 @@ pub(super) fn init_in_first_kthread() {
     MISC_MAJOR.call_once(|| char::acquire_major(MajorId::new(10)).unwrap());
     MISC_CLASS.call_once(|| class::register(MiscClass).unwrap());
 
-    hwrng::init_in_first_kthread();
+    hwrng::init_in_first_kthread().unwrap();
 
     #[cfg(target_arch = "x86_64")]
     ostd::if_tdx_enabled!({

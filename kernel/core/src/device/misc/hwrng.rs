@@ -5,14 +5,18 @@
 //! This module registers the `/dev/hwrng` character device and tracks the
 //! currently selected [`EntropyDevice`] backend.
 
+use aster_device::{
+    class::ClassDevice,
+    common::{DevNode, DevNum},
+};
 use aster_virtio::device::entropy::{self, device::EntropyDevice};
 use device_id::{DeviceId, MinorId};
 
+use super::{AnyMiscDevice, MISC_CLASS, MISC_MAJOR};
 use crate::{
-    device::{Device, DeviceType, registry::char},
+    device::registry::char,
     events::IoEvents,
     fs::{
-        devtmpfs::DevtmpfsNodeMeta,
         file::{PerOpenFileOps, StatusFlags},
         vfs::inode::FileOps,
     },
@@ -29,32 +33,14 @@ const HWRNG_MINOR: u32 = 183;
 static RNG_CURRENT: Mutex<Option<Arc<EntropyDevice>>> = Mutex::new(None);
 
 /// The `/dev/hwrng` device.
-#[derive(Debug)]
-struct HwRngDevice {
-    id: DeviceId,
-}
+struct HwRngDevice;
 
-impl HwRngDevice {
-    fn new() -> Arc<Self> {
-        let major = super::MISC_MAJOR.get().unwrap().get();
-        let minor = MinorId::new(HWRNG_MINOR);
-
-        let id = DeviceId::new(major, minor);
-        Arc::new(Self { id })
-    }
-}
-
-impl Device for HwRngDevice {
-    fn type_(&self) -> DeviceType {
-        DeviceType::Char
-    }
-
-    fn id(&self) -> DeviceId {
-        self.id
-    }
-
-    fn devtmpfs_meta(&self) -> Option<DevtmpfsNodeMeta> {
-        Some(DevtmpfsNodeMeta::new("hwrng").unwrap())
+impl AnyMiscDevice for HwRngDevice {
+    fn devnode(&self) -> Option<DevNode> {
+        Some(DevNode {
+            path: Some("hwrng".into()),
+            mode: None,
+        })
     }
 
     fn open(&self) -> Result<Box<dyn PerOpenFileOps>> {
@@ -158,10 +144,21 @@ fn current_device() -> Result<Arc<EntropyDevice>> {
     Ok(rng)
 }
 
-pub(super) fn init_in_first_kthread() {
+pub(super) fn init_in_first_kthread() -> Result<()> {
     if let Some(device) = entropy::first_device() {
         *RNG_CURRENT.lock() = Some(device);
     }
 
-    char::register(HwRngDevice::new()).unwrap();
+    let class = MISC_CLASS.get().unwrap();
+    let id = DeviceId::new(MISC_MAJOR.get().unwrap().get(), MinorId::new(HWRNG_MINOR));
+    let device = ClassDevice::builder(class, "hw_random", Box::new(HwRngDevice))
+        .devnum(DevNum::char(id))
+        .build();
+
+    aster_device::add_device(&device)?;
+    if let Err(err) = char::register(device.clone()) {
+        let _ = aster_device::remove_device(&device);
+        return Err(err);
+    }
+    Ok(())
 }
