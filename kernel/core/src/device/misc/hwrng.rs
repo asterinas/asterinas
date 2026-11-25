@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Hardware RNG misc-device support.
+//! This module registers the `hw_random` misc device and implements the file operations for `/dev/hwrng`.
 //!
-//! This module registers the `/dev/hwrng` character device and tracks the
-//! currently selected [`EntropyDevice`] backend.
+//! The device exposes the following attributes under `/sys/class/misc/hw_random/`.
+//!
+//! - `rng_available` (read-only) lists the registered entropy sources by name, separated by spaces.
+//! - `rng_current` (read-write) shows the selected source name, or `none` when no source is available.
+//!   Writing a listed name selects that source for subsequent reads from `/dev/hwrng`,
+//!   including reads on an already open file descriptor.
+//!   Writing a newline alone selects the first available source in name order.
 
 use aster_device::{
     class::ClassDevice,
-    common::{DevNode, DevNum},
+    common::{Attr, DevNode, DevNum},
 };
-use aster_virtio::device::entropy::{self, device::EntropyDevice};
+use aster_virtio::device::entropy;
 use device_id::{DeviceId, MinorId};
 
-use super::{AnyMiscDevice, MISC_CLASS, MISC_MAJOR};
+use super::{AnyMiscDevice, MISC_CLASS, MISC_MAJOR, MiscClass};
 use crate::{
     device::registry::char,
     events::IoEvents,
@@ -24,13 +29,48 @@ use crate::{
     process::signal::{PollHandle, Pollable},
 };
 
+pub(super) fn init_in_first_kthread() -> Result<()> {
+    let class = MISC_CLASS.get().unwrap();
+    let id = DeviceId::new(MISC_MAJOR.get().unwrap().get(), MinorId::new(HWRNG_MINOR));
+    let device = ClassDevice::builder(class, "hw_random", Box::new(HwRngDevice))
+        .attrs(HWRNG_ATTRS)
+        .devnum(DevNum::char(id))
+        .build();
+
+    aster_device::add_device(&device)?;
+    if let Err(err) = char::register(device.clone()) {
+        let _ = aster_device::remove_device(&device);
+        return Err(err);
+    }
+    Ok(())
+}
+
 const HWRNG_MINOR: u32 = 183;
 
-/// The currently in-use hardware RNG device.
-//
-// TODO: Users can select a device by writing its name to `/sys/class/misc/hw_random/rng_current`,
-// which is not supported yet.
-static RNG_CURRENT: Mutex<Option<Arc<EntropyDevice>>> = Mutex::new(None);
+static HWRNG_ATTRS: &[Attr<ClassDevice<MiscClass>>] = &[
+    Attr::ro("rng_available", |_, w| {
+        for name in entropy::available_devices() {
+            write!(w, "{name} ")?;
+        }
+        writeln!(w)?;
+        Ok(())
+    }),
+    Attr::rw(
+        "rng_current",
+        |_, w| {
+            let current = entropy::current_device();
+            let name = current.as_ref().map_or("none", |device| device.name());
+            writeln!(w, "{name}")?;
+            Ok(())
+        },
+        |_, value| {
+            // Accept C strings written with their terminating NUL, as Linux does.
+            let value = value.split_once('\0').map_or(value, |(name, _)| name);
+            entropy::select_device(value.strip_suffix('\n').unwrap_or(value));
+            Ok(())
+        },
+    ),
+];
 
 /// The `/dev/hwrng` device.
 struct HwRngDevice;
@@ -72,7 +112,9 @@ impl FileOps for HwRngFile {
     ) -> Result<usize> {
         // Linux looks up the selected device at `read()`.
         // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/core.c#L215>.
-        let dev = current_device()?;
+        let Some(dev) = entropy::current_device() else {
+            return Err(errno!(ENODEV, "no current hardware RNG device is selected"));
+        };
         let is_nonblocking = status_flags.contains(StatusFlags::O_NONBLOCK);
 
         let mut total_copied: usize = 0;
@@ -135,30 +177,4 @@ impl PerOpenFileOps for HwRngFile {
     fn is_offset_aware(&self) -> bool {
         false
     }
-}
-
-fn current_device() -> Result<Arc<EntropyDevice>> {
-    let Some(rng) = RNG_CURRENT.lock().clone() else {
-        return Err(errno!(ENODEV, "no current hardware RNG device is selected"));
-    };
-    Ok(rng)
-}
-
-pub(super) fn init_in_first_kthread() -> Result<()> {
-    if let Some(device) = entropy::first_device() {
-        *RNG_CURRENT.lock() = Some(device);
-    }
-
-    let class = MISC_CLASS.get().unwrap();
-    let id = DeviceId::new(MISC_MAJOR.get().unwrap().get(), MinorId::new(HWRNG_MINOR));
-    let device = ClassDevice::builder(class, "hw_random", Box::new(HwRngDevice))
-        .devnum(DevNum::char(id))
-        .build();
-
-    aster_device::add_device(&device)?;
-    if let Err(err) = char::register(device.clone()) {
-        let _ = aster_device::remove_device(&device);
-        return Err(err);
-    }
-    Ok(())
 }
