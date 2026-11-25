@@ -57,9 +57,31 @@ impl ToFaultSignal for CpuException {
                 // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/loongarch/kernel/traps.c#L877>
                 (SIGILL, SI_KERNEL, None)
             }
-            FloatingPointUnavailable => {
-                // TODO: Support FPU in LoongArch64.
-                (SIGFPE, FPE_FLTINV, Some(era))
+            FloatingPointUnavailable => (SIGFPE, FPE_FLTINV, Some(era)),
+            FloatingPoint { fcsr } => {
+                // Reference: <https://github.com/torvalds/linux/blob/v6.17/arch/loongarch/kernel/traps.c>
+                const FCSR_CAUSE_SHIFT: u32 = 24;
+                const INVALID: u32 = 1 << 4;
+                const DIVIDE_BY_ZERO: u32 = 1 << 3;
+                const OVERFLOW: u32 = 1 << 2;
+                const UNDERFLOW: u32 = 1 << 1;
+                const INEXACT: u32 = 1 << 0;
+                let causes = (fcsr >> FCSR_CAUSE_SHIFT) & fcsr;
+                let code = if causes & INVALID != 0 {
+                    FPE_FLTINV
+                } else if causes & DIVIDE_BY_ZERO != 0 {
+                    FPE_FLTDIV
+                } else if causes & OVERFLOW != 0 {
+                    FPE_FLTOVF
+                } else if causes & UNDERFLOW != 0 {
+                    FPE_FLTUND
+                } else if causes & INEXACT != 0 {
+                    FPE_FLTRES
+                } else {
+                    // No enabled cause is recorded.
+                    SI_KERNEL
+                };
+                (SIGFPE, code, Some(era))
             }
 
             Syscall => return None,
