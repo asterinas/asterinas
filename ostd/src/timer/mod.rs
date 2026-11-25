@@ -31,6 +31,11 @@ cpu_local! {
 }
 
 /// Registers a function that will be executed during the timer interrupt on the current CPU.
+///
+/// # Panics
+///
+/// The callback function `F` must not call this `register_callback_on_cpu` API.
+/// Doing so would cause a panic.
 pub fn register_callback_on_cpu<F>(func: F)
 where
     F: Fn() + Sync + Send + 'static,
