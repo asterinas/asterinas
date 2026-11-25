@@ -30,7 +30,7 @@ pub fn main() {
     let vm_space = Arc::new(create_vm_space(PROGRAM_BINARY));
     vm_space.activate();
     let user_task = create_user_task(vm_space);
-    user_task.run();
+    user_task.start();
 }
 
 fn create_vm_space(program: &[u8]) -> VmSpace {

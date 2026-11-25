@@ -127,7 +127,7 @@ impl Thread {
     /// Runs this thread at once.
     #[track_caller]
     pub(crate) fn run(&self) {
-        self.task.upgrade().unwrap().run();
+        self.task.upgrade().unwrap().start();
     }
 
     /// Returns whether the thread is exited.

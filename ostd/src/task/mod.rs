@@ -15,7 +15,7 @@ use core::{
     cell::{Cell, SyncUnsafeCell},
     ops::Deref,
     ptr::NonNull,
-    sync::atomic::AtomicBool,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use kernel_stack::KernelStack;
@@ -69,6 +69,11 @@ pub struct Task {
     /// This is to enforce not context switching to an already running task.
     /// See [`processor::switch_to_task`] for more details.
     switched_to_cpu: AtomicBool,
+    /// Whether [`Task::start`] has already been called on this task.
+    ///
+    /// A task can only be started once: starting an exited task again would switch to its
+    /// stale context, from which `scheduler::exit_current()` would return.
+    started: AtomicBool,
 
     schedule_info: TaskScheduleInfo,
 }
@@ -107,11 +112,17 @@ impl Task {
         scheduler::yield_now()
     }
 
-    /// Kicks the task scheduler to run the task.
+    /// Starts the task by making it eligible for scheduling.
     ///
-    /// BUG: This method highly depends on the current scheduling policy.
+    /// This method should be called at most once per task.
+    /// Calling it more than once has no effect.
+    ///
+    /// The task is not guaranteed to begin executing immediately.
     #[track_caller]
-    pub fn run(self: &Arc<Self>) {
+    pub fn start(self: &Arc<Self>) {
+        if self.started.swap(true, Ordering::Relaxed) {
+            return;
+        }
         scheduler::run_new_task(self.clone());
     }
 
@@ -234,6 +245,7 @@ impl TaskOptions {
             ctx: SyncUnsafeCell::new(ctx),
             kstack,
             switched_to_cpu: AtomicBool::new(false),
+            started: AtomicBool::new(false),
             schedule_info: TaskScheduleInfo {
                 cpu: AtomicCpuId::default(),
             },
@@ -246,7 +258,7 @@ impl TaskOptions {
     #[track_caller]
     pub fn spawn(self) -> Result<Arc<Task>> {
         let task = Arc::new(self.build()?);
-        task.run();
+        task.start();
         Ok(task)
     }
 }
@@ -350,7 +362,7 @@ mod test {
                 .build()
                 .unwrap(),
         );
-        task.run();
+        task.start();
     }
 
     #[ktest]
