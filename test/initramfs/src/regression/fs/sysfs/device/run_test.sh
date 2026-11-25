@@ -6,6 +6,7 @@ set -e
 
 cd "$(dirname "$0")"
 
+./hwrng
 ./mem
 ./pci
 ./virtio
