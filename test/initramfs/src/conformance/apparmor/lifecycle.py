@@ -158,28 +158,27 @@ def main():
         remove('m2_label_first')
         remove('m2_label_second')
 
-        # An unenforced file rule must never be silently accepted.
+        # File policies are saved without attaching to tasks.
+        file_policy = copy_helper('file-policy')
+        name = 'm2_label_file_rules'
+        profiles_file = Path('/sys/kernel/security/apparmor/profiles')
+        before = profiles_file.read_text()
         for rule in ('deny /tmp/secret r,', '/tmp/secret r,', '/bin/true ux,'):
-            unsafe_name = 'm2_label_unsupported_file'
-            source = f'profile {unsafe_name} "{exact}" {{ {rule} }}\n'
+            source = f'profile {name} "{file_policy}" {{ {rule} }}\n'
             blob = subprocess.run(
                 ['apparmor_parser', '--config-file=/dev/null', '-m',
                  'policy {versions {v5 {yes}}}', '-j0', '-K', '-S'],
                 input=source.encode(), stdout=subprocess.PIPE, check=True, timeout=30,
             ).stdout
-            fd = os.open('/sys/kernel/security/apparmor/.load', os.O_WRONLY)
+            with open('/sys/kernel/security/apparmor/.load', 'wb', buffering=0) as load_fd:
+                assert load_fd.write(blob) == len(blob)
             try:
-                try:
-                    os.write(fd, blob)
-                except OSError as error:
-                    assert error.errno == errno.EOPNOTSUPP, error
-                else:
-                    with open('/sys/kernel/security/apparmor/.remove', 'wb', buffering=0) as remove_fd:
-                        remove_fd.write(unsafe_name.encode())
-                    raise AssertionError(f'profile with unsupported rule {rule!r} was accepted')
+                assert f'{name} (enforce)' in profiles_file.read_text().splitlines()
+                query(file_policy, 'self', 'unconfined')
             finally:
-                os.close(fd)
-            assert unsafe_name not in Path('/sys/kernel/security/apparmor/profiles').read_text()
+                with open('/sys/kernel/security/apparmor/.remove', 'wb', buffering=0) as remove_fd:
+                    assert remove_fd.write(name.encode()) == len(name)
+            assert profiles_file.read_text() == before
 
         script = root / 'script'
         script.write_text(

@@ -3,6 +3,7 @@
 //! AppArmor profiles and policy storage.
 //!
 //! A [`Profile`] contains validated metadata and the original policy bytes.
+//! Only profiles with supported runtime rules can attach to tasks.
 //! [`PolicyStore`] provides immutable [`PolicySet`] snapshots so readers can
 //! finish a query while profiles are loaded or removed.
 
@@ -27,6 +28,9 @@ const MAX_DIRECTORY_SUFFIX_LEN: usize = 21; // A dot and at most 20 decimal digi
 pub(super) enum ProfileMode {
     Enforce,
     Complain,
+    Kill,
+    Unconfined,
+    User,
 }
 
 impl ProfileMode {
@@ -34,15 +38,20 @@ impl ProfileMode {
         match self {
             Self::Enforce => "enforce",
             Self::Complain => "complain",
+            Self::Kill => "kill",
+            Self::Unconfined => "unconfined",
+            Self::User => "user",
         }
     }
 
-    fn decode(raw: u32) -> Result<Self> {
+    fn from_packed(raw: u32) -> Option<Self> {
         match raw {
-            0 => Ok(Self::Enforce),
-            1 => Ok(Self::Complain),
-            2..=4 => Err(Error::new(Errno::EOPNOTSUPP)),
-            _ => Err(Error::new(Errno::EPROTO)),
+            0 => Some(Self::Enforce),
+            1 => Some(Self::Complain),
+            2 => Some(Self::Kill),
+            3 => Some(Self::Unconfined),
+            4 => Some(Self::User),
+            _ => None,
         }
     }
 }
@@ -54,6 +63,11 @@ pub(super) struct Profile {
     raw_data: Vec<u8>,
     id: SysNodeId,
     directory_name: SysStr,
+    runtime: Option<RuntimePolicy>,
+}
+
+#[derive(Debug)]
+struct RuntimePolicy {
     attachment: Option<Attachment>,
 }
 
@@ -88,7 +102,7 @@ impl Profile {
         name: String,
         mode: ProfileMode,
         raw_data: Vec<u8>,
-        attachment: Option<Attachment>,
+        runtime: Option<RuntimePolicy>,
     ) -> Result<Self> {
         let id = SysNodeId::new();
         let mut directory_name = String::new();
@@ -116,12 +130,15 @@ impl Profile {
             raw_data,
             id,
             directory_name: directory_name.into(),
-            attachment,
+            runtime,
         })
     }
 
     fn attachment_match(&self, path: &str) -> Result<Option<(usize, usize)>> {
-        let Some(attachment) = &self.attachment else {
+        let Some(runtime) = &self.runtime else {
+            return Ok(None);
+        };
+        let Some(attachment) = &runtime.attachment else {
             return Ok((self.name.starts_with('/') && self.name == path)
                 .then_some((usize::MAX, usize::MAX)));
         };

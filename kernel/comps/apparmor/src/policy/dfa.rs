@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Validation of the ordinary DFA encoding used by the AppArmor policy ABI v5.
+//! Validation of AppArmor policy DFA encodings and matching of active attachments.
 //!
 //! Table layout follows the official parser's [`flex-tables.h`][format]. State
 //! bounds follow Linux's [`verify_dfa`][verify]. Validation borrows the serialized
@@ -8,6 +8,8 @@
 //!
 //! [format]: https://gitlab.com/apparmor/apparmor/-/blob/v5.0.2/parser/libapparmor_re/flex-tables.h
 //! [verify]: https://github.com/torvalds/linux/blob/db2ddb87143519e20a95aa36c60b36107b736a58/security/apparmor/match.c
+
+use alloc::vec::Vec;
 
 use aster_core::prelude::*;
 
@@ -25,12 +27,36 @@ const TABLE_ALIGNMENT: usize = 8;
 const CHARACTER_COUNT: usize = 256;
 const ENCODING_FLAGS_MASK: u16 = 3;
 const STATE_FLAGS_MASK: u32 = 0xff00_0000;
+const DIFF_STATE: u32 = 0x8000_0000;
+const OOB_STATE: u32 = 0x2000_0000;
+const DIFF_ENCODING: u16 = 1;
+const OOB_ENCODING: u16 = 2;
 const ATTACHMENT_EXEC_PERMISSION: u32 = 1;
+const EXEC_TYPE_SHIFTS: [u32; 2] = [10, 24];
+const EXEC_TYPE_MASK: u32 = 0xf;
+const NAMED_EXEC_TRANSITION_MIN: u32 = 4;
 const START_STATE: u32 = 1;
+
+#[derive(Clone, Copy)]
+enum Encoding {
+    Ordinary,
+    Extended,
+}
+
+enum SecondAcceptTable {
+    Required,
+    Optional,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum PermissionFormat {
+    Indexed,
+    OwnerPairs,
+}
 
 pub(super) fn match_attachment(bytes: &[u8], path: &[u8]) -> Result<Option<usize>> {
     // Load-time validation established the state bounds; decode just the table views.
-    let tables = decode_tables(bytes)?;
+    let tables = decode_tables(bytes, Encoding::Ordinary)?;
     let base = required_table(&tables, BASE)?;
     let check = required_table(&tables, CHECK)?;
     let next = required_table(&tables, NEXT)?;
@@ -82,14 +108,57 @@ pub(super) fn match_attachment(bytes: &[u8], path: &[u8]) -> Result<Option<usize
     Ok((accept.get(state as usize)? & ATTACHMENT_EXEC_PERMISSION != 0).then_some(prefix_len))
 }
 
-pub(super) fn validate_attachment(bytes: &[u8]) -> Result<()> {
-    let tables = validate_tables(bytes)?;
+/// Checks the restrictions imposed on an already validated attachment DFA.
+pub(super) fn validate_active_attachment(bytes: &[u8]) -> Result<()> {
+    let tables = decode_tables(bytes, Encoding::Ordinary)?;
     let accept = required_table(&tables, ACCEPT)?;
     let accept2 = required_table(&tables, ACCEPT2)?;
     for state in 0..accept.len() {
         // Attachment matching consumes only the legacy AA_MAY_EXEC permission.
         if accept.get(state)? & !ATTACHMENT_EXEC_PERMISSION != 0 || accept2.get(state)? != 0 {
             return Err(unsupported_error());
+        }
+    }
+    Ok(())
+}
+
+/// Checks wire indexes without enabling evaluation of the policy.
+pub(super) fn validate_policy(
+    bytes: &[u8],
+    permissions: Option<(usize, PermissionFormat)>,
+    start: u32,
+    file_start: u32,
+    file_transitions: Option<usize>,
+) -> Result<()> {
+    let second_accept = match permissions {
+        Some((_, PermissionFormat::Indexed)) => SecondAcceptTable::Optional,
+        _ => SecondAcceptTable::Required,
+    };
+    let tables = validate_tables(bytes, second_accept)?;
+    let accept = required_table(&tables, ACCEPT)?;
+    if start as usize >= accept.len() || file_start as usize >= accept.len() {
+        return Err(protocol_error());
+    }
+    for state in 0..accept.len() {
+        let value = accept.get(state)?;
+        if let Some((count, format)) = permissions {
+            let owner = if matches!(format, PermissionFormat::OwnerPairs) {
+                required_table(&tables, ACCEPT2)?.get(state)?
+            } else {
+                0
+            };
+            if owner > 1 || value as usize >= count.saturating_sub(owner as usize) {
+                return Err(protocol_error());
+            }
+        } else if let Some(count) = file_transitions {
+            for shift in EXEC_TYPE_SHIFTS {
+                let index = (value >> shift) & EXEC_TYPE_MASK;
+                if index >= NAMED_EXEC_TRANSITION_MIN
+                    && (index - NAMED_EXEC_TRANSITION_MIN) as usize >= count
+                {
+                    return Err(protocol_error());
+                }
+            }
         }
     }
     Ok(())
@@ -116,10 +185,14 @@ impl Table<'_> {
     }
 }
 
-fn validate_tables(bytes: &[u8]) -> Result<[Option<Table<'_>>; 8]> {
-    let tables = decode_tables(bytes)?;
+fn validate_tables(
+    bytes: &[u8],
+    second_accept: SecondAcceptTable,
+) -> Result<[Option<Table<'_>>; 8]> {
+    let tables = decode_tables(bytes, Encoding::Extended)?;
+    let encoding_flags = read_u16(bytes, 12)?;
     let accept = required_table(&tables, ACCEPT)?;
-    let accept2 = required_table(&tables, ACCEPT2)?;
+    let accept2 = tables[ACCEPT2];
     let base = required_table(&tables, BASE)?;
     let default = required_table(&tables, DEFAULT)?;
     let next = required_table(&tables, NEXT)?;
@@ -128,7 +201,8 @@ fn validate_tables(bytes: &[u8]) -> Result<[Option<Table<'_>>; 8]> {
     let transitions = next.len();
     if states < 2
         || accept.len() != states
-        || accept2.len() != states
+        || (matches!(second_accept, SecondAcceptTable::Required) && accept2.is_none())
+        || accept2.is_some_and(|table| table.len() != states)
         || default.len() != states
         || check.len() != transitions
         || tables[EQUIVALENCE].is_some_and(|table| table.len() != CHARACTER_COUNT)
@@ -140,12 +214,13 @@ fn validate_tables(bytes: &[u8]) -> Result<[Option<Table<'_>>; 8]> {
         if default.get(state)? as usize >= states {
             return Err(protocol_error());
         }
-        let base = base.get(state)?;
-        // Ordinary encoding has no per-state diff or out-of-band flags.
-        if base & STATE_FLAGS_MASK != 0
-            || base
-                .checked_add((CHARACTER_COUNT - 1) as u32)
-                .is_none_or(|last| last as usize >= transitions)
+        let packed = base.get(state)?;
+        let state_flags = packed & STATE_FLAGS_MASK;
+        let index = packed & !STATE_FLAGS_MASK;
+        if state_flags & !(DIFF_STATE | OOB_STATE) != 0
+            || (state_flags & DIFF_STATE != 0 && encoding_flags & DIFF_ENCODING == 0)
+            || (state_flags & OOB_STATE != 0 && (encoding_flags & OOB_ENCODING == 0 || index == 0))
+            || index as usize + CHARACTER_COUNT > transitions
         {
             return Err(protocol_error());
         }
@@ -155,10 +230,39 @@ fn validate_tables(bytes: &[u8]) -> Result<[Option<Table<'_>>; 8]> {
             return Err(protocol_error());
         }
     }
+    if encoding_flags & DIFF_ENCODING != 0 {
+        validate_diff_chains(base, default)?;
+    }
     Ok(tables)
 }
 
-fn decode_tables(bytes: &[u8]) -> Result<[Option<Table<'_>>; 8]> {
+fn validate_diff_chains(base: Table<'_>, default: Table<'_>) -> Result<()> {
+    let mut marks = Vec::new();
+    marks
+        .try_reserve_exact(base.len())
+        .map_err(|_| Error::new(Errno::ENOMEM))?;
+    marks.resize(base.len(), 0_u8);
+    // A diff state falls back to its default; every such chain must terminate.
+    for origin in 0..base.len() {
+        let mut state = origin;
+        while base.get(state)? & DIFF_STATE != 0 {
+            match marks[state] {
+                1 => return Err(protocol_error()),
+                2 => break,
+                _ => marks[state] = 1,
+            }
+            state = default.get(state)? as usize;
+        }
+        state = origin;
+        while marks[state] == 1 {
+            marks[state] = 2;
+            state = default.get(state)? as usize;
+        }
+    }
+    Ok(())
+}
+
+fn decode_tables(bytes: &[u8], encoding: Encoding) -> Result<[Option<Table<'_>>; 8]> {
     if bytes.len() < HEADER_SIZE || read_u32(bytes, 0)? != MAGIC {
         return Err(protocol_error());
     }
@@ -175,7 +279,7 @@ fn decode_tables(bytes: &[u8]) -> Result<[Option<Table<'_>>; 8]> {
     if flags & !ENCODING_FLAGS_MASK != 0 {
         return Err(protocol_error());
     }
-    if flags != 0 {
+    if flags != 0 && matches!(encoding, Encoding::Ordinary) {
         return Err(unsupported_error());
     }
 
