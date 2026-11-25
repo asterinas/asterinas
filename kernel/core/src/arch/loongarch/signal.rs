@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use loongArch64::register::estat::Exception;
 use ostd::{
-    arch::cpu::context::{CpuExceptionInfo, UserContext},
+    arch::cpu::context::{CpuException, UserContext},
     user::UserContextApi,
 };
 
@@ -19,51 +18,51 @@ impl SignalContext for UserContext {
     }
 }
 
-impl ToFaultSignal for CpuExceptionInfo {
+impl ToFaultSignal for CpuException {
     fn to_fault_signal(&self, user_ctx: &UserContext) -> Option<FaultSignal> {
+        use CpuException::*;
+
         use crate::process::signal::constants::*;
 
         let era = user_ctx.instruction_pointer() as u64;
 
-        let (num, code, addr) = match self.code {
-            Exception::LoadPageFault | Exception::StorePageFault | Exception::FetchPageFault => {
+        let (num, code, addr) = match self {
+            LoadPageFault(addr) | StorePageFault(addr) | FetchPageFault(addr) => {
                 // FIXME: The code should be `SEGV_ACCERR` for faults within an existing mapping.
-                (SIGSEGV, SEGV_MAPERR, Some(self.page_fault_addr as u64))
+                (SIGSEGV, SEGV_MAPERR, Some(*addr as u64))
             }
-            Exception::PageModifyFault
-            | Exception::PageNonReadableFault
-            | Exception::PageNonExecutableFault
-            | Exception::PagePrivilegeIllegal => {
-                (SIGSEGV, SEGV_ACCERR, Some(self.page_fault_addr as u64))
-            }
-            Exception::FetchInstructionAddressError | Exception::MemoryAccessAddressError => {
+            PageModifyFault(addr)
+            | PageNonReadableFault(addr)
+            | PageNonExecutableFault(addr)
+            | PagePrivilegeIllegal(addr) => (SIGSEGV, SEGV_ACCERR, Some(*addr as u64)),
+            FetchInstructionAddressError | MemoryAccessAddressError => {
                 // TODO: Report `si_addr`.
                 (SIGBUS, BUS_ADRERR, None)
             }
-            Exception::AddressNotAligned => {
+            AddressNotAligned => {
                 // TODO: Report `si_addr`.
                 (SIGBUS, BUS_ADRALN, None)
             }
-            Exception::BoundsCheckFault => {
+            BoundsCheckFault => {
                 // TODO: Report `si_addr`, `si_lower`, and `si_upper`.
                 (SIGSEGV, SEGV_BNDERR, None)
             }
-            Exception::Breakpoint => {
+            Breakpoint => {
                 // TODO: Decode the faulting `break` instruction and choose the signal and code.
                 (SIGTRAP, TRAP_BRKPT, Some(era))
             }
-            Exception::InstructionNotExist | Exception::InstructionPrivilegeIllegal => {
+            InstructionNotExist | InstructionPrivilegeIllegal => {
                 // Linux uses `SI_KERNEL` without an address.
                 //
                 // Reference: <https://elixir.bootlin.com/linux/v7.0/source/arch/loongarch/kernel/traps.c#L877>
                 (SIGILL, SI_KERNEL, None)
             }
-            Exception::FloatingPointUnavailable => {
+            FloatingPointUnavailable => {
                 // TODO: Support FPU in LoongArch64.
                 (SIGFPE, FPE_FLTINV, Some(era))
             }
 
-            Exception::Syscall | Exception::TLBRFill => return None,
+            Syscall => return None,
         };
 
         Some(FaultSignal::new(num, code, addr))

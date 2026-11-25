@@ -17,12 +17,8 @@ mod ex_table;
 
 use spin::Once;
 
-#[cfg(not(target_arch = "loongarch64"))]
-use crate::arch::cpu::context::CpuException;
-#[cfg(target_arch = "loongarch64")]
-use crate::arch::cpu::context::CpuExceptionInfo as CpuException;
 use crate::{
-    arch::trap::TrapFrame,
+    arch::{cpu::context::CpuException, trap::TrapFrame},
     mm::{MAX_USERSPACE_VADDR, Vaddr, fault::ex_table::ExTable},
 };
 

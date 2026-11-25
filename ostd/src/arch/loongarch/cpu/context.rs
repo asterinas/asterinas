@@ -56,34 +56,71 @@ pub struct GeneralRegs {
     pub s8: usize,
 }
 
-/// CPU exception information.
-//
-// TODO: Refactor the struct into an enum (similar to x86's `CpuException`).
-#[repr(C)]
+/// LoongArch CPU exceptions.
+///
+/// Every enum variant corresponds to one exception defined by the LoongArch
+/// architecture. Variants that naturally carry a faulting virtual address
+/// (in the `badv` register) expose it through their associated data fields.
 #[derive(Clone, Copy, Debug)]
-pub struct CpuExceptionInfo {
-    /// The type of the exception.
-    pub code: Exception,
-    /// The page fault address.
-    pub page_fault_addr: usize,
-    /// The error code associated with the exception.
-    pub error_code: usize, // TODO
+pub enum CpuException {
+    /// Load page fault exception.
+    LoadPageFault(FaultAddress),
+    /// Store page fault exception.
+    StorePageFault(FaultAddress),
+    /// Fetch page fault exception.
+    FetchPageFault(FaultAddress),
+    /// Page modify fault exception.
+    PageModifyFault(FaultAddress),
+    /// Page non-readable fault exception.
+    PageNonReadableFault(FaultAddress),
+    /// Page non-executable fault exception.
+    PageNonExecutableFault(FaultAddress),
+    /// Page privilege illegal exception.
+    PagePrivilegeIllegal(FaultAddress),
+    /// Fetch instruction address error exception.
+    FetchInstructionAddressError,
+    /// Memory access address error exception.
+    MemoryAccessAddressError,
+    /// Address not aligned exception.
+    AddressNotAligned,
+    /// Bounds check fault exception.
+    BoundsCheckFault,
+    /// System call exception.
+    Syscall,
+    /// Breakpoint exception.
+    Breakpoint,
+    /// Instruction does not exist exception.
+    InstructionNotExist,
+    /// Instruction privilege illegal exception.
+    InstructionPrivilegeIllegal,
+    /// Floating-point unit unavailable exception.
+    FloatingPointUnavailable,
 }
 
-impl Default for CpuExceptionInfo {
-    fn default() -> Self {
-        CpuExceptionInfo {
-            code: Exception::AddressNotAligned,
-            page_fault_addr: 0,
-            error_code: 0,
+/// Faulting virtual address of address-related exceptions.
+pub type FaultAddress = usize;
+
+impl CpuException {
+    pub(in crate::arch) fn new(raw_exception: Exception, badv: usize) -> Self {
+        match raw_exception {
+            Exception::LoadPageFault => Self::LoadPageFault(badv),
+            Exception::StorePageFault => Self::StorePageFault(badv),
+            Exception::FetchPageFault => Self::FetchPageFault(badv),
+            Exception::PageModifyFault => Self::PageModifyFault(badv),
+            Exception::PageNonReadableFault => Self::PageNonReadableFault(badv),
+            Exception::PageNonExecutableFault => Self::PageNonExecutableFault(badv),
+            Exception::PagePrivilegeIllegal => Self::PagePrivilegeIllegal(badv),
+            Exception::FetchInstructionAddressError => Self::FetchInstructionAddressError,
+            Exception::MemoryAccessAddressError => Self::MemoryAccessAddressError,
+            Exception::AddressNotAligned => Self::AddressNotAligned,
+            Exception::BoundsCheckFault => Self::BoundsCheckFault,
+            Exception::Syscall => Self::Syscall,
+            Exception::Breakpoint => Self::Breakpoint,
+            Exception::InstructionNotExist => Self::InstructionNotExist,
+            Exception::InstructionPrivilegeIllegal => Self::InstructionPrivilegeIllegal,
+            Exception::FloatingPointUnavailable => Self::FloatingPointUnavailable,
+            Exception::TLBRFill => unreachable!(),
         }
-    }
-}
-
-impl CpuExceptionInfo {
-    /// Gets corresponding CPU exception.
-    pub fn cpu_exception(&self) -> CpuException {
-        self.code
     }
 }
 
@@ -93,7 +130,7 @@ impl CpuExceptionInfo {
 pub struct UserContext {
     user_context: RawUserContext,
     trap: Trap,
-    cpu_exception_info: Option<CpuExceptionInfo>,
+    exception: Option<CpuException>,
 }
 
 impl Default for UserContext {
@@ -101,7 +138,7 @@ impl Default for UserContext {
         UserContext {
             user_context: RawUserContext::default(),
             trap: Trap::Unknown,
-            cpu_exception_info: None,
+            exception: None,
         }
     }
 }
@@ -120,8 +157,8 @@ impl UserContext {
     }
 
     /// Takes the CPU exception out.
-    pub fn take_exception(&mut self) -> Option<CpuExceptionInfo> {
-        self.cpu_exception_info.take()
+    pub fn take_exception(&mut self) -> Option<CpuException> {
+        self.exception.take()
     }
 
     // Architecture-specific methods.
@@ -171,11 +208,7 @@ impl UserContextApiInternal for UserContext {
                     | Exception::PagePrivilegeIllegal => {
                         // Handle page fault
                         tlb_flush_addr(badv);
-                        self.cpu_exception_info = Some(CpuExceptionInfo {
-                            code: exception,
-                            page_fault_addr: badv,
-                            error_code: 0, // TODO: Set error code if needed
-                        });
+                        self.exception = Some(CpuException::new(exception, badv));
                         break ReturnReason::UserException;
                     }
                     Exception::FetchInstructionAddressError
@@ -186,11 +219,7 @@ impl UserContextApiInternal for UserContext {
                     | Exception::InstructionNotExist
                     | Exception::InstructionPrivilegeIllegal => {
                         // Handle other exceptions
-                        self.cpu_exception_info = Some(CpuExceptionInfo {
-                            code: exception,
-                            page_fault_addr: 0,
-                            error_code: 0, // TODO: Set error code if needed
-                        });
+                        self.exception = Some(CpuException::new(exception, badv));
                         crate::debug!(
                             "Exception {exception:?} occurred, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
                         );
@@ -327,9 +356,6 @@ cpu_context_impl_getter_setter!(
     [s7, set_s7],
     [s8, set_s8]
 );
-
-/// CPU exception.
-pub type CpuException = Exception;
 
 /// The FPU context of user task.
 /// Reference: <https://elixir.bootlin.com/linux/v6.15.7/source/arch/loongarch/include/uapi/asm/sigcontext.h#L37>

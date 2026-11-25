@@ -3,7 +3,7 @@
 use core::fmt;
 
 use ostd::{
-    arch::cpu::context::{CpuExceptionInfo, UserContext},
+    arch::cpu::context::{CpuException, UserContext},
     cpu::PinCurrentCpu,
     task::DisabledPreemptGuard,
     user::UserContextApi,
@@ -140,22 +140,22 @@ impl SigContext {
     }
 }
 
-impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
-    // [`Err`] indicates that the [`CpuExceptionInfo`] is not a page fault,
+impl TryFrom<&CpuException> for PageFaultInfo {
+    // [`Err`] indicates that the [`CpuException`] is not a page fault,
     // with no additional error information.
     type Error = ();
 
-    fn try_from(value: &CpuExceptionInfo) -> Result<Self, ()> {
-        use loongArch64::register::estat::Exception;
+    fn try_from(value: &CpuException) -> Result<Self, ()> {
+        use CpuException::*;
 
-        let required_perms = match value.cpu_exception() {
-            Exception::FetchPageFault => VmPerms::EXEC,
-            Exception::LoadPageFault => VmPerms::READ,
-            Exception::StorePageFault => VmPerms::WRITE,
+        let (fault_addr, required_perms) = match value {
+            FetchPageFault(addr) => (addr, VmPerms::EXEC),
+            LoadPageFault(addr) => (addr, VmPerms::READ),
+            StorePageFault(addr) => (addr, VmPerms::WRITE),
             _ => return Err(()),
         };
 
-        Ok(PageFaultInfo::new(value.page_fault_addr, required_perms))
+        Ok(PageFaultInfo::new(*fault_addr, required_perms))
     }
 }
 
