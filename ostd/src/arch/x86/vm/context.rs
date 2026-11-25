@@ -36,6 +36,9 @@ impl GuestContext {
                 sregs,
                 msrs,
                 pending_interrupt: None,
+                pending_exception: None,
+                idt_vectoring_info: 0,
+                idt_vectoring_error_code: 0,
                 timer_deadline: None,
             },
             vmcs: Vmcs::new(&vmx_guard)?,
@@ -99,7 +102,13 @@ pub struct VcpuArchState {
     /// The model-specific registers.
     pub msrs: VcpuMsrs,
     /// An external interrupt awaiting injection by OSTD.
-    pub pending_interrupt: Option<GuestInterrupt>,
+    pub pending_interrupt: Option<u8>,
+    /// A pending exception awaiting injection by OSTD.
+    pub pending_exception: Option<(u32, u32)>,
+    /// IDT-vectoring information for an interrupted event delivery.
+    pub idt_vectoring_info: u32,
+    /// The exception error code, if indicated by `idt_vectoring_info`.
+    pub idt_vectoring_error_code: u32,
     /// The guest TSC deadline for returning from guest execution.
     pub timer_deadline: Option<GuestTimerInstant>,
 }

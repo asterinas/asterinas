@@ -47,6 +47,18 @@ pub(in crate::kvm) struct PendingIo {
     instruction_len: u32,
 }
 
+impl VcpuState {
+    fn skip_emulated_instruction(&mut self, instruction_len: u32) {
+        let orig_rip = self.guest_context.regs().rip;
+        let mut rip = orig_rip.wrapping_add(instruction_len as usize);
+        if ((rip ^ orig_rip) >> 31) == 3 && !is_64_bit_code(self.guest_context.sregs()) {
+            rip = rip as u32 as usize;
+        }
+
+        self.guest_context.regs_mut().rip = rip;
+    }
+}
+
 macro_rules! write_run_fields {
     ($run_page:ident; $( [$offset:expr, $value:expr] ),+ $(,)?) => {
         $( $run_page.write_run_val($offset, &$value)?; )+
@@ -142,14 +154,8 @@ impl Vcpu {
                 Ok(false)
             }
             Ok(VmxExitReason::HLT) => {
-                let rip = state
-                    .guest_context
-                    .regs()
-                    .rip
-                    .checked_add(exit_info.instruction_len as usize)
-                    .ok_or_else(|| Error::new(Errno::EOVERFLOW))?;
+                state.skip_emulated_instruction(exit_info.instruction_len);
                 run_page.write_run_val(ioctl::KVM_RUN_EXIT_REASON_OFFSET, &ioctl::KVM_EXIT_HLT)?;
-                state.guest_context.regs_mut().rip = rip;
                 Ok(true)
             }
             Ok(VmxExitReason::PREEMPTION_TIMER) => Ok(false),
@@ -161,7 +167,7 @@ impl Vcpu {
         if let Some(pending_io) = state.pending_io.take() {
             let rip = state.guest_context.regs().rip;
             if rip == pending_io.rip {
-                state.guest_context.regs_mut().rip += pending_io.instruction_len as usize;
+                state.skip_emulated_instruction(pending_io.instruction_len);
             }
         }
     }
@@ -175,4 +181,12 @@ impl GuestModeHooks for Vcpu {
     fn has_kernel_event(&self) -> bool {
         current_thread!().as_posix_thread().unwrap().has_pending()
     }
+}
+
+fn is_64_bit_code(sregs: &VcpuSregs) -> bool {
+    use x86_64::registers::model_specific::EferFlags;
+
+    let long_mode_active = sregs.efer & EferFlags::LONG_MODE_ACTIVE.bits() != 0;
+    let long_code_segment = sregs.cs.l & 1 != 0;
+    long_mode_active && long_code_segment
 }

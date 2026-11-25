@@ -21,7 +21,7 @@ use crate::{
 
 pub(super) struct VcpuFile {
     // Keeps the VM alive while this vCPU file is open.
-    _vm: Arc<Vm>,
+    vm: Arc<Vm>,
     vcpu: Arc<Vcpu>,
     run_page: KvmRunPage,
     common: FileCommon,
@@ -30,7 +30,7 @@ pub(super) struct VcpuFile {
 impl VcpuFile {
     pub(super) fn new(vm: Arc<Vm>, vcpu: Arc<Vcpu>) -> Result<Self> {
         Ok(Self {
-            _vm: vm,
+            vm,
             vcpu,
             run_page: KvmRunPage::new(KVM_RUN_MMAP_SIZE)?,
             common: FileCommon::new(
@@ -49,6 +49,8 @@ impl VcpuFile {
 
 impl FileLike for VcpuFile {
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        self.vm.check_current_vmar()?;
+
         dispatch_ioctl!(match raw_ioctl {
             Run => {
                 self.run()

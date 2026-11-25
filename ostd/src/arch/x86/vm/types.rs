@@ -233,11 +233,11 @@ pub struct VcpuMsrs {
 }
 
 /// A guest external interrupt.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct GuestInterrupt {
-    /// The interrupt vector, in the range 32 through 255.
-    pub vector: u8,
-}
+// #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+// pub struct GuestInterrupt {
+//     /// The interrupt vector, in the range 32 through 255.
+//     pub vector: u8,
+// }
 
 /// An instant on the guest's TSC timeline.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

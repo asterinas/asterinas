@@ -37,6 +37,8 @@ impl VmFile {
 
 impl FileLike for VmFile {
     fn ioctl(&self, raw_ioctl: RawIoctl) -> Result<i32> {
+        self.vm.check_current_vmar()?;
+
         dispatch_ioctl!(match raw_ioctl {
             CheckExtension => {
                 Ok(check_extension(raw_ioctl.arg()))
@@ -51,8 +53,8 @@ impl FileLike for VmFile {
                 let file_table = current.as_thread_local().unwrap().borrow_file_table();
                 let mut file_table_locked = file_table.unwrap().write();
                 let vcpu_fd = file_table_locked
-                    .insert(vcpu_file, FdFlags::empty())
-                    .map_err(|(err, _)| err)?;
+                    .insert(vcpu_file, FdFlags::CLOEXEC);
+                let vcpu_fd = vcpu_fd.map_err(|(err, _)| err)?;
 
                 Ok(vcpu_fd.into())
             }

@@ -76,8 +76,8 @@ impl PerOpenFileOps for KvmDeviceFile {
                 let file_table = current.as_thread_local().unwrap().borrow_file_table();
                 let mut file_table_locked = file_table.unwrap().write();
                 let vm_fd = file_table_locked
-                    .insert(vm_file, FdFlags::empty())
-                    .map_err(|(err, _)| err)?;
+                    .insert(vm_file, FdFlags::CLOEXEC);
+                let vm_fd = vm_fd.map_err(|(err, _)| err)?;
 
                 Ok(vm_fd.into())
             }
