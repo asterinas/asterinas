@@ -54,6 +54,11 @@ impl LsmModule for AppArmorLsm {
     }
 
     fn init(&self) -> Result<()> {
+        #[cfg(feature = "policy-abi-conformance")]
+        {
+            policy::run_field_tests();
+            ostd::early_println!("APPARMOR_ABI_V5_FIELDS_OK");
+        }
         securityfs::register()
     }
 }

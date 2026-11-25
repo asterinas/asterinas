@@ -10,5 +10,8 @@ aster-util.workspace = true
 component.workspace = true
 ostd.workspace = true
 
+[features]
+policy-abi-conformance = []
+
 [lints]
 workspace = true

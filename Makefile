@@ -160,6 +160,9 @@ endif
 ifeq ($(CONFORMANCE_TEST_SUITE), pjdfstest)
 CARGO_OSDK_BUILD_ARGS += --kcmd-args="PJDFSTEST_FS_TYPE=$(PJDFSTEST_FS_TYPE)"
 endif
+ifeq ($(CONFORMANCE_TEST_SUITE), apparmor)
+CARGO_OSDK_BUILD_ARGS += --features=apparmor-abi-conformance
+endif
 CARGO_OSDK_BUILD_ARGS += --init-args="/opt/run_conformance_test.sh"
 else ifeq ($(AUTO_TEST), regression)
 ENABLE_REGRESSION_TEST := true
@@ -344,6 +347,12 @@ endif
 kernel:
 	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
 
+# The fixed UART schemes write early kernel output to qemu.log.
+APPARMOR_TEST_LOG := qemu.log
+ifeq ($(CONSOLE):$(filter loongarch sifive_u,$(SCHEME)),hvc0:)
+APPARMOR_TEST_LOG := qemu-serial.log
+endif
+
 # Build the kernel with an initramfs and then run it
 .PHONY: run_kernel
 run_kernel: $(CARGO_OSDK)
@@ -358,6 +367,10 @@ run_kernel:
 ifeq ($(AUTO_TEST), conformance)
 	@tail --lines 100 qemu.log | grep -q "^All conformance tests passed." \
 		|| (echo "Conformance test failed" && exit 1)
+ifeq ($(CONFORMANCE_TEST_SUITE), apparmor)
+	@grep -q "^APPARMOR_ABI_V5_FIELDS_OK" $(APPARMOR_TEST_LOG) \
+		|| (echo "AppArmor in-kernel ABI v5 field tests did not pass" && exit 1)
+endif
 else ifeq ($(AUTO_TEST), regression)
 	@tail --lines 100 qemu.log | grep -q "^All regression tests passed." \
 		|| (echo "Regression test failed" && exit 1)

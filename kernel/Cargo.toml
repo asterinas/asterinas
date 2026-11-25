@@ -20,6 +20,7 @@ aster-i8042.workspace = true
 
 [features]
 default = ["cvm_guest"]
+apparmor-abi-conformance = ["aster-apparmor/policy-abi-conformance"]
 coverage = ["aster-core/coverage"]
 cvm_guest = ["aster-core/cvm_guest"]
 pvh_boot = ["aster-core/pvh_boot"]

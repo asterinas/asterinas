@@ -18,6 +18,15 @@ use aster_core::prelude::*;
 
 use super::{Attachment, Profile, ProfileMode, RuntimePolicy, dfa};
 
+#[cfg(feature = "policy-abi-conformance")]
+#[path = "abi/selftest.rs"]
+mod selftest;
+
+#[cfg(feature = "policy-abi-conformance")]
+pub(crate) fn run_field_tests() {
+    selftest::run();
+}
+
 const LOAD_ABI_WORD: u32 = 5;
 const MAX_MAPPED_SIGNAL: u32 = 35;
 const EXEC_TYPE_MASK: u32 = 0x0c00_0000;

@@ -17,6 +17,9 @@ use ostd::sync::Mutex;
 mod abi;
 mod dfa;
 
+#[cfg(feature = "policy-abi-conformance")]
+pub(crate) use self::abi::run_field_tests;
+
 pub(super) const MAX_POLICY_BLOB_SIZE: usize = 1024 * 1024;
 const MAX_LOADED_PROFILES: usize = 1024;
 // Limit policy bytes in the current set; old snapshots and open nodes can retain more.
