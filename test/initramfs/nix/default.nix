@@ -26,7 +26,11 @@ let
 
   pkgs = import ../../../distro/nixpkgs.nix {
     config = { };
-    overlays = [ ];
+    overlays =
+      if enableConformanceTest && conformanceTestSuite == "apparmor" then
+        [ (import ../../../distro/etc_nixos/overlays/apparmor) ]
+      else
+        [ ];
     inherit system crossSystem;
   };
   buildMachinePkgs = pkgs.pkgsBuildBuild;
