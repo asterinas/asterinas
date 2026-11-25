@@ -20,13 +20,16 @@ RUN apt update \
     && apt clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install agent tools.
+#
+# Always install the latest releases because these tools evolve quickly,
+# and pinning versions would require frequent manual updates.
+
 # Install Claude Code.
-ENV CLAUDE_CODE_RELEASE=2.1.223
-RUN curl -fsSL https://claude.ai/install.sh | bash -s -- ${CLAUDE_CODE_RELEASE} \
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- latest \
     && claude --version
 
 # Install Codex.
-ENV CODEX_RELEASE=0.160.0
 ENV CODEX_NON_INTERACTIVE=yes
 RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh \
     && codex --version
