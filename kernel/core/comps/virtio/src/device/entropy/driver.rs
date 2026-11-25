@@ -11,13 +11,6 @@ use crate::{
 
 pub(crate) struct VirtioRngDriver;
 
-impl VirtioRngDriver {
-    pub(crate) fn new() -> Self {
-        super::init();
-        Self
-    }
-}
-
 impl VirtioDriver for VirtioRngDriver {
     fn name(&self) -> &str {
         "virtio_rng"

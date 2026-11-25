@@ -47,7 +47,7 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
     driver::register_driver(device::block::driver::VirtioBlockDriver).unwrap();
     driver::register_driver(device::network::driver::VirtioNetDriver::new()).unwrap();
     driver::register_driver(device::console::driver::VirtioConsoleDriver).unwrap();
-    driver::register_driver(device::entropy::driver::VirtioRngDriver::new()).unwrap();
+    driver::register_driver(device::entropy::driver::VirtioRngDriver).unwrap();
     driver::register_driver(device::input::driver::VirtioInputDriver).unwrap();
     driver::register_driver(device::socket::driver::VirtioVsockDriver::new()).unwrap();
     driver::register_driver(device::filesystem::driver::VirtioFsDriver).unwrap();
