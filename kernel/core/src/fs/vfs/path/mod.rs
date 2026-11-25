@@ -149,12 +149,17 @@ impl Path {
         Self { mount, dentry }
     }
 
-    /// Gets the mount node of current `Path`.
+    /// Gets the mount node of the current `Path`.
     pub(crate) fn mount_node(&self) -> &Arc<Mount> {
         &self.mount
     }
 
-    /// Gets the dentry of current `Path`.
+    /// Gets the file system of the current `Path`.
+    pub(crate) fn fs(&self) -> &Arc<dyn FileSystem> {
+        self.mount.fs()
+    }
+
+    /// Gets the dentry of the current `Path`.
     pub(in crate::fs) fn dentry(&self) -> &Arc<Dentry> {
         &self.dentry
     }
@@ -1006,7 +1011,6 @@ impl Path {
 // Methods inherited from `Inode`.
 #[inherit_methods(from = "self.inode()")]
 impl Path {
-    pub(crate) fn fs(&self) -> Arc<dyn FileSystem>;
     pub(crate) fn sync(&self, mode: SyncMode) -> Result<()>;
     pub(crate) fn metadata(&self) -> Result<Metadata>;
     pub(crate) fn mode(&self) -> Result<InodeMode>;
