@@ -177,12 +177,19 @@ struct CallbackHandle {
 
 impl Drop for CallbackHandle {
     fn drop(&mut self) {
-        let mut callbacks = INNERS[self.irq_index as usize].callbacks.write();
+        // Extract the drop of the removed callback out of the critical region to avoid deadlock.
+        // As the callback is given by an OSTD user,
+        // we cannot rule out the possibility that the callback closure owns an `IrqLine`.
+        // In this case, dropping the callback closure would need the same lock.
+        let removed = {
+            let mut callbacks = INNERS[self.irq_index as usize].callbacks.write();
 
-        let pos = callbacks
-            .iter()
-            .position(|element| core::ptr::from_ref(&**element).addr() == self.callback_addr);
-        let _ = callbacks.swap_remove(pos.unwrap());
+            let pos = callbacks
+                .iter()
+                .position(|element| core::ptr::from_ref(&**element).addr() == self.callback_addr);
+            callbacks.swap_remove(pos.unwrap())
+        };
+        drop(removed);
     }
 }
 
