@@ -22,7 +22,7 @@ pub(crate) fn on_alien_access(context: AlienAccessContext) -> Result<()> {
 }
 
 /// The inputs for an alien access check through the LSM stack.
-pub(crate) struct AlienAccessContext<'a> {
+pub struct AlienAccessContext<'a> {
     accessor: &'a PosixThread,
     target: &'a PosixThread,
     mode: AlienAccessMode,
