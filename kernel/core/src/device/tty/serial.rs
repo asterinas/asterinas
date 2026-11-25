@@ -3,16 +3,14 @@
 use alloc::format;
 
 use aster_console::AnyConsoleDevice;
+use aster_device::common::SysStr;
 use ostd::mm::Infallible;
 use spin::Once;
 
-use super::{Tty, TtyDriver};
+use super::{Tty, TtyDriver, class};
 use crate::{
-    device::{
-        registry::char,
-        tty::{file::TtyFile, termio::CTermios},
-    },
-    fs::{devtmpfs::DevtmpfsNodeMeta, file::PerOpenFileOps},
+    device::tty::{file::TtyFile, termio::CTermios},
+    fs::file::PerOpenFileOps,
     prelude::*,
 };
 
@@ -30,8 +28,8 @@ impl TtyDriver for SerialDriver {
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/linux/major.h#L18>.
     const DEVICE_MAJOR_ID: u32 = 4;
 
-    fn devtmpfs_meta(&self, index: u32) -> Option<DevtmpfsNodeMeta> {
-        Some(DevtmpfsNodeMeta::new(format!("ttyS{}", index - Self::MINOR_ID_BASE)).unwrap())
+    fn devnode_name(&self, index: u32) -> Option<SysStr> {
+        Some(SysStr::from(format!("ttyS{}", index - Self::MINOR_ID_BASE)))
     }
 
     fn open(tty: Arc<Tty<Self>>) -> Result<Box<dyn PerOpenFileOps>> {
@@ -82,7 +80,7 @@ pub(super) fn init_in_first_process() -> Result<()> {
         let serial0 = Tty::new(SerialDriver::MINOR_ID_BASE, driver);
 
         SERIAL0.call_once(|| serial0.clone());
-        char::register(serial0.clone())?;
+        class::add_tty_device(serial0.clone())?;
 
         serial_console.register_callback(Box::leak(Box::new(
             move |mut reader: VmReader<Infallible>| {
