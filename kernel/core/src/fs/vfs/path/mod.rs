@@ -200,16 +200,26 @@ impl Path {
             return Err(errno!(ELOOP, "the file is a symlink"));
         }
 
-        if inode_type.is_regular_file() {
-            if open_args.access_mode.is_writable() {
-                self.check_mount_writable()?;
-            }
-            if creation_flags.contains(CreationFlags::O_TRUNC) {
-                self.resize(0)?;
-            }
+        // Keep a temporary write reference across truncation and handle construction.
+        // Release it on either result; a writable handle holds its own reference.
+        let needs_write = inode_type.is_regular_file()
+            && (open_args.access_mode.is_writable()
+                || creation_flags.contains(CreationFlags::O_TRUNC));
+        if needs_write {
+            self.mount.acquire_write()?;
         }
-
-        InodeHandle::new(self.clone(), open_args.access_mode, *status_flags)
+        let resize_result =
+            if inode_type.is_regular_file() && creation_flags.contains(CreationFlags::O_TRUNC) {
+                self.resize(0)
+            } else {
+                Ok(())
+            };
+        let result = resize_result
+            .and_then(|()| InodeHandle::new(self.clone(), open_args.access_mode, *status_flags));
+        if needs_write {
+            self.mount.release_write();
+        }
+        result
     }
 
     /// Changes the mode after checking mount writability and the caller's permissions.
@@ -662,6 +672,9 @@ impl Path {
     /// Returns `EINVAL` in the following cases:
     /// - The current path is not a mount root.
     /// - The current path is not in the current mount namespace.
+    ///
+    /// Returns `EBUSY` if a bind remount would make a writable mount read-only
+    /// while a write reference to that mount is still held.
     pub(crate) fn remount(
         &self,
         mount_flags: PerMountFlags,

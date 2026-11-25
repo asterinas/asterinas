@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
-use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use hashbrown::{HashMap, HashSet};
 use sparse_id_alloc::SparseIdAlloc;
 
@@ -61,10 +60,18 @@ pub(crate) struct Mount {
     mnt_ns: Weak<MountNamespace>,
     /// Propagation state of this mount.
     propagation: RwLock<MountPropagation>,
-    /// The flags of this mount.
-    flags: AtomicPerMountFlags,
+    /// Mount flags and write references, serialized with read-only bind remounts.
+    ///
+    /// Lock order: `MountTopology` before `state`. Never perform filesystem operations
+    /// while holding `state`.
+    state: SpinLock<MountState>,
     /// Reference to self.
     this: Weak<Self>,
+}
+
+struct MountState {
+    flags: PerMountFlags,
+    writers: usize,
 }
 
 impl Mount {
@@ -164,7 +171,7 @@ impl Mount {
             children: RwLock::new(HashMap::new()),
             mnt_ns,
             propagation: RwLock::new(MountPropagation::default()),
-            flags: AtomicPerMountFlags::new(flags),
+            state: SpinLock::new(MountState { flags, writers: 0 }),
             this: weak_self.clone(),
         });
         // `upgrade` returns `None` for pseudo mounts (no namespace) and for
@@ -288,7 +295,11 @@ impl Mount {
             children: RwLock::new(HashMap::new()),
             mnt_ns: new_ns.clone(),
             propagation: RwLock::new(propagation),
-            flags: AtomicPerMountFlags::new(self.flags.load(Ordering::Relaxed)),
+            // A bind or namespace clone is a new mount, with its own write references.
+            state: SpinLock::new(MountState {
+                flags: self.flags(),
+                writers: 0,
+            }),
             this: weak_self.clone(),
         });
         if let Some(ns) = mount.mnt_ns.upgrade() {
@@ -726,6 +737,20 @@ impl Mount {
             self.fs.set_fs_flags(flags, data, ctx)?;
         }
 
+        let mut state = self.state.lock();
+        let old_flags = state.flags;
+
+        // Bind remounts affect only this mount. Filesystem-wide writer exclusion
+        // requires coordinating all mounts of the filesystem and is not implemented here.
+        // Reference: https://github.com/torvalds/linux/blob/v6.17/fs/namespace.c#L724-L734
+        if fs_flags.is_none()
+            && mount_flags.contains(PerMountFlags::RDONLY)
+            && !old_flags.contains(PerMountFlags::RDONLY)
+            && state.writers != 0
+        {
+            return Err(errno!(EBUSY, "the mount has active writers"));
+        }
+
         // The logics here are consistent with Linux.
         // In Linux, `NOATIME`, `RELATIME`, and `STRICTATIME` are mutually exclusive.
         // If none of them nor `NODIRATIME` are set, the atime policy will be inherited
@@ -738,11 +763,10 @@ impl Mount {
         let need_inherit_atime = !mount_flags.intersects(ATIME_MASK | PerMountFlags::NODIRATIME);
 
         if need_inherit_atime {
-            let old_flags = self.flags.load(Ordering::Relaxed);
             let new_flags = mount_flags | (old_flags & ATIME_MASK);
-            self.flags.store(new_flags, Ordering::Relaxed);
+            state.flags = new_flags;
         } else {
-            self.flags.store(mount_flags, Ordering::Relaxed);
+            state.flags = mount_flags;
         }
 
         Ok(())
@@ -784,7 +808,36 @@ impl Mount {
 
     /// Gets the associated mount flags.
     pub(crate) fn flags(&self) -> PerMountFlags {
-        self.flags.load(Ordering::Relaxed)
+        self.state.lock().flags
+    }
+
+    /// Acquires a write reference that prevents this mount from becoming read-only
+    /// through a bind remount until the reference is released.
+    pub(in crate::fs) fn acquire_write(&self) -> Result<()> {
+        // Filesystem-wide flag updates have their own synchronization requirements.
+        // Do not call into a filesystem while holding the mount state spinlock.
+        if self.fs.flags().contains(FsFlags::RDONLY) {
+            return Err(errno!(EROFS, "the filesystem is read-only"));
+        }
+
+        let mut state = self.state.lock();
+        if state.flags.contains(PerMountFlags::RDONLY) {
+            return Err(errno!(EROFS, "the mount is read-only"));
+        }
+
+        state.writers = state
+            .writers
+            .checked_add(1)
+            .ok_or_else(|| errno!(EOVERFLOW, "too many mount write references"))?;
+
+        Ok(())
+    }
+
+    /// Releases a write reference acquired by an operation or a file handle.
+    pub(in crate::fs) fn release_write(&self) {
+        let mut state = self.state.lock();
+        debug_assert!(state.writers > 0);
+        state.writers -= 1;
     }
 
     /// Sets the parent mount node.
@@ -1063,9 +1116,3 @@ impl From<PerMountFlags> for u32 {
         value.bits()
     }
 }
-
-define_atomic_version_of_integer_like_type!(PerMountFlags, {
-    /// An atomic version of `PerMountFlags`.
-    #[derive(Debug)]
-    pub(crate) struct AtomicPerMountFlags(AtomicU32);
-});

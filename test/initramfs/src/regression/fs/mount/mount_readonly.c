@@ -4,6 +4,7 @@
 
 #include <fcntl.h>
 #include <sched.h>
+#include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
@@ -15,6 +16,7 @@
 
 #define SOURCE "/tmp/readonly_source"
 #define ALIAS "/tmp/readonly_alias"
+#define OTHER_ALIAS "/tmp/readonly_other_alias"
 #define CONTENT "ORIGINAL"
 #define XATTR_NAME "user.test"
 #define XATTR_VALUE "old"
@@ -43,6 +45,205 @@ FN_SETUP(mount_fixtures)
 	CHECK(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY, NULL));
 }
 END_SETUP()
+
+// A writable file description prevents a read-only bind remount.
+FN_TEST(readonly_bind_remount_rejects_writable_opens)
+{
+	const int flags[] = { O_WRONLY, O_RDWR, O_WRONLY | O_APPEND };
+
+	for (size_t i = 0; i < sizeof(flags) / sizeof(flags[0]); i++) {
+		TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND, NULL));
+
+		int fd = TEST_SUCC(open(ALIAS "/file", flags[i]));
+
+		TEST_ERRNO(mount(NULL, ALIAS, NULL,
+				 MS_REMOUNT | MS_BIND | MS_RDONLY, NULL),
+			   EBUSY);
+
+		// A failed remount must leave the mount writable.
+		int another_fd = TEST_SUCC(open(ALIAS "/file", O_WRONLY));
+		TEST_SUCC(close(another_fd));
+
+		TEST_SUCC(close(fd));
+
+		TEST_SUCC(mount(NULL, ALIAS, NULL,
+				MS_REMOUNT | MS_BIND | MS_RDONLY, NULL));
+	}
+}
+END_TEST()
+
+FN_TEST(duplicated_fd_keeps_mount_busy)
+{
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND, NULL));
+
+	int fd = TEST_SUCC(open(ALIAS "/file", O_RDWR));
+	int duplicate = TEST_SUCC(dup(fd));
+
+	TEST_SUCC(close(fd));
+
+	TEST_ERRNO(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY,
+			 NULL),
+		   EBUSY);
+
+	TEST_SUCC(close(duplicate));
+
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY,
+			NULL));
+}
+END_TEST()
+
+FN_TEST(inherited_fd_keeps_mount_busy)
+{
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND, NULL));
+
+	int fd = TEST_SUCC(open(ALIAS "/file", O_RDWR));
+	int ready[2], release[2];
+	TEST_SUCC(pipe(ready));
+	TEST_SUCC(pipe(release));
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		CHECK(close(ready[0]));
+		CHECK(close(release[1]));
+
+		char token = 'x';
+		CHECK_WITH(write(ready[1], &token, 1), _ret == 1);
+		CHECK_WITH(read(release[0], &token, 1), _ret == 1);
+
+		CHECK(close(fd));
+		CHECK(close(ready[1]));
+		CHECK(close(release[0]));
+
+		_exit(EXIT_SUCCESS);
+	}
+
+	TEST_SUCC(close(ready[1]));
+	TEST_SUCC(close(release[0]));
+	TEST_SUCC(close(fd));
+
+	char token;
+	TEST_RES(read(ready[0], &token, 1), _ret == 1);
+
+	TEST_ERRNO(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY,
+			 NULL),
+		   EBUSY);
+
+	TEST_RES(write(release[1], &token, 1), _ret == 1);
+
+	int status;
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+
+	TEST_SUCC(close(ready[0]));
+	TEST_SUCC(close(release[1]));
+
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY,
+			NULL));
+}
+END_TEST()
+
+FN_TEST(shared_mapping_keeps_mount_busy_after_close)
+{
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND, NULL));
+
+	int fd = TEST_SUCC(open(ALIAS "/file", O_RDWR));
+	long page_size = TEST_RES(sysconf(_SC_PAGESIZE), _ret > 0);
+	void *mapping = TEST_RES(mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+				      MAP_SHARED, fd, 0),
+				 _ret != MAP_FAILED);
+
+	TEST_SUCC(close(fd));
+
+	TEST_ERRNO(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY,
+			 NULL),
+		   EBUSY);
+
+	TEST_SUCC(munmap(mapping, page_size));
+
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY,
+			NULL));
+}
+END_TEST()
+
+FN_TEST(failed_open_does_not_leave_mount_busy)
+{
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND, NULL));
+	TEST_SUCC(chmod(SOURCE "/file", 0444));
+
+	pid_t pid = TEST_SUCC(fork());
+	if (pid == 0) {
+		CHECK(setgid(1000));
+		CHECK(setuid(1000));
+
+		CHECK_WITH(open(ALIAS "/file", O_WRONLY),
+			   _ret == -1 && errno == EACCES);
+
+		_exit(EXIT_SUCCESS);
+	}
+
+	int status;
+	TEST_RES(waitpid(pid, &status, 0),
+		 _ret == pid && WIFEXITED(status) &&
+			 WEXITSTATUS(status) == EXIT_SUCCESS);
+
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY,
+			NULL));
+	TEST_SUCC(chmod(SOURCE "/file", 0666));
+}
+END_TEST()
+
+FN_TEST(readonly_and_special_opens_do_not_block_bind_remount)
+{
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND, NULL));
+
+	int read_fd = TEST_SUCC(open(ALIAS "/file", O_RDONLY));
+	int path_fd = TEST_SUCC(open(ALIAS "/file", O_PATH | O_RDWR));
+	int fifo_fd = TEST_SUCC(open(ALIAS "/fifo", O_RDWR | O_NONBLOCK));
+	int device_fd = TEST_SUCC(open(ALIAS "/null", O_WRONLY));
+
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY,
+			NULL));
+
+	TEST_SUCC(close(read_fd));
+	TEST_SUCC(close(path_fd));
+	TEST_SUCC(close(fifo_fd));
+	TEST_SUCC(close(device_fd));
+}
+END_TEST()
+
+FN_TEST(bind_mounts_track_writers_independently)
+{
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND, NULL));
+
+	int source_fd = TEST_SUCC(open(SOURCE "/file", O_RDWR));
+	int alias_fd = TEST_SUCC(open(ALIAS "/file", O_RDWR));
+
+	// A newly cloned mount must start with no writers of its own.
+	TEST_SUCC(mkdir(OTHER_ALIAS, 0755));
+	TEST_SUCC(mount(ALIAS, OTHER_ALIAS, NULL, MS_BIND, NULL));
+
+	TEST_SUCC(mount(NULL, OTHER_ALIAS, NULL,
+			MS_REMOUNT | MS_BIND | MS_RDONLY, NULL));
+
+	TEST_ERRNO(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY,
+			 NULL),
+		   EBUSY);
+
+	TEST_SUCC(close(alias_fd));
+
+	// The source mount's writer must not prevent remounting the alias.
+	TEST_SUCC(mount(NULL, ALIAS, NULL, MS_REMOUNT | MS_BIND | MS_RDONLY,
+			NULL));
+
+	TEST_RES(pwrite(source_fd, CONTENT, sizeof(CONTENT) - 1, 0),
+		 _ret == sizeof(CONTENT) - 1);
+	TEST_SUCC(close(source_fd));
+
+	TEST_SUCC(umount(OTHER_ALIAS));
+	TEST_SUCC(rmdir(OTHER_ALIAS));
+}
+END_TEST()
 
 FN_TEST(readonly_bind_preserves_writable_source)
 {
