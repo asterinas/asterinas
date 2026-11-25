@@ -181,11 +181,17 @@ impl<S: HasVmReaderWriter> VmIoFill for S {
 impl<S: HasVmReaderWriter> VmIoOnce for S {
     fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T> {
         let mut reader = <Self as HasVmReaderWriter>::Types::to_reader_result(self.reader())?;
+        if offset > reader.remain() {
+            return Err(Error::InvalidArgs);
+        }
         reader.skip(offset).read_once()
     }
 
     fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()> {
         let mut writer = <Self as HasVmReaderWriter>::Types::to_writer_result(self.writer())?;
+        if offset > writer.avail() {
+            return Err(Error::InvalidArgs);
+        }
         writer.skip(offset).write_once(new_val)
     }
 }
