@@ -12,6 +12,7 @@ use crate::{
                 overflow_gid::OverflowGidFileOps,
                 overflow_uid::OverflowUidFileOps,
                 pid_max::PidMaxFileOps,
+                random::RandomDirOps,
                 tainted::TaintedFileOps,
                 uts::{DomainnameFileOps, HostnameFileOps, OsReleaseFileOps, VersionFileOps},
                 yama::YamaDirOps,
@@ -31,6 +32,7 @@ mod cap_last_cap;
 mod overflow_gid;
 mod overflow_uid;
 mod pid_max;
+mod random;
 mod tainted;
 mod uts;
 mod yama;
@@ -66,6 +68,7 @@ impl KernelDirOps {
             OverflowUidFileOps::new_inode,
         ),
         ("pid_max", InodeType::File, PidMaxFileOps::new_inode),
+        ("random", InodeType::Dir, RandomDirOps::new_inode),
         ("tainted", InodeType::File, TaintedFileOps::new_inode),
         ("version", InodeType::File, VersionFileOps::new_inode),
     ];
