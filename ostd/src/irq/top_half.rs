@@ -50,9 +50,10 @@ impl IrqLine {
 
     /// Allocates a specific IRQ line.
     pub fn alloc_specific(irq_num: u8) -> Result<Self> {
+        let irq_index = irq_num.checked_sub(IRQ_NUM_MIN).ok_or(Error::InvalidArgs)?;
         get_or_init_allocator()
             .lock()
-            .alloc_specific((irq_num - IRQ_NUM_MIN) as usize)
+            .alloc_specific(irq_index as usize)
             .map(|id| Self::new(id as u8))
             .ok_or(Error::NotEnoughResources)
     }
