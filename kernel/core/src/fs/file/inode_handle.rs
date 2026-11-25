@@ -82,9 +82,22 @@ impl InodeHandle {
         } else if inode.type_() == InodeType::Socket {
             return Err(errno!(ENXIO, "a socket cannot be opened as a file"));
         } else {
-            inode
+            let is_writer = inode_type.is_regular_file() && access_mode.is_writable();
+            if is_writer {
+                path.mount_node().acquire_write()?;
+            }
+            match inode
                 .open(path.dentry(), access_mode, status_flags)
-                .transpose()?
+                .transpose()
+            {
+                Ok(open_file) => open_file,
+                Err(error) => {
+                    if is_writer {
+                        path.mount_node().release_write();
+                    }
+                    return Err(error);
+                }
+            }
         };
 
         Ok(Self {
@@ -535,6 +548,12 @@ impl FileLike for InodeHandle {
 impl Drop for InodeHandle {
     fn drop(&mut self) {
         let _ = self.unlock_flock();
+        if self.access_mode().is_writable() && self.path().type_().is_regular_file() {
+            // Close the per-open object while the mount still has its write reference.
+            // The path in `common` keeps the filesystem alive during teardown.
+            drop(self.open_file.take());
+            self.path().mount_node().release_write();
+        }
     }
 }
 
