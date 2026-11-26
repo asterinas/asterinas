@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::VecDeque;
+use alloc::collections::LinkedList;
 use core::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
 use crate::{
@@ -74,9 +74,14 @@ impl RcuMonitor {
     where
         F: FnOnce() + Send + 'static,
     {
+        // Allocate both the boxed closure and its list node before disabling
+        // IRQs and locking `self.state`, then splice the node in O(1).
+        let mut single_callback = Callbacks::new();
+        single_callback.push_back(Box::new(f));
+
         let mut state = self.state.disable_irq().lock();
 
-        state.next_callbacks.push_back(Box::new(f));
+        state.next_callbacks.append(&mut single_callback);
 
         if !state.current_gp.is_complete() {
             return;
@@ -97,12 +102,15 @@ impl State {
     fn new() -> Self {
         Self {
             current_gp: GracePeriod::new(),
-            next_callbacks: VecDeque::new(),
+            next_callbacks: Callbacks::new(),
         }
     }
 }
 
-type Callbacks = VecDeque<Box<dyn FnOnce() + Send + 'static>>;
+// Use `LinkedList` instead of `VecDeque` so bursts of RCU callbacks allocate
+// individual slab nodes rather than growing a contiguous ring buffer into
+// multi-page `HeapSlot::alloc_large` allocations under memory fragmentation.
+type Callbacks = LinkedList<Box<dyn FnOnce() + Send + 'static>>;
 
 struct GracePeriod {
     callbacks: Callbacks,
@@ -139,5 +147,60 @@ impl GracePeriod {
         self.is_complete = false;
         self.cpu_mask.store(&CpuSet::new_empty(), Relaxed);
         self.callbacks = callbacks;
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use core::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+
+    use super::RcuMonitor;
+    use crate::{
+        cpu::{self, PinCurrentCpu},
+        irq,
+        mm::heap,
+        prelude::*,
+        task::atomic_mode::AsAtomicModeGuard,
+    };
+
+    #[ktest]
+    fn callbacks_run_in_fifo_order_without_large_heap_slots() {
+        // Each `Box<dyn FnOnce()>` is two `usize` words, so 600 callbacks exceed
+        // one 4 KiB page on 64-bit targets (256 fat pointers) and would force a
+        // contiguous `VecDeque` buffer into `SlotInfo::LargeSlot` requests.
+        const CALLBACK_COUNT: usize = 600;
+
+        let monitor = RcuMonitor::new();
+        let next_expected = Arc::new(AtomicUsize::new(0));
+
+        {
+            let _irq = irq::disable_local();
+            let large_before = heap::nr_large_slot_requests();
+            for index in 0..CALLBACK_COUNT {
+                let next_expected = Arc::clone(&next_expected);
+                monitor.after_grace_period(move || {
+                    assert_eq!(next_expected.fetch_add(1, Relaxed), index);
+                });
+            }
+            assert_eq!(heap::nr_large_slot_requests(), large_before);
+        }
+        assert_eq!(next_expected.load(Relaxed), 0);
+
+        for expected_after_gp in [1, CALLBACK_COUNT] {
+            {
+                let mut state = monitor.state.disable_irq().lock();
+                let cur_cpu = state.as_atomic_mode_guard().current_cpu();
+                for cpu in cpu::all_cpus().filter(|&cpu| cpu != cur_cpu) {
+                    state.current_gp.finish_grace_period(cpu);
+                }
+            }
+            // SAFETY: No RCU read-side critical section is held on this private test monitor.
+            unsafe {
+                monitor.finish_grace_period();
+            }
+            assert_eq!(next_expected.load(Relaxed), expected_after_gp);
+        }
+
+        assert!(!monitor.is_monitoring.load(Relaxed));
     }
 }
