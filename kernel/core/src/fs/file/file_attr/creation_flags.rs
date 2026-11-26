@@ -2,6 +2,8 @@
 
 use bitflags::bitflags;
 
+use crate::prelude::*;
+
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq)]
     pub(crate) struct CreationFlags: u32 {
@@ -21,5 +23,17 @@ bitflags! {
         const O_CLOEXEC   = 1 << 19;
         /// create an unnamed temporary file
         const O_TMPFILE   = 1 << 22;
+    }
+}
+
+impl CreationFlags {
+    pub(crate) fn check_create_directory(self) -> Result<()> {
+        if self.contains(Self::O_CREAT | Self::O_DIRECTORY) {
+            return Err(errno!(
+                EINVAL,
+                "O_CREAT and O_DIRECTORY cannot be specified together"
+            ));
+        }
+        Ok(())
     }
 }
