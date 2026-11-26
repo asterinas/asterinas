@@ -15,6 +15,7 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+use aster_block::{AnyBlockDevice, BlockDeviceKind, WholeDisk};
 use device_id::DeviceId;
 use ostd::mm::{HasSize, VmIo};
 use ostd_pod::{FromZeros, Pod};
@@ -70,7 +71,7 @@ struct DiskInner<D: BlockSet> {
     write_sync_region: RwLock<()>,
 }
 
-impl<D: BlockSet + 'static> aster_block::BlockDevice for MlsDisk<D> {
+impl<D: BlockSet + 'static> AnyBlockDevice for MlsDisk<D> {
     fn enqueue(
         &self,
         bio: aster_block::bio::SubmittedBio,
@@ -165,6 +166,17 @@ impl<D: BlockSet + 'static> aster_block::BlockDevice for MlsDisk<D> {
 
     fn id(&self) -> DeviceId {
         todo!()
+    }
+
+    fn kind(&self) -> BlockDeviceKind<'_> {
+        BlockDeviceKind::Disk(self)
+    }
+}
+
+impl<D: BlockSet + 'static> WholeDisk for MlsDisk<D> {
+    fn handle_requests(&self) -> Option<()> {
+        // Requests are handled directly in `enqueue()`.
+        None
     }
 }
 

@@ -7,10 +7,11 @@ use core::{
 };
 
 use aster_block::{
-    BlockDeviceMeta, PartitionManager,
+    BlockDeviceKind, BlockDeviceMeta, WholeDisk,
     bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio, bio_segment_pool_init},
     request_queue::{BioRequest, BioRequestSingleQueue},
 };
+use aster_device::common::DevNum;
 use aster_util::mem_obj_slice::Slice;
 use device_id::{DeviceId, MinorId};
 use ostd::{
@@ -23,6 +24,7 @@ use ostd::{
 use super::{BlockFeatures, VirtioBlockConfig};
 use crate::{
     VIRTIO_BLOCK_MAJOR_ID,
+    bus::VirtioDevice,
     device::{
         VirtioDeviceError,
         block::{ReqType, RespStatus},
@@ -30,7 +32,7 @@ use crate::{
     dma_buf::DmaBuf,
     id_alloc::SyncIdAlloc,
     queue::VirtQueue,
-    transport::{ConfigManager, DeviceTransport},
+    transport::{ConfigManager, DeviceStatus},
 };
 
 /// The number of virtio block devices, used to assign minor device numbers.
@@ -43,7 +45,6 @@ pub struct BlockDevice {
     queue: BioRequestSingleQueue,
     id: DeviceId,
     name: String,
-    partition_manager: PartitionManager,
 }
 
 impl BlockDevice {
@@ -69,9 +70,12 @@ impl BlockDevice {
         name
     }
 
-    /// Creates a new VirtIO-Block driver and registers it.
-    pub(crate) fn init(device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
-        let device = DeviceInner::init(device_transport)?;
+    /// Initializes a VirtIO block device and registers it with the block subsystem.
+    pub(crate) fn init(
+        virtio_device: Arc<VirtioDevice>,
+        negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
+        let device = DeviceInner::init(virtio_device.clone(), negotiated_features)?;
 
         let index = NR_BLOCK_DEVICE.fetch_add(1, Ordering::Relaxed);
         let id = DeviceId::new(
@@ -80,7 +84,7 @@ impl BlockDevice {
         );
         let name = Self::formatted_device_name(index);
 
-        let block_device = Arc::new(BlockDevice {
+        let block_device = Box::new(BlockDevice {
             device,
             // Each bio request includes an additional 1 request and 1 response descriptor,
             // therefore this upper bound is set to (QUEUE_SIZE - 2).
@@ -88,26 +92,23 @@ impl BlockDevice {
                 (DeviceInner::QUEUE_SIZE - 2) as usize,
             ),
             id,
-            name,
-            partition_manager: PartitionManager::new(),
+            name: name.clone(),
         });
 
-        aster_block::register(block_device).unwrap();
+        let block_device = aster_block::BlockDevice::builder(
+            aster_block::BLOCK_CLASS.get().unwrap(),
+            name,
+            block_device,
+        )
+        .parent(virtio_device)
+        .dev_type(&aster_block::DISK_TYPE)
+        .devnum(DevNum::block(id))
+        .build();
+
+        aster_device::add_device(&block_device).map_err(VirtioDeviceError::DeviceModel)?;
 
         bio_segment_pool_init();
         Ok(())
-    }
-
-    /// Dequeues a `BioRequest` from the software staging queue and
-    /// processes the request.
-    pub fn handle_requests(&self) {
-        let request = self.queue.dequeue();
-        info!("Handle Request: {:?}", request);
-        match request.type_() {
-            BioType::Read => self.device.read(request),
-            BioType::Write => self.device.write(request),
-            BioType::Flush => self.device.flush(request),
-        }
     }
 
     /// Negotiate features for the device specified bits 0~23
@@ -116,7 +117,7 @@ impl BlockDevice {
     }
 }
 
-impl aster_block::BlockDevice for BlockDevice {
+impl aster_block::AnyBlockDevice for BlockDevice {
     fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
         self.queue.enqueue(bio)
     }
@@ -136,8 +137,21 @@ impl aster_block::BlockDevice for BlockDevice {
         self.id
     }
 
-    fn partition_manager(&self) -> Option<&PartitionManager> {
-        Some(&self.partition_manager)
+    fn kind(&self) -> BlockDeviceKind<'_> {
+        BlockDeviceKind::Disk(self)
+    }
+}
+
+impl WholeDisk for BlockDevice {
+    fn handle_requests(&self) -> Option<()> {
+        let request = self.queue.dequeue();
+        info!("Handle Request: {:?}", request);
+        match request.type_() {
+            BioType::Read => self.device.read(request),
+            BioType::Write => self.device.write(request),
+            BioType::Flush => self.device.flush(request),
+        }
+        Some(())
     }
 }
 
@@ -146,7 +160,7 @@ struct DeviceInner {
     config_manager: ConfigManager<VirtioBlockConfig>,
     features: BlockFeatures,
     queue: SpinLock<VirtQueue>,
-    transport: SpinLock<DeviceTransport>,
+    virtio_device: Arc<VirtioDevice>,
     block_requests: Arc<DmaStream>,
     block_responses: Arc<DmaStream>,
     id_allocator: SyncIdAlloc,
@@ -157,14 +171,16 @@ impl DeviceInner {
     const QUEUE_SIZE: u16 = 64;
 
     /// Creates and inits the device.
-    fn init(mut device_transport: DeviceTransport) -> Result<Arc<Self>, VirtioDeviceError> {
-        let config_manager = VirtioBlockConfig::new_manager(device_transport.as_ref());
+    fn init(
+        virtio_device: Arc<VirtioDevice>,
+        negotiated_features: u64,
+    ) -> Result<Arc<Self>, VirtioDeviceError> {
+        let config_manager = VirtioBlockConfig::new_manager(virtio_device.payload().as_ref());
 
         let config = config_manager.read_config();
         debug!("virio_blk_config = {:?}", config);
 
-        let features =
-            BlockFeatures::negotiated_with_device(device_transport.read_device_features());
+        let features = BlockFeatures::from_bits_truncate(negotiated_features);
 
         let block_size = if features.contains(BlockFeatures::BLK_SIZE) {
             config_manager.block_size()
@@ -179,7 +195,7 @@ impl DeviceInner {
             return Err(VirtioDeviceError::UnsupportedConfig);
         }
 
-        let num_queues = device_transport.num_queues();
+        let num_queues = virtio_device.num_queues();
         if num_queues != 1 {
             // TODO: Support Multi-Queue Block IO Queueing Mechanism
             // (`BlkFeatures::MQ`) to accelerate multi-processor requests for
@@ -189,7 +205,7 @@ impl DeviceInner {
             );
         }
 
-        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, device_transport.as_mut())?;
+        let queue = VirtQueue::new(0, Self::QUEUE_SIZE, virtio_device.payload().as_ref())?;
 
         let block_requests =
             Arc::new(DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?);
@@ -204,7 +220,7 @@ impl DeviceInner {
             config_manager,
             features,
             queue: SpinLock::new(queue),
-            transport: SpinLock::new(device_transport),
+            virtio_device,
             block_requests,
             block_responses,
             id_allocator: SyncIdAlloc::with_capacity(Self::QUEUE_SIZE as usize),
@@ -221,12 +237,10 @@ impl DeviceInner {
             cloned_device.handle_config_change();
         };
 
-        {
-            let mut transport = device.transport.lock();
-            transport.register_cfg_callback(Box::new(handle_config_change))?;
-            transport.register_queue_callback(0, Box::new(handle_irq), false)?;
-            transport.finish_init();
-        }
+        let transport = device.virtio_device.payload().as_ref();
+        transport.register_cfg_callback(Box::new(handle_config_change))?;
+        transport.register_queue_callback(0, Box::new(handle_irq), false)?;
+        transport.add_device_status(DeviceStatus::DRIVER_OK)?;
 
         Ok(device)
     }

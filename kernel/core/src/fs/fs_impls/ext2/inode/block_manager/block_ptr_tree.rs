@@ -1228,6 +1228,8 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_direct_and_indirect_ok() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
@@ -1339,6 +1341,8 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_get_block_range_returns_contiguous_runs() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
@@ -1364,6 +1368,8 @@ mod test {
 
     #[ktest]
     fn block_ptr_tree_out_of_range_iblock_returns_err() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
 
@@ -1429,6 +1435,8 @@ mod test {
     #[ktest]
     fn approx_hole_blocks_scans() {
         clocks::init_for_ktest();
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(2, 256).build().unwrap();
         let disk = &f.disk;
         let ptrs = PTRS_PER_BLOCK;
@@ -1539,6 +1547,8 @@ mod test {
 
     #[ktest]
     fn block_alloc_direct_range_ok() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
@@ -1581,6 +1591,8 @@ mod test {
 
     #[ktest]
     fn block_alloc_indirect_range_ok() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
@@ -1612,6 +1624,8 @@ mod test {
 
     #[ktest]
     fn truncate_indirect_frees_shared_path() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
@@ -1648,6 +1662,8 @@ mod test {
 
     #[ktest]
     fn truncate_releases_all_indirect_blocks() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()
@@ -1683,6 +1699,8 @@ mod test {
 
     #[ktest]
     fn free_block_subtree_recursively_releases_blocks() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(1, 256)
             .with_free_blocks(64, 64)
             .build()

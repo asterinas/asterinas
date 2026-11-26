@@ -100,6 +100,8 @@ mod test {
     #[ktest]
     fn io_range_iter_yields_mapped_and_holes() {
         clocks::init_for_ktest();
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(2, 256).build().unwrap();
 
         // Set up direct pointers: blocks 0-2 mapped, 3-6 holes, 7-8 mapped.

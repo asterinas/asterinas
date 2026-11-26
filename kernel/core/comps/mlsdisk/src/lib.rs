@@ -24,14 +24,15 @@ extern crate alloc;
 #[macro_use]
 extern crate ostd_pod;
 
-use alloc::{string::ToString, sync::Arc, vec};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec};
 use core::ops::Range;
 
 use aster_block::{
-    BlockDevice, SECTOR_SIZE,
+    AnyBlockDevice, BlockDevice, SECTOR_SIZE,
     bio::{Bio, BioDirection, BioSegment, BioStatus, BioType},
     id::Sid,
 };
+use aster_device::common::DevNum;
 use component::{ComponentInitError, init_component};
 use device_id::{DeviceId, MajorId, MinorId};
 use ostd::{
@@ -60,18 +61,28 @@ fn init() -> Result<(), ComponentInitError> {
     let root_key = AeadKey::random();
     let device =
         MlsDisk::create(raw_disk, root_key, None).map_err(|_| ComponentInitError::Unknown)?;
-    let _ = aster_block::register(Arc::new(device));
+    let devnum = DevNum::block(device.id());
+    let device = BlockDevice::builder(
+        aster_block::BLOCK_CLASS.get().unwrap(),
+        device.name().to_string(),
+        Box::new(device),
+    )
+    .dev_type(&aster_block::DISK_TYPE)
+    .devnum(devnum)
+    .build();
+
+    aster_device::add_device(&device).map_err(|_| ComponentInitError::Unknown)?;
     Ok(())
 }
 
 #[derive(Clone, Debug)]
 struct RawDisk {
-    inner: Arc<dyn BlockDevice>,
+    inner: Arc<BlockDevice>,
     region: Range<BlockId>,
 }
 
 impl RawDisk {
-    fn new(host_disk: Arc<dyn BlockDevice>) -> Self {
+    fn new(host_disk: Arc<BlockDevice>) -> Self {
         let end = host_disk.metadata().nr_sectors * SECTOR_SIZE / BLOCK_SIZE;
         Self {
             inner: host_disk,
@@ -89,7 +100,7 @@ impl BlockSet for RawDisk {
         let bio_segment = BioSegment::alloc(buf.nblocks(), BioDirection::FromDevice);
         let bio = Bio::new(BioType::Read, sid, vec![bio_segment.clone()], None);
 
-        let res = bio.submit_and_wait(&*self.inner);
+        let res = bio.submit_and_wait(self.inner.payload().as_ref());
         match res {
             Ok(BioStatus::Complete) => {
                 bio_segment.read_bytes(0, buf.as_mut_slice()).unwrap();
@@ -108,7 +119,7 @@ impl BlockSet for RawDisk {
         bio_segment.write_bytes(0, buf.as_slice()).unwrap();
         let bio = Bio::new(BioType::Write, sid, vec![bio_segment], None);
 
-        let res = bio.submit_and_wait(&*self.inner);
+        let res = bio.submit_and_wait(self.inner.payload().as_ref());
         match res {
             Ok(BioStatus::Complete) => Ok(()),
             _ => return_errno_with_msg!(Errno::IoFailed, "write io failed"),
@@ -141,7 +152,7 @@ impl BlockSet for RawDisk {
 #[cfg(ktest)]
 mod test {
     use aster_block::{
-        BlockDeviceMeta,
+        BlockDeviceKind, BlockDeviceMeta, WholeDisk,
         bio::{BioEnqueueError, SubmittedBio},
     };
     use ostd::{
@@ -166,7 +177,7 @@ mod test {
         }
     }
 
-    impl BlockDevice for MemoryDisk {
+    impl AnyBlockDevice for MemoryDisk {
         fn enqueue(&self, bio: SubmittedBio) -> Result<(), BioEnqueueError> {
             let bio_type = bio.type_();
             if bio_type == BioType::Flush {
@@ -203,21 +214,41 @@ mod test {
         }
 
         fn name(&self) -> &str {
-            todo!()
+            "memory-disk"
         }
 
         fn id(&self) -> DeviceId {
             todo!()
         }
+
+        fn kind(&self) -> BlockDeviceKind<'_> {
+            BlockDeviceKind::Disk(self)
+        }
+    }
+
+    impl WholeDisk for MemoryDisk {
+        fn handle_requests(&self) -> Option<()> {
+            // Requests are handled directly in `enqueue()`.
+            None
+        }
     }
 
     fn create_rawdisk(nblocks: usize) -> RawDisk {
         let memory_disk = MemoryDisk::new(nblocks);
-        RawDisk::new(Arc::new(memory_disk))
+        let device = BlockDevice::builder(
+            aster_block::BLOCK_CLASS.get().unwrap(),
+            memory_disk.name().to_string(),
+            Box::new(memory_disk),
+        )
+        .build();
+
+        RawDisk::new(device)
     }
 
     #[ktest]
     fn write_sync_read() {
+        aster_block::init_for_ktest();
+
         let nblocks = 64 * 1024;
         let raw_disk = create_rawdisk(nblocks);
         let root_key = AeadKey::random();

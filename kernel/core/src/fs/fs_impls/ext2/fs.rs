@@ -51,7 +51,7 @@ pub(super) const ROOT_INO: u32 = 2;
 #[derive(Debug)]
 pub(crate) struct Ext2 {
     /// Backing block device.
-    block_device: Arc<dyn BlockDevice>,
+    block_device: Arc<BlockDevice>,
     /// Superblock with dirty tracking.
     super_block: RwMutex<Dirty<SuperBlock>>,
     /// Block group descriptors and caches.
@@ -116,7 +116,7 @@ impl Ext2MountOptions {
 impl Ext2 {
     /// Opens and loads an Ext2 filesystem from a block device.
     pub(super) fn open(
-        device: Arc<dyn BlockDevice>,
+        device: Arc<BlockDevice>,
         flags: FsFlags,
         data: Option<&str>,
     ) -> Result<Arc<Self>> {
@@ -189,8 +189,8 @@ impl Ext2 {
     }
 
     /// Returns the block device.
-    pub(super) fn block_device(&self) -> &dyn BlockDevice {
-        self.block_device.as_ref()
+    pub(super) fn block_device(&self) -> &dyn AnyBlockDevice {
+        self.block_device.payload().as_ref()
     }
 
     /// Returns the maximum regular file size supported by this ext2 instance.
@@ -717,6 +717,8 @@ mod test {
 
     #[ktest]
     fn stat_bsddf_subtracts_overhead() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(3, 512).build().unwrap();
 
         let stat = FileSystemTrait::sb(f.ext2.as_ref());
@@ -731,9 +733,11 @@ mod test {
 
     #[ktest]
     fn stat_minixdf_reports_total() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(3, 512).build().unwrap();
         let ext2 = Ext2::open(
-            f.disk.clone() as Arc<dyn BlockDevice>,
+            f.ext2.block_device.clone(),
             FsFlags::empty(),
             Some("minixdf"),
         )
@@ -746,6 +750,8 @@ mod test {
     #[ktest]
     fn sync_metadata_writes_primary_and_backup() {
         clocks::init_for_ktest();
+        aster_block::init_for_ktest();
+
         let fixture = Ext2FixtureBuilder::new(3, 512)
             .with_free_blocks(0, 10)
             .with_free_inodes(16, 16)
@@ -808,6 +814,8 @@ mod test {
 
     #[ktest]
     fn block_alloc_and_free_single_group_ok() {
+        aster_block::init_for_ktest();
+
         // Happy path: allocate a contiguous run and then free it back.
         let f = Ext2FixtureBuilder::new(1, 128)
             .with_free_blocks(31, 31)
@@ -848,6 +856,8 @@ mod test {
 
     #[ktest]
     fn block_alloc_and_free_invalid_returns_err() {
+        aster_block::init_for_ktest();
+
         // No-space and invalid-request checks.
         let f_nospc = Ext2FixtureBuilder::new(1, 128)
             .with_free_blocks(0, 0)
@@ -891,6 +901,8 @@ mod test {
 
     #[ktest]
     fn inode_alloc_and_free_single_group_ok() {
+        aster_block::init_for_ktest();
+
         // Allocate one directory inode and verify bitmap/counter transitions.
         let f = Ext2FixtureBuilder::new(1, 128)
             .with_free_inodes(16, 16)
@@ -936,6 +948,8 @@ mod test {
 
     #[ktest]
     fn inode_alloc_and_free_invalid_returns_err() {
+        aster_block::init_for_ktest();
+
         // No free inode counter means ENOSPC without bitmap scan.
         let f_nospc = Ext2FixtureBuilder::new(1, 128)
             .with_free_inodes(0, 0)
@@ -1013,6 +1027,8 @@ mod test {
 
     #[ktest]
     fn persist_and_reload_inode() {
+        aster_block::init_for_ktest();
+
         let (f, root) = default_fixture();
 
         let child = create_file(&root, "cache_file");
@@ -1035,6 +1051,8 @@ mod test {
 
     #[ktest]
     fn load_block_bitmap_valid_image_ok() {
+        aster_block::init_for_ktest();
+
         let f = Ext2FixtureBuilder::new(2, 128)
             .block_bitmap(BlockBitmapInit::MetadataOnly)
             .build()

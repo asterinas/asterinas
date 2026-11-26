@@ -8,5 +8,7 @@ cd "$(dirname "$0")"
 
 ./mem
 ./pci
+./virtio
+./block
 
 echo "All device model tests passed."

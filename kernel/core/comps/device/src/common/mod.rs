@@ -215,6 +215,7 @@ struct Links {
     subsystem: bool,
     device: bool,
     index: bool,
+    block: bool,
     dev_index: bool,
 }
 

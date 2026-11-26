@@ -33,6 +33,7 @@ pub(crate) struct Registry {
     virtual_dir: Arc<Dir>,
     bus: Arc<Dir>,
     class: Arc<Dir>,
+    block: Arc<Dir>,
     dev_char: Arc<Dir>,
     dev_block: Arc<Dir>,
     virtual_glue_dirs: GlueDirs,
@@ -51,6 +52,10 @@ impl Registry {
 
     pub(crate) fn class_root(&self) -> &Arc<Dir> {
         &self.class
+    }
+
+    pub(crate) fn block_root(&self) -> &Arc<Dir> {
+        &self.block
     }
 
     pub(crate) fn dev_index(&self, kind: DevKind) -> &Arc<Dir> {
@@ -90,6 +95,7 @@ impl Registry {
         let virtual_dir = Dir::new(SysStr::from("virtual"));
         let bus = Dir::new(SysStr::from("bus"));
         let class = Dir::new(SysStr::from("class"));
+        let block = Dir::new(SysStr::from("block"));
         let dev = Dir::new(SysStr::from("dev"));
         let dev_char = Dir::new(SysStr::from("char"));
         let dev_block = Dir::new(SysStr::from("block"));
@@ -101,6 +107,7 @@ impl Registry {
         root.add_child(devices.clone())?;
         root.add_child(bus.clone())?;
         root.add_child(class.clone())?;
+        root.add_child(block.clone())?;
         root.add_child(dev)?;
 
         Ok(Self {
@@ -108,6 +115,7 @@ impl Registry {
             virtual_dir,
             bus,
             class,
+            block,
             dev_char,
             dev_block,
             virtual_glue_dirs: GlueDirs::new(),

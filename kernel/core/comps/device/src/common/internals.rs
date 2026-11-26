@@ -32,6 +32,11 @@ pub trait DeviceInternals {
     /// Returns the shared device state.
     fn base(&self) -> &DeviceBase;
 
+    /// Returns the declared device type name, if any.
+    fn type_name(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Returns type-erased attributes contributed by the subsystem, the device type, and the device.
     fn attr_groups(&self) -> Vec<TyErasedAttr>;
 
