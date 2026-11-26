@@ -26,10 +26,10 @@ pub(super) fn sys_rt_sigsuspend(
     let sigmask = sigmask_ptr.read_val()?;
     ctx.save_and_set_sig_mask(sigmask);
 
-    // Wait until receiving any signal
+    // Wait for a signal to arrive.
     let waiter = Waiter::new_pair().0;
     waiter
-        .pause_until(|| None::<()>)
+        .pause_until(|| None::<!>)
         .map_err(|err| match err.error() {
             Errno::ERESTARTSYS => {
                 errno!(EINTR, "rt_sigsuspend was interrupted")
@@ -37,6 +37,5 @@ pub(super) fn sys_rt_sigsuspend(
             _ => err,
         })?;
 
-    // This syscall should always return `Err(EINTR)`. This path should never be reached.
-    unreachable!("rt_sigsuspend always return EINTR");
+    // Unreachable due to `!`.
 }
