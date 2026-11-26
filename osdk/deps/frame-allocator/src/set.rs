@@ -10,6 +10,8 @@ pub(crate) struct BuddySet<const MAX_ORDER: BuddyOrder> {
     total_size: usize,
     /// The lists of free buddy chunks for each orders.
     lists: [LinkedList<FreeHeadMeta>; MAX_ORDER],
+    #[cfg(ktest)]
+    nr_alloc_attempts: usize,
 }
 
 impl<const MAX_ORDER: BuddyOrder> BuddySet<MAX_ORDER> {
@@ -18,12 +20,24 @@ impl<const MAX_ORDER: BuddyOrder> BuddySet<MAX_ORDER> {
         Self {
             total_size: 0,
             lists: [const { LinkedList::new() }; MAX_ORDER],
+            #[cfg(ktest)]
+            nr_alloc_attempts: 0,
         }
     }
 
     /// Gets the total size of free chunks.
     pub(crate) fn total_size(&self) -> usize {
         self.total_size
+    }
+
+    #[cfg(ktest)]
+    pub(crate) fn nr_alloc_attempts(&self) -> usize {
+        self.nr_alloc_attempts
+    }
+
+    #[cfg(ktest)]
+    pub(crate) fn reset_alloc_attempts(&mut self) {
+        self.nr_alloc_attempts = 0;
     }
 
     /// Inserts a free chunk into the set.
@@ -61,6 +75,10 @@ impl<const MAX_ORDER: BuddyOrder> BuddySet<MAX_ORDER> {
     /// The function will choose and remove a buddy chunk of the given order
     /// from the set. The address of the chunk will be returned.
     pub(crate) fn alloc_chunk(&mut self, order: BuddyOrder) -> Option<Paddr> {
+        #[cfg(ktest)]
+        {
+            self.nr_alloc_attempts += 1;
+        }
         // Find the first non-empty size class larger than the requested order.
         let mut non_empty = None;
         for (i, list) in self.lists.iter_mut().enumerate().skip(order) {

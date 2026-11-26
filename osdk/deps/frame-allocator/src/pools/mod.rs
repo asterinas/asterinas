@@ -10,7 +10,7 @@ use core::{
 };
 
 use ostd::{
-    cpu_local,
+    cpu, cpu_local,
     irq::DisabledLocalIrqGuard,
     mm::Paddr,
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
@@ -51,45 +51,126 @@ const MAX_BUDDY_ORDER: BuddyOrder = 32;
 /// chunks.
 const MAX_LOCAL_BUDDY_ORDER: BuddyOrder = 18;
 
+/// Outcome of refilling an empty per-CPU frame cache.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RefillAlloc {
+    Batch(Paddr),
+    Single(Paddr),
+}
+
 pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Paddr> {
     let local_pool_cell = LOCAL_POOL.get_with(guard);
     let mut local_pool = local_pool_cell.borrow_mut();
     let mut global_pool = OnDemandGlobalLock::new();
 
-    let size_order = chunk::greater_order_of(layout.size());
-    let align_order = chunk::greater_order_of(layout.align());
-    let order = size_order.max(align_order);
+    alloc_from(&mut local_pool, &mut global_pool, layout, cpu::num_cpus())
+}
 
-    let mut chunk_addr = None;
+pub(super) fn alloc_refill(
+    guard: &DisabledLocalIrqGuard,
+    batch_layout: Layout,
+    single_layout: Layout,
+) -> Option<RefillAlloc> {
+    let local_pool_cell = LOCAL_POOL.get_with(guard);
+    let mut local_pool = local_pool_cell.borrow_mut();
+    let mut global_pool = OnDemandGlobalLock::new();
 
-    if order < MAX_LOCAL_BUDDY_ORDER {
-        chunk_addr = local_pool.alloc_chunk(order);
+    alloc_refill_from(
+        &mut local_pool,
+        &mut global_pool,
+        batch_layout,
+        single_layout,
+        cpu::num_cpus(),
+    )
+}
+
+fn alloc_from(
+    local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
+    global_pool: &mut OnDemandGlobalLock,
+    layout: Layout,
+    nr_cpus: usize,
+) -> Option<Paddr> {
+    let allocated = try_alloc_from_local(local_pool, global_pool, layout)
+        .or_else(|| try_alloc_from_global(local_pool, global_pool, layout));
+    balancing::balance_for_cpus(local_pool, global_pool, nr_cpus);
+    allocated
+}
+
+fn alloc_refill_from(
+    local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
+    global_pool: &mut OnDemandGlobalLock,
+    batch_layout: Layout,
+    single_layout: Layout,
+    nr_cpus: usize,
+) -> Option<RefillAlloc> {
+    // Probe `LOCAL_POOL` for both the batch and single segment before locking
+    // `GLOBAL_POOL`, and probe both layouts before `balance_for_cpus` can split
+    // an intact segment in `GLOBAL_POOL`.
+    let allocated = try_alloc_from_local(local_pool, global_pool, batch_layout)
+        .map(RefillAlloc::Batch)
+        .or_else(|| {
+            try_alloc_from_local(local_pool, global_pool, single_layout).map(RefillAlloc::Single)
+        })
+        .or_else(|| {
+            try_alloc_from_global(local_pool, global_pool, batch_layout).map(RefillAlloc::Batch)
+        })
+        .or_else(|| {
+            try_alloc_from_global(local_pool, global_pool, single_layout).map(RefillAlloc::Single)
+        });
+
+    balancing::balance_for_cpus(local_pool, global_pool, nr_cpus);
+    allocated
+}
+
+fn layout_order(layout: Layout) -> BuddyOrder {
+    chunk::greater_order_of(layout.size()).max(chunk::greater_order_of(layout.align()))
+}
+
+fn try_alloc_from_local(
+    local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
+    global_pool: &mut OnDemandGlobalLock,
+    layout: Layout,
+) -> Option<Paddr> {
+    let order = layout_order(layout);
+    if order >= MAX_LOCAL_BUDDY_ORDER {
+        return None;
     }
+    let chunk_addr = local_pool.alloc_chunk(order)?;
+    return_unused_tail(local_pool, global_pool, chunk_addr, order, layout.size());
+    Some(chunk_addr)
+}
 
-    // Fall back to the global free lists if the local free lists are empty.
-    if chunk_addr.is_none() {
-        chunk_addr = global_pool.get().alloc_chunk(order);
-    }
+fn try_alloc_from_global(
+    local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
+    global_pool: &mut OnDemandGlobalLock,
+    layout: Layout,
+) -> Option<Paddr> {
     // TODO: On memory pressure the global pool may be not enough. We may need
     // to merge all buddy chunks from the local pools to the global pool and
     // try again.
+    let order = layout_order(layout);
+    let chunk_addr = global_pool.get().alloc_chunk(order)?;
+    return_unused_tail(local_pool, global_pool, chunk_addr, order, layout.size());
+    Some(chunk_addr)
+}
 
-    // If the alignment order is larger than the size order, we need to split
-    // the chunk and return the rest part back to the free lists.
+fn return_unused_tail(
+    local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
+    global_pool: &mut OnDemandGlobalLock,
+    chunk_addr: Paddr,
+    order: BuddyOrder,
+    requested_size: usize,
+) {
+    // If the buddy chunk is larger than `requested_size`, return the unused
+    // tail to the free lists.
     let allocated_size = chunk::size_of_order(order);
-    if allocated_size > layout.size()
-        && let Some(chunk_addr) = chunk_addr
-    {
+    if allocated_size > requested_size {
         do_dealloc(
-            &mut local_pool,
-            &mut global_pool,
-            [(chunk_addr + layout.size(), allocated_size - layout.size())].into_iter(),
+            local_pool,
+            global_pool,
+            [(chunk_addr + requested_size, allocated_size - requested_size)].into_iter(),
         );
     }
-
-    balancing::balance(local_pool.deref_mut(), &mut global_pool);
-
-    chunk_addr
 }
 
 pub(super) fn dealloc(
@@ -173,14 +254,14 @@ impl Drop for OnDemandGlobalLock {
 
 #[cfg(ktest)]
 pub(crate) mod test {
-    use core::marker::PhantomData;
+    use core::{alloc::Layout, marker::PhantomData};
 
     use ostd::{
         mm,
         sync::{LocalIrqDisabled, SpinLock},
     };
 
-    use super::{OnDemandGlobalLock, balancing};
+    use super::{OnDemandGlobalLock, RefillAlloc, balancing};
     use crate::{chunk, set::BuddySet, test::MockMemoryRegion};
 
     static TEST_GLOBAL_POOL: SpinLock<BuddySet<{ super::MAX_BUDDY_ORDER }>, LocalIrqDisabled> =
@@ -205,6 +286,16 @@ pub(crate) mod test {
             self.lock.get().insert_chunk(addr, order);
         }
 
+        pub(crate) fn alloc_refill_from_pools(
+            &mut self,
+            local: &mut BuddySet<{ super::MAX_LOCAL_BUDDY_ORDER }>,
+            batch_layout: Layout,
+            single_layout: Layout,
+            nr_cpus: usize,
+        ) -> Option<RefillAlloc> {
+            super::alloc_refill_from(local, &mut self.lock, batch_layout, single_layout, nr_cpus)
+        }
+
         pub(super) fn balance_for_cpus(
             &mut self,
             local: &mut BuddySet<{ super::MAX_LOCAL_BUDDY_ORDER }>,
@@ -216,11 +307,20 @@ pub(crate) mod test {
         pub(crate) fn total_size(&mut self) -> usize {
             self.lock.get().total_size()
         }
+
+        pub(crate) fn alloc_chunk(&mut self, order: chunk::BuddyOrder) -> Option<mm::Paddr> {
+            self.lock.get().alloc_chunk(order)
+        }
+
+        pub(crate) fn nr_alloc_attempts(&mut self) -> usize {
+            self.lock.get().nr_alloc_attempts()
+        }
     }
 
     impl Drop for TestGlobalPool<'_> {
         fn drop(&mut self) {
             while self.lock.get().alloc_chunk(0).is_some() {}
+            self.lock.get().reset_alloc_attempts();
             // Clear `guard` so `OnDemandGlobalLock::drop` does not overwrite `GLOBAL_POOL_SIZE`.
             drop(self.lock.guard.take());
         }
