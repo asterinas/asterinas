@@ -10,6 +10,9 @@
 
 #include "test.h"
 
+#define YAMA_SCOPE_DISABLED 0
+#define YAMA_SCOPE_RELATIONAL 1
+#define YAMA_SCOPE_CAPABILITY 2
 #define YAMA_SCOPE_NO_ATTACH 3
 
 static inline __attribute__((unused)) int read_yama_scope(void)
