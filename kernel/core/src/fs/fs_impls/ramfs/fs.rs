@@ -1314,28 +1314,18 @@ impl Inode for RamInode {
         old_child_dentry: &Dentry,
         new_dir_dentry: &Dentry,
         new_name: &str,
-        _replaced_inode: Option<&Arc<dyn Inode>>,
+        replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()> {
         let old_name = old_child_dentry.name();
         // Perform necessary checks to ensure that `dst_inode` can be replaced by `src_inode`.
-        let check_replace_inode =
+        let check_replace_inode_fn =
             |src_inode: &Arc<RamInode>, dst_inode: &Arc<RamInode>| -> Result<()> {
                 if src_inode.ino == dst_inode.ino {
                     return Ok(());
                 }
 
                 match (src_inode.typ, dst_inode.typ) {
-                    (InodeType::Dir, InodeType::Dir)
-                        if !dst_inode
-                            .inner
-                            .as_direntry()
-                            .unwrap()
-                            .read()
-                            .is_empty_children() =>
-                    {
-                        return Err(errno!(ENOTEMPTY, "dir not empty"));
-                    }
                     (InodeType::Dir, InodeType::Dir) => {}
                     (InodeType::Dir, _) => {
                         return Err(errno!(ENOTDIR, "old is not dir"));
@@ -1347,13 +1337,48 @@ impl Inode for RamInode {
                 }
                 Ok(())
             };
+        // Drops the links held by the name of `dst_inode`, which has been replaced.
+        // A replaced directory is empty, so it also loses the link of its `.` entry.
+        let drop_replaced_links_fn = |dst_inode: &Arc<RamInode>, now: Duration| {
+            let mut dst_meta = dst_inode.metadata.lock();
+            dst_meta.dec_nlinks();
+            if dst_inode.typ == InodeType::Dir {
+                dst_meta.dec_nlinks();
+            }
+            dst_meta.set_ctime(now);
+        };
 
         let new_dir_inode = new_dir_dentry.inode().downcast_ref::<RamInode>().unwrap();
+        let replaced_inode = replaced_inode.map(|inode| inode.downcast_ref::<RamInode>().unwrap());
+        // A directory that is replaced is locked together with the parent directories,
+        // from the check that it is empty until its link count drops,
+        // so that no entry can be added to it in between.
+        let replaced_dir = replaced_inode
+            .filter(|inode| inode.typ == InodeType::Dir && mode != RenameMode::Exchange)
+            .map(|inode| (inode.ino, inode.inner.as_direntry().unwrap()));
+        // The VFS layer looked up `old_name` and `new_name` under its locks.
+        // Code that changes directories without the VFS locks, such as devtmpfs,
+        // may have changed them since then, so they are checked again under the locks here.
+        let check_entries_fn = |old_dir: &DirEntry, new_dir: &DirEntry| -> Result<()> {
+            let entry_ino =
+                |dir: &DirEntry, name: &str| dir.get_entry(name).map(|(_, inode)| inode.ino);
+            if entry_ino(old_dir, &old_name) != Some(old_child_dentry.inode().ino())
+                || entry_ino(new_dir, new_name) != replaced_inode.map(|inode| inode.ino)
+            {
+                return Err(errno!(ENOENT, "the entries have changed"));
+            }
+            Ok(())
+        };
 
         // Rename in the same directory
         if self.ino == new_dir_inode.ino {
-            let mut self_dir = self.inner.as_direntry().unwrap().write();
-            // The source is guaranteed to exist (checked by VFS layer).
+            let [self_dir, dst_dir] = write_lock_direntries_by_ino([
+                Some((self.ino, self.inner.as_direntry().unwrap())),
+                replaced_dir,
+            ]);
+            let mut self_dir = self_dir.unwrap();
+            check_entries_fn(&self_dir, &self_dir)?;
+            // The source is guaranteed to exist (checked by `check_entries_fn`).
             let (src_idx, src_inode) = self_dir.get_entry(&old_name).unwrap();
 
             if mode == RenameMode::Exchange {
@@ -1367,18 +1392,22 @@ impl Inode for RamInode {
                 src_inode.metadata.lock().set_ctime(now);
                 dst_inode.metadata.lock().set_ctime(now);
             } else if let Some((dst_idx, dst_inode)) = self_dir.get_entry(new_name) {
-                check_replace_inode(&src_inode, &dst_inode)?;
+                check_replace_inode_fn(&src_inode, &dst_inode)?;
+                if dst_dir.as_ref().is_some_and(|dir| !dir.is_empty_children()) {
+                    return Err(errno!(ENOTEMPTY, "dir not empty"));
+                }
                 self_dir.remove_entry(dst_idx);
                 self_dir.substitute_entry(
                     src_idx,
                     (CStr256::from_str_truncated(new_name), src_inode.clone()),
                 );
+                let now = now();
+                drop_replaced_links_fn(&dst_inode, now);
+                drop(dst_dir);
                 drop(self_dir);
 
-                let now = now();
                 DirChange::del(&src_inode).apply(self, now);
                 src_inode.metadata.lock().set_ctime(now);
-                dst_inode.metadata.lock().set_ctime(now);
             } else {
                 self_dir.substitute_entry(
                     src_idx,
@@ -1393,16 +1422,22 @@ impl Inode for RamInode {
         }
         // Or rename across different directories
         else {
-            let [self_dir, target_dir] = write_lock_direntries_by_ino([
+            // The directory to replace is the parent of the source, so it is not empty.
+            // Checking this before locking also keeps `self` from being locked twice.
+            if replaced_dir.is_some_and(|(ino, _)| ino == self.ino) {
+                return Err(errno!(ENOTEMPTY));
+            }
+            let [self_dir, target_dir, dst_dir] = write_lock_direntries_by_ino([
                 Some((self.ino, self.inner.as_direntry().unwrap())),
                 Some((
                     new_dir_inode.ino,
                     new_dir_inode.inner.as_direntry().unwrap(),
                 )),
+                replaced_dir,
             ]);
             let (mut self_dir, mut target_dir) = (self_dir.unwrap(), target_dir.unwrap());
-            let self_inode_arc = self.this.upgrade().unwrap();
-            // The source is guaranteed to exist (checked by VFS layer).
+            check_entries_fn(&self_dir, &target_dir)?;
+            // The source is guaranteed to exist (checked by `check_entries_fn`).
             let (src_idx, src_inode) = self_dir.get_entry(&old_name).unwrap();
 
             if mode == RenameMode::Exchange {
@@ -1424,21 +1459,21 @@ impl Inode for RamInode {
 
                 dst_inode.set_parent_if_dir(self.this.clone());
             } else if let Some((dst_idx, dst_inode)) = target_dir.get_entry(new_name) {
-                // Avoid renaming a subdirectory to a directory.
-                if Arc::ptr_eq(&self_inode_arc, &dst_inode) {
-                    return Err(errno!(ENOTEMPTY));
+                check_replace_inode_fn(&src_inode, &dst_inode)?;
+                if dst_dir.as_ref().is_some_and(|dir| !dir.is_empty_children()) {
+                    return Err(errno!(ENOTEMPTY, "dir not empty"));
                 }
-                check_replace_inode(&src_inode, &dst_inode)?;
                 self_dir.remove_entry(src_idx);
                 target_dir.remove_entry(dst_idx);
                 target_dir.append_entry(new_name, src_inode.clone());
+                let now = now();
+                drop_replaced_links_fn(&dst_inode, now);
+                drop(dst_dir);
                 drop(self_dir);
                 drop(target_dir);
 
-                let now = now();
                 DirChange::del(&src_inode).apply(self, now);
                 DirChange::exchange(&dst_inode, &src_inode).apply(new_dir_inode, now);
-                dst_inode.metadata.lock().set_ctime(now);
                 src_inode.metadata.lock().set_ctime(now);
             } else {
                 self_dir.remove_entry(src_idx);
