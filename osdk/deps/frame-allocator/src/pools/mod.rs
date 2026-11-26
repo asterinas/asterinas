@@ -16,7 +16,7 @@ use ostd::{
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
 };
 
-use crate::chunk::{BuddyOrder, greater_order_of, lesser_order_of, size_of_order, split_to_chunks};
+use crate::chunk::{self, BuddyOrder};
 
 use super::set::BuddySet;
 
@@ -56,8 +56,8 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
     let mut local_pool = local_pool_cell.borrow_mut();
     let mut global_pool = OnDemandGlobalLock::new();
 
-    let size_order = greater_order_of(layout.size());
-    let align_order = greater_order_of(layout.align());
+    let size_order = chunk::greater_order_of(layout.size());
+    let align_order = chunk::greater_order_of(layout.align());
     let order = size_order.max(align_order);
 
     let mut chunk_addr = None;
@@ -76,7 +76,7 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
 
     // If the alignment order is larger than the size order, we need to split
     // the chunk and return the rest part back to the free lists.
-    let allocated_size = size_of_order(order);
+    let allocated_size = chunk::size_of_order(order);
     if allocated_size > layout.size()
         && let Some(chunk_addr) = chunk_addr
     {
@@ -108,7 +108,7 @@ pub(super) fn dealloc(
 pub(super) fn add_free_memory(_guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
     let mut global_pool = OnDemandGlobalLock::new();
 
-    split_to_chunks(addr, size).for_each(|(addr, order)| {
+    chunk::split_to_chunks(addr, size).for_each(|(addr, order)| {
         global_pool.get().insert_chunk(addr, order);
     });
 }
@@ -119,7 +119,7 @@ fn do_dealloc(
     segments: impl Iterator<Item = (Paddr, usize)>,
 ) {
     segments.for_each(|(addr, size)| {
-        split_to_chunks(addr, size).for_each(|(addr, order)| {
+        chunk::split_to_chunks(addr, size).for_each(|(addr, order)| {
             if order >= MAX_LOCAL_BUDDY_ORDER {
                 global_pool.get().insert_chunk(addr, order);
             } else {
@@ -167,6 +167,62 @@ impl Drop for OnDemandGlobalLock {
         // Updates [`GLOBAL_POOL_SIZE`] if the global pool is locked.
         if let Some(guard) = self.guard.as_ref() {
             GLOBAL_POOL_SIZE.store(guard.total_size(), Ordering::Relaxed);
+        }
+    }
+}
+
+#[cfg(ktest)]
+pub(crate) mod test {
+    use core::marker::PhantomData;
+
+    use ostd::{
+        mm,
+        sync::{LocalIrqDisabled, SpinLock},
+    };
+
+    use super::{OnDemandGlobalLock, balancing};
+    use crate::{chunk, set::BuddySet, test::MockMemoryRegion};
+
+    static TEST_GLOBAL_POOL: SpinLock<BuddySet<{ super::MAX_BUDDY_ORDER }>, LocalIrqDisabled> =
+        SpinLock::new(BuddySet::new_empty());
+
+    pub(crate) struct TestGlobalPool<'a> {
+        lock: OnDemandGlobalLock,
+        _region: PhantomData<&'a MockMemoryRegion>,
+    }
+
+    impl<'a> TestGlobalPool<'a> {
+        pub(crate) fn new(_region: &'a MockMemoryRegion) -> Self {
+            Self {
+                lock: OnDemandGlobalLock {
+                    guard: Some(TEST_GLOBAL_POOL.lock()),
+                },
+                _region: PhantomData,
+            }
+        }
+
+        pub(crate) fn insert_chunk(&mut self, addr: mm::Paddr, order: chunk::BuddyOrder) {
+            self.lock.get().insert_chunk(addr, order);
+        }
+
+        pub(super) fn balance_for_cpus(
+            &mut self,
+            local: &mut BuddySet<{ super::MAX_LOCAL_BUDDY_ORDER }>,
+            nr_cpus: usize,
+        ) {
+            balancing::balance_for_cpus(local, &mut self.lock, nr_cpus);
+        }
+
+        pub(crate) fn total_size(&mut self) -> usize {
+            self.lock.get().total_size()
+        }
+    }
+
+    impl Drop for TestGlobalPool<'_> {
+        fn drop(&mut self) {
+            while self.lock.get().alloc_chunk(0).is_some() {}
+            // Clear `guard` so `OnDemandGlobalLock::drop` does not overwrite `GLOBAL_POOL_SIZE`.
+            drop(self.lock.guard.take());
         }
     }
 }
