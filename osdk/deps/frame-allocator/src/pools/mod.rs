@@ -90,10 +90,10 @@ fn alloc_from(
     layout: Layout,
     nr_cpus: usize,
 ) -> Option<Paddr> {
-    let allocated = try_alloc_from_local(local_pool, global_pool, layout)
-        .or_else(|| try_alloc_from_global(local_pool, global_pool, layout));
-    balancing::balance_for_cpus(local_pool, global_pool, nr_cpus);
-    allocated
+    alloc_with_balance(local_pool, global_pool, nr_cpus, |local, global| {
+        try_alloc_from_local(local, global, layout)
+            .or_else(|| try_alloc_from_global(local, global, layout))
+    })
 }
 
 fn alloc_refill_from(
@@ -103,23 +103,41 @@ fn alloc_refill_from(
     single_layout: Layout,
     nr_cpus: usize,
 ) -> Option<RefillAlloc> {
-    // Probe `LOCAL_POOL` for both the batch and single segment before locking
-    // `GLOBAL_POOL`, and probe both layouts before `balance_for_cpus` can split
-    // an intact segment in `GLOBAL_POOL`.
-    let allocated = try_alloc_from_local(local_pool, global_pool, batch_layout)
-        .map(RefillAlloc::Batch)
-        .or_else(|| {
-            try_alloc_from_local(local_pool, global_pool, single_layout).map(RefillAlloc::Single)
-        })
-        .or_else(|| {
-            try_alloc_from_global(local_pool, global_pool, batch_layout).map(RefillAlloc::Batch)
-        })
-        .or_else(|| {
-            try_alloc_from_global(local_pool, global_pool, single_layout).map(RefillAlloc::Single)
-        });
+    alloc_with_balance(local_pool, global_pool, nr_cpus, |local, global| {
+        // Probe `LOCAL_POOL` for both the batch and single segment before locking
+        // `GLOBAL_POOL`, and probe both layouts before `balance_for_cpus` can split
+        // an intact segment in `GLOBAL_POOL`.
+        try_alloc_from_local(local, global, batch_layout)
+            .map(RefillAlloc::Batch)
+            .or_else(|| try_alloc_from_local(local, global, single_layout).map(RefillAlloc::Single))
+            .or_else(|| try_alloc_from_global(local, global, batch_layout).map(RefillAlloc::Batch))
+            .or_else(|| {
+                try_alloc_from_global(local, global, single_layout).map(RefillAlloc::Single)
+            })
+    })
+}
 
-    balancing::balance_for_cpus(local_pool, global_pool, nr_cpus);
-    allocated
+fn alloc_with_balance<T>(
+    local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
+    global_pool: &mut OnDemandGlobalLock,
+    nr_cpus: usize,
+    try_alloc_fn: impl Fn(&mut BuddySet<MAX_LOCAL_BUDDY_ORDER>, &mut OnDemandGlobalLock) -> Option<T>,
+) -> Option<T> {
+    if let Some(allocated) = try_alloc_fn(local_pool, global_pool) {
+        balancing::balance_for_cpus(local_pool, global_pool, nr_cpus);
+        return Some(allocated);
+    }
+
+    // Flush `local_pool` into `GLOBAL_POOL` on a miss so buddies split between
+    // this CPU and `GLOBAL_POOL` coalesce regardless of watermarks or list depth.
+    if balancing::drain_to_global(local_pool, global_pool)
+        && let Some(allocated) = try_alloc_fn(local_pool, global_pool)
+    {
+        balancing::balance_for_cpus(local_pool, global_pool, nr_cpus);
+        return Some(allocated);
+    }
+
+    None
 }
 
 fn layout_order(layout: Layout) -> BuddyOrder {
@@ -286,6 +304,15 @@ pub(crate) mod test {
             self.lock.get().insert_chunk(addr, order);
         }
 
+        pub(super) fn alloc_from_pools(
+            &mut self,
+            local: &mut BuddySet<{ super::MAX_LOCAL_BUDDY_ORDER }>,
+            layout: Layout,
+            nr_cpus: usize,
+        ) -> Option<mm::Paddr> {
+            super::alloc_from(local, &mut self.lock, layout, nr_cpus)
+        }
+
         pub(crate) fn alloc_refill_from_pools(
             &mut self,
             local: &mut BuddySet<{ super::MAX_LOCAL_BUDDY_ORDER }>,
@@ -300,8 +327,18 @@ pub(crate) mod test {
             &mut self,
             local: &mut BuddySet<{ super::MAX_LOCAL_BUDDY_ORDER }>,
             nr_cpus: usize,
-        ) {
-            balancing::balance_for_cpus(local, &mut self.lock, nr_cpus);
+        ) -> bool {
+            balancing::balance_for_cpus(local, &mut self.lock, nr_cpus)
+        }
+
+        pub(super) fn balance_with_snapshot(
+            &mut self,
+            local: &mut BuddySet<{ super::MAX_LOCAL_BUDDY_ORDER }>,
+            snapshot_size: usize,
+            nr_cpus: usize,
+        ) -> bool {
+            let global_set = &mut **self.lock.get();
+            balancing::balance_with_snapshot(local, snapshot_size, nr_cpus, || global_set)
         }
 
         pub(crate) fn total_size(&mut self) -> usize {

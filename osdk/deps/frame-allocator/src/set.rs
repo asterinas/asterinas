@@ -70,6 +70,42 @@ impl<const MAX_ORDER: BuddyOrder> BuddySet<MAX_ORDER> {
         self.total_size += inserted_size;
     }
 
+    /// Removes and returns a free chunk of `order` without splitting larger chunks.
+    pub(crate) fn alloc_exact_chunk(&mut self, order: BuddyOrder) -> Option<Paddr> {
+        #[cfg(ktest)]
+        {
+            self.nr_alloc_attempts += 1;
+        }
+        self.pop_exact_chunk(order)
+    }
+
+    /// Removes and returns the smallest free chunk with order at least `min_order`
+    /// without splitting.
+    pub(crate) fn pop_smallest_chunk_at_least(
+        &mut self,
+        min_order: BuddyOrder,
+    ) -> Option<(Paddr, BuddyOrder)> {
+        #[cfg(ktest)]
+        {
+            self.nr_alloc_attempts += 1;
+        }
+        for order in min_order..MAX_ORDER {
+            if let Some(paddr) = self.pop_exact_chunk(order) {
+                return Some((paddr, order));
+            }
+        }
+        None
+    }
+
+    fn pop_exact_chunk(&mut self, order: BuddyOrder) -> Option<Paddr> {
+        let head = self.lists.get_mut(order)?.pop_front()?;
+        debug_assert_eq!(head.meta().order(), order);
+        self.total_size -= size_of_order(order);
+        let paddr = head.paddr();
+        head.reset_as_unused();
+        Some(paddr)
+    }
+
     /// Allocates a chunk from the set.
     ///
     /// The function will choose and remove a buddy chunk of the given order
