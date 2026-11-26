@@ -853,10 +853,11 @@ impl RamInode {
         }
 
         // When we got the lock, the directory may have been modified by another thread.
-        let (mut self_dir, target_dir) = write_lock_two_direntries_by_ino(
-            (self.ino, self.inner.as_direntry().unwrap()),
-            (target.ino, target.inner.as_direntry().unwrap()),
-        );
+        let [self_dir, target_dir] = write_lock_direntries_by_ino([
+            Some((self.ino, self.inner.as_direntry().unwrap())),
+            Some((target.ino, target.inner.as_direntry().unwrap())),
+        ]);
+        let (mut self_dir, target_dir) = (self_dir.unwrap(), target_dir.unwrap());
         if !target_dir.is_empty_children() {
             return Err(errno!(ENOTEMPTY, "dir not empty"));
         }
@@ -1392,13 +1393,14 @@ impl Inode for RamInode {
         }
         // Or rename across different directories
         else {
-            let (mut self_dir, mut target_dir) = write_lock_two_direntries_by_ino(
-                (self.ino, self.inner.as_direntry().unwrap()),
-                (
+            let [self_dir, target_dir] = write_lock_direntries_by_ino([
+                Some((self.ino, self.inner.as_direntry().unwrap())),
+                Some((
                     new_dir_inode.ino,
                     new_dir_inode.inner.as_direntry().unwrap(),
-                ),
-            );
+                )),
+            ]);
+            let (mut self_dir, mut target_dir) = (self_dir.unwrap(), target_dir.unwrap());
             let self_inode_arc = self.this.upgrade().unwrap();
             // The source is guaranteed to exist (checked by VFS layer).
             let (src_idx, src_inode) = self_dir.get_entry(&old_name).unwrap();
@@ -1635,22 +1637,22 @@ impl DirChange {
     }
 }
 
-fn write_lock_two_direntries_by_ino<'a>(
-    this: (u64, &'a RwMutex<DirEntry>),
-    other: (u64, &'a RwMutex<DirEntry>),
-) -> (
-    RwMutexWriteGuard<'a, DirEntry>,
-    RwMutexWriteGuard<'a, DirEntry>,
-) {
-    if this.0 < other.0 {
-        let this = this.1.write();
-        let other = other.1.write();
-        (this, other)
-    } else {
-        let other = other.1.write();
-        let this = this.1.write();
-        (this, other)
+/// Write-locks the entries of the given directories in ascending inode number order.
+///
+/// Each directory is given as its inode number and its entries.
+/// A `None` is skipped and yields `None`. The directories must be different.
+fn write_lock_direntries_by_ino<'a, const N: usize>(
+    dirs: [Option<(u64, &'a RwMutex<DirEntry>)>; N],
+) -> [Option<RwMutexWriteGuard<'a, DirEntry>>; N] {
+    let mut order: [usize; N] = core::array::from_fn(|i| i);
+    order.sort_unstable_by_key(|&i| dirs[i].map(|(ino, _)| ino));
+    let mut guards = core::array::from_fn(|_| None);
+    for i in order {
+        if let Some((_, entries)) = dirs[i] {
+            guards[i] = Some(entries.write());
+        }
     }
+    guards
 }
 
 fn now() -> Duration {
