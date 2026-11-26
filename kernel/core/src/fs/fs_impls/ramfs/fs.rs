@@ -87,7 +87,6 @@ impl RamFs {
                 this: weak_root.clone(),
                 fs: weak_fs.clone(),
                 container_dev_id: root_dev_id,
-                hard_linkability: HardLinkability::Linkable,
                 extension: Extension::new(),
                 to_be_revalidated: false,
                 xattr: RamXattr::new(),
@@ -156,11 +155,6 @@ pub(in crate::fs::fs_impls) struct RamInode {
     /// Detached inodes such as `memfd` store it directly
     /// because they do not have a valid fs reference.
     container_dev_id: DeviceId,
-    /// Hard linkability.
-    ///
-    /// All inodes except temporary files are set to linkable
-    /// Linkability of temporary files is specified via [`RamInode::create_tmpfile`]
-    hard_linkability: HardLinkability,
     /// Extensions
     extension: Extension,
     /// Whether this inode should be revalidated during VFS path lookup.
@@ -300,6 +294,11 @@ struct InodeMeta {
     ctime: Duration,
     mode: InodeMode,
     nlinks: usize,
+    /// Whether the inode may get a hard link while it has none.
+    ///
+    /// This is true only for a temporary file that was created hard-linkable
+    /// and has not been linked yet.
+    linkable_without_links: bool,
     uid: Uid,
     gid: Gid,
 }
@@ -315,6 +314,7 @@ impl InodeMeta {
             ctime: now,
             mode,
             nlinks: 1,
+            linkable_without_links: false,
             uid,
             gid,
         }
@@ -330,14 +330,21 @@ impl InodeMeta {
             ctime: now,
             mode,
             nlinks: NUM_SPECIAL_ENTRIES,
+            linkable_without_links: false,
             uid,
             gid,
         }
     }
 
-    pub(crate) fn new_tmpfile(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
+    pub(crate) fn new_tmpfile(
+        mode: InodeMode,
+        uid: Uid,
+        gid: Gid,
+        hard_linkability: HardLinkability,
+    ) -> Self {
         let mut meta = Self::new(mode, uid, gid);
         meta.nlinks = 0;
+        meta.linkable_without_links = hard_linkability == HardLinkability::Linkable;
         meta
     }
 
@@ -377,6 +384,18 @@ impl InodeMeta {
 
     pub(crate) fn inc_nlinks(&mut self) {
         self.nlinks += 1;
+    }
+
+    /// Increments the link count for a new hard link to the inode.
+    ///
+    /// Fails with `ENOENT` if the inode has no links and may not get one.
+    pub(crate) fn check_and_inc_nlinks(&mut self) -> Result<()> {
+        if self.nlinks == 0 && !self.linkable_without_links {
+            return Err(errno!(ENOENT, "the inode has no links"));
+        }
+        self.linkable_without_links = false;
+        self.inc_nlinks();
+        Ok(())
     }
 
     pub(crate) fn dec_nlinks(&mut self) {
@@ -537,7 +556,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -560,7 +578,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -577,14 +594,13 @@ impl RamInode {
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
             inner: Inner::new_file(),
-            metadata: Mutex::new(InodeMeta::new_tmpfile(mode, uid, gid)),
+            metadata: Mutex::new(InodeMeta::new_tmpfile(mode, uid, gid, hard_linkability)),
             ino: fs.alloc_id(),
             typ: InodeType::File,
             dir_revalidation_policy: RevalidationPolicy::empty(),
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -608,7 +624,6 @@ impl RamInode {
             this: Weak::new(),
             fs: Weak::new(),
             container_dev_id: dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: false,
             xattr: RamXattr::new(),
@@ -636,7 +651,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -666,7 +680,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -689,7 +702,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -712,7 +724,6 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             container_dev_id: fs.sb.container_dev_id,
-            hard_linkability: HardLinkability::Linkable,
             extension: Extension::new(),
             to_be_revalidated: to_be_revalidated.as_bool(),
             xattr: RamXattr::new(),
@@ -853,10 +864,11 @@ impl RamInode {
         }
 
         // When we got the lock, the directory may have been modified by another thread.
-        let (mut self_dir, target_dir) = write_lock_two_direntries_by_ino(
-            (self.ino, self.inner.as_direntry().unwrap()),
-            (target.ino, target.inner.as_direntry().unwrap()),
-        );
+        let [self_dir, target_dir] = write_lock_direntries_by_ino([
+            Some((self.ino, self.inner.as_direntry().unwrap())),
+            Some((target.ino, target.inner.as_direntry().unwrap())),
+        ]);
+        let (mut self_dir, target_dir) = (self_dir.unwrap(), target_dir.unwrap());
         if !target_dir.is_empty_children() {
             return Err(errno!(ENOTEMPTY, "dir not empty"));
         }
@@ -870,6 +882,13 @@ impl RamInode {
             return Ok(false);
         }
         self_dir.remove_entry(idx);
+
+        // Drop the link count while `target_dir` is still locked, so that
+        // `check_dir_not_removed` sees it under the same lock.
+        let mut target_meta = target.metadata.lock();
+        target_meta.dec_nlinks();
+        target_meta.dec_nlinks();
+        drop(target_meta);
         drop(self_dir);
         drop(target_dir);
 
@@ -879,10 +898,6 @@ impl RamInode {
         self_meta.dec_nlinks();
         self_meta.set_mtime(now);
         self_meta.set_ctime(now);
-        drop(self_meta);
-        let mut target_meta = target.metadata.lock();
-        target_meta.dec_nlinks();
-        target_meta.dec_nlinks();
 
         Ok(true)
     }
@@ -900,6 +915,7 @@ impl RamInode {
         }
 
         let mut self_dir = self.inner.as_direntry().unwrap().write();
+        self.check_dir_not_removed()?;
         if self_dir.contains_entry(name) {
             return Err(errno!(EEXIST, "entry exists"));
         }
@@ -948,6 +964,7 @@ impl RamInode {
         }
 
         let mut self_dir = self.inner.as_direntry().unwrap().write();
+        self.check_dir_not_removed()?;
         if self_dir.contains_entry(name) {
             return Err(errno!(EEXIST, "entry exists"));
         }
@@ -980,6 +997,17 @@ impl RamInode {
 
         self.metadata.lock().inc_size();
         Ok(new_inode)
+    }
+
+    /// Returns `ENOENT` if this directory has been removed.
+    ///
+    /// `rmdir` drops the link count of the directory to zero while holding the
+    /// lock on the directory's entries, so the caller must hold that lock too.
+    fn check_dir_not_removed(&self) -> Result<()> {
+        if self.metadata.lock().nlinks == 0 {
+            return Err(errno!(ENOENT, "the directory has been removed"));
+        }
+        Ok(())
     }
 
     fn resize_impl(&self, new_size: usize) -> Result<()> {
@@ -1260,23 +1288,20 @@ impl Inode for RamInode {
         if old.typ == InodeType::Dir {
             return Err(errno!(EPERM, "old is a dir"));
         }
-        if old.hard_linkability == HardLinkability::Unlinkable {
-            return Err(errno!(ENOENT, "tmpfile is not linkable"));
-        }
 
         let mut self_dir = self.inner.as_direntry().unwrap().write();
+        self.check_dir_not_removed()?;
         if self_dir.contains_entry(name) {
             return Err(errno!(EEXIST, "entry exist"));
         }
-        self_dir.append_entry(name, old.this.upgrade().unwrap());
         let now = now();
 
-        // An `O_TMPFILE` inode starts with zero links. Bump the link count
-        // before exposing the new entry to concurrent lookup or unlink.
+        // Add the link before exposing the new entry to concurrent lookup or unlink.
         let mut old_meta = old.metadata.lock();
-        old_meta.inc_nlinks();
+        old_meta.check_and_inc_nlinks()?;
         old_meta.set_ctime(now);
         drop(old_meta);
+        self_dir.append_entry(name, old.this.upgrade().unwrap());
         drop(self_dir);
 
         let mut self_meta = self.metadata.lock();
@@ -1313,28 +1338,18 @@ impl Inode for RamInode {
         old_child_dentry: &Dentry,
         new_dir_dentry: &Dentry,
         new_name: &str,
-        _replaced_inode: Option<&Arc<dyn Inode>>,
+        replaced_inode: Option<&Arc<dyn Inode>>,
         mode: RenameMode,
     ) -> Result<()> {
         let old_name = old_child_dentry.name();
         // Perform necessary checks to ensure that `dst_inode` can be replaced by `src_inode`.
-        let check_replace_inode =
+        let check_replace_inode_fn =
             |src_inode: &Arc<RamInode>, dst_inode: &Arc<RamInode>| -> Result<()> {
                 if src_inode.ino == dst_inode.ino {
                     return Ok(());
                 }
 
                 match (src_inode.typ, dst_inode.typ) {
-                    (InodeType::Dir, InodeType::Dir)
-                        if !dst_inode
-                            .inner
-                            .as_direntry()
-                            .unwrap()
-                            .read()
-                            .is_empty_children() =>
-                    {
-                        return Err(errno!(ENOTEMPTY, "dir not empty"));
-                    }
                     (InodeType::Dir, InodeType::Dir) => {}
                     (InodeType::Dir, _) => {
                         return Err(errno!(ENOTDIR, "old is not dir"));
@@ -1346,13 +1361,48 @@ impl Inode for RamInode {
                 }
                 Ok(())
             };
+        // Drops the links held by the name of `dst_inode`, which has been replaced.
+        // A replaced directory is empty, so it also loses the link of its `.` entry.
+        let drop_replaced_links_fn = |dst_inode: &Arc<RamInode>, now: Duration| {
+            let mut dst_meta = dst_inode.metadata.lock();
+            dst_meta.dec_nlinks();
+            if dst_inode.typ == InodeType::Dir {
+                dst_meta.dec_nlinks();
+            }
+            dst_meta.set_ctime(now);
+        };
 
         let new_dir_inode = new_dir_dentry.inode().downcast_ref::<RamInode>().unwrap();
+        let replaced_inode = replaced_inode.map(|inode| inode.downcast_ref::<RamInode>().unwrap());
+        // A directory that is replaced is locked together with the parent directories,
+        // from the check that it is empty until its link count drops,
+        // so that no entry can be added to it in between.
+        let replaced_dir = replaced_inode
+            .filter(|inode| inode.typ == InodeType::Dir && mode != RenameMode::Exchange)
+            .map(|inode| (inode.ino, inode.inner.as_direntry().unwrap()));
+        // The VFS layer looked up `old_name` and `new_name` under its locks.
+        // Code that changes directories without the VFS locks, such as devtmpfs,
+        // may have changed them since then, so they are checked again under the locks here.
+        let check_entries_fn = |old_dir: &DirEntry, new_dir: &DirEntry| -> Result<()> {
+            let entry_ino =
+                |dir: &DirEntry, name: &str| dir.get_entry(name).map(|(_, inode)| inode.ino);
+            if entry_ino(old_dir, &old_name) != Some(old_child_dentry.inode().ino())
+                || entry_ino(new_dir, new_name) != replaced_inode.map(|inode| inode.ino)
+            {
+                return Err(errno!(ENOENT, "the entries have changed"));
+            }
+            Ok(())
+        };
 
         // Rename in the same directory
         if self.ino == new_dir_inode.ino {
-            let mut self_dir = self.inner.as_direntry().unwrap().write();
-            // The source is guaranteed to exist (checked by VFS layer).
+            let [self_dir, dst_dir] = write_lock_direntries_by_ino([
+                Some((self.ino, self.inner.as_direntry().unwrap())),
+                replaced_dir,
+            ]);
+            let mut self_dir = self_dir.unwrap();
+            check_entries_fn(&self_dir, &self_dir)?;
+            // The source is guaranteed to exist (checked by `check_entries_fn`).
             let (src_idx, src_inode) = self_dir.get_entry(&old_name).unwrap();
 
             if mode == RenameMode::Exchange {
@@ -1366,18 +1416,22 @@ impl Inode for RamInode {
                 src_inode.metadata.lock().set_ctime(now);
                 dst_inode.metadata.lock().set_ctime(now);
             } else if let Some((dst_idx, dst_inode)) = self_dir.get_entry(new_name) {
-                check_replace_inode(&src_inode, &dst_inode)?;
+                check_replace_inode_fn(&src_inode, &dst_inode)?;
+                if dst_dir.as_ref().is_some_and(|dir| !dir.is_empty_children()) {
+                    return Err(errno!(ENOTEMPTY, "dir not empty"));
+                }
                 self_dir.remove_entry(dst_idx);
                 self_dir.substitute_entry(
                     src_idx,
                     (CStr256::from_str_truncated(new_name), src_inode.clone()),
                 );
+                let now = now();
+                drop_replaced_links_fn(&dst_inode, now);
+                drop(dst_dir);
                 drop(self_dir);
 
-                let now = now();
                 DirChange::del(&src_inode).apply(self, now);
                 src_inode.metadata.lock().set_ctime(now);
-                dst_inode.metadata.lock().set_ctime(now);
             } else {
                 self_dir.substitute_entry(
                     src_idx,
@@ -1392,15 +1446,23 @@ impl Inode for RamInode {
         }
         // Or rename across different directories
         else {
-            let (mut self_dir, mut target_dir) = write_lock_two_direntries_by_ino(
-                (self.ino, self.inner.as_direntry().unwrap()),
-                (
+            // The directory to replace is the parent of the source, so it is not empty.
+            // Checking this before locking also keeps `self` from being locked twice.
+            if replaced_dir.is_some_and(|(ino, _)| ino == self.ino) {
+                return Err(errno!(ENOTEMPTY));
+            }
+            let [self_dir, target_dir, dst_dir] = write_lock_direntries_by_ino([
+                Some((self.ino, self.inner.as_direntry().unwrap())),
+                Some((
                     new_dir_inode.ino,
                     new_dir_inode.inner.as_direntry().unwrap(),
-                ),
-            );
-            let self_inode_arc = self.this.upgrade().unwrap();
-            // The source is guaranteed to exist (checked by VFS layer).
+                )),
+                replaced_dir,
+            ]);
+            let (mut self_dir, mut target_dir) = (self_dir.unwrap(), target_dir.unwrap());
+            new_dir_inode.check_dir_not_removed()?;
+            check_entries_fn(&self_dir, &target_dir)?;
+            // The source is guaranteed to exist (checked by `check_entries_fn`).
             let (src_idx, src_inode) = self_dir.get_entry(&old_name).unwrap();
 
             if mode == RenameMode::Exchange {
@@ -1422,21 +1484,21 @@ impl Inode for RamInode {
 
                 dst_inode.set_parent_if_dir(self.this.clone());
             } else if let Some((dst_idx, dst_inode)) = target_dir.get_entry(new_name) {
-                // Avoid renaming a subdirectory to a directory.
-                if Arc::ptr_eq(&self_inode_arc, &dst_inode) {
-                    return Err(errno!(ENOTEMPTY));
+                check_replace_inode_fn(&src_inode, &dst_inode)?;
+                if dst_dir.as_ref().is_some_and(|dir| !dir.is_empty_children()) {
+                    return Err(errno!(ENOTEMPTY, "dir not empty"));
                 }
-                check_replace_inode(&src_inode, &dst_inode)?;
                 self_dir.remove_entry(src_idx);
                 target_dir.remove_entry(dst_idx);
                 target_dir.append_entry(new_name, src_inode.clone());
+                let now = now();
+                drop_replaced_links_fn(&dst_inode, now);
+                drop(dst_dir);
                 drop(self_dir);
                 drop(target_dir);
 
-                let now = now();
                 DirChange::del(&src_inode).apply(self, now);
                 DirChange::exchange(&dst_inode, &src_inode).apply(new_dir_inode, now);
-                dst_inode.metadata.lock().set_ctime(now);
                 src_inode.metadata.lock().set_ctime(now);
             } else {
                 self_dir.remove_entry(src_idx);
@@ -1635,22 +1697,22 @@ impl DirChange {
     }
 }
 
-fn write_lock_two_direntries_by_ino<'a>(
-    this: (u64, &'a RwMutex<DirEntry>),
-    other: (u64, &'a RwMutex<DirEntry>),
-) -> (
-    RwMutexWriteGuard<'a, DirEntry>,
-    RwMutexWriteGuard<'a, DirEntry>,
-) {
-    if this.0 < other.0 {
-        let this = this.1.write();
-        let other = other.1.write();
-        (this, other)
-    } else {
-        let other = other.1.write();
-        let this = this.1.write();
-        (this, other)
+/// Write-locks the entries of the given directories in ascending inode number order.
+///
+/// Each directory is given as its inode number and its entries.
+/// A `None` is skipped and yields `None`. The directories must be different.
+fn write_lock_direntries_by_ino<'a, const N: usize>(
+    dirs: [Option<(u64, &'a RwMutex<DirEntry>)>; N],
+) -> [Option<RwMutexWriteGuard<'a, DirEntry>>; N] {
+    let mut order: [usize; N] = core::array::from_fn(|i| i);
+    order.sort_unstable_by_key(|&i| dirs[i].map(|(ino, _)| ino));
+    let mut guards = core::array::from_fn(|_| None);
+    for i in order {
+        if let Some((_, entries)) = dirs[i] {
+            guards[i] = Some(entries.write());
+        }
     }
+    guards
 }
 
 fn now() -> Duration {
