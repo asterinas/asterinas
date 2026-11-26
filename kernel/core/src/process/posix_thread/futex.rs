@@ -120,7 +120,7 @@ pub(crate) fn futex_wait_bitset(
     let result = waiter
         .pause_timeout(&timeout.into())
         .map_err(|err| match err.error() {
-            Errno::ERESTARTSYS if has_timeout => errno!(EINTR),
+            Errno::ERESTARTSYS if has_timeout => errno!(EINTR, "futex wait was interrupted"),
             _ => err,
         });
 
@@ -138,10 +138,7 @@ pub(crate) fn futex_wait_bitset(
         Err(err)
     } else {
         // Spurious wakeups. Return `EINTR` anyway.
-        Err(errno!(
-            EINTR,
-            "the current thread is interrupted by a signal"
-        ))
+        Err(errno!(EINTR, "a spurious wakeup occurs on the futex"))
     }
 }
 
