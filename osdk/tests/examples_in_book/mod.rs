@@ -9,3 +9,5 @@ mod work_in_workspace;
 mod write_a_hypervisor_in_100_lines;
 #[cfg(target_arch = "x86_64")]
 mod write_a_kernel_in_100_lines;
+
+mod write_a_hypervisor_in_100_lines_riscv;
