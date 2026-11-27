@@ -7,12 +7,14 @@ edition.workspace = true
 
 [dependencies]
 align_ext.workspace = true
+aster-softirq.workspace = true
 aster-util.workspace = true
 dma-pool.workspace = true
 component.workspace = true
 device-id.workspace = true
 id-alloc.workspace = true
 int-to-c-enum.workspace = true
+intrusive-collections.workspace = true
 io-util.workspace = true
 ostd.workspace = true
 ostd-pod.workspace = true
