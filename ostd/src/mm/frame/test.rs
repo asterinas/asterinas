@@ -574,3 +574,281 @@ mod frame_ref {
         assert_eq!(frame_ref.paddr(), ptr);
     }
 }
+
+// Address-sensitive frame metadata tests.
+mod pinning {
+    use core::{marker::PhantomPinned, pin::Pin};
+
+    use super::*;
+    use crate::mm::{
+        Infallible, UniqueFrame, VmReader,
+        frame::linked_list::{Link, LinkedList},
+    };
+
+    #[derive(Default)]
+    struct DropCounts {
+        callbacks: AtomicUsize,
+        drops: AtomicUsize,
+    }
+
+    #[derive(Default)]
+    struct PinnedMeta {
+        address: AtomicUsize,
+        counts: Arc<DropCounts>,
+        _pin: PhantomPinned,
+    }
+
+    impl PinnedMeta {
+        fn record_address(self: Pin<&mut Self>) {
+            let address = self.as_ref().get_ref() as *const Self as usize;
+            self.address.store(address, Ordering::Relaxed);
+        }
+
+        fn check_address(&self) {
+            assert_eq!(
+                self as *const Self as usize,
+                self.address.load(Ordering::Relaxed)
+            );
+        }
+    }
+
+    // SAFETY: The callback does not read bytes. Address dependencies are only
+    // initialized after pinning, and the metadata is !Unpin and never moved.
+    unsafe impl AnyFrameMeta for PinnedMeta {
+        unsafe fn on_drop(self: Pin<&mut Self>, _reader: &mut VmReader<Infallible>) {
+            self.check_address();
+            assert_eq!(self.counts.callbacks.fetch_add(1, Ordering::Relaxed), 0);
+        }
+    }
+
+    impl Drop for PinnedMeta {
+        fn drop(&mut self) {
+            if self.address.load(Ordering::Relaxed) != 0 {
+                self.check_address();
+            }
+            self.counts.drops.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn new_frame() -> (UniqueFrame<Link<PinnedMeta>>, Arc<DropCounts>) {
+        let meta = PinnedMeta::default();
+        let counts = meta.counts.clone();
+        let mut frame: UniqueFrame<_> = FrameAllocOptions::new()
+            .alloc_frame_with(Link::new(meta))
+            .unwrap()
+            .try_into()
+            .unwrap();
+        frame.pin_meta().project().record_address();
+        (frame, counts)
+    }
+
+    #[ktest]
+    fn pinned_metadata_survives_list_operations() {
+        let (first, first_counts) = new_frame();
+        let (second, second_counts) = new_frame();
+        let first_paddr = first.paddr();
+        let mut list = LinkedList::new();
+        list.push_back(first);
+        list.push_front(second);
+
+        let mut cursor = list.cursor_mut_at(first_paddr).unwrap();
+        cursor.pin_current_meta().unwrap().check_address();
+        let first = cursor.take_current().unwrap();
+        assert!(cursor.pin_current_meta().is_none());
+        first.meta().check_address();
+        list.push_front(first);
+
+        drop(list);
+        for counts in [first_counts, second_counts] {
+            assert_eq!(counts.callbacks.load(Ordering::Relaxed), 1);
+            assert_eq!(counts.drops.load(Ordering::Relaxed), 1);
+        }
+    }
+
+    #[ktest]
+    fn pinned_metadata_survives_frame_conversions() {
+        let (frame, counts) = new_frame();
+        let paddr = frame.paddr();
+        let shared: Frame<_> = frame.into();
+        let other = shared.clone();
+        drop(other);
+
+        let erased: Frame<dyn AnyFrameMeta> = shared.into();
+        let mut unique: UniqueFrame<dyn AnyFrameMeta> = erased.try_into().unwrap();
+        assert_eq!(unique.paddr(), paddr);
+        assert_eq!(
+            unique.pin_dyn_meta().as_ref().get_ref().type_id(),
+            core::any::TypeId::of::<Link<PinnedMeta>>()
+        );
+
+        let shared: Frame<dyn AnyFrameMeta> = unique.into();
+        let typed = Frame::<Link<PinnedMeta>>::try_from(shared).unwrap();
+        let mut unique: UniqueFrame<_> = typed.try_into().unwrap();
+        unique.pin_meta().project().check_address();
+
+        drop(unique.repurpose(()));
+        assert_eq!(counts.callbacks.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.drops.load(Ordering::Relaxed), 1);
+    }
+
+    #[ktest]
+    fn pinned_replacement_runs_ordinary_drop() {
+        let (mut frame, old_counts) = new_frame();
+        let replacement = PinnedMeta::default();
+        let new_counts = replacement.counts.clone();
+        frame.pin_meta().project().set(replacement);
+        assert_eq!(old_counts.callbacks.load(Ordering::Relaxed), 0);
+        assert_eq!(old_counts.drops.load(Ordering::Relaxed), 1);
+
+        let paddr = frame.paddr();
+        frame.pin_meta().project().record_address();
+        frame.reset_as_unused();
+        assert_eq!(new_counts.callbacks.load(Ordering::Relaxed), 1);
+        assert_eq!(new_counts.drops.load(Ordering::Relaxed), 1);
+        drop(UniqueFrame::from_unused(paddr, ()).unwrap());
+    }
+}
+
+mod teardown {
+    use core::pin::Pin;
+
+    use super::*;
+    use crate::{
+        mm::{self, Infallible, UniqueFrame, VmReader},
+        panic,
+    };
+
+    const INSTALLED: usize = 0;
+    const TORN_DOWN: usize = 1;
+    const DROPPED: usize = 2;
+
+    struct TeardownMeta {
+        stage: Arc<AtomicUsize>,
+        paddr: Paddr,
+        should_panic_on_teardown: bool,
+    }
+
+    // SAFETY: The callback only checks the reader's bounds without reading bytes.
+    unsafe impl AnyFrameMeta for TeardownMeta {
+        unsafe fn on_drop(self: Pin<&mut Self>, reader: &mut VmReader<Infallible>) {
+            assert_eq!(reader.cursor() as usize, mm::paddr_to_vaddr(self.paddr));
+            assert_eq!(reader.remain(), PAGE_SIZE);
+            assert_eq!(self.stage.swap(TORN_DOWN, Ordering::Relaxed), INSTALLED);
+            assert!(!self.should_panic_on_teardown, "teardown panic");
+        }
+    }
+
+    impl Drop for TeardownMeta {
+        fn drop(&mut self) {
+            assert_eq!(self.stage.swap(DROPPED, Ordering::Relaxed), TORN_DOWN);
+        }
+    }
+
+    fn new_frame() -> (UniqueFrame<TeardownMeta>, Arc<AtomicUsize>) {
+        let stage = Arc::new(AtomicUsize::new(INSTALLED));
+        let mut frame: UniqueFrame<_> = FrameAllocOptions::new()
+            .alloc_frame_with(TeardownMeta {
+                stage: stage.clone(),
+                paddr: 0,
+                should_panic_on_teardown: false,
+            })
+            .unwrap()
+            .try_into()
+            .unwrap();
+        frame.meta_mut().paddr = frame.paddr();
+        (frame, stage)
+    }
+
+    #[ktest]
+    fn release_calls_teardown_once_before_drop() {
+        let (frame, stage) = new_frame();
+        drop(frame);
+        assert_eq!(stage.load(Ordering::Relaxed), DROPPED);
+
+        let (frame, stage) = new_frame();
+        let frame = Frame::from(frame);
+        let other = frame.clone();
+        drop(frame);
+        assert_eq!(stage.load(Ordering::Relaxed), INSTALLED);
+        drop(other);
+        assert_eq!(stage.load(Ordering::Relaxed), DROPPED);
+    }
+
+    #[ktest]
+    fn repurpose_calls_teardown_once_before_drop() {
+        let (frame, stage) = new_frame();
+        let paddr = frame.paddr();
+        let frame = frame.repurpose(MockFrameMeta { value: 42 });
+        assert_eq!(stage.load(Ordering::Relaxed), DROPPED);
+        assert_eq!(frame.paddr(), paddr);
+        assert_eq!(frame.meta().value, 42);
+    }
+
+    #[ktest]
+    fn reset_calls_teardown_once_before_drop() {
+        let (frame, stage) = new_frame();
+        let paddr = frame.paddr();
+        frame.reset_as_unused();
+        assert_eq!(stage.load(Ordering::Relaxed), DROPPED);
+        // Reset does not return the page to the allocator. Reclaim it to clean up.
+        drop(UniqueFrame::from_unused(paddr, ()).unwrap());
+    }
+
+    #[ktest]
+    fn panicking_teardown_retains_frame() {
+        fn assert_retained(teardown_fn: impl FnOnce(UniqueFrame<TeardownMeta>)) {
+            let (mut frame, stage) = new_frame();
+            frame.meta_mut().should_panic_on_teardown = true;
+            let paddr = frame.paddr();
+            assert!(panic::catch_unwind(|| teardown_fn(frame)).is_err());
+            assert_eq!(stage.load(Ordering::Relaxed), TORN_DOWN);
+            assert!(UniqueFrame::from_unused(paddr, ()).is_err());
+            assert!(Frame::<dyn AnyFrameMeta>::from_in_use(paddr).is_err());
+            // The failed teardown must leave the frame allocated. Intentionally
+            // leak it: accessing its metadata or retrying teardown is unsound.
+        }
+
+        assert_retained(drop);
+        assert_retained(|frame| drop(Frame::from(frame)));
+        assert_retained(|frame| drop(frame.repurpose(())));
+        assert_retained(UniqueFrame::reset_as_unused);
+    }
+
+    #[ktest]
+    fn custom_teardown_runs_once() {
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+        // These names previously collided with helpers generated by the macro.
+        fn drop_body() -> &'static str {
+            "caller function"
+        }
+
+        trait DropBody {
+            fn run() -> &'static str;
+        }
+
+        struct CustomDropMeta;
+        impl DropBody for CustomDropMeta {
+            fn run() -> &'static str {
+                "caller trait"
+            }
+        }
+
+        impl_untyped_frame_meta_for!(CustomDropMeta, {
+            assert_eq!(drop_body(), "caller function");
+            assert_eq!(<Self as DropBody>::run(), "caller trait");
+            assert_eq!(Self::run(), "caller trait");
+            CALLS.fetch_add(1, Ordering::Relaxed);
+        });
+
+        let before = CALLS.load(Ordering::Relaxed);
+        let frame = FrameAllocOptions::new()
+            .alloc_frame_with(CustomDropMeta)
+            .unwrap();
+        let other = frame.clone();
+        drop(frame);
+        assert_eq!(CALLS.load(Ordering::Relaxed), before);
+        drop(other);
+        assert_eq!(CALLS.load(Ordering::Relaxed), before + 1);
+    }
+}
