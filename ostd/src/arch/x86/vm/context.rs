@@ -101,14 +101,20 @@ pub struct VcpuArchState {
     pub sregs: VcpuSregs,
     /// The model-specific registers.
     pub msrs: VcpuMsrs,
-    /// An external interrupt awaiting injection by OSTD.
-    pub pending_interrupt: Option<u8>,
-    /// A pending exception awaiting injection by OSTD.
-    pub pending_exception: Option<(u32, u32)>,
+    // /// An external interrupt awaiting injection by OSTD.
+    // pub pending_interrupt: Option<u8>,
+
+    /// A pending event awaiting injection on `vmentry` by OSTD.
+    pub pending_interruption_info: (u32, u32),
     /// IDT-vectoring information for an interrupted event delivery.
     pub idt_vectoring_info: u32,
     /// The exception error code, if indicated by `idt_vectoring_info`.
     pub idt_vectoring_error_code: u32,
+    pub is_interruptible: bool,
+
+    pub interruption_info: (u32, u32),
+    pub request_interrupt_window: bool,
+    pub request_immediate_exit: bool,
     /// The guest TSC deadline for returning from guest execution.
     pub timer_deadline: Option<GuestTimerInstant>,
 }

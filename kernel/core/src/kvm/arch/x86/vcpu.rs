@@ -20,6 +20,8 @@ use crate::{
 
 pub(in crate::kvm) struct VcpuArch {
     state: Mutex<VcpuState>,
+
+    exception: SpinLock<Option<(u32, u32)>>,
 }
 
 impl VcpuArch {
@@ -29,6 +31,7 @@ impl VcpuArch {
                 guest_context: Vcpu::new_guest_context()?,
                 pending_io: None,
             }),
+            exception: SpinLock::new(None),
         })
     }
 
@@ -174,7 +177,48 @@ impl Vcpu {
 }
 
 impl GuestModeHooks for Vcpu {
-    fn pre_guest_run(&self, _state: &mut VcpuArchState, _guard: &DisabledLocalIrqGuard) {}
+    fn pre_guest_run(&self, state: &mut VcpuArchState, _guard: &DisabledLocalIrqGuard) {
+        // TODO: 添加时钟源后，需要在这里继续设置 `state.timer_deadline`
+
+        state.interruption_info = if is_exception(state.idt_vectoring_info) {
+            (state.idt_vectoring_info, state.idt_vectoring_error_code)
+        } else if is_exception(state.pending_interruption_info.0) {
+            state.pending_interruption_info
+        } else if self.arch().exception.lock().is_some() {
+            self.arch().exception.take()
+        } else {
+            (0, 0)
+        };
+        
+        state.request_immediate_exit = false;
+        state.request_interrupt_window = false;
+        if is_exception(state.interruption_info.0) {
+            state.pending_interruption_info = state.interruption_info;
+            if is_interrupt(state.pending_interruption_info.0)
+                || is_interrupt(state.idt_vectoring_info) {
+                if state.is_interruptible {
+                    state.request_immediate_exit = true;
+                } else {
+                    state.request_interrupt_window = true;
+                }
+            }
+            return ;
+        }
+
+        if is_interrupt(state.pending_interruption_info.0)
+            || is_interrupt(state.idt_vectoring_info) {
+            if state.is_interruptible {
+                state.interruption_info = if is_interrupt(state.pending_interruption_info.0) {
+                    state.pending_interruption_info
+                } else {
+                    (state.idt_vectoring_info, 0)
+                };
+                state.pending_interruption_info = state.interruption_info;
+            } else {
+                state.request_interrupt_window = true;
+            }
+        }
+    }
 
     fn post_guest_run(&self, _state: &mut VcpuArchState, _guard: &DisabledLocalIrqGuard) {}
 
@@ -189,4 +233,12 @@ fn is_64_bit_code(sregs: &VcpuSregs) -> bool {
     let long_mode_active = sregs.efer & EferFlags::LONG_MODE_ACTIVE.bits() != 0;
     let long_code_segment = sregs.cs.l & 1 != 0;
     long_mode_active && long_code_segment
+}
+
+fn is_exception(interruption_info: u32) -> bool {
+    interruption_info & (1 << 31) != 0 && ((interruption_info >> 8) & 0x7) == 3
+}
+
+fn is_interrupt(interruption_info: u32) -> bool {
+    interruption_info & (1 << 31) != 0 && ((interruption_info >> 8) & 0x7) == 0
 }
