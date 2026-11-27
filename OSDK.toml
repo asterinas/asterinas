@@ -24,6 +24,9 @@ kcmd_args = [
 init_args = ["sh", "-l"]
 
 # Special options for testing
+[test.boot]
+kcmd_args = ["earlycon"]
+
 [test.qemu]
 args = "$(./tools/qemu_args.sh test)"
 
