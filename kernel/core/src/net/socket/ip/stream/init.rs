@@ -147,11 +147,22 @@ impl InitStream {
         );
 
         let remote_endpoint = map_unspecified_to_localhost(*remote_endpoint);
-        if is_broadcast_endpoint(&remote_endpoint) {
+        // Classify IPv4-mapped IPv6 destinations by their embedded IPv4 address, without
+        // changing how IPv4-mapped connections themselves are handled below.
+        let checked_endpoint = match remote_endpoint.addr {
+            IpAddress::Ipv6(address) => address
+                .to_ipv4_mapped()
+                .map(|address| IpEndpoint::new(address.into(), remote_endpoint.port))
+                .unwrap_or(remote_endpoint),
+            IpAddress::Ipv4(_) => remote_endpoint,
+        };
+        // Reject non-unicast TCP destinations before binding a port or entering SYN-SENT.
+        // Otherwise, sending a SYN can pass a multicast address to smoltcp's unicast routing.
+        if checked_endpoint.addr.is_multicast() || is_broadcast_endpoint(&checked_endpoint) {
             return Err((
                 errno!(
                     ENETUNREACH,
-                    "TCP sockets cannot connect to broadcast addresses",
+                    "TCP sockets cannot connect to multicast or broadcast addresses",
                 ),
                 self,
             ));
