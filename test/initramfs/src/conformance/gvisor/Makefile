@@ -11,6 +11,8 @@ TESTS ?= \
 	capabilities_test \
 	chmod_test \
 	chown_test \
+	clock_gettime_test \
+	clock_nanosleep_test \
 	creat_test \
 	dev_test \
 	dup_test \

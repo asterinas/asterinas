@@ -1,0 +1,2 @@
+# TODO: Support `clock_getres` syscall.
+ClockGettime.JavaThreadTime
