@@ -20,6 +20,7 @@ set -e
 ./pty/signal_char
 ./pty/termios2
 
+./vt/vt_font
 ./vt/vt_ioctl
 ./vt/vt_waitactive
 
