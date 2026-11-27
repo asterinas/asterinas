@@ -15,8 +15,10 @@ asterinas/osdk-dev -> asterinas/prebuilt-nix-packages ->asterinas/kernel-dev -> 
 ```
 
 `asterinas/osdk-dev` contains tools for building OSDK itself and developing
-OSDK-based kernels. The later images add, respectively, Nix tooling and cached
-Nix packages, Asterinas kernel-specific development tools, and agent tooling.
+OSDK-based kernels, including Nix with channels pinned to `flake.lock` and the
+QEMU built from the flake.
+The later Docker images add, respectively, Nix utilities and prebuilt test
+packages, Asterinas kernel-specific development tools, and agent tooling.
 
 ## Building Docker Images
 

@@ -15,8 +15,6 @@ final: prev:
       toolchain // { components = toolchain.components ++ [ "rust-analyzer" ]; }
     );
 
-  # Prebuilt Linux vDSO binaries embedded by the kernel build, pinned to the
-  # commit tools/dev_env/docker/kernel-dev/Dockerfile clones.
   asterinas-vdso = final.fetchFromGitHub {
     owner = "asterinas";
     repo = "linux_vdso";
