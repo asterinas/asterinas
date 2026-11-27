@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::btree_set::BTreeSet;
+//! Reservation and enumeration of block device major numbers.
+//!
+//! [`acquire_major`] reserves a specified major number,
+//! while [`allocate_major`] selects an available one.
+//! Their `_with_name` variants associate a name with the reservation.
+//! [`major_devices`] returns a snapshot of reserved major numbers and their names.
+
+use alloc::{
+    collections::{BTreeMap, btree_map::Entry},
+    string::String,
+};
 
 use device_id::{DeviceId, MajorId, MinorId};
 use id_alloc::IdAlloc;
@@ -20,37 +30,61 @@ pub const MAX_MAJOR: u16 = 511;
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/block/genhd.c#L224>.
 const LAST_DYNAMIC_MAJOR: u16 = 254;
 
-static MAJORS: Mutex<BTreeSet<u16>> = Mutex::new(BTreeSet::new());
+static MAJORS: Mutex<BTreeMap<u16, String>> = Mutex::new(BTreeMap::new());
 
 /// Acquires a major ID.
 ///
-/// The returned `MajorIdOwner` object represents the ownership to the major ID.
-/// Until the object is dropped, this major ID cannot be acquired via `acquire_major` or `allocate_major` again.
+/// The returned `MajorIdOwner` object represents ownership of the major ID.
+/// This major ID remains reserved until the returned owner is dropped.
 pub fn acquire_major(major: MajorId) -> Result<MajorIdOwner, Error> {
+    acquire_major_with_name(major, "unknown")
+}
+
+/// Acquires a major ID and associates a registration name with it.
+pub fn acquire_major_with_name(major: MajorId, name: &str) -> Result<MajorIdOwner, Error> {
     if major.get() > MAX_MAJOR {
         return Err(Error::InvalidArgs);
     }
 
-    if MAJORS.lock().insert(major.get()) {
-        Ok(MajorIdOwner(major))
-    } else {
-        Err(Error::IdAcquired)
+    let mut majors = MAJORS.lock();
+    match majors.entry(major.get()) {
+        Entry::Vacant(entry) => {
+            entry.insert(String::from(name));
+            Ok(MajorIdOwner(major))
+        }
+        Entry::Occupied(_) => Err(Error::IdAcquired),
     }
 }
 
 /// Allocates a major ID.
 ///
-/// The returned `MajorIdOwner` object represents the ownership to the major ID.
-/// Until the object is dropped, this major ID cannot be acquired via `acquire_major` or `allocate_major` again.
+/// The returned `MajorIdOwner` object represents ownership of the major ID.
+/// This major ID remains reserved until the returned owner is dropped.
 pub fn allocate_major() -> Result<MajorIdOwner, Error> {
+    allocate_major_with_name("unknown")
+}
+
+/// Allocates a dynamic major ID and associates a registration name with it.
+pub fn allocate_major_with_name(name: &str) -> Result<MajorIdOwner, Error> {
     let mut majors = MAJORS.lock();
     for id in (1..LAST_DYNAMIC_MAJOR + 1).rev() {
-        if majors.insert(id) {
+        if let Entry::Vacant(entry) = majors.entry(id) {
+            entry.insert(String::from(name));
             return Ok(MajorIdOwner(MajorId::new(id)));
         }
     }
 
     Err(Error::IdExhausted)
+}
+
+/// Returns a snapshot of the registered block majors as
+/// `(major_number, registration_name)` pairs, sorted by major number in ascending order.
+pub fn major_devices() -> alloc::vec::Vec<(u16, String)> {
+    MAJORS
+        .lock()
+        .iter()
+        .map(|(major, name)| (*major, name.clone()))
+        .collect()
 }
 
 /// An owned major ID.
@@ -71,7 +105,8 @@ impl Drop for MajorIdOwner {
     }
 }
 
-/// The major ID used for extended partitions when the number of disk partitions exceeds the standard limit.
+/// The major ID used for extended partitions when the number of disk partitions
+/// exceeds the standard limit.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/block/partitions/core.c#L352>.
 const EXTENDED_MAJOR: u16 = 259;
@@ -88,7 +123,7 @@ impl ExtendedDeviceIdAllocator {
         let minor_allocator = IdAlloc::with_capacity(MinorId::MAX.get() as usize + 1);
 
         Self {
-            major: acquire_major(major).unwrap(),
+            major: acquire_major_with_name(major, "blkext").unwrap(),
             minor_allocator: Mutex::new(minor_allocator),
         }
     }
@@ -112,6 +147,38 @@ impl ExtendedDeviceIdAllocator {
 }
 
 pub(crate) static EXTENDED_DEVICE_ID_ALLOCATOR: Once<ExtendedDeviceIdAllocator> = Once::new();
+
+#[cfg(ktest)]
+mod tests {
+    use ostd::prelude::ktest;
+
+    use super::*;
+
+    #[ktest]
+    fn major_snapshot_is_sorted_and_tracks_owner_lifetime() {
+        let before = major_devices();
+        let first = acquire_major_with_name(MajorId::new(508), "first-major").unwrap();
+        let second = acquire_major_with_name(MajorId::new(507), "second-major").unwrap();
+
+        let snapshot = major_devices();
+        let first_index = snapshot
+            .iter()
+            .position(|(major, _)| *major == 507)
+            .unwrap();
+        let second_index = snapshot
+            .iter()
+            .position(|(major, _)| *major == 508)
+            .unwrap();
+        assert!(first_index < second_index);
+        assert_eq!(snapshot[first_index].1, "second-major");
+        assert_eq!(snapshot[second_index].1, "first-major");
+
+        drop(first);
+        assert!(major_devices().iter().all(|(major, _)| *major != 508));
+        drop(second);
+        assert_eq!(major_devices(), before);
+    }
+}
 
 pub(super) fn init() {
     EXTENDED_DEVICE_ID_ALLOCATOR.call_once(ExtendedDeviceIdAllocator::new);

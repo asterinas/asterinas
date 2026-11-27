@@ -21,9 +21,9 @@ use crate::{
 };
 
 /// Same major number with Linux.
-const PTMX_MAJOR_NUM: u16 = 5;
+pub(super) const PTMX_MAJOR_NUM: u16 = 5;
 /// Same minor number with Linux.
-const PTMX_MINOR_NUM: u32 = 2;
+pub(super) const PTMX_MINOR_NUM: u32 = 2;
 
 /// Ptmx is the multiplexing master of devpts.
 ///

@@ -51,6 +51,12 @@ mod minor;
 pub mod utils;
 
 pub fn register_device(device: Arc<dyn DrmDevice>) -> Result<()> {
+    // All DRM devices share one subsystem-wide number reservation.
+    static MAJOR: spin::Once<char::MajorIdOwner> = spin::Once::new();
+    MAJOR.try_call_once(|| {
+        char::acquire_major(device_id::MajorId::new(minor::DRM_MAJOR_ID), "drm")
+    })?;
+
     let registered_device = Arc::new(RegisteredDrmDevice::new(device)?);
     let render_minor = if registered_device.device().has_features(DrmFeatures::RENDER) {
         let minor = DrmMinor::new(registered_device.clone(), DrmMinorType::Render);

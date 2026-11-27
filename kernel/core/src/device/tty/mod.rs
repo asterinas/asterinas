@@ -32,7 +32,7 @@ pub(super) mod termio;
 mod vt;
 
 pub(crate) use device::CONSOLE_DEVICE_ID;
-pub(super) use driver::TtyDriver;
+pub(crate) use driver::TtyDriver;
 pub(super) use flags::TtyFlags;
 
 pub(super) fn init_in_first_process() -> Result<()> {
