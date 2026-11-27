@@ -43,13 +43,13 @@ impl<M: AnyFrameMeta> UniqueFrame<M> {
         })
     }
 
-    /// Gets the metadata of this page.
+    /// Gets a reference to this frame's metadata.
     pub fn meta(&self) -> &M {
         // SAFETY: The type is tracked by the type system.
         unsafe { &*self.slot().as_meta_ptr::<M>() }
     }
 
-    /// Gets the mutable metadata of this page.
+    /// Gets a mutable reference to this frame's metadata.
     ///
     /// Address-sensitive metadata requires [`Self::pin_meta`].
     pub fn meta_mut(&mut self) -> &mut M
@@ -85,35 +85,12 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
         1
     }
 
-    /// Gets the dynamically-typed metadata of this frame.
+    /// Gets a dynamically-typed reference to this frame's metadata.
     ///
-    /// If the type is known at compile time, use [`Frame::meta`] instead.
+    /// If the type is known at compile time, use [`Self::meta`] instead.
     pub fn dyn_meta(&self) -> &dyn AnyFrameMeta {
         // SAFETY: The metadata is initialized and valid.
         unsafe { &*self.slot().dyn_meta_ptr() }
-    }
-
-    /// Gets the mutable dynamically-typed metadata of this frame.
-    ///
-    /// Requires proof that the metadata is [`Unpin`] before erasing its type.
-    /// An already-erased frame must use [`Self::pin_dyn_meta`] instead.
-    pub fn dyn_meta_mut(&mut self) -> &mut dyn AnyFrameMeta
-    where
-        M: Unpin,
-    {
-        // SAFETY: The metadata is initialized and valid. We have the exclusive
-        // access to the frame.
-        unsafe { &mut *self.slot().dyn_meta_ptr() }
-    }
-
-    /// Gets the pinned dynamically-typed metadata of this frame.
-    ///
-    /// Supports address-sensitive metadata that does not implement [`Unpin`].
-    /// A pinned trait object cannot be converted to `&mut dyn Any` for downcasting.
-    pub fn pin_dyn_meta(&mut self) -> Pin<&mut dyn AnyFrameMeta> {
-        // SAFETY: We exclusively own valid metadata. It stays in its slot until
-        // dropped in place, and all mutable access paths preserve pinning.
-        unsafe { Pin::new_unchecked(&mut *self.slot().dyn_meta_ptr()) }
     }
 
     /// Repurposes the frame with a new metadata.

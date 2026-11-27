@@ -30,7 +30,7 @@ mod pte_state;
 
 use core::{
     cell::SyncUnsafeCell,
-    marker::PhantomData,
+    marker::{PhantomData, PhantomPinned},
     ops::Deref,
     pin::Pin,
     sync::atomic::{AtomicU8, Ordering},
@@ -257,8 +257,21 @@ impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
     }
 }
 
-/// The metadata of any kinds of page table pages.
-/// Make sure the the generic parameters don't effect the memory layout.
+/// The metadata of a page table page.
+///
+/// The generic configuration does not affect the memory layout.
+///
+/// # Address sensitivity and pinning
+///
+/// The paging level and child count describe the PTEs in the associated frame.
+/// Moving this metadata to another frame could make teardown interpret that
+/// frame's PTEs at the wrong level and release frames it does not own.
+/// Once installed, the metadata must therefore remain in its frame's metadata
+/// slot. This type is `!Unpin` regardless of whether `C` implements [`Unpin`].
+///
+/// [`Pin::set`] would replace the metadata without calling `on_drop`, losing the
+/// association with the existing PTEs. The constructor is private, and no APIs
+/// expose owned metadata values, so safe callers cannot construct replacements.
 #[derive(Debug)]
 pub(crate) struct PageTablePageMeta<C: PageTableConfig> {
     /// The number of valid PTEs. It is mutable if the lock is held.
@@ -275,6 +288,7 @@ pub(crate) struct PageTablePageMeta<C: PageTableConfig> {
     /// The lock for the page table page.
     lock: AtomicU8,
     _phantom: PhantomData<C>,
+    _pin: PhantomPinned,
 }
 
 impl<C: PageTableConfig> PageTablePageMeta<C> {
@@ -285,6 +299,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
             level,
             lock: AtomicU8::new(0),
             _phantom: PhantomData,
+            _pin: PhantomPinned,
         }
     }
 }

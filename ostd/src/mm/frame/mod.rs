@@ -125,7 +125,7 @@ impl<M: AnyFrameMeta> Frame<M> {
         })
     }
 
-    /// Gets the metadata of this page.
+    /// Gets a reference to this frame's metadata.
     pub fn meta(&self) -> &M {
         // SAFETY: The type is tracked by the type system.
         unsafe { &*self.slot().as_meta_ptr::<M>() }
@@ -158,7 +158,7 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
         1
     }
 
-    /// Gets the dynamically-typed metadata of this frame.
+    /// Gets a dynamically-typed reference to this frame's metadata.
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     pub fn dyn_meta(&self) -> &dyn AnyFrameMeta {
