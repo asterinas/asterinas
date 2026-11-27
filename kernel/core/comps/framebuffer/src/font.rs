@@ -51,7 +51,7 @@ impl BitmapFont {
     ///
     /// This is the default font for the framebuffer console.
     pub fn new_basic8x8() -> Self {
-        const CHAR_COUNT: u32 = 0x7F;
+        const CHAR_COUNT: u32 = 256;
 
         const FONT_WIDTH: usize = 8;
         const FONT_HEIGHT: usize = 8;
@@ -60,7 +60,7 @@ impl BitmapFont {
             .flat_map(|ch| {
                 font8x8::BASIC_FONTS
                     .get(char::from_u32(ch).unwrap())
-                    .unwrap()
+                    .unwrap_or_default()
                     .into_iter()
             })
             .collect();
@@ -118,6 +118,11 @@ impl BitmapFont {
     /// Returns the height of the font.
     pub fn height(&self) -> usize {
         self.height
+    }
+
+    /// Returns the number of the characters in the font.
+    pub fn char_count(&self) -> usize {
+        self.bitmap.len() / self.char_size
     }
 
     /// Returns the bitmap of the specified character in the font.

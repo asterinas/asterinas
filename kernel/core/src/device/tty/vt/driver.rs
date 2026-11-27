@@ -56,16 +56,17 @@ impl VtDriver {
             CFontOp::OP_SET_DEFAULT => {
                 return self.console.set_font(BitmapFont::new_basic8x8());
             }
-            _ => return Err(errno!(EINVAL, "the font operation is invalid")),
+            _ => return Err(errno!(ENOSYS, "the font operation is invalid")),
         };
 
         if *width == 0
-            || *height == 0
             || *width > CFontOp::MAX_WIDTH
+            || *height == 0
             || *height > CFontOp::MAX_HEIGHT
+            || *height > vpitch
             || *charcount == 0
             || *charcount > CFontOp::MAX_CHARCOUNT
-            || *height > vpitch
+            || *data == 0
         {
             return Err(errno!(EINVAL, "the font is invalid or too large"));
         }
