@@ -74,7 +74,7 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 - [Comments](rust-specific/comments.md)
     - [`rfc1574-summary`](rust-specific/comments.md#rfc1574-summary): First doc line is one sentence — a third-person verb for functions, a noun phrase for types/modules.
     - [`comment-punctuation`](rust-specific/comments.md#comment-punctuation): End full-sentence comments with terminal punctuation.
-    - [`backtick-identifiers`](rust-specific/comments.md#backtick-identifiers): Wrap identifiers in doc comments in backticks; prefer rustdoc links where possible.
+    - [`backtick-identifiers`](rust-specific/comments.md#backtick-identifiers): Wrap identifiers in comments in backticks; prefer rustdoc links in doc comments where possible.
     - [`no-impl-in-docs`](rust-specific/comments.md#no-impl-in-docs): Doc comments describe what an API does and how to use it, not its internal implementation.
 
 **[Path-Specific](path-specific/)**

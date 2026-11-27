@@ -61,3 +61,56 @@ let tsc_info = cpuid.get_tsc_info().unwrap();
 See also:
 _The Rust Programming Language_, Chapter 9 "Error Handling"
 and [Rust by Example: unpacking options and defaults with `?`](https://doc.rust-lang.org/rust-by-example/std/result/question_mark.html).
+
+### Match Linux syscall semantics (`match-linux-semantics`) {#match-linux-semantics}
+
+Syscall implementations must match Linux's return values,
+error codes, and side effects for supported argument combinations.
+A recognized flag may still be invalid in a particular branch.
+
+When accepting new flags or argument values,
+recheck every affected branch, including unchanged ones.
+Keep null pointers, empty strings, and sentinel values distinct
+when Linux assigns them different meanings.
+
+For example, `utimensat`'s null-pathname update branch
+must reject nonzero flags:
+
+```rust
+// Good — reject invalid flags before resolving the fd-only target
+if !flags.is_empty() {
+    return_errno_with_message!(Errno::EINVAL, "flags require a pathname");
+}
+let fs_path = FsPath::from_fd(dirfd)?;
+
+// Bad — resolve the fd-only target without checking its flags
+let fs_path = FsPath::from_fd(dirfd)?;
+```
+
+See also:
+PR [#3176](https://github.com/asterinas/asterinas/pull/3176#discussion_r3137887431).
+
+### Prevent reachable kernel panics (`reachable-panic`) {#reachable-panic}
+
+Kernel code must handle user input, recoverable errors,
+and valid state changes without panicking.
+Use `unwrap()`, `expect()`, indexing, or assertions
+only when their preconditions hold on every reachable path.
+Check caller validation and helper side effects:
+a merge can remove a saved key even while holding a lock.
+
+```rust
+// Good — a prior merge has already completed this entry's update.
+let Some(entry) = entries.remove(&key) else {
+    continue;
+};
+
+// Bad — an earlier iteration may have merged this entry away.
+let entry = entries.remove(&key).unwrap();
+```
+
+Skip a missing entry only if its work is already complete;
+otherwise return an error or recompute the remaining work.
+
+See also:
+the [fix for a panic after merging adjacent mappings](https://github.com/asterinas/asterinas/commit/c7b633e9bdf425d7aa3f7a5a5bb4fe819517da01).

@@ -28,7 +28,7 @@ fn select_cpu(&self) -> CpuId {
 See also:
 PR [#1790](https://github.com/asterinas/asterinas/pull/1790).
 
-### Minimize unnecessary copies and allocations (`minimize-copies`) {#minimize-copies}
+### Minimize unnecessary copies and allocations (`minimize-copies-and-allocations`) {#minimize-copies-and-allocations}
 
 Extra data copies —
 serializing to a stack buffer before writing,
@@ -49,8 +49,23 @@ fn process(&self, stream: &DmaStream) {
 }
 ```
 
+When input length is unknown,
+avoid reserving the full size limit up front.
+Use a small initial capacity capped by that limit,
+and grow as needed while enforcing the input size limit.
+
+```rust
+// Bad — allocate for the full read limit before seeing any data
+let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
+
+// Good — cap the initial allocation and grow with the actual input
+const INITIAL_CAPACITY: usize = 64;
+let mut buffer: Vec<u8> = Vec::with_capacity(max_len.min(INITIAL_CAPACITY));
+```
+
 See also:
-PR [#2582](https://github.com/asterinas/asterinas/pull/2582)
+PR [#2430](https://github.com/asterinas/asterinas/pull/2430#discussion_r2348115060),
+[#2582](https://github.com/asterinas/asterinas/pull/2582),
 and [#2725](https://github.com/asterinas/asterinas/pull/2725).
 
 ### No premature optimization without evidence (`no-premature-optimization`) {#no-premature-optimization}
