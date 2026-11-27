@@ -17,3 +17,6 @@ pub const NETWORK_TX_SOFTIRQ_ID: u8 = 3;
 
 /// The corresponding softirq line is used to handle reception network events.
 pub const NETWORK_RX_SOFTIRQ_ID: u8 = 4;
+
+/// The corresponding softirq line is used to complete block I/O requests.
+pub const BLOCK_SOFTIRQ_ID: u8 = 5;
