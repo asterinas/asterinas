@@ -5,12 +5,19 @@
 #[expect(clippy::module_inception)]
 mod trap;
 
-use loongArch64::register::estat::{self, Exception, Interrupt, Trap};
+use loongArch64::register::{
+    estat::{self, Exception, Interrupt, Trap},
+    prmd::Prmd,
+};
 pub(super) use trap::RawUserContext;
 pub use trap::TrapFrame;
 
 use crate::{
-    arch::{cpu::context::CpuExceptionInfo, irq::HwIrqLine, mm::tlb_flush_addr},
+    arch::{
+        cpu::context::CpuExceptionInfo,
+        irq::{HwIrqLine, disable_local, enable_local},
+        mm::tlb_flush_addr,
+    },
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
 };
@@ -37,45 +44,65 @@ pub(crate) unsafe fn init_on_cpu() {
 // SAFETY: The name does not collide with other symbols.
 #[unsafe(no_mangle)]
 unsafe extern "C" fn trap_handler(f: &mut TrapFrame) {
+    fn enable_local_if(cond: bool) {
+        if cond {
+            enable_local();
+        }
+    }
+
+    fn disable_local_if(cond: bool) {
+        if cond {
+            disable_local();
+        }
+    }
+
     let cause = estat::read().cause();
     let badi = loongArch64::register::badi::read().raw();
     let badv = loongArch64::register::badv::read().vaddr();
     let era = loongArch64::register::era::read().raw();
 
+    // The IRQ state before trapping. We need to ensure that the IRQ state
+    // during exception handling is consistent with the state before the trap.
+    let was_irq_enabled = Prmd::from(f.prmd).pie();
+
     match cause {
-        Trap::Exception(exception) => match exception {
-            Exception::LoadPageFault
-            | Exception::StorePageFault
-            | Exception::FetchPageFault
-            | Exception::PageNonReadableFault
-            | Exception::PageNonExecutableFault
-            | Exception::PagePrivilegeIllegal => {
-                tlb_flush_addr(badv);
-                crate::debug!(
-                    "Page fault occurred in kernel: {exception:?}, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
-                );
-                crate::mm::fault::handle_user_page_fault(
-                    f,
-                    &CpuExceptionInfo {
-                        code: exception,
-                        page_fault_addr: badv,
-                        error_code: 0,
-                    },
-                    badv,
-                );
+        Trap::Exception(exception) => {
+            enable_local_if(was_irq_enabled);
+            match exception {
+                Exception::LoadPageFault
+                | Exception::StorePageFault
+                | Exception::PageModifyFault
+                | Exception::FetchPageFault
+                | Exception::PageNonReadableFault
+                | Exception::PageNonExecutableFault
+                | Exception::PagePrivilegeIllegal => {
+                    tlb_flush_addr(badv);
+                    crate::debug!(
+                        "Page fault occurred in kernel: {exception:?}, badv: {badv:#x?}, badi: {badi:#x?}, era: {era:#x?}"
+                    );
+                    crate::mm::fault::handle_user_page_fault(
+                        f,
+                        &CpuExceptionInfo {
+                            code: exception,
+                            page_fault_addr: badv,
+                            error_code: 0,
+                        },
+                        badv,
+                    );
+                }
+                Exception::FetchInstructionAddressError => todo!(),
+                Exception::MemoryAccessAddressError => todo!(),
+                Exception::AddressNotAligned => todo!(),
+                Exception::BoundsCheckFault => todo!(),
+                Exception::Syscall => todo!(),
+                Exception::Breakpoint => todo!(),
+                Exception::InstructionNotExist => todo!(),
+                Exception::InstructionPrivilegeIllegal => todo!(),
+                Exception::FloatingPointUnavailable => todo!(),
+                Exception::TLBRFill => unreachable!(),
             }
-            Exception::PageModifyFault => unimplemented!(),
-            Exception::FetchInstructionAddressError => todo!(),
-            Exception::MemoryAccessAddressError => todo!(),
-            Exception::AddressNotAligned => todo!(),
-            Exception::BoundsCheckFault => todo!(),
-            Exception::Syscall => todo!(),
-            Exception::Breakpoint => todo!(),
-            Exception::InstructionNotExist => todo!(),
-            Exception::InstructionPrivilegeIllegal => todo!(),
-            Exception::FloatingPointUnavailable => todo!(),
-            Exception::TLBRFill => unreachable!(),
-        },
+            disable_local_if(was_irq_enabled);
+        }
         Trap::Interrupt(interrupt) => {
             match interrupt {
                 Interrupt::SWI0 => todo!(),
