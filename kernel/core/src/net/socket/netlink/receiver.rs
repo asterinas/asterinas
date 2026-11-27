@@ -34,9 +34,6 @@ impl<Message> MessageQueue<Message> {
     }
 
     /// Returns whether the message queue contains errors.
-    ///
-    /// Currently, the message queue contains errors only if the queue is full but the kernel still
-    /// wants to enqueue new messages.
     pub(super) fn has_errors(&self) -> bool {
         self.error.is_some()
     }
@@ -80,32 +77,46 @@ impl<Message: QueueableMessage> MessageQueue<Message> {
 
     /// Tries to enqueue a new message. Returns `false` if the buffer is full.
     #[must_use]
-    pub(self) fn enqueue(&mut self, message: Message) -> bool {
+    fn enqueue(&mut self, message: Message) -> bool {
         let length = message.total_len();
 
-        // Currently, we don't support sending netlink messages between user spaces, so only the
-        // kernel can enqueue new messages. If the kernel fails to enqueue a new message, `ENOBUFS`
-        // will be returned when userspace calls `recv`.
-        if NETLINK_DEFAULT_BUF_SIZE - self.total_length < length {
-            self.error = Some(errno!(ENOBUFS, "the receive buffer is full",));
+        if length > NETLINK_DEFAULT_BUF_SIZE.saturating_sub(self.total_length) {
             return false;
         }
 
-        self.messages.push_back(message);
         self.total_length += length;
+        self.messages.push_back(message);
 
         true
     }
 }
 
 impl<Message: QueueableMessage> MessageReceiver<Message> {
+    /// Enqueues a message or reports `ENOBUFS` to the receiver if the queue is full.
     pub(super) fn enqueue_message(&self, message: Message) {
-        let is_ok = self.message_queue.lock().enqueue(message);
-        if is_ok {
-            self.pollee.notify(IoEvents::IN);
-        } else {
-            self.pollee.notify(IoEvents::ERR);
+        let events = {
+            let mut queue = self.message_queue.lock();
+            if queue.enqueue(message) {
+                IoEvents::IN
+            } else {
+                queue.error = Some(errno!(ENOBUFS, "the receive buffer is full"));
+                IoEvents::ERR
+            }
+        };
+        self.pollee.notify(events);
+    }
+
+    /// Tries to enqueue a message, returning `EAGAIN` if the queue is full.
+    pub(super) fn try_enqueue_message(&self, message: Message) -> Result<()> {
+        if !self.message_queue.lock().enqueue(message) {
+            return Err(errno!(
+                EAGAIN,
+                "the receive buffer of the destination socket is full"
+            ));
         }
+
+        self.pollee.notify(IoEvents::IN);
+        Ok(())
     }
 }
 

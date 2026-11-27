@@ -36,7 +36,7 @@ impl datagram_common::Bound for BoundNetlinkRoute {
     }
 
     fn set_remote_endpoint(&mut self, endpoint: &Self::Endpoint) {
-        self.remote_addr = *endpoint;
+        self.set_remote_endpoint_common(endpoint);
     }
 
     fn try_send(

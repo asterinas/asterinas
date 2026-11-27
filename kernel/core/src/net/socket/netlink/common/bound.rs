@@ -42,6 +42,11 @@ impl<Message: 'static> BoundNetlink<Message> {
         Ok(())
     }
 
+    pub(in netlink) fn set_remote_endpoint_common(&mut self, endpoint: &NetlinkSocketAddr) {
+        self.handle.set_connected_peer(endpoint.port());
+        self.remote_addr = *endpoint;
+    }
+
     pub(in netlink) fn check_io_events_common(&self) -> IoEvents {
         let mut events = IoEvents::OUT;
 

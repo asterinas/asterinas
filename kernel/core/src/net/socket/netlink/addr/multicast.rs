@@ -59,8 +59,7 @@ impl GroupIdSet {
     }
 
     /// Checks if the set of group IDs is empty.
-    #[expect(dead_code)]
-    fn is_empty(&self) -> bool {
+    pub(in netlink) fn is_empty(&self) -> bool {
         self.0 == 0
     }
 

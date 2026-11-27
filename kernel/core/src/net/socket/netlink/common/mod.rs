@@ -131,6 +131,7 @@ where
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
 
+        P::authorize_destination(&endpoint)?;
         self.inner.write().connect(&endpoint, &self.pollee)
     }
 
@@ -178,6 +179,10 @@ where
         if reader.is_empty() {
             // Based on how Linux behaves, zero-sized messages are not allowed for netlink sockets.
             return Err(errno!(ENODATA, "there are no data to send"));
+        }
+
+        if let Some(remote) = &remote {
+            P::authorize_destination(remote)?;
         }
 
         // TODO: Make sure our blocking behavior matches that of Linux

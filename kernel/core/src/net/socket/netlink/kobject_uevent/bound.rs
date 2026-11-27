@@ -4,7 +4,10 @@ use super::message::UeventMessage;
 use crate::{
     events::IoEvents,
     net::socket::{
-        netlink::{NetlinkSocketAddr, common::BoundNetlink, options::NetlinkOptionSet},
+        netlink::{
+            GroupIdSet, NETLINK_DEFAULT_BUF_SIZE, NetlinkSocketAddr, addr, common::BoundNetlink,
+            options::NetlinkOptionSet,
+        },
         util::{RecvFlags, RecvOutput, SendFlags, datagram_common},
     },
     prelude::*,
@@ -30,7 +33,7 @@ impl datagram_common::Bound for BoundNetlinkUevent {
     }
 
     fn set_remote_endpoint(&mut self, endpoint: &Self::Endpoint) {
-        self.remote_addr = *endpoint;
+        self.set_remote_endpoint_common(endpoint);
     }
 
     fn try_send(
@@ -40,21 +43,38 @@ impl datagram_common::Bound for BoundNetlinkUevent {
         flags: SendFlags,
         _options: Self::SendOptions,
     ) -> Result<usize> {
+        // Reference: <https://elixir.bootlin.com/linux/v6.13/source/net/netlink/af_netlink.c#L1809>.
+
         // TODO: Deal with flags
         if !flags.is_all_supported() {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        if *remote != NetlinkSocketAddr::new_unspecified() {
-            return Err(errno!(
-                ECONNREFUSED,
-                "sending uevent messages to user space is not supported"
-            ));
+        // Select only the lowest set group bit.
+        let dst_groups = GroupIdSet::new(remote.groups().as_u32().isolate_lowest_one());
+        let dst_port = remote.port();
+
+        let length = reader.sum_lens();
+        if length > NETLINK_DEFAULT_BUF_SIZE {
+            return Err(errno!(EMSGSIZE, "the message is too large"));
         }
 
-        // FIXME: How to deal with sending message to kernel socket?
-        // Here we simply ignore the message and return the message length.
-        Ok(reader.sum_lens())
+        let mut payload = vec![0; length];
+        reader.read(&mut VmWriter::from(payload.as_mut_slice()))?;
+
+        // Accept and drop messages addressed to the kernel.
+        if dst_port == addr::UNSPECIFIED_PORT && dst_groups.is_empty() {
+            return Ok(length);
+        }
+
+        // Include the destination group in the source address.
+        let sender_port = self.handle.port();
+        let src_addr = NetlinkSocketAddr::new(sender_port, dst_groups);
+        // The sender's real credentials are not captured.
+        let message = UeventMessage::new(payload, src_addr);
+        self.handle.send(dst_port, dst_groups, message)?;
+
+        Ok(length)
     }
 
     fn try_recv(
