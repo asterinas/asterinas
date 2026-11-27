@@ -18,7 +18,6 @@ MountTest.MountNoAtime
 MountTest.MountOverBusy
 MountTest.MountPermDenied
 MountTest.MountReadonly
-MountTest.MountTmpfs
 MountTest.MountTmpfsMagicValIgnored
 MountTest.OpenFileBusy
 MountTest.OverlayfsDirectoryRenameInUserNamespace

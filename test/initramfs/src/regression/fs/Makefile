@@ -20,6 +20,7 @@ SUBDIRS := \
 	sync \
 	sysfs \
 	tmpfile \
+	tmpfs \
 	utimensat \
 
 include ../common/Makefile

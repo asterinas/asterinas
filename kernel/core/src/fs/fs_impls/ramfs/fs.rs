@@ -67,6 +67,9 @@ impl RamFs {
         anon_device_id: AnonDeviceId,
         sb: SuperBlock,
         revalidation_policy: RevalidationPolicy,
+        root_mode: InodeMode,
+        root_uid: Uid,
+        root_gid: Gid,
     ) -> Arc<Self> {
         let root_dev_id = anon_device_id.id();
         Arc::new_cyclic(move |weak_fs| Self {
@@ -76,11 +79,7 @@ impl RamFs {
             sb,
             root: Arc::new_cyclic(|weak_root| RamInode {
                 inner: Inner::new_dir(weak_root.clone(), weak_root.clone()),
-                metadata: Mutex::new(InodeMeta::new_dir(
-                    mkmod!(a+rx, u+w),
-                    Uid::new_root(),
-                    Gid::new_root(),
-                )),
+                metadata: Mutex::new(InodeMeta::new_dir(root_mode, root_uid, root_gid)),
                 ino: ROOT_INO,
                 typ: InodeType::Dir,
                 dir_revalidation_policy: revalidation_policy,
@@ -100,7 +99,15 @@ impl RamFs {
     fn new_internal(name: &'static str) -> Arc<Self> {
         let anon_device_id = AnonDeviceId::acquire().expect("no device ID is available for ramfs");
         let sb = SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX, anon_device_id.id());
-        Self::new_with_sb(name, anon_device_id, sb, RevalidationPolicy::empty())
+        Self::new_with_sb(
+            name,
+            anon_device_id,
+            sb,
+            RevalidationPolicy::empty(),
+            mkmod!(a+rx, u+w),
+            Uid::new_root(),
+            Gid::new_root(),
+        )
     }
 
     fn alloc_id(&self) -> u64 {

@@ -6,6 +6,7 @@ pub(super) use fs::TmpFs;
 use fs::TmpFsType;
 
 mod fs;
+mod options;
 
 pub(super) fn init() {
     crate::fs::vfs::registry::register(&TmpFsType).unwrap();
