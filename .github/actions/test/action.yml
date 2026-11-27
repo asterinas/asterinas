@@ -115,7 +115,7 @@ runs:
       id: cache-config
       shell: bash
       env:
-        CACHE_IMAGE: asterinas/kernel-dev:0.19.0-20261012
+        CACHE_IMAGE: asterinas/kernel-dev:0.19.0-20261119
         CACHE_ARCH: ${{ inputs.arch }}
         CACHE_RELEASE: ${{ inputs.release }}
         CACHE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}

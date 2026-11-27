@@ -58,7 +58,7 @@ bit_field.workspace = true
 fdt.workspace = true
 riscv.workspace = true
 sbi-rt.workspace = true
-unwinding = { workspace = true, features = ["fde-static"] }
+unwinding = { workspace = true, features = ["fde-gnu-eh-frame-hdr"] }
 
 [target.loongarch64-unknown-none-softfloat.dependencies]
 fdt.workspace = true

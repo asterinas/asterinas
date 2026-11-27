@@ -16,7 +16,7 @@ jobs:
     name: ${{ matrix.id }} (${{ matrix.runs_on }})
     runs-on: ${{ matrix.runs_on }}
     container:
-      image: asterinas/kernel-dev:0.19.0-20261012
+      image: asterinas/kernel-dev:0.19.0-20261119
       options: -v /dev:/dev --privileged
       volumes:
         # Map the following directories on the host into the container so that
@@ -48,7 +48,7 @@ jobs:
     name: ${{ matrix.test_id }} (${{ matrix.runs_on }})
     runs-on: ${{ matrix.runs_on }}
     container:
-      image: asterinas/kernel-dev:0.19.0-20261012
+      image: asterinas/kernel-dev:0.19.0-20261119
       options: -v /dev:/dev --privileged
       volumes:
         # Map the following directories on the host into the container so that
