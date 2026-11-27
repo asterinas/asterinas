@@ -6,7 +6,9 @@ set -e
 
 cd "$(dirname "$0")"
 
+./hwrng
 ./mem
 ./pci
+./virtio
 
 echo "All device model tests passed."

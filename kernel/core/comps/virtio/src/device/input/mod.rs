@@ -27,6 +27,7 @@
 //
 
 pub mod device;
+pub(crate) mod driver;
 
 use aster_util::safe_ptr::SafePtr;
 use ostd::io::IoMem;

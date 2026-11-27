@@ -20,31 +20,16 @@ use ostd::{
 };
 
 use crate::{
+    bus::VirtioDevice,
     device::{VirtioDeviceError, entropy},
     queue::VirtQueue,
-    transport::DeviceTransport,
+    transport::DeviceStatus,
 };
-
-static ENTROPY_DEVICE_ID: AtomicUsize = AtomicUsize::new(0);
-
-/// The prefix of Linux-compatible device names (`virtio_rng.N`).
-//
-// TODO: Export the names in sysfs (`/sys/class/misc/hw_random/rng_available`)
-// and allow the user to select the current device.
-const ENTROPY_DEVICE_PREFIX: &str = "virtio_rng.";
-
-/// The queue size for in-flight entropy requests.
-///
-/// A ring depth of 1 is sufficient because `try_read` submits a new entropy
-/// request only when none is in flight.
-const ENTROPY_QUEUE_SIZE: u16 = 1;
-
-/// The buffer size of an entropy request.
-const ENTROPY_BUFFER_SIZE: usize = PAGE_SIZE;
 
 /// Entropy devices, which supply high-quality randomness for guest use.
 pub struct EntropyDevice {
-    transport: SpinLock<DeviceTransport>,
+    name: Arc<str>,
+    virtio_device: Arc<VirtioDevice>,
     inner: SpinLock<EntropyDeviceInner, LocalIrqDisabled>,
     /// A filled DMA buffer drained by user-space reads.
     cache: Mutex<EntropyCache>,
@@ -52,18 +37,24 @@ pub struct EntropyDevice {
 }
 
 impl EntropyDevice {
-    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
-        let queue = VirtQueue::new(0, ENTROPY_QUEUE_SIZE, device_transport.as_mut())?;
+    pub(crate) fn init(
+        virtio_device: Arc<VirtioDevice>,
+        _negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
+        let queue = VirtQueue::new(0, ENTROPY_QUEUE_SIZE, virtio_device.payload().as_ref())?;
         let inner = EntropyDeviceInner::new(queue)?;
         let cache = EntropyCache::new()?;
+        let id = ENTROPY_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
+        let name: Arc<str> = format!("{ENTROPY_DEVICE_PREFIX}{id}").into();
         let device = Arc::new(EntropyDevice {
-            transport: SpinLock::new(device_transport),
+            name: name.clone(),
+            virtio_device,
             inner: SpinLock::new(inner),
             cache: Mutex::new(cache),
             wait_queue: WaitQueue::new(),
         });
 
-        let mut transport = device.transport.lock();
+        let transport = device.virtio_device.payload().as_ref();
 
         // Register IRQ callbacks.
         transport.register_queue_callback(
@@ -81,15 +72,22 @@ impl EntropyDevice {
         // Virtio-rng has no configuration fields, so config-space change interrupts
         // are not expected and no config callback is registered.
 
-        transport.finish_init();
-        drop(transport);
-
-        let device_id = ENTROPY_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
-        let name = format!("{ENTROPY_DEVICE_PREFIX}{device_id}");
+        transport.add_device_status(DeviceStatus::DRIVER_OK)?;
 
         entropy::register_device(name, device);
 
+        // There is no RNG class device under this `virtioN`.
+        // Linux registers each source with the hwrng core.
+        // The shared `hw_random` device lists their names in `rng_available`.
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/virtio-rng.c#L206>.
+        // Reference: <https://elixir.bootlin.com/linux/v6.18/source/drivers/char/hw_random/virtio-rng.c#L129>.
+
         Ok(())
+    }
+
+    /// Returns the name used to select this entropy source.
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Attempts to read random data from cache into the given writer without blocking.
@@ -149,6 +147,20 @@ impl EntropyDevice {
         self.wait_queue.wake_all();
     }
 }
+
+static ENTROPY_DEVICE_ID: AtomicUsize = AtomicUsize::new(0);
+
+/// The prefix of Linux-compatible device names (`virtio_rng.N`).
+const ENTROPY_DEVICE_PREFIX: &str = "virtio_rng.";
+
+/// The queue size for in-flight entropy requests.
+///
+/// A ring depth of 1 is sufficient because `try_read` submits a new entropy
+/// request only when none is in flight.
+const ENTROPY_QUEUE_SIZE: u16 = 1;
+
+/// The buffer size of an entropy request.
+const ENTROPY_BUFFER_SIZE: usize = PAGE_SIZE;
 
 struct EntropyDeviceInner {
     queue: VirtQueue,
