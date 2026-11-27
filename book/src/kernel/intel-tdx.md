@@ -79,6 +79,27 @@ go to the project folder to build and run Asterinas.
 If everything goes well,
 Asterinas is now up and running inside a TD.
 
+## Memory acceptance
+
+By default, Asterinas accepts TDX private memory in lazy mode:
+it accepts memory for early-boot allocations immediately
+and other memory when it is first allocated.
+
+When configured to eager mode, Asterinas accepts all memory during boot,
+trading longer boot time for avoiding runtime acceptance latency.
+
+To select the policy explicitly:
+
+```bash
+make run_kernel INTEL_TDX=1 ACCEPT_MEMORY_MODE=lazy
+make run_kernel INTEL_TDX=1 ACCEPT_MEMORY_MODE=eager
+```
+
+These options pass `accept_memory=lazy` or `accept_memory=eager`
+on the kernel command line.
+
+`/proc/meminfo` reports remaining pending memory in the `Unaccepted` field.
+
 ## Using GDB to debug
 
 A Trust Domain (TD) is debuggable if its `ATTRIBUTES.DEBUG` bit is 1.
