@@ -37,20 +37,21 @@ pub(super) fn sys_rt_sigtimedwait(
         let size_policy = RequireFullSize::new(sigset_size)?;
         UserSigSetPtr::new(&user_space, set_ptr, size_policy)
     };
-    // Read the signal set
+
+    // Read the signal set.
     let mask = {
         let mut set = sigmask_ptr.read_val()?;
 
-        // Remove SIGKILL and SIGSTOP as they cannot be waited for
+        // Remove SIGKILL and SIGSTOP as they cannot be waited for.
         set -= SIGKILL;
         set -= SIGSTOP;
 
         !set
     };
 
-    // Read timeout if provided
+    // Read the timeout, if provided.
     let timeout = if timeout_ptr != 0 {
-        let timespec: timespec_t = ctx.user_space().read_val(timeout_ptr)?;
+        let timespec: timespec_t = user_space.read_val(timeout_ptr)?;
         Some(Duration::try_from(timespec)?)
     } else {
         None
@@ -64,6 +65,7 @@ pub(super) fn sys_rt_sigtimedwait(
     );
 
     let block_list = ctx.posix_thread.sig_mask();
+
     // Fast path: If a signal is already pending, dequeue and return it immediately.
     if let Some(signal) = dequeue_signal_with_checking_ignore(ctx, mask, block_list) {
         if info_ptr != 0 {
@@ -87,9 +89,9 @@ pub(super) fn sys_rt_sigtimedwait(
                 )
                 .map_err(|e| {
                     if e.error() == Errno::ETIME {
-                        errno!(EAGAIN)
+                        errno!(EAGAIN, "rt_sigtimedwait reached its time limit")
                     } else if e.error() == Errno::ERESTARTSYS {
-                        errno!(EINTR)
+                        errno!(EINTR, "rt_sigtimedwait was interrupted")
                     } else {
                         e
                     }
@@ -105,7 +107,7 @@ pub(super) fn sys_rt_sigtimedwait(
     )
 }
 
-/// Dequeue a signal from the thread's pending signal queue.
+/// Dequeues a signal from the thread's pending signal queue.
 ///
 /// If the signal is ignored and not blocked, it will be dropped and
 /// the next signal will be checked.
@@ -116,6 +118,7 @@ fn dequeue_signal_with_checking_ignore(
 ) -> Option<Box<dyn Signal>> {
     let sig_dispositions = ctx.process.sig_dispositions().lock();
     let sig_disposition = sig_dispositions.lock();
+
     while let Some(dequeued) = ctx.posix_thread.dequeue_signal(&mask) {
         let signal = dequeued.unwrap();
         // If the signal is ignored and not blocked, the signal will be directly dropped.

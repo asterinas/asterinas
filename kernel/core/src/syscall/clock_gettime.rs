@@ -103,7 +103,7 @@ pub(super) enum DynamicClockType {
 /// Reads the time of a clock specified by the input clock ID.
 ///
 /// If the clock ID does not support, this function will return `Err`.
-pub(super) fn read_clock(clockid: clockid_t, ctx: &Context) -> Result<Duration> {
+fn read_clock(clockid: clockid_t, ctx: &Context) -> Result<Duration> {
     if clockid >= 0 {
         let clock_id = ClockId::try_from(clockid)?;
         match clock_id {

@@ -147,7 +147,7 @@ impl VtManager {
             .map_err(|err| match err.error() {
                 // Linux interrupts VT_WAITACTIVE even when the handler has SA_RESTART.
                 // Reference: <https://elixir.bootlin.com/linux/v6.17/source/drivers/tty/vt/vt_ioctl.c#L230>.
-                Errno::ERESTARTSYS => errno!(EINTR),
+                Errno::ERESTARTSYS => errno!(EINTR, "VT wait was interrupted"),
                 _ => err,
             })?;
 

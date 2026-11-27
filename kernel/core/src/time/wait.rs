@@ -124,6 +124,7 @@ impl<'a> From<Option<ManagedTimeout<'a>>> for TimeoutExt<'a> {
 }
 
 /// A [`Timeout`] with the associated [`TimerManager`].
+#[derive(Clone)]
 pub(crate) struct ManagedTimeout<'a> {
     timeout: Timeout,
     manager: &'a Arc<TimerManager>,
@@ -145,6 +146,16 @@ impl<'a> ManagedTimeout<'a> {
     /// Returns weather the timeout is expired.
     pub(crate) fn is_expired(&self) -> bool {
         self.manager.is_expired_timeout(&self.timeout)
+    }
+
+    /// Returns the remaining duration.
+    ///
+    /// If the timeout is expired, the result will be [`Duration::ZERO`].
+    pub(crate) fn remain(&self) -> Duration {
+        match self.timeout {
+            Timeout::When(instant) => instant.saturating_sub(self.manager.clock().read_time()),
+            Timeout::After(duration) => duration,
+        }
     }
 
     /// Freezes the expired time.
