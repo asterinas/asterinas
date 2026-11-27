@@ -347,7 +347,7 @@ pub(super) trait IsUnicast {
     ///  - will return true for `10.0.2.15` and `10.0.2.254`, and
     ///  - will return false for `10.0.2.255` and `255.255.255.255`.
     ///
-    /// Note: This excludes broadcast addresses, link-local broadcast addresses, and multicast
+    /// Note: This excludes unspecified, broadcast, subnet-directed broadcast, and multicast
     /// addresses.
     fn is_unicast(&self, dst_addr: smoltcp::wire::IpAddress) -> bool;
 
@@ -364,7 +364,9 @@ pub(super) trait IsUnicast {
 
 impl IsUnicast for smoltcp::iface::Context {
     fn is_unicast(&self, dst_addr: smoltcp::wire::IpAddress) -> bool {
-        !self.is_broadcast(&dst_addr) && !dst_addr.is_multicast()
+        // Match smoltcp's unicast requirement, including rejecting unspecified addresses.
+        // The interface-specific check also excludes subnet-directed broadcasts.
+        dst_addr.is_unicast() && !self.is_broadcast(&dst_addr)
     }
 
     fn is_unicast_local(&self, dst_addr: smoltcp::wire::IpAddress) -> bool {
@@ -379,5 +381,56 @@ impl IsUnicast for smoltcp::iface::Context {
             }),
             IpAddress::Ipv6(dst_addr) => self.ipv6_addr().is_some_and(|addr| addr == dst_addr),
         }
+    }
+}
+
+#[cfg(ktest)]
+mod tests {
+    use ostd::prelude::ktest;
+    use smoltcp::{
+        iface::{Config, Interface},
+        phy::{Loopback, Medium},
+        time::Instant,
+        wire::{HardwareAddress, IpAddress, IpCidr, Ipv4Address, Ipv4Cidr, Ipv6Address},
+    };
+
+    use super::IsUnicast;
+
+    #[ktest]
+    fn unicast_excludes_unspecified_and_group_addresses() {
+        let mut device = Loopback::new(Medium::Ip);
+        let mut iface = Interface::new(
+            Config::new(HardwareAddress::Ip),
+            &mut device,
+            Instant::from_millis(0),
+        );
+        iface.update_ip_addrs(|addresses| {
+            addresses
+                .push(IpCidr::Ipv4(Ipv4Cidr::new(
+                    Ipv4Address::new(192, 0, 2, 1),
+                    24,
+                )))
+                .unwrap();
+        });
+
+        let invalid: [IpAddress; 6] = [
+            Ipv4Address::UNSPECIFIED.into(),
+            Ipv6Address::UNSPECIFIED.into(),
+            Ipv4Address::BROADCAST.into(),
+            Ipv4Address::new(192, 0, 2, 255).into(),
+            Ipv4Address::new(224, 0, 0, 2).into(),
+            Ipv6Address::new(0xff02, 0, 0, 0, 0, 0, 0, 1).into(),
+        ];
+        for address in invalid {
+            assert!(!IsUnicast::is_unicast(iface.context(), address));
+        }
+        assert!(IsUnicast::is_unicast(
+            iface.context(),
+            Ipv4Address::new(192, 0, 2, 2).into()
+        ));
+        assert!(IsUnicast::is_unicast(
+            iface.context(),
+            Ipv6Address::LOCALHOST.into()
+        ));
     }
 }
