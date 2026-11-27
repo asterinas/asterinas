@@ -71,6 +71,12 @@ impl FramebufferConsole {
 
     /// Sets the font for the framebuffer console.
     pub fn set_font(&mut self, font: BitmapFont) -> Result<(), ConsoleSetFontError> {
+        // Reference: <https://elixir.bootlin.com/linux/v7.3.4/source/drivers/video/fbdev/core/fbcon.c#L2537>.
+        let char_count = font.char_count();
+        if char_count != 256 && char_count != 512 {
+            return Err(ConsoleSetFontError::InvalidFont);
+        }
+
         self.state.set_font(font)
     }
 
