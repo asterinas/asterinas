@@ -195,10 +195,12 @@ impl<M: AnyFrameMeta + ?Sized> TryFrom<Frame<M>> for UniqueFrame<M> {
     ///
     /// If the reference count is not 1, the frame is returned back.
     fn try_from(frame: Frame<M>) -> Result<Self, Self::Error> {
+        // Acquire prior owners' accesses released by `Frame::drop` before
+        // allowing mutable metadata access or teardown through the unique frame.
         match frame.slot().ref_count.compare_exchange(
             1,
             REF_COUNT_UNIQUE,
-            Ordering::Relaxed,
+            Ordering::Acquire,
             Ordering::Relaxed,
         ) {
             Ok(_) => {
