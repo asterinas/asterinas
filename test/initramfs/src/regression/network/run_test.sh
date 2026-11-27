@@ -44,3 +44,4 @@ sleep 0.2
 ./netlink_sockoption
 ./rtnl_err
 ./uevent_err
+./uevent_userspace
