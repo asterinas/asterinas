@@ -26,6 +26,7 @@ use crate::{
         io::{
             Io,
             copy::{memcpy, memset},
+            pod_once_impls,
         },
         kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
@@ -283,6 +284,8 @@ impl IoMem<Insensitive> {
 
 impl VmIoOnce for IoMem<Insensitive> {
     fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T> {
+        const { assert!(pod_once_impls::is_non_tearing::<T>()) };
+
         self.check_range(offset, size_of::<T>())?;
         let ptr = (self.base() + offset) as *const T;
         if !ptr.is_aligned() {
@@ -295,6 +298,8 @@ impl VmIoOnce for IoMem<Insensitive> {
     }
 
     fn write_once<T: PodOnce>(&self, offset: usize, value: &T) -> Result<()> {
+        const { assert!(pod_once_impls::is_non_tearing::<T>()) };
+
         self.check_range(offset, size_of::<T>())?;
         let ptr = (self.base() + offset) as *mut T;
         if !ptr.is_aligned() {
