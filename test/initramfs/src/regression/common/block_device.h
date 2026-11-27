@@ -4,13 +4,14 @@
 #define BLOCK_DEVICE_H
 
 /*
- * Utilities to operate block devices, which work in both guest Asterinas and
- * host Linux.
+ * Utilities to operate block devices in guest Asterinas, Linux regression VMs,
+ * and host Linux.
  *
- * By opening a block device via open_block_device(), the device will be opened
- * in guest Asterinas via /dev/vda (or similar) and in host Linux via
- * /dev/loop0 (or similar). These correspond to the same device image, where
- * the underlying file system is prepared as part of the build process.
+ * By opening a block device via open_block_device(), the device is opened via
+ * /dev/vda (or similar) in guest Asterinas and in Linux builds compiled with
+ * __linux_vm__, or via /dev/loop0 (or similar) on host Linux.
+ * These correspond to the same disk image prepared as part of the build
+ * process.
  *
  * The device can be mounted using mount_block_device(). After use, the mount
  * can be cleaned up and the device can be closed via umount_block_device() and
@@ -28,7 +29,7 @@ enum block_device {
 	BLOCK_VDC_EXT2,
 };
 
-#ifdef __asterinas__
+#if defined(__asterinas__) || defined(__linux_vm__)
 
 static int open_block_device(enum block_device dev)
 {
@@ -50,7 +51,7 @@ static int close_block_device(int fd)
 	return close(fd);
 }
 
-#else /* __asterinas__ */
+#else /* __asterinas__ || __linux_vm__ */
 
 #include <sys/ioctl.h>
 #include <linux/loop.h>
@@ -98,7 +99,7 @@ static int close_block_device(int fd)
 	return 0;
 }
 
-#endif /* __asterinas__ */
+#endif /* __asterinas__ || __linux_vm__ */
 
 static int __attribute__((unused)) mount_block_device(int fd, const char *path,
 						      const char *fs, int flags)
