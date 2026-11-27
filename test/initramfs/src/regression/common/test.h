@@ -39,6 +39,7 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -216,6 +217,9 @@ static int __total_failures;
 		}                                                         \
 		_ret;                                                     \
 	})
+
+#define pthread_kill(thread, sig) \
+	__PTHREAD_ERRNO(pthread_kill(thread, sig))
 
 int main(void)
 {

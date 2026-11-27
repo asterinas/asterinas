@@ -5,6 +5,7 @@
 set -e
 
 ./futex/futex_requeue
+./futex/futex_wait
 
 ./pipe/pipe_err
 ./pipe/process_pipe_available
