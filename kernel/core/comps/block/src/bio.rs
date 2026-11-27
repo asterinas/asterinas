@@ -6,12 +6,13 @@ use align_ext::AlignExt;
 use aster_util::mem_obj_slice::Slice;
 use dma_pool::{DmaArenaPool, DmaBuffer};
 use int_to_c_enum::TryFromInt;
+use intrusive_collections::{LinkedListLink, intrusive_adapter};
 use io_util::{
     IoError,
     batch::{IoBatch, IoCompletion},
 };
 use ostd::{
-    Error,
+    Error, irq,
     mm::{
         HasSize, Infallible, USegment, VmReader, VmWriter,
         dma::{DmaStream, FromAndToDevice},
@@ -129,10 +130,16 @@ impl Bio {
 
         let waiter_metadata = metadata.clone();
         let submitted_bio = SubmittedBio {
-            metadata,
-            sid_offset: 0,
-            complete_fn,
-            segments,
+            // Allocate before handing the BIO to the driver so that completion
+            // can link this node into the softirq queue without allocating.
+            inner: Box::new(SubmittedBioInner {
+                metadata,
+                sid_offset: 0,
+                complete_fn,
+                segments,
+                completion_link: LinkedListLink::new(),
+                completion_status: BioStatus::Submit,
+            }),
         };
         if let Err(e) = block_device.enqueue(submitted_bio) {
             // Fail to submit, revert the status.
@@ -199,56 +206,93 @@ impl From<BioEnqueueError> for Error {
 ///
 /// The request queue of a block device only accepts `SubmittedBio`s into the queue.
 pub struct SubmittedBio {
+    inner: Box<SubmittedBioInner>,
+}
+
+/// The uniquely owned request and its intrusive completion queue link.
+pub(super) struct SubmittedBioInner {
     metadata: Arc<BioMetadata>,
     sid_offset: u64,
     complete_fn: Option<BioCompleteFn>,
     segments: Vec<BioSegment>,
+    completion_link: LinkedListLink,
+    /// The driver-reported status, kept separate from the published status
+    /// until the completion callback has returned.
+    completion_status: BioStatus,
 }
+
+intrusive_adapter!(pub(super) BioCompletionAdapter = Box<SubmittedBioInner>: SubmittedBioInner {
+    completion_link: LinkedListLink
+});
 
 impl SubmittedBio {
     /// Returns the type.
     pub fn type_(&self) -> BioType {
-        self.metadata.type_()
+        self.inner.metadata.type_()
     }
 
     /// Returns the range of target sectors on the device.
     pub fn sid_range(&self) -> &Range<Sid> {
-        self.metadata.sid_range()
+        self.inner.metadata.sid_range()
     }
 
     /// Returns the offset of the first sector ID.
     pub fn sid_offset(&self) -> u64 {
-        self.sid_offset
+        self.inner.sid_offset
     }
 
     /// Sets the offset of the first sector ID.
     pub fn set_sid_offset(&mut self, offset: u64) {
-        self.sid_offset = offset;
+        self.inner.sid_offset = offset;
     }
 
     /// Returns the slice to the memory segments.
     pub fn segments(&self) -> &[BioSegment] {
-        &self.segments
+        &self.inner.segments
     }
 
     /// Returns the status.
     pub fn status(&self) -> BioStatus {
-        self.metadata.status()
+        self.inner.metadata.status()
     }
 
     /// Completes the `Bio` by consuming `self`, releasing the segments, invoking
     /// the callback function, and publishing the final status.
     ///
+    /// Completion is deferred to the block softirq when called at interrupt
+    /// level `L1` or `L2`. At `L0`, completion runs inline, including during
+    /// softirq processing when bottom halves are re-enabled in task context
+    /// or when the softirq daemon runs callbacks.
+    ///
     /// The final status becomes visible only after the callback returns.
     ///
     /// When the driver finishes the request for this `Bio`, it will call this method.
-    pub fn complete(self, status: BioStatus) {
+    pub fn complete(mut self, status: BioStatus) {
         assert!(status != BioStatus::Init && status != BioStatus::Submit);
+        self.inner.completion_status = status;
 
+        if irq::InterruptLevel::current().is_task_context() {
+            // Synchronous in-task completions can still make forward progress
+            // without a later IRQ.
+            self.inner.complete_now();
+        } else {
+            crate::completion::enqueue(self);
+        }
+    }
+
+    /// Consumes this handle and returns its preallocated completion node.
+    pub(super) fn into_inner(self) -> Box<SubmittedBioInner> {
+        self.inner
+    }
+}
+
+impl SubmittedBioInner {
+    pub(super) fn complete_now(self) {
         let Self {
             metadata,
             complete_fn,
             segments,
+            completion_status: status,
             ..
         } = self;
 
@@ -273,9 +317,9 @@ impl SubmittedBio {
 impl Debug for SubmittedBio {
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
         f.debug_struct("SubmittedBio")
-            .field("metadata", &self.metadata)
-            .field("sid_offset", &self.sid_offset)
-            .field("segments", &self.segments)
+            .field("metadata", &self.inner.metadata)
+            .field("sid_offset", &self.inner.sid_offset)
+            .field("segments", &self.inner.segments)
             .finish()
     }
 }

@@ -99,12 +99,14 @@ name = "aster-block"
 version = "0.1.0"
 dependencies = [
  "align_ext",
+ "aster-softirq",
  "aster-util",
  "component",
  "device-id",
  "dma-pool",
  "id-alloc",
  "int-to-c-enum",
+ "intrusive-collections",
  "io-util",
  "ostd",
  "ostd-pod",
