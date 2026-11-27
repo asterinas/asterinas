@@ -29,6 +29,7 @@ initramfs/
 Most tests in this directory are compiled and packaged using [Nix](https://nixos.org/), a powerful package manager. This ensures consistency and reproducibility across environments.
 
 > **Note**: If you are adding a new test to the `regression` directory, ensure that it supports multiple architectures. Some of the existing tests lack proper architecture-specific handling.
+> To validate `src/regression/` against the pinned Linux `6.16.0` kernel image, see [`test/linux_regression/README.md`](../linux_regression/README.md).
 
 ### Linux Kernel Selftest (kselftest)
 
