@@ -14,6 +14,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "../../common/capability.h"
 #include "../../common/test.h"
 #include "../../common/yama_ptrace_scope.h"
 
@@ -570,5 +571,48 @@ FN_TEST(ptrace_peek_poke_data)
 	TEST_SUCC(ptrace(PTRACE_CONT, pid, 0, 0));
 	TEST_RES(waitpid(pid, &status, 0),
 		 _ret == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+END_TEST()
+
+FN_TEST(ptrace_traceme_without_cap_sys_ptrace)
+{
+	int old_scope = read_yama_scope();
+	SKIP_TEST_IF(old_scope == YAMA_SCOPE_NO_ATTACH);
+
+	// Ensure Yama relational mode is active so that a tracer without
+	// `CAP_SYS_PTRACE` exercises the ancestor check during `PTRACE_TRACEME`.
+	if (old_scope != YAMA_SCOPE_RELATIONAL) {
+		write_yama_scope(YAMA_SCOPE_RELATIONAL);
+	}
+
+	pid_t tracer = TEST_SUCC(fork());
+	if (tracer == 0) {
+		drop_capability(CAP_SYS_PTRACE);
+
+		pid_t tracee = CHECK(fork());
+		if (tracee == 0) {
+			CHECK(ptrace(PTRACE_TRACEME, 0, 0, 0));
+			CHECK(raise(SIGSTOP));
+			_exit(0);
+		}
+
+		int status = 0;
+		CHECK_WITH(waitpid(tracee, &status, 0),
+			   _ret == tracee && WIFSTOPPED(status) &&
+				   WSTOPSIG(status) == SIGSTOP);
+		CHECK(ptrace(PTRACE_CONT, tracee, 0, 0));
+		CHECK_WITH(waitpid(tracee, &status, 0),
+			   _ret == tracee && WIFEXITED(status) &&
+				   WEXITSTATUS(status) == 0);
+		_exit(0);
+	}
+
+	int status = 0;
+	pid_t waited = waitpid(tracer, &status, 0);
+	if (old_scope != YAMA_SCOPE_RELATIONAL) {
+		write_yama_scope(old_scope);
+	}
+	TEST_RES(waited, _ret == tracer && WIFEXITED(status) &&
+				 WEXITSTATUS(status) == 0);
 }
 END_TEST()
