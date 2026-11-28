@@ -26,6 +26,8 @@ TEST_PLATFORM ?= asterinas
 
 ifeq ($(TEST_PLATFORM),asterinas)
 C_FLAGS += -D__asterinas__
+else ifeq ($(TEST_PLATFORM),linux_vm)
+C_FLAGS += -D__linux_vm__
 endif
 
 ifneq ($(C_OBJS_FILTER),)

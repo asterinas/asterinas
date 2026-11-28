@@ -1,0 +1,59 @@
+name: Test regressions on Linux
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/test_linux_regression.yml
+      - distro/nixpkgs.nix
+      - flake.lock
+      - test/initramfs/Makefile
+      - test/initramfs/etc/group
+      - test/initramfs/etc/hosts
+      - test/initramfs/etc/passwd
+      - test/initramfs/nix/regression/**
+      - test/initramfs/src/conformance/xfstests/build_config.mk
+      - test/initramfs/src/regression/**
+      - test/linux_regression/**
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/test_linux_regression.yml
+      - distro/nixpkgs.nix
+      - flake.lock
+      - test/initramfs/Makefile
+      - test/initramfs/etc/group
+      - test/initramfs/etc/hosts
+      - test/initramfs/etc/passwd
+      - test/initramfs/nix/regression/**
+      - test/initramfs/src/conformance/xfstests/build_config.mk
+      - test/initramfs/src/regression/**
+      - test/linux_regression/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Run regression tests under KVM
+        run: |
+          test/linux_regression/run.sh --log-dir "${{ runner.temp }}/linux-regression"
+      - name: Upload userspace and kernel logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-regression-logs
+          path: |
+            ${{ runner.temp }}/linux-regression/userspace.log
+            ${{ runner.temp }}/linux-regression/kernel.log
+          if-no-files-found: ignore

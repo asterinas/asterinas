@@ -8,9 +8,10 @@ CONFORMANCE_TEST_SUITE ?= ltp
 CONFORMANCE_TEST_WORKDIR ?= /tmp
 CONFORMANCE_TEST_SELECTOR ?=
 ENABLE_REGRESSION_TEST ?= false
-# Specify platform macros when building regression tests (supported: asterinas, linux).
+# Specify platform macros when building regression tests (supported: asterinas, linux, linux_vm).
 # - asterinas: Define both `__asterinas__` and `__linux__`. Tests may fail in Linux.
 # - linux: Define only `__linux__`. Tests may fail in Asterinas.
+# - linux_vm: Define both `__linux_vm__` and `__linux__`. Open `/dev/vd*` directly instead of `/dev/loop*`.
 REGRESSION_TEST_PLATFORM ?= asterinas
 DNS_SERVER ?= none
 # Set Nix's cached tarballs to be live for a longer period of time (30 days) to avoid network traffics.

@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Regression test blocklist for the pinned prebuilt x86_64 Linux 6.16.0 VM.
+# One executable path per line, relative to `/test` in the guest.
+# Blank lines and `#` comments are ignored.
+
+## Missing `CONFIG_EXFAT_FS` in the kernel image (no mounted `/exfat`)
+fs/empty_write/empty_write
+fs/exfat/read_eof
+fs/fdatasync/fdatasync
+fs/statx/btime
+
+## Missing `CONFIG_EXT2_FS_XATTR` in the kernel image
+fs/ext2/xattr
+
+## The kernel image lacks the overlayfs module (`CONFIG_OVERLAY_FS`)
+fs/overlayfs/lchown_lower_symlink
+fs/overlayfs/link_lower_file
+fs/overlayfs/mknod_whiteout_rejected
+fs/overlayfs/ovl_test
+fs/overlayfs/readdir_small_buffer
+fs/overlayfs/rmdir_lower_only_nonempty
+fs/overlayfs/sparse_copyup_consistency
+fs/overlayfs/xino_dino_identity
+
+## The kernel image lacks the vsock module (`CONFIG_VSOCKETS`)
+network/socket_ioctl
+
+## Missing `CONFIG_SECURITY_YAMA` (`/proc/sys/kernel/yama/ptrace_scope` absent)
+fs/procfs/pid_mem
+process/ptrace/debugger
+process/ptrace/ptrace
+process/ptrace/read_write_regs
+process/ptrace/regset
+process/ptrace/set_options
+security/lsm/yama
+
+## Intermittent VM timing races under KVM
+
+# `blocking_write_slave` can deadlock while KVM drains PTY echo.
+device/pty/pty_blocking
+# Closing a VT does not always restore the expected `VT_OPENQRY` result.
+device/vt/vt_ioctl
+
+## Deterministic Linux 6.16.0 behavior differences
+
+# Linux ext2 driver returns `EOPNOTSUPP` for `fallocate`.
+fs/ext2/fallocate
+# `O_DIRECT` `preadv` racing with concurrent `ftruncate` fails the buffer check.
+fs/ext2/preadv_short_read
+# A write crossing into an unmapped page returns a partial count instead of `EFAULT`.
+fs/ext2/short_rw
+# `umount` on cwd returns `EBUSY`, and Linux accepts `MNT_ID_REQ_SIZE_VER1` (`VER0 + 8`).
+fs/mount/listmount
+# UID 0 can write `/proc/sys/kernel/overflowuid` after dropping `CAP_SYS_ADMIN`.
+fs/procfs/proc_sys_kernel
+# `fallocate` on a pidfd returns `EPERM` instead of `ENODEV`.
+fs/pseudofs/fallocate
+# `fchmod` on a pidfd returns `EPERM` instead of `EOPNOTSUPP`.
+fs/pseudofs/pseudo_inode
+# For `preadv2`/`pwritev2`, `0xf0` includes `RWF_ATOMIC`/`RWF_DONTCACHE`. Linux returns `EINVAL`, but the test expects `EOPNOTSUPP`.
+io/file_io/iovec_err
+# Overflowing `mremap` returns `ENOMEM`, `CAP_SYS_RAWIO` maps below `mmap_min_addr`, and ext4 rejects `MAP_SYNC`.
+memory/mmap/mmap_err
+# Accepted TCP sockets do not inherit listener `SO_RCVTIMEO`/`SO_SNDTIMEO` changes after `connect`.
+network/sockoption
+# `SO_PASSCRED` on an `AF_INET` TCP socket returns `EOPNOTSUPP`.
+network/sockoption_unix
+# Disabling `SO_REUSEADDR` after bind makes a second bind fail with `EADDRINUSE`.
+network/tcp_reuseaddr
+# Linux TCP `recv` can return fewer bytes than the Asterinas ring-buffer assumption.
+network/tcp_wrapped_buffer_io
+# Unconnected `recv` returns `ENOTCONN` instead of `EINVAL`, and `listen` on an accepted socket succeeds.
+network/unix_seqpacket_err
+# `listen` on an accepted `AF_UNIX` stream socket succeeds instead of returning `EINVAL`.
+network/unix_stream_err
+# Inactive child `cpu.stat` emits 4 lines instead of 3.
+process/cgroup.sh
+# `waitpid` without `__WCLONE`/`__WALL` returns `ECHILD` for exit signal 255.
+process/clone3/clone_invalid_exit_signal
+# `execveat` with `AT_EMPTY_PATH` sets `comm` differently from the test expectation.
+process/execve/execve_comm
+# Low-address ELF case under `CAP_SYS_RAWIO` does not die with `SIGSEGV`.
+process/execve/execve_err
+# `setpgid(-1, pid)` returns `ESRCH` instead of `EINVAL`.
+process/group_session
+# `PIDFD_SELF_THREAD_GROUP` with `PIDFD_SIGNAL_PROCESS_GROUP` returns `EBADF` instead of `ESRCH`.
+process/signal/pidfd_send_signal
+# Signal frame `uc_stack.ss_flags` differs from the handler expectation.
+process/signal/sigaltstack
+# Shebang argument splitting differs and zero-length `security.capability` xattr is accepted.
+security/capability/execve
