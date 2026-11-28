@@ -10,7 +10,9 @@ use super::{
 };
 use crate::{
     net::socket::netlink::{
-        addr::UNSPECIFIED_PORT, kobject_uevent::UeventMessage, receiver::MessageReceiver,
+        addr::UNSPECIFIED_PORT,
+        kobject_uevent::{self, UeventMessage},
+        receiver::MessageReceiver,
         route::RtnlMessage,
     },
     prelude::*,
@@ -41,6 +43,8 @@ pub(crate) trait SupportedNetlinkProtocol {
 
     fn socket_table() -> &'static RwMutex<ProtocolSocketTable<Self::Message>>;
 
+    fn authorize_destination(dst: &NetlinkSocketAddr) -> Result<()>;
+
     fn bind(
         addr: &NetlinkSocketAddr,
         receiver: MessageReceiver<Self::Message>,
@@ -56,14 +60,6 @@ pub(crate) trait SupportedNetlinkProtocol {
         let socket_table = Self::socket_table().read();
         socket_table.unicast(dst_port, message)
     }
-
-    fn multicast(dst_groups: GroupIdSet, message: Self::Message) -> Result<()>
-    where
-        Self::Message: MulticastMessage,
-    {
-        let socket_table = Self::socket_table().read();
-        socket_table.multicast(dst_groups, message)
-    }
 }
 
 pub(crate) enum NetlinkRouteProtocol {}
@@ -74,15 +70,29 @@ impl SupportedNetlinkProtocol for NetlinkRouteProtocol {
     fn socket_table() -> &'static RwMutex<ProtocolSocketTable<Self::Message>> {
         &NETLINK_SOCKET_TABLE.get().unwrap().route
     }
+
+    fn authorize_destination(_dst: &NetlinkSocketAddr) -> Result<()> {
+        Ok(())
+    }
 }
 
 pub(crate) enum NetlinkUeventProtocol {}
+
+impl NetlinkUeventProtocol {
+    pub(super) fn broadcast(dst_groups: GroupIdSet, message: UeventMessage) {
+        Self::socket_table().read().broadcast(dst_groups, message);
+    }
+}
 
 impl SupportedNetlinkProtocol for NetlinkUeventProtocol {
     type Message = UeventMessage;
 
     fn socket_table() -> &'static RwMutex<ProtocolSocketTable<Self::Message>> {
         &NETLINK_SOCKET_TABLE.get().unwrap().uevent
+    }
+
+    fn authorize_destination(dst: &NetlinkSocketAddr) -> Result<()> {
+        kobject_uevent::authorize_destination(dst)
     }
 }
 
@@ -91,8 +101,13 @@ impl SupportedNetlinkProtocol for NetlinkUeventProtocol {
 /// Each table can have bound sockets for unicast
 /// and at most 32 groups for multicast.
 pub(crate) struct ProtocolSocketTable<Message> {
-    unicast_sockets: BTreeMap<PortNum, MessageReceiver<Message>>,
+    unicast_sockets: BTreeMap<PortNum, BoundReceiver<Message>>,
     multicast_groups: Box<[MulticastGroup]>,
+}
+
+struct BoundReceiver<Message> {
+    receiver: MessageReceiver<Message>,
+    connected_peer: Option<PortNum>,
 }
 
 impl<Message: 'static> ProtocolSocketTable<Message> {
@@ -137,7 +152,13 @@ impl<Message: 'static> ProtocolSocketTable<Message> {
             return Err(errno!(EADDRINUSE, "the netlink port is already in use"));
         }
 
-        self.unicast_sockets.insert(port, receiver);
+        self.unicast_sockets.insert(
+            port,
+            BoundReceiver {
+                receiver,
+                connected_peer: None,
+            },
+        );
 
         for group_id in addr.groups().ids_iter() {
             let group = &mut self.multicast_groups[group_id as usize];
@@ -151,18 +172,61 @@ impl<Message: 'static> ProtocolSocketTable<Message> {
     where
         Message: QueueableMessage,
     {
-        let Some(receiver) = self.unicast_sockets.get(&dst_port) else {
+        let Some(entry) = self.unicast_sockets.get(&dst_port) else {
             // FIXME: Should we return error here?
             return Ok(());
         };
-        receiver.enqueue_message(message);
+        entry.receiver.enqueue_message(message);
 
         Ok(())
     }
 
-    fn multicast(&self, dst_groups: GroupIdSet, message: Message) -> Result<()>
+    fn broadcast(&self, dst_groups: GroupIdSet, message: Message)
     where
         Message: MulticastMessage,
+    {
+        self.broadcast_to(dst_groups, message, |_| true);
+    }
+
+    fn send_from(
+        &self,
+        sender_port: PortNum,
+        dst_port: PortNum,
+        dst_groups: GroupIdSet,
+        message: Message,
+    ) -> Result<()>
+    where
+        Message: MulticastMessage,
+    {
+        if !dst_groups.is_empty() {
+            self.broadcast_to(dst_groups, message.clone(), |port| {
+                port != sender_port && port != dst_port
+            });
+        }
+
+        if dst_port == UNSPECIFIED_PORT {
+            return Ok(());
+        }
+
+        let Some(entry) = self
+            .unicast_sockets
+            .get(&dst_port)
+            .filter(|entry| entry.connected_peer.is_none_or(|peer| peer == sender_port))
+        else {
+            return Err(errno!(
+                ECONNREFUSED,
+                "no socket at the destination port accepts this sender"
+            ));
+        };
+        entry.receiver.try_enqueue_message(message)?;
+
+        Ok(())
+    }
+
+    fn broadcast_to<F>(&self, dst_groups: GroupIdSet, message: Message, include_fn: F)
+    where
+        Message: MulticastMessage,
+        F: Fn(PortNum) -> bool,
     {
         for group in dst_groups.ids_iter() {
             let Some(group) = self.multicast_groups.get(group as usize) else {
@@ -170,14 +234,16 @@ impl<Message: 'static> ProtocolSocketTable<Message> {
             };
 
             for port_num in group.members() {
-                let Some(receiver) = self.unicast_sockets.get(port_num) else {
+                if !include_fn(*port_num) {
+                    continue;
+                }
+
+                let Some(entry) = self.unicast_sockets.get(port_num) else {
                     continue;
                 };
-                receiver.enqueue_message(message.clone());
+                entry.receiver.enqueue_message(message.clone());
             }
         }
-
-        Ok(())
     }
 }
 
@@ -208,6 +274,29 @@ impl<Message: 'static> BoundHandle<Message> {
 
     pub(super) const fn port(&self) -> PortNum {
         self.port
+    }
+
+    pub(super) fn send(
+        &self,
+        dst_port: PortNum,
+        dst_groups: GroupIdSet,
+        message: Message,
+    ) -> Result<()>
+    where
+        Message: MulticastMessage,
+    {
+        self.socket_table
+            .read()
+            .send_from(self.port, dst_port, dst_groups, message)
+    }
+
+    pub(super) fn set_connected_peer(&mut self, peer: PortNum) {
+        let mut table = self.socket_table.write();
+        table
+            .unicast_sockets
+            .get_mut(&self.port)
+            .unwrap()
+            .connected_peer = Some(peer);
     }
 
     pub(super) const fn addr(&self) -> NetlinkSocketAddr {
