@@ -91,6 +91,8 @@ impl<const SLOT_SIZE: usize> Slab<SLOT_SIZE> {
         const { assert!(SLOT_SIZE >= size_of::<usize>()) };
         // To ensure `nr_allocated` can be stored in a `u16`.
         const { assert!(PAGE_SIZE / SLOT_SIZE <= u16::MAX as usize) };
+        // To prevent the last slot exceeding the boundary.
+        const { assert!(PAGE_SIZE.is_multiple_of(SLOT_SIZE)) };
 
         let mut slab: Slab<SLOT_SIZE> = FrameAllocOptions::new()
             .zeroed(false)
