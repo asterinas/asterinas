@@ -981,7 +981,7 @@ pub trait PodOnce: Pod {}
     target_arch = "loongarch64",
     target_arch = "aarch64"
 ))]
-mod pod_once_impls {
+pub(crate) mod pod_once_impls {
     use super::PodOnce;
 
     impl PodOnce for u8 {}
@@ -1001,7 +1001,7 @@ mod pod_once_impls {
     /// Note that the Rust documentation makes no such guarantee, and even the wording in the LLVM
     /// LangRef is ambiguous. But this is unlikely to break in practice because the Linux kernel
     /// also uses "volatile" semantics to implement `READ_ONCE`/`WRITE_ONCE`.
-    pub(super) const fn is_non_tearing<T>() -> bool {
+    pub(crate) const fn is_non_tearing<T>() -> bool {
         let size = size_of::<T>();
 
         size == 1 || size == 2 || size == 4 || size == 8
