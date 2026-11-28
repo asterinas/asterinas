@@ -22,6 +22,7 @@ use crate::{
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
     },
     sched::{Nice, SchedPolicy},
+    security::lsm::LsmTaskState,
     thread::{Thread, Tid, task},
     time::{TimerManager, clocks::ProfClock},
     vm::vmar::VmarHandle,
@@ -35,6 +36,7 @@ pub(crate) struct PosixThreadBuilder {
     user_ctx: Box<UserContext>,
     process: Weak<Process>,
     credentials: Credentials,
+    lsm_state: Option<Arc<dyn LsmTaskState>>,
     vmar: VmarHandle,
 
     // Optional part
@@ -65,6 +67,7 @@ impl PosixThreadBuilder {
             user_ctx,
             process: Weak::new(),
             credentials,
+            lsm_state: None,
             vmar,
             set_child_tid: 0,
             clear_child_tid: 0,
@@ -82,6 +85,11 @@ impl PosixThreadBuilder {
 
     pub(crate) fn process(mut self, process: Weak<Process>) -> Self {
         self.process = process;
+        self
+    }
+
+    pub(crate) fn lsm_state(mut self, state: Option<Arc<dyn LsmTaskState>>) -> Self {
+        self.lsm_state = state;
         self
     }
 
@@ -154,6 +162,7 @@ impl PosixThreadBuilder {
             user_ctx,
             process,
             credentials,
+            lsm_state,
             vmar,
             thread_name,
             set_child_tid,
@@ -190,6 +199,7 @@ impl PosixThreadBuilder {
                     tid: AtomicU32::new(tid),
                     name: Mutex::new(thread_name),
                     credentials,
+                    lsm_state: RwLock::new(lsm_state),
                     fs: RwMutex::new(Some(fs.clone())),
                     file_table: Mutex::new(Some(file_table.clone_ro())),
                     sig_mask,

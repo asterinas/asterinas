@@ -46,6 +46,12 @@ elif [ "${CONFORMANCE_TEST_SUITE}" = "xfstests" ]; then
         echo "Error: xfstests failed." >&2
         exit 5
     fi
+elif [ "${CONFORMANCE_TEST_SUITE}" = "apparmor" ]; then
+    echo "Running AppArmor kernel regression tests..."
+    if ! /opt/apparmor/run_apparmor.sh; then
+        echo "Error: AppArmor kernel regression tests failed." >&2
+        exit 1
+    fi
 else
     echo "Error: Unknown test suite '${CONFORMANCE_TEST_SUITE}'." >&2
     exit 6

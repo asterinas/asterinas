@@ -12,6 +12,11 @@
 
 pub mod hooks;
 mod modules;
+pub(crate) mod proc_attr;
+pub(crate) mod task_state;
+
+pub use proc_attr::CurrentAttrReader;
+pub use task_state::{ExecStatePreparer, LsmTaskState};
 
 pub(crate) mod yama {
     pub(crate) use super::modules::yama::{YamaScope, get_scope, set_scope};
@@ -23,7 +28,7 @@ use crate::prelude::*;
 bitflags! {
     /// LSM module flags.
     #[derive(Clone, Copy, Debug)]
-    pub(crate) struct LsmFlags: u32 {
+    pub struct LsmFlags: u32 {
         /// Marks a module as selectable through the legacy `security=` parameter.
         const LEGACY_MAJOR = 1 << 0;
         /// Marks a module as mutually exclusive with other exclusive modules.
@@ -31,13 +36,42 @@ bitflags! {
     }
 }
 
-/// The common interface for built-in LSM modules.
-trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
+/// The common interface for LSM modules.
+pub trait LsmModule: LsmAlienAccessHook + LsmCapabilityHook + Sync {
     /// Returns the module name.
     fn name(&self) -> &'static str;
 
     /// Returns the module flags.
     fn flags(&self) -> LsmFlags;
+
+    /// Returns the module's current task attribute reader, if supported.
+    ///
+    /// This declaration must remain unchanged after registration. It also determines
+    /// whether procfs exposes a module-specific attribute directory.
+    fn current_attr_reader(&self) -> Option<CurrentAttrReader> {
+        None
+    }
+
+    /// Returns the exclusive module's immutable task-state provider.
+    ///
+    /// This declaration must remain unchanged after registration.
+    fn exec_state_preparer(&self) -> Option<ExecStatePreparer> {
+        None
+    }
+
+    /// Initializes the module after it has been selected.
+    fn init(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// Registers an LSM module before the LSM stack is initialized.
+///
+/// The name must be nonempty and contain neither commas nor whitespace.
+/// Returns `EINVAL` for an invalid name, `EEXIST` for a duplicate name, or
+/// `EBUSY` once module selection has begun.
+pub fn register(module: &'static dyn LsmModule) -> Result<()> {
+    modules::register(module)
 }
 
 /// Returns whether the Yama LSM is enabled.
@@ -47,8 +81,11 @@ pub(crate) fn is_yama_enabled() -> bool {
         .any(|module| module.name() == "yama")
 }
 
-pub(super) fn init() {
+pub(super) fn init() -> Result<()> {
     for module in modules::active_modules() {
         info!("[kernel] LSM module enabled: {}", module.name());
+        module.init()?;
     }
+
+    Ok(())
 }
