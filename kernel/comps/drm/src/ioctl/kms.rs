@@ -14,10 +14,7 @@ use crate::{
     ioctl::ioctl_defs,
     kms::{
         display_mode::{DrmDisplayMode, DrmModeInfo},
-        modeset::{
-            connector::DrmConnectorState, crtc::DrmCrtcState, encoder::DrmEncoderState,
-            plane::DrmPlaneState,
-        },
+        modeset::{connector::DrmConnectorState, crtc::DrmCrtcState, plane::DrmPlaneState},
         objects::{
             DrmKmsObjectType, KmsObjectId, KmsObjectIndex,
             connector::DrmConnector,
@@ -367,25 +364,10 @@ impl DrmFile {
         for connector in static_objects.connectors() {
             if modeset_state
                 .connector_state(connector.index())
-                .encoder()
-                .upgrade()
-                .is_some_and(|encoder| {
-                    modeset_state
-                        .encoder_state(encoder.index())
-                        .current_crtc()
-                        .ptr_eq(&crtc_ref)
-                })
-            {
-                modeset_state.set_connector_state(connector.index(), DrmConnectorState::default());
-            }
-        }
-        for encoder in static_objects.encoders() {
-            if modeset_state
-                .encoder_state(encoder.index())
-                .current_crtc()
+                .crtc()
                 .ptr_eq(&crtc_ref)
             {
-                modeset_state.set_encoder_state(encoder.index(), DrmEncoderState::default());
+                modeset_state.set_connector_state(connector.index(), DrmConnectorState::default());
             }
         }
 
@@ -401,11 +383,9 @@ impl DrmFile {
                 ),
             );
             for (connector, encoder) in matched_connector_encoders {
-                modeset_state
-                    .set_encoder_state(encoder.index(), DrmEncoderState::new(Arc::downgrade(crtc)));
                 modeset_state.set_connector_state(
                     connector.index(),
-                    DrmConnectorState::new(Arc::downgrade(encoder)),
+                    DrmConnectorState::new(Arc::downgrade(crtc), Arc::downgrade(encoder)),
                 );
             }
         } else {
@@ -427,13 +407,27 @@ impl DrmFile {
             .lookup_encoder_by_id(args.encoder_id)
             .ok_or(Errno::ENOENT)?;
 
-        args.crtc_id = kms
-            .modeset_state()
-            .lock()
-            .encoder_state(encoder.index())
-            .current_crtc()
-            .upgrade()
-            .map_or(0, |crtc| crtc.id());
+        args.crtc_id = {
+            let modeset_state = kms.modeset_state().lock();
+            let encoder_ref = Arc::downgrade(encoder);
+            let mut crtc_id = 0;
+
+            for connector in static_objects.connectors() {
+                let connector_state = modeset_state.connector_state(connector.index());
+
+                if !connector_state.encoder().ptr_eq(&encoder_ref) {
+                    continue;
+                }
+
+                if let Some(crtc) = connector_state.crtc().upgrade() {
+                    crtc_id = crtc.id();
+                }
+
+                break;
+            }
+
+            crtc_id
+        };
         args.encoder_type = encoder.type_() as u32;
         args.possible_crtcs = encoder.possible_crtcs().as_raw_slice()[0];
         args.possible_clones = encoder.possible_clones().as_raw_slice()[0];
