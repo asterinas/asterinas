@@ -27,8 +27,31 @@ jobs:
         uses: ./.github/actions/test
         with:
           auto_test: 'general'
-          runs_on: 'ubuntu-latest'
           arch: 'loongarch64'
           restore_osdk_from_cache: true
           restore_kernel_from_cache: ${{ matrix.id == 'compile' }}
           save_builds_to_cache: ${{ matrix.id == 'compile' }}
+
+  boot-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: asterinas/kernel-dev:0.19.0-20261012
+      options: -v /dev:/dev --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run boot test
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'boot'
+          arch: 'loongarch64'
+          smp: 1
+          enable_kvm: false
+          restore_osdk_from_cache: true
+          restore_kernel_from_cache: true
+      - name: Upload QEMU log
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: loongarch64-boot-log
+          path: qemu.log

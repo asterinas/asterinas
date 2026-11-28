@@ -55,7 +55,7 @@ jobs:
             exit 1
           fi
           # initramfs_pkgs embeds the host resolver configuration, so Docker builds it locally.
-          for target in aarch64_pkgs riscv64_pkgs x86_64_pkgs; do
+          for target in aarch64_pkgs riscv64_pkgs loongarch64_pkgs x86_64_pkgs; do
             make --no-print-directory -C test/initramfs "$target" \
               PREBUILT_ROOT="$RUNNER_TEMP/prebuilt" > "$RUNNER_TEMP/$target.paths"
             if [[ "$PUBLISH" == true ]]; then

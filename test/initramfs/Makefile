@@ -84,13 +84,7 @@ BOOT_IMAGE_NIX_ARGS := \
 	--arg smp $(SMP)
 
 .PHONY: initramfs-boot-images
-ifeq ($(TARGET_ARCH), loongarch64)
-initramfs-boot-images: data-disk-images
-	@echo "For loongarch, we generate a fake initramfs to successfully test or build."
-	@touch $(INITRAMFS_IMAGE)
-else
 initramfs-boot-images: $(INITRAMFS_IMAGE) data-disk-images
-endif
 
 .PHONY: data-disk-images
 ifeq ($(TARGET_ARCH), loongarch64)
@@ -103,6 +97,12 @@ endif
 
 .PHONY: $(INITRAMFS_IMAGE)
 $(INITRAMFS_IMAGE): $(INITRAMFS_DIR)
+ifeq ($(TARGET_ARCH), loongarch64)
+	@# Older LoongArch builds left an empty file where Nix now creates a symlink.
+	@if [ -f "$@" ] && [ ! -L "$@" ] && [ ! -s "$@" ]; then \
+		rm -f -- "$@"; \
+	fi
+endif
 	@nix-build \
 		$(BOOT_IMAGE_NIX_ARGS) \
 		--arg initramfsCompressed $(INITRAMFS_COMPRESSED) \
@@ -193,6 +193,16 @@ aarch64_pkgs:
 		-A busybox \
 		-A conformance.ltp \
 		-A regression.package
+
+# Prebuild loongarch64 packages
+loongarch64_pkgs:
+	@nix-build \
+		nix/default.nix \
+		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
+		$(NIX_QUIET) \
+		--argstr target loongarch64 \
+		--out-link $(PREBUILT_ROOT)/loongarch64-pkgs \
+		-A busybox
 
 install_host_pkgs:
 	@nix-env \
