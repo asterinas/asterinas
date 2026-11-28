@@ -13,4 +13,8 @@ C_OBJS_FILTER += \
 	regset
 endif
 
+ifneq ($(HOST_PLATFORM), riscv64-linux)
+C_OBJS_FILTER += regset_riscv
+endif
+
 include ../../common/Makefile
