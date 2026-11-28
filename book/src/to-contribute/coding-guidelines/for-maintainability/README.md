@@ -24,6 +24,8 @@ with a one-line gist so a reader (or a review tool) can grasp the guideline befo
 - [`atomic-commits`](process.md#atomic-commits): One logical change per commit; don't mix unrelated changes.
 - [`refactor-then-feature`](process.md#refactor-then-feature): Put preparatory refactoring in its own earlier commit(s), separate from the feature.
 - [`focused-prs`](process.md#focused-prs): Keep a PR on a single topic; ensure CI passes before requesting review.
+- [`pr-summary`](process.md#pr-summary): Explain the motivation, key changes, and relevant context; keep the description concise and current.
+- [`design-before-large-changes`](process.md#design-before-large-changes): Discuss substantial designs in a proposal issue before implementation, and link it from the PR.
 
 **[Naming](naming.md)**
 - [`descriptive-names`](naming.md#descriptive-names): Names convey meaning at the point of use; avoid single letters and ambiguous abbreviations.
