@@ -1,0 +1,12 @@
+// Attribute fields and valid argument values are described in README.md.
+struct perf_counting_attr = {
+    type = PERF_TYPE_HARDWARE,
+    size,
+    config = PERF_COUNT_HW_CPU_CYCLES | PERF_COUNT_HW_INSTRUCTIONS,
+    ..
+};
+
+perf_event_open(
+    attr = <perf_counting_attr>, pid = <INTEGER>, cpu = <INTEGER>,
+    group_fd = <INTEGER>, flags = PERF_FLAG_FD_CLOEXEC
+);

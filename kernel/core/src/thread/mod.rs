@@ -8,11 +8,13 @@ use aster_util::per_cpu_counter::PerCpuCounter;
 use ostd::{
     cpu::{AtomicCpuSet, CpuId, CpuSet},
     irq::DisabledLocalIrqGuard,
+    pmu,
     task::Task,
 };
 
 use self::{kernel_thread::AsKernelThread, stats::CONTEXT_SWITCH_COUNTER};
 use crate::{
+    events::perf::PerfContext,
     prelude::*,
     sched::{SchedAttr, SchedPolicy},
 };
@@ -33,6 +35,11 @@ fn pre_schedule_handler(irq_guard: &DisabledLocalIrqGuard) {
     let Some(task) = Task::current() else {
         return;
     };
+    if pmu::HAS_BACKEND
+        && let Some(perf) = task.as_thread().and_then(|thread| thread.perf())
+    {
+        perf.on_schedule_out(irq_guard);
+    }
     let Some(thread_local) = task.as_thread_local() else {
         return;
     };
@@ -58,6 +65,11 @@ fn post_schedule_handler(irq_guard: &DisabledLocalIrqGuard) {
         .and_then(|kernel_thread| kernel_thread.vmar())
     {
         vmar.vm_space().activate(irq_guard);
+    }
+    if pmu::HAS_BACKEND
+        && let Some(perf) = task.as_thread().and_then(|thread| thread.perf())
+    {
+        perf.on_schedule_in(irq_guard);
     }
 }
 
@@ -91,6 +103,7 @@ pub(crate) struct Thread {
     cpu_affinity: AtomicCpuSet,
     /// Thread scheduling attribute.
     sched_attr: SchedAttr,
+    perf: Option<Arc<PerfContext>>,
 }
 
 impl Thread {
@@ -107,6 +120,7 @@ impl Thread {
             is_exited: AtomicBool::new(false),
             cpu_affinity: AtomicCpuSet::new(cpu_affinity),
             sched_attr: SchedAttr::new(sched_policy),
+            perf: pmu::HAS_BACKEND.then(|| Arc::new(PerfContext::new())),
         }
     }
 
@@ -135,7 +149,18 @@ impl Thread {
         self.is_exited.load(Ordering::Acquire)
     }
 
+    /// Returns the context that owns this thread's performance events.
+    ///
+    /// Event files can retain the context beyond thread exit to read final counts.
+    /// Builds without a hardware PMU backend return `None`.
+    pub(crate) fn perf(&self) -> Option<&Arc<PerfContext>> {
+        self.perf.as_ref()
+    }
+
     pub(super) fn exit(&self) {
+        if let Some(perf) = self.perf() {
+            perf.on_exit();
+        }
         self.is_exited.store(true, Ordering::Release);
     }
 

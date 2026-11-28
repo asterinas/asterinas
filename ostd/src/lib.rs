@@ -42,6 +42,7 @@ pub mod irq;
 pub mod log;
 pub mod mm;
 pub mod panic;
+pub mod pmu;
 pub mod power;
 pub mod prelude;
 pub mod smp;

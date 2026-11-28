@@ -2,13 +2,16 @@
 
 use aster_rights::{Dup, Read, TRights, Write};
 use aster_rights_proc::require;
-use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
+use ostd::{
+    pmu,
+    sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard},
+};
 
 use super::{
     Credentials, ExecCred, FileCapabilities, Gid, SecureBits, Uid, capabilities::CapSet,
     credentials_::Credentials_,
 };
-use crate::prelude::*;
+use crate::{prelude::*, process::posix_thread::AsPosixThread, thread::Thread};
 
 impl<R: TRights> Credentials<R> {
     /// Creates a root `Credentials`.
@@ -90,7 +93,7 @@ impl<R: TRights> Credentials<R> {
     /// This method requires the `Write` right.
     #[require(R > Write)]
     pub(crate) fn set_uid(&self, uid: Uid) -> Result<()> {
-        self.0.set_uid(uid)
+        self.with_perf_credential_update(|| self.0.set_uid(uid))
     }
 
     /// Sets the real, effective user IDs as `ruid`, `euid` respectively.
@@ -100,7 +103,7 @@ impl<R: TRights> Credentials<R> {
     /// This method requires the `Write` right.
     #[require(R > Write)]
     pub(crate) fn set_reuid(&self, ruid: Option<Uid>, euid: Option<Uid>) -> Result<()> {
-        self.0.set_reuid(ruid, euid)
+        self.with_perf_credential_update(|| self.0.set_reuid(ruid, euid))
     }
 
     /// Sets the real, effective, saved-set user IDs as `ruid`, `euid`, `suid` respectively.
@@ -115,7 +118,7 @@ impl<R: TRights> Credentials<R> {
         euid: Option<Uid>,
         suid: Option<Uid>,
     ) -> Result<()> {
-        self.0.set_resuid(ruid, euid, suid)
+        self.with_perf_credential_update(|| self.0.set_resuid(ruid, euid, suid))
     }
 
     /// Sets the filesystem user ID as `fsuid` and returns the original filesystem user ID.
@@ -170,7 +173,7 @@ impl<R: TRights> Credentials<R> {
     /// This method requires the `Write` right.
     #[require(R > Write)]
     pub(crate) fn set_gid(&self, gid: Gid) -> Result<()> {
-        self.0.set_gid(gid)
+        self.with_perf_credential_update(|| self.0.set_gid(gid))
     }
 
     /// Sets the real, effective group IDs as `rgid`, `egid` respectively.
@@ -180,7 +183,7 @@ impl<R: TRights> Credentials<R> {
     /// This method requires the `Write` right.
     #[require(R > Write)]
     pub(crate) fn set_regid(&self, rgid: Option<Gid>, egid: Option<Gid>) -> Result<()> {
-        self.0.set_regid(rgid, egid)
+        self.with_perf_credential_update(|| self.0.set_regid(rgid, egid))
     }
 
     /// Sets the real, effective, saved-set group IDs as `rgid`, `egid`, `sgid` respectively.
@@ -195,7 +198,7 @@ impl<R: TRights> Credentials<R> {
         egid: Option<Gid>,
         sgid: Option<Gid>,
     ) -> Result<()> {
-        self.0.set_resgid(rgid, egid, sgid)
+        self.with_perf_credential_update(|| self.0.set_resgid(rgid, egid, sgid))
     }
 
     /// Sets the filesystem group ID as `fsgid` and returns the original filesystem group ID.
@@ -268,28 +271,18 @@ impl<R: TRights> Credentials<R> {
         self.0.bounding_capset()
     }
 
-    /// Sets the capabilities that child processes can inherit.
+    /// Applies the capability sets validated by `capset`.
+    ///
+    /// Perf observes the three writes as one credential update.
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub(crate) fn set_inheritable_capset(&self, inheritable_capset: CapSet) {
-        self.0.set_inheritable_capset(inheritable_capset);
-    }
-
-    /// Sets the capabilities that a process can potentially be granted.
-    ///
-    /// This method requires the `Write` right.
-    #[require(R > Write)]
-    pub(crate) fn set_permitted_capset(&self, permitted_capset: CapSet) {
-        self.0.set_permitted_capset(permitted_capset);
-    }
-
-    /// Sets the capabilities that a process can actually use.
-    ///
-    /// This method requires the `Write` right.
-    #[require(R > Write)]
-    pub(crate) fn set_effective_capset(&self, effective_capset: CapSet) {
-        self.0.set_effective_capset(effective_capset);
+    pub(crate) fn set_capsets(&self, permitted: CapSet, effective: CapSet, inheritable: CapSet) {
+        self.with_perf_credential_update(|| {
+            self.0.set_permitted_capset(permitted);
+            self.0.set_effective_capset(effective);
+            self.0.set_inheritable_capset(inheritable);
+        });
     }
 
     /// Gets the ambient capability set.
@@ -409,6 +402,20 @@ impl<R: TRights> Credentials<R> {
     /// This method requires the `Write` right.
     #[require(R > Write)]
     pub(in crate::process) fn apply_exec_cred(&self, exec_cred: ExecCred) -> Result<()> {
-        self.0.apply_exec_cred(exec_cred)
+        self.with_perf_credential_update(|| self.0.apply_exec_cred(exec_cred))
+    }
+
+    fn with_perf_credential_update<T>(&self, update: impl FnOnce() -> T) -> T {
+        if pmu::HAS_BACKEND
+            && let Some(thread) = Thread::current()
+            && let Some(perf) = thread.perf()
+            && let Some(posix_thread) = thread.as_posix_thread()
+        {
+            let credentials = posix_thread.credentials();
+            if Arc::ptr_eq(&self.0, &credentials.0) {
+                return perf.update_credentials(&credentials, update);
+            }
+        }
+        update()
     }
 }

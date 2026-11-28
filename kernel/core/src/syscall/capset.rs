@@ -79,9 +79,7 @@ pub(super) fn sys_capset(
         return Err(errno!(EPERM, "inheritable capabilities are not bounding"));
     }
 
-    credentials.set_permitted_capset(permitted_capset);
-    credentials.set_effective_capset(effective_capset);
-    credentials.set_inheritable_capset(inheritable_capset);
+    credentials.set_capsets(permitted_capset, effective_capset, inheritable_capset);
 
     Ok(SyscallReturn::Return(0))
 }

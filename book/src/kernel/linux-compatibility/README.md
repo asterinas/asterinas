@@ -318,7 +318,7 @@ which are summarized in the table below.
 | 295     | preadv                 | ✅             | 💯 |
 | 296     | pwritev                | ✅             | 💯 |
 | 297     | rt_tgsigqueueinfo      | ❌             | N/A |
-| 298     | perf_event_open        | ❌             | N/A |
+| 298     | perf_event_open        | ✅             | [⚠️](syscall-flag-coverage/system-information-and-misc/#perf_event_open) |
 | 299     | recvmmsg               | ❌             | N/A |
 | 300     | fanotify_init          | ❌             | N/A |
 | 301     | fanotify_mark          | ❌             | N/A |

@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: MPL-2.0
+
+//! Per-thread hardware performance counting backed by OSTD's CPU-local PMU.
+//!
+//! The kernel translates a `perf_event_open` request into an [`EventSpec`].
+//! The resulting [`PerfEventFile`] attaches the event to the target thread's [`PerfContext`]
+//! and exposes its counts and controls through the file interface.
+//!
+//! The context carries counts across scheduling intervals
+//! and uses OSTD counters only while the target is scheduled.
+//! Schedule-out settles the current count and releases the hardware
+//! so another thread can use it.
+//! Live reads sample the counter on its owner CPU.
+//! An open event file keeps the accumulated count readable after thread exit.
+
+mod activity;
+mod context;
+mod credentials;
+mod enabled_time;
+mod file;
+mod observation;
+pub(crate) mod policy;
+mod record;
+mod remote;
+
+use ostd::pmu::{self, PmuError};
+
+use self::context::{Operation, Snapshot};
+pub(crate) use self::{
+    context::{EventSpec, PerfContext},
+    file::{PerfEventFile, ReadFormat},
+};
+use crate::{prelude::*, thread::Thread};
+
+/// Probes the CPU-local PMU before its timer callbacks begin running.
+pub(crate) fn init_on_cpu() {
+    if !pmu::HAS_BACKEND {
+        return;
+    }
+    if let Err(error) = pmu::init_on_cpu() {
+        debug!("CPU-local PMU initialization skipped: {error:?}");
+    }
+    remote::init_on_cpu();
+    ostd::timer::register_callback_on_cpu(sync_current);
+}
+
+pub(crate) fn to_error(error: PmuError) -> Error {
+    match error {
+        PmuError::Unsupported => errno!(EOPNOTSUPP, "no supported hardware PMU"),
+        PmuError::UnsupportedEvent => errno!(EOPNOTSUPP, "PMU event is unavailable"),
+        PmuError::NoCounter => errno!(EBUSY, "PMU counter resource is occupied"),
+        PmuError::Overflow => errno!(EOVERFLOW, "PMU count or observation interval overflow"),
+        PmuError::WrongCpu | PmuError::InvalidHandle | PmuError::HardwareFault => {
+            errno!(EIO, "PMU register or ownership operation failed")
+        }
+    }
+}
+
+fn sync_current() {
+    remote::service_requests();
+    if activity::has_events()
+        && let Some(perf) = Thread::current().as_deref().and_then(Thread::perf)
+    {
+        perf.on_tick();
+    }
+}
