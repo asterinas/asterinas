@@ -10,6 +10,7 @@
 }:
 rec {
   inherit testSuite;
+  apparmor = callPackage ./apparmor.nix { inherit conformanceSrc; };
   gvisor = callPackage ./gvisor { };
   kselftest = callPackage ./kselftest.nix { };
   ltp = callPackage ./ltp.nix { };
@@ -39,6 +40,7 @@ rec {
       ${lib.optionalString (testSuite == "kselftest") "export KSELFTEST_PREBUILT_DIR=${kselftest}"}
       ${lib.optionalString (testSuite == "pjdfstest") "export PJDFSTEST_PREBUILT_DIR=${pjdfstest}"}
       ${lib.optionalString (testSuite == "xfstests") "export XFSTESTS_PREBUILT_DIR=${xfstests}"}
+      ${lib.optionalString (testSuite == "apparmor") "export APPARMOR_PREBUILT_DIR=${apparmor}"}
       make
     '';
   };

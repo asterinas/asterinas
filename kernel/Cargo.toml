@@ -10,6 +10,7 @@ ostd.workspace = true
 # High-level component crates.
 #
 # Keep this list in sync with the `extern crate` declarations in `src/lib.rs`.
+aster-apparmor.workspace = true
 aster-drm.workspace = true
 aster-simpledrm.workspace = true
 aster-uart.workspace = true
@@ -19,6 +20,7 @@ aster-i8042.workspace = true
 
 [features]
 default = ["cvm_guest"]
+apparmor-abi-conformance = ["aster-apparmor/policy-abi-conformance"]
 coverage = ["aster-core/coverage"]
 cvm_guest = ["aster-core/cvm_guest"]
 pvh_boot = ["aster-core/pvh_boot"]

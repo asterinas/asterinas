@@ -448,6 +448,7 @@ fn clone_child_task(
             credentials,
             child_vmar,
         )
+        .lsm_state(ctx.posix_thread.lsm_state())
         .process(posix_thread.weak_process().clone())
         .sig_mask(sig_mask)
         .file_table(child_file_table)
@@ -584,6 +585,7 @@ fn clone_child_process(
                 credentials,
                 child_vmar,
             )
+            .lsm_state(ctx.posix_thread.lsm_state())
             .sig_mask(child_sig_mask)
             .file_table(child_file_table)
             .fs(child_fs)
