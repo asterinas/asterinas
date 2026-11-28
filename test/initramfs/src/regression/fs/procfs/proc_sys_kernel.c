@@ -4,6 +4,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -324,5 +325,55 @@ FN_TEST(proc_sys_kernel_overflow_ids_require_cap_sys_admin)
 			  sizeof(actual_gid));
 	TEST_RES(strcmp(actual_uid, original_uid), _ret == 0);
 	TEST_RES(strcmp(actual_gid, original_gid), _ret == 0);
+}
+END_TEST()
+
+#define BOOT_ID_STR_LEN 36
+
+static bool is_boot_id_well_formed(const char *id)
+{
+	int i;
+
+	for (i = 0; i < BOOT_ID_STR_LEN; i++) {
+		char c = id[i];
+
+		if (i == 8 || i == 13 || i == 18 || i == 23) {
+			if (c != '-')
+				return false;
+		} else if (!((c >= '0' && c <= '9') ||
+			     (c >= 'a' && c <= 'f'))) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+FN_TEST(proc_sys_kernel_boot_id_is_stable_well_formed_uuid)
+{
+	char first[BOOT_ID_STR_LEN + 2];
+	char second[BOOT_ID_STR_LEN + 2];
+
+	read_file_checked("/proc/sys/kernel/random/boot_id", first,
+			  sizeof(first));
+	read_file_checked("/proc/sys/kernel/random/boot_id", second,
+			  sizeof(second));
+
+	TEST_RES(strlen(first),
+		 _ret == BOOT_ID_STR_LEN + 1 && first[BOOT_ID_STR_LEN] == '\n');
+	TEST_RES(is_boot_id_well_formed(first), _ret);
+	TEST_RES(strcmp(first, second), _ret == 0);
+
+	// FIXME: The boot ID is read-only. Linux rejects the open with EACCES,
+	// while Asterinas rejects the write with EPERM.
+#ifdef __asterinas__
+	TEST_ERRNO(write_file("/proc/sys/kernel/random/boot_id",
+			      "00000000-0000-0000-0000-000000000000\n"),
+		   EPERM);
+#else
+	TEST_ERRNO(write_file("/proc/sys/kernel/random/boot_id",
+			      "00000000-0000-0000-0000-000000000000\n"),
+		   EACCES);
+#endif
 }
 END_TEST()
