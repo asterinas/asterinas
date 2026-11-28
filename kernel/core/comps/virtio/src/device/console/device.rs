@@ -14,14 +14,15 @@ use ostd::{
 
 use super::{DEVICE_NAME, config::VirtioConsoleConfig};
 use crate::{
+    bus::VirtioDevice,
     device::{VirtioDeviceError, console::config::ConsoleFeatures},
     queue::VirtQueue,
-    transport::{ConfigManager, DeviceTransport},
+    transport::{ConfigManager, DeviceStatus},
 };
 
 pub struct ConsoleDevice {
     config_manager: ConfigManager<VirtioConsoleConfig>,
-    transport: SpinLock<DeviceTransport>,
+    virtio_device: Arc<VirtioDevice>,
     receive_queue: SpinLock<VirtQueue>,
     transmit_queue: SpinLock<VirtQueue>,
     send_buffer: DmaStream,
@@ -70,7 +71,7 @@ impl Debug for ConsoleDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ConsoleDevice")
             .field("config", &self.config_manager.read_config())
-            .field("transport", &self.transport)
+            .field("virtio_device", &self.virtio_device)
             .field("receive_queue", &self.receive_queue)
             .field("transmit_queue", &self.transmit_queue)
             .finish()
@@ -85,8 +86,11 @@ impl ConsoleDevice {
         features.bits()
     }
 
-    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
-        let config_manager = VirtioConsoleConfig::new_manager(device_transport.as_ref());
+    pub(crate) fn init(
+        virtio_device: Arc<VirtioDevice>,
+        _negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
+        let config_manager = VirtioConsoleConfig::new_manager(virtio_device.payload().as_ref());
         debug!("virtio_console_config = {:?}", config_manager.read_config());
 
         const RECV0_QUEUE_INDEX: u16 = 0;
@@ -94,12 +98,12 @@ impl ConsoleDevice {
         let receive_queue = SpinLock::new(VirtQueue::new(
             RECV0_QUEUE_INDEX,
             2,
-            device_transport.as_mut(),
+            virtio_device.payload().as_ref(),
         )?);
         let transmit_queue = SpinLock::new(VirtQueue::new(
             TRANSMIT0_QUEUE_INDEX,
             2,
-            device_transport.as_mut(),
+            virtio_device.payload().as_ref(),
         )?);
 
         let send_buffer = DmaStream::alloc(1, false).map_err(VirtioDeviceError::ResourceAlloc)?;
@@ -108,7 +112,7 @@ impl ConsoleDevice {
 
         let device = Arc::new(Self {
             config_manager,
-            transport: SpinLock::new(device_transport),
+            virtio_device,
             receive_queue,
             transmit_queue,
             send_buffer,
@@ -119,7 +123,7 @@ impl ConsoleDevice {
         device.activate_receive_buffer(&mut device.receive_queue.disable_irq().lock());
 
         // Register IRQ callbacks.
-        let mut transport = device.transport.lock();
+        let transport = device.virtio_device.payload().as_ref();
         let handle_console_input = {
             // FIXME: This callback captures a strong `Arc`, creating a reference cycle.
             let device = device.clone();
@@ -131,8 +135,7 @@ impl ConsoleDevice {
             false,
         )?;
         transport.register_cfg_callback(Box::new(config_space_change))?;
-        transport.finish_init();
-        drop(transport);
+        transport.add_device_status(DeviceStatus::DRIVER_OK)?;
 
         Self::notify_receive_queue(&mut device.receive_queue.disable_irq().lock());
 

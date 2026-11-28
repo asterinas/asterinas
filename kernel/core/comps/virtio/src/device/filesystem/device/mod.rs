@@ -33,11 +33,11 @@ use waiter::{FuseWaiter, ReplyBufs};
 
 pub use self::session::{AttrVersion, FuseSession};
 use crate::{
+    bus::VirtioDevice,
     device::filesystem::{
         pool,
         pool::{FuseDataBuf, FuseReplyBuf, FuseReplyBufs, FuseRequestBuf, VirtiofsDmaPool},
     },
-    transport::DeviceTransport,
 };
 
 /// Maximum data pages packed into one FUSE read request as DMA buffers.
@@ -65,7 +65,7 @@ static FILESYSTEM_DEVICES: Once<SpinLock<Vec<Arc<FileSystemDevice>>, LocalIrqDis
 /// guards. The request path takes virtio-fs locks in this order:
 /// VFS sleepable guard -> selected request queue `SpinLock`.
 pub struct FileSystemDevice {
-    transport: SpinLock<DeviceTransport, LocalIrqDisabled>,
+    virtio_device: Arc<VirtioDevice>,
     hiprio_queue: Arc<FsRequestQueue>,
     request_queues: Vec<Arc<FsRequestQueue>>,
     to_device_pool: VirtiofsDmaPool<ToDevice>,
@@ -77,7 +77,7 @@ pub struct FileSystemDevice {
 
 impl FileSystemDevice {
     fn new(
-        transport: DeviceTransport,
+        virtio_device: Arc<VirtioDevice>,
         hiprio_queue: Arc<FsRequestQueue>,
         request_queues: Vec<Arc<FsRequestQueue>>,
         tag: String,
@@ -86,7 +86,7 @@ impl FileSystemDevice {
         let (to_device_arena_pool, from_device_arena_pool) = pool::dma_arena_pools_singleton();
 
         Self {
-            transport: SpinLock::new(transport),
+            virtio_device,
             hiprio_queue,
             request_queues,
             to_device_pool: VirtiofsDmaPool::new(to_device_arena_pool),

@@ -269,7 +269,7 @@ fi
 # The virtio-net device needs the net01 backend, which NETDEV=none does not create.
 Q35_NETWORK_DEVICE_ARGS=""
 if [ "$NETDEV" = "user" ] || [ "$NETDEV" = "tap" ]; then
-    Q35_NETWORK_DEVICE_ARGS="-device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA"
+    Q35_NETWORK_DEVICE_ARGS="-device virtio-net-pci,bus=pcie.0,addr=0x2,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA"
 fi
 
 if [ "$1" = "microvm" ]; then
@@ -298,7 +298,7 @@ else
         -object rng-random,id=rng0,filename=/dev/urandom \
         -device virtio-rng-pci,bus=pcie.0,addr=0x9,disable-legacy=on,disable-modern=off,rng=rng0,event_idx=off,indirect_desc=off,queue_reset=off$IOMMU_DEV_EXTRA \
         $Q35_NETWORK_DEVICE_ARGS \
-        -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
+        -device virtio-serial-pci,bus=pcie.0,addr=0x3,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
         -drive if=none,format=raw,id=nvme0n1,file=./test/initramfs/build/nvme0n1.img \
         -device nvme,bus=pcie.0,addr=0x4,drive=nvme0n1,serial=nvme0n1 \
         $CONSOLE_ARGS \

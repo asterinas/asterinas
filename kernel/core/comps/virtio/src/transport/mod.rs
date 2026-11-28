@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, sync::Arc};
-use core::{
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
+use core::{fmt::Debug, hint::spin_loop};
 
 use aster_pci::cfg_space::BarAccess;
 use aster_util::safe_ptr::SafePtr;
@@ -37,17 +34,24 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
     /// Get device type.
     fn device_type(&self) -> VirtioDeviceType;
 
+    /// Returns the VirtIO vendor ID.
+    fn vendor_id(&self) -> u32;
+
     /// Get device features.
     fn read_device_features(&self) -> u64;
 
     /// Set driver features.
-    fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError>;
+    fn write_driver_features(&self, features: u64) -> Result<(), VirtioTransportError>;
 
     /// Get device status.
     fn read_device_status(&self) -> DeviceStatus;
 
     /// Set device status.
-    fn write_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError>;
+    fn write_device_status(&self, status: DeviceStatus) -> Result<(), VirtioTransportError>;
+
+    /// Reads the current device status, ORs it with `bits`, and writes the result back.
+    /// This read-modify-write is atomic with respect to other status updates through this transport.
+    fn add_device_status(&self, bits: DeviceStatus) -> Result<(), VirtioTransportError>;
 
     /// Get access to the device config memory.
     fn device_config_mem(&self) -> Option<IoMem>;
@@ -62,7 +66,7 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
 
     /// Set virtqueue information. Some transport may set other necessary information such as MSI-X vector in PCI transport.
     fn set_queue(
-        &mut self,
+        &self,
         idx: u16,
         queue_size: u16,
         descriptor_ptr: &SafePtr<Descriptor, Arc<DmaCoherent>>,
@@ -88,7 +92,7 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
     /// If no available IRQ lines are found for allocation, the
     /// transport may assign the callback to a shared IRQ line.
     fn register_queue_callback(
-        &mut self,
+        &self,
         index: u16,
         func: Box<IrqCallbackFunction>,
         single_interrupt: bool,
@@ -96,9 +100,24 @@ pub(crate) trait VirtioTransport: Sync + Send + Debug {
 
     /// Register configuration space change interrupt callback.
     fn register_cfg_callback(
-        &mut self,
+        &self,
         func: Box<IrqCallbackFunction>,
     ) -> Result<(), VirtioTransportError>;
+
+    /// Unregisters all functional driver callbacks and waits for running callbacks to finish.
+    ///
+    /// Call from task context without holding any lock acquired by callbacks
+    /// registered through [`Self::register_queue_callback()`] or [`Self::register_cfg_callback()`].
+    /// Otherwise, this call may wait for a callback that is waiting for your lock.
+    fn clear_callbacks(&self);
+
+    /// Resets the device and waits for the reset to complete.
+    fn reset(&self) {
+        self.write_device_status(DeviceStatus::empty()).unwrap();
+        while !self.read_device_status().is_empty() {
+            spin_loop();
+        }
+    }
 }
 
 /// Manage PCI device/notify configuration space (legacy/modern).
@@ -243,72 +262,15 @@ bitflags::bitflags! {
         /// Indicates that the device has experienced an error from which it
         /// can’t recover.
         const DEVICE_NEEDS_RESET = 64;
+
+        // Reset completes when the device reports zero. Discarding unrecognized bits
+        // could turn a nonzero status into zero. Keeping all eight bits also lets
+        // sysfs report the exact status byte.
+        const _                  = !0;
     }
 }
 
-/// A wrapper around [`Box<dyn VirtioTransport>`] that sets the device status to FAILED
-/// on drop unless [`Self::finish_init`] has been called.
-///
-/// This ensures that the FAILED status bit is set whenever a device initialization
-/// is aborted before completion, as required by the VirtIO specification.
-///
-/// The `DeviceTransport` is stored in the device struct and held for the device's
-/// lifetime. During initialization it acts as a sentinel: if init fails (the struct
-/// is dropped without [`finish_init`] being called), [`Drop`] sets `FAILED`. Once
-/// `finish_init` is called, the FAILED bit is no longer set on drop.
-#[derive(Debug)]
-pub(crate) struct DeviceTransport {
-    inner: Box<dyn VirtioTransport>,
-    is_completed: bool,
-}
-
-impl DeviceTransport {
-    /// Creates a new wrapper around `transport`.
-    ///
-    /// The wrapper will set the device status to [`DeviceStatus::FAILED`] on drop
-    /// unless [`Self::finish_init`] is called first.
-    pub(super) fn new(transport: Box<dyn VirtioTransport>) -> Self {
-        Self {
-            inner: transport,
-            is_completed: false,
-        }
-    }
-
-    /// Marks initialization as complete and sets the device status to `DRIVER_OK`.
-    ///
-    /// After this call, the wrapper will NOT set `FAILED` on drop.
-    pub(crate) fn finish_init(&mut self) {
-        self.is_completed = true;
-        let status = self.inner.read_device_status() | DeviceStatus::DRIVER_OK;
-        self.inner.write_device_status(status).unwrap();
-    }
-}
-
-impl Deref for DeviceTransport {
-    type Target = Box<dyn VirtioTransport>;
-
-    fn deref(&self) -> &Box<dyn VirtioTransport> {
-        &self.inner
-    }
-}
-
-impl DerefMut for DeviceTransport {
-    fn deref_mut(&mut self) -> &mut Box<dyn VirtioTransport> {
-        &mut self.inner
-    }
-}
-
-impl Drop for DeviceTransport {
-    fn drop(&mut self) {
-        if !self.is_completed {
-            let status = self.inner.read_device_status();
-            let _ = self
-                .inner
-                .write_device_status(status | DeviceStatus::FAILED);
-        }
-    }
-}
-
+/// Registers the PCI and MMIO transport drivers to discover VirtIO devices.
 pub(super) fn init() {
     virtio_pci_init();
     virtio_mmio_init();

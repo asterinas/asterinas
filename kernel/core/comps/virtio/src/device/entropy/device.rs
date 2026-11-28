@@ -20,9 +20,10 @@ use ostd::{
 };
 
 use crate::{
+    bus::VirtioDevice,
     device::{VirtioDeviceError, entropy},
     queue::VirtQueue,
-    transport::DeviceTransport,
+    transport::DeviceStatus,
 };
 
 static ENTROPY_DEVICE_ID: AtomicUsize = AtomicUsize::new(0);
@@ -44,7 +45,7 @@ const ENTROPY_BUFFER_SIZE: usize = PAGE_SIZE;
 
 /// Entropy devices, which supply high-quality randomness for guest use.
 pub struct EntropyDevice {
-    transport: SpinLock<DeviceTransport>,
+    virtio_device: Arc<VirtioDevice>,
     inner: SpinLock<EntropyDeviceInner, LocalIrqDisabled>,
     /// A filled DMA buffer drained by user-space reads.
     cache: Mutex<EntropyCache>,
@@ -52,18 +53,21 @@ pub struct EntropyDevice {
 }
 
 impl EntropyDevice {
-    pub(crate) fn init(mut device_transport: DeviceTransport) -> Result<(), VirtioDeviceError> {
-        let queue = VirtQueue::new(0, ENTROPY_QUEUE_SIZE, device_transport.as_mut())?;
+    pub(crate) fn init(
+        virtio_device: Arc<VirtioDevice>,
+        _negotiated_features: u64,
+    ) -> Result<(), VirtioDeviceError> {
+        let queue = VirtQueue::new(0, ENTROPY_QUEUE_SIZE, virtio_device.payload().as_ref())?;
         let inner = EntropyDeviceInner::new(queue)?;
         let cache = EntropyCache::new()?;
         let device = Arc::new(EntropyDevice {
-            transport: SpinLock::new(device_transport),
+            virtio_device,
             inner: SpinLock::new(inner),
             cache: Mutex::new(cache),
             wait_queue: WaitQueue::new(),
         });
 
-        let mut transport = device.transport.lock();
+        let transport = device.virtio_device.payload().as_ref();
 
         // Register IRQ callbacks.
         transport.register_queue_callback(
@@ -81,8 +85,7 @@ impl EntropyDevice {
         // Virtio-rng has no configuration fields, so config-space change interrupts
         // are not expected and no config callback is registered.
 
-        transport.finish_init();
-        drop(transport);
+        transport.add_device_status(DeviceStatus::DRIVER_OK)?;
 
         let device_id = ENTROPY_DEVICE_ID.fetch_add(1, Ordering::Relaxed);
         let name = format!("{ENTROPY_DEVICE_PREFIX}{device_id}");
