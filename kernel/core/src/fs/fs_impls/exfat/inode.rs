@@ -283,14 +283,18 @@ impl ExfatInodeInner {
         Ok((sub_inodes, sub_dirs))
     }
 
-    /// Resize current inode to new_size.
-    /// The `size_allocated` field in inode can be enlarged, while the `size` field will not.
-    fn resize(&mut self, new_size: usize, fs_guard: &MutexGuard<()>) -> Result<()> {
-        let fs = self.fs();
-        let cluster_size = fs.cluster_size();
+    fn clusters_for_size(&self, size: usize) -> Result<u32> {
+        let clusters = size.div_ceil(self.fs().cluster_size());
+        if clusters > MAX_CLUSTER_COUNT as usize {
+            return Err(errno!(EFBIG, "file size exceeds exFAT maximum"));
+        }
+        Ok(clusters as u32)
+    }
 
+    /// Resizes the allocation, capping the valid data length on shrink.
+    fn resize(&mut self, new_size: usize, fs_guard: &MutexGuard<()>) -> Result<()> {
         let num_clusters = self.num_clusters();
-        let new_num_clusters = (new_size.align_up(cluster_size) / cluster_size) as u32;
+        let new_num_clusters = self.clusters_for_size(new_size)?;
 
         let sync = self.is_sync();
 
@@ -304,13 +308,13 @@ impl ExfatInodeInner {
                 // Some exist clusters should be truncated.
                 self.start_chain
                     .remove_clusters_from_tail(num_clusters - new_num_clusters, sync)?;
-                if new_size < self.size {
-                    // Valid data is truncated.
-                    self.size = new_size;
-                }
             }
             _ => {}
         };
+        if new_size < self.size {
+            // Valid data is truncated, including the same-cluster-count case.
+            self.size = new_size;
+        }
         self.size_allocated = new_size;
 
         Ok(())

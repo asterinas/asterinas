@@ -19,6 +19,10 @@ pub(super) const MEDIA_FAILURE: u16 = 0x0004;
 pub(super) const EXFAT_RESERVED_CLUSTERS: u32 = 2;
 pub(super) const EXFAT_FIRST_CLUSTER: u32 = 2;
 
+// The exFAT specification, section 3.1.9 (ClusterCount Field), limits the
+// cluster heap to 2^32 - 11 clusters.
+pub(super) const MAX_CLUSTER_COUNT: u32 = 0xFFFF_FFF5;
+
 // exFAT allows 8388608(256MB) directory entries
 pub(super) const EXFAT_MAX_DENTRIES: u32 = 8388608;
 
