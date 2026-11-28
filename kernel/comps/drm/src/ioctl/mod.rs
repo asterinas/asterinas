@@ -116,6 +116,14 @@ impl DrmFile {
                 self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
                 self.drm_mode_object_get_props(cmd)
             }
+            cmd @ ModeCreatePropBlob => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_create_prop_blob(cmd)
+            }
+            cmd @ ModeDestroyPropBlob => {
+                self.check_kms_ioctl_access(DrmIoctlAccess::empty())?;
+                self.drm_mode_destroy_prop_blob(cmd)
+            }
             _ => {
                 ostd::warn!(
                     "unknown ioctl minor={:?} cmd={:#x}",
@@ -194,14 +202,18 @@ mod ioctl_defs {
         util::ioctl::{InData, InOutData, NoData, OutData},
     };
 
-    use crate::ioctl::{
-        gem::{DrmGemClose, DrmModeCreateDumb, DrmModeDestroyDumb, DrmModeMapDumb},
-        general::{DrmAuth, DrmGetCap, DrmUnique, DrmVersion},
-        kms::{
-            DrmModeCrtc, DrmModeFbCmd, DrmModeFbDirtyCmd, DrmModeGetBlob, DrmModeGetConnector,
-            DrmModeGetEncoder, DrmModeGetPlane, DrmModeGetPlaneRes, DrmModeGetProperty,
-            DrmModeGetResources, DrmModeObjectGetProps, DrmSetClientCap,
+    use crate::{
+        ioctl::{
+            gem::{DrmGemClose, DrmModeCreateDumb, DrmModeDestroyDumb, DrmModeMapDumb},
+            general::{DrmAuth, DrmGetCap, DrmUnique, DrmVersion},
+            kms::{
+                DrmModeCreateBlob, DrmModeCrtc, DrmModeDestroyBlob, DrmModeFbCmd,
+                DrmModeFbDirtyCmd, DrmModeGetBlob, DrmModeGetConnector, DrmModeGetEncoder,
+                DrmModeGetPlane, DrmModeGetPlaneRes, DrmModeGetProperty, DrmModeGetResources,
+                DrmModeObjectGetProps, DrmSetClientCap,
+            },
         },
+        kms::objects::KmsObjectId,
     };
 
     // Reference: <https://elixir.bootlin.com/linux/v6.17/source/include/uapi/drm/drm.h>
@@ -225,9 +237,11 @@ mod ioctl_defs {
     pub(super) type ModeGetProperty         = ioc!(DRM_IOCTL_MODE_GETPROPERTY,          b'd', 0xaa, InOutData<DrmModeGetProperty>);
     pub(super) type ModeGetPropBlob         = ioc!(DRM_IOCTL_MODE_GETPROPBLOB,          b'd', 0xac, InOutData<DrmModeGetBlob>);
     pub(super) type ModeAddFb               = ioc!(DRM_IOCTL_MODE_ADDFB,                b'd', 0xae, InOutData<DrmModeFbCmd>);
-    pub(super) type ModeRmFb                = ioc!(DRM_IOCTL_MODE_RMFB,                 b'd', 0xaf, InOutData<u32>);
+    pub(super) type ModeRmFb                = ioc!(DRM_IOCTL_MODE_RMFB,                 b'd', 0xaf, InOutData<KmsObjectId>);
     pub(super) type ModeDirtyFb             = ioc!(DRM_IOCTL_MODE_DIRTYFB,              b'd', 0xb1, InOutData<DrmModeFbDirtyCmd>);
     pub(super) type ModeGetPlaneResources   = ioc!(DRM_IOCTL_MODE_GETPLANERESOURCES,    b'd', 0xb5, InOutData<DrmModeGetPlaneRes>);
     pub(super) type ModeGetPlane            = ioc!(DRM_IOCTL_MODE_GETPLANE,             b'd', 0xb6, InOutData<DrmModeGetPlane>);
     pub(super) type ModeObjectGetProps      = ioc!(DRM_IOCTL_MODE_OBJ_GETPROPERTIES,    b'd', 0xb9, InOutData<DrmModeObjectGetProps>);
+    pub(super) type ModeCreatePropBlob      = ioc!(DRM_IOCTL_MODE_CREATEPROPBLOB,       b'd', 0xbd, InOutData<DrmModeCreateBlob>);
+    pub(super) type ModeDestroyPropBlob     = ioc!(DRM_IOCTL_MODE_DESTROYPROPBLOB,      b'd', 0xbe, InOutData<DrmModeDestroyBlob>);
 }
