@@ -3,6 +3,7 @@
 <!--
 Put system calls such as
 msgget, msgsnd, msgrcv, msgctl, semget, semop, semctl, shmget, shmat, shmctl
+mq_open, mq_unlink, mq_getsetattr, mq_timedsend, mq_timedreceive, mq_notify
 futex, set_robust_list, and get_robust_list
 under this category.
 -->
@@ -24,6 +25,70 @@ Unsupported operations:
 
 For more information,
 see [the man page](https://man7.org/linux/man-pages/man2/futex.2.html).
+
+## POSIX message queue
+
+### `mq_open`
+
+Supported functionality in SCML:
+
+```c
+{{#include mq_open.scml}}
+```
+
+Unsupported flags:
+* `O_NOFOLLOW`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/mq_open.2.html).
+
+### `mq_unlink`
+
+Supported functionality in SCML:
+
+```c
+{{#include mq_unlink.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man2/mq_unlink.2.html).
+
+### `mq_getsetattr`
+
+Supported functionality in SCML:
+
+```c
+{{#include mq_getsetattr.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man3/mq_getattr.3.html).
+
+### `mq_timedsend` and `mq_timedreceive`
+
+Supported functionality in SCML:
+
+```c
+{{#include mq_timedsend_and_timedreceive.scml}}
+```
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man3/mq_timedreceive.3.html).
+
+### `mq_notify`
+
+Supported functionality in SCML:
+
+```c
+{{#include mq_notify.scml}}
+```
+
+Unsupported notification methods:
+* `SIGEV_THREAD`
+* `SIGEV_THREAD_ID`
+
+For more information,
+see [the man page](https://man7.org/linux/man-pages/man3/mq_notify.3.html).
 
 ## System V semaphore
 

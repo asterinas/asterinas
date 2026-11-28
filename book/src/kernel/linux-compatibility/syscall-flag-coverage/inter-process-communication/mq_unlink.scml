@@ -1,0 +1,2 @@
+// Remove the message queue with the given name
+mq_unlink(name);

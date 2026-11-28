@@ -1,0 +1,15 @@
+// Get the attributes of the message queue
+mq_getattr(
+    mqdes,
+    attr
+);
+
+// Set the attributes of the message queue
+mq_setattr(
+    mqdes,
+    newattr = {
+        mq_flags = O_NONBLOCK,
+        ..
+    },
+    oldattr
+);

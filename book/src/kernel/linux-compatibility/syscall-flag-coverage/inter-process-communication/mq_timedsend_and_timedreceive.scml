@@ -1,0 +1,19 @@
+// Send a message to the message queue,
+// blocking until space is available or the absolute timeout expires
+mq_timedsend(
+    mqdes,
+    msg_ptr,
+    msg_len,
+    msg_prio,
+    abs_timeout
+);
+
+// Receive the highest-priority message from the message queue,
+// blocking until a message arrives or the absolute timeout expires
+mq_timedreceive(
+    mqdes,
+    msg_ptr,
+    msg_len,
+    msg_prio,
+    abs_timeout
+);

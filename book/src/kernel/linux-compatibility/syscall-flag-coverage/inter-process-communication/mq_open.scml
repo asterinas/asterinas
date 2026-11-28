@@ -1,0 +1,13 @@
+// Open an existing message queue
+mq_open(
+    name,
+    oflag = O_RDONLY | O_WRONLY | O_RDWR | O_CLOEXEC | O_NONBLOCK,
+);
+
+// Create a new message queue
+mq_open(
+    name,
+    oflag = O_CREAT | O_EXCL | O_RDONLY | O_WRONLY | O_RDWR | O_CLOEXEC | O_NONBLOCK,
+    mode,
+    ..
+);

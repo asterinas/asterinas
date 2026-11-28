@@ -2,6 +2,7 @@
 
 SUBDIRS := \
 	futex \
+	mqueue \
 	pipe \
 	sem \
 	shm \
