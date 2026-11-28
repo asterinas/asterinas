@@ -64,6 +64,12 @@ stdenvNoCC.mkDerivation {
       cp -r "${conformance.package}"/* $out/
     ''}
 
+    ${lib.optionalString (conformance != null && conformance.testSuite == "apparmor") ''
+      ln -sfn ${pkgs.perl}/bin/perl $out/usr/bin/perl
+      mkdir -p $out/etc/apparmor
+      ln -s /opt/apparmor/parser.conf $out/etc/apparmor/parser.conf
+    ''}
+
     # Use `writeClosure` to retrieve all dependencies of the specified packages.
     # This will generate a text file containing the complete closure of the packages,
     # including the packages themselves.
