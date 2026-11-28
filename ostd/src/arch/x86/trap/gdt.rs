@@ -58,6 +58,21 @@ pub(super) unsafe fn init_on_cpu() {
     gdt.tss0.store(tss0, Ordering::Relaxed);
     gdt.tss1.store(tss1, Ordering::Relaxed);
 
+    // The bundled Linux x86-64 vDSO reads selector 0x7b using LSL. Its
+    // segment limit encodes the current CPU in bits 0..12 and the NUMA node
+    // above it. NUMA is not supported yet, so the node is always zero. CPUs
+    // outside the vDSO's 12-bit range cannot be encoded; the kernel does not
+    // expose that vDSO when the system has more than 4096 CPUs.
+    let cpu_id = u32::from(CpuId::current_racy());
+    let cpunode_desc = if cpu_id <= 0xfff {
+        // Present ring-3 read-only, expand-down data segment, byte-granular
+        // limit, with the accessed bit set. This matches Linux's getcpu GDT.
+        CPUNODE_DESCRIPTOR_FLAGS | u64::from(cpu_id)
+    } else {
+        0
+    };
+    gdt.cpunode.store(cpunode_desc, Ordering::Relaxed);
+
     // The kernel CS is considered a global invariant set by the boot GDT. This method is not
     // intended for switching to a new kernel CS.
     assert_eq!(CS::get_reg(), KERNEL_CS);
@@ -70,7 +85,7 @@ pub(super) unsafe fn init_on_cpu() {
     // SAFETY: The GDT is valid to load because:
     //  - It lives for `'static`.
     //  - It contains correct entries at correct indexes: the kernel code/data segments, the user
-    //    code/data segments, and the TSS segment.
+    //    code/data segments, the TSS segment, and the CPU/node descriptor.
     //  - Specifically, the TSS segment points to the CPU-local TSS of the current CPU.
     unsafe { lgdt(&gdtr) };
 
@@ -126,6 +141,8 @@ struct Gdt {
     // Mutable part: They are initialized at runtime; the LTR instruction will set the BUSY bit.
     tss0: AtomicU64,
     tss1: AtomicU64,
+    _reserved_after_tss: [u64; 6],
+    cpunode: AtomicU64,
 }
 
 cpu_local! {
@@ -139,6 +156,8 @@ cpu_local! {
         ucode64: UCODE64,
         tss0: AtomicU64::new(0), // To be set in `init_on_cpu`.
         tss1: AtomicU64::new(0), // To be set in `init_on_cpu`.
+        _reserved_after_tss: [0; 6],
+        cpunode: AtomicU64::new(0), // To be set in `init_on_cpu`.
     };
 }
 
@@ -165,6 +184,10 @@ pub(in crate::arch) const KCODE32: u64 = 0x00CF_9B00_0000_FFFF;
 const UCODE64: u64 = 0x00AF_FB00_0000_FFFF;
 const UDATA: u64 = 0x00CF_F300_0000_FFFF;
 
+// A byte-granular ring-3 expand-down data segment. Its 20-bit limit is
+// retrieved by the Linux vDSO's LSL instruction; bit 54 sets 32-bit mode.
+const CPUNODE_DESCRIPTOR_FLAGS: u64 = 0x0040_F500_0000_0000;
+
 // ========== Selectors ==========
 
 pub(in crate::arch) const KERNEL_CS: SegmentSelector =
@@ -181,6 +204,11 @@ const_assert!(USER_SS.0 & OFFSET_MASK == offset_of!(Gdt, udata) as u16);
 pub(in crate::arch) const TSS_SEL: SegmentSelector = SegmentSelector::new(7, PrivilegeLevel::Ring0);
 const_assert!(TSS_SEL.0 & OFFSET_MASK == offset_of!(Gdt, tss0) as u16);
 const_assert!(TSS_SEL.0 & OFFSET_MASK == (offset_of!(Gdt, tss1) - size_of::<u64>()) as u16);
+
+// The prebuilt Linux x86-64 vDSO uses the fixed selector 0x7b (entry 15, RPL 3).
+const CPUNODE_SEL: SegmentSelector = SegmentSelector::new(15, PrivilegeLevel::Ring3);
+const_assert!(CPUNODE_SEL.0 == 0x7b);
+const_assert!(CPUNODE_SEL.0 & OFFSET_MASK == offset_of!(Gdt, cpunode) as u16);
 
 pub(in crate::arch) const SYSRET_SEL: SegmentSelector =
     SegmentSelector::new(4, PrivilegeLevel::Ring3);

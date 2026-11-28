@@ -396,6 +396,14 @@ pub(super) fn init_in_first_kthread() {
 ///
 /// This function will return `None` if vDSO does not exist (e.g., if it has not been initialized).
 pub(crate) fn vdso_vmo() -> Option<Arc<Vmo>> {
+    // The prebuilt x86-64 Linux vDSO encodes the CPU in 12 bits. If any CPU
+    // cannot be represented, omit the vDSO so libc falls back to getcpu(2)
+    // instead of reporting a truncated CPU number.
+    #[cfg(target_arch = "x86_64")]
+    if ostd::cpu::num_cpus() > 0x1000 {
+        return None;
+    }
+
     VDSO.get().map(|vdso| vdso.vmo.clone())
 }
 
