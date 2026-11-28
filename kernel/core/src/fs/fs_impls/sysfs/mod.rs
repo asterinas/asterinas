@@ -3,6 +3,7 @@
 mod fs;
 mod inode;
 mod kernel;
+mod module;
 #[cfg(ktest)]
 mod test;
 
@@ -18,6 +19,7 @@ pub(crate) fn init() {
     registry::register(&SysFsType).unwrap();
 
     kernel::init();
+    module::init();
 }
 
 /// Registers a new kernel `SysNode`.
