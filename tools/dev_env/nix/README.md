@@ -7,7 +7,7 @@ If you only want to use the shell, read
 ## File organization
 
 - The root [`flake.nix`](../../../flake.nix) declares the inputs
-  and exports the development shells and the boot-stack packages
+  and exports the development shells, boot-stack packages, and vDSO files
   for `x86_64-linux` and `aarch64-linux`.
 - [`overlay.nix`](overlay.nix) assembles the Rust toolchain, the vDSO source,
   and the project-specific packages into a nixpkgs overlay.
@@ -17,10 +17,9 @@ If you only want to use the shell, read
 - The test suites are packaged under [`test/initramfs/nix`](../../../test/initramfs/nix), not here.
   The shell only provides the `nix` command that the existing Make targets use to build them.
 
-nixpkgs packages QEMU, GRUB, and OVMF too, but for now the shell must provide the same boot stack as the Docker image,
-so each definition under `packages/` pins the versions or source revisions the Dockerfiles use
-and overrides nixpkgs' patches and build settings where needed.
-The header comment of each file lists its deviations from nixpkgs.
+The definitions under `packages/` select the QEMU, GRUB, OVMF, and RustSBI versions used for development
+and adjust nixpkgs' patches and build settings where needed.
+Comments in each package definition explain its deviations from nixpkgs.
 
 The shell sets `GRUB_MKRESCUE` to its packaged GRUB executable
 so that the `iso` and `nixos` targets do not depend on `/usr/bin/grub-mkrescue`.
@@ -38,11 +37,9 @@ and the shell adds `rust-analyzer` from the same nightly.
 RustSBI uses the `rust-toolchain.toml` in its pinned upstream source, as it does in Docker.
 Read each toolchain from its source file rather than duplicating the version in Nix expressions.
 
-The QEMU and GRUB versions, the edk2 release used to build OVMF, and the RustSBI revision follow the
+The GRUB version, the edk2 release used to build OVMF, and the RustSBI revision follow the
 [OSDK Dockerfile](../../../osdk/tools/docker/Dockerfile).
-The vDSO revision follows the
-[kernel development Dockerfile](../docker/kernel-dev/Dockerfile).
-When you bump one of these dependencies in a Dockerfile,
+When you bump one of these dependencies in that Dockerfile,
 bump its Nix counterpart in the same change.
 Nothing in CI compares the two yet, so a Dockerfile-only bump passes unnoticed.
 Until such a check exists, verify the pins by hand.
@@ -53,6 +50,10 @@ That first run is expected to fail with a hash mismatch.
 The error prints the real hash after `got:`, so copy that value into the file.
 The workflow then rebuilds the packages and boots the kernel from them.
 
+QEMU ([`packages/qemu.nix`](packages/qemu.nix)) and the vDSO files (`asterinas-vdso` in [`overlay.nix`](overlay.nix)) are shared with the Docker images.
+Update the version or revision and hash in Nix, verify with `nix build .#qemu` or `nix build .#vdso`,
+and rebuild the Docker image chain.
+
 To update the main nixpkgs source, run `nix flake update nixpkgs` from the repository root,
 either on a host with Nix installed or inside the project development container.
 The development shell and Make-based builds both read this source from `flake.lock`.
@@ -60,10 +61,10 @@ Review the lock diff, then run the validation commands below.
 If Nix reports that `nix-command` or `flakes` is disabled,
 add `--extra-experimental-features 'nix-command flakes'` to the command.
 
-The [prebuilt Nix packages image](../docker/prebuilt-nix-packages/Dockerfile)
-creates its channels from the locked revision when the image is built.
-Updating `flake.lock` does not change the channels in published images,
-so rebuild the image to pick up the new revision.
+The [OSDK Docker image](../../../osdk/tools/docker/Dockerfile)
+creates its `nixpkgs` and `nixos` channels from the locked revision when built.
+Updating `flake.lock` does not change the channels in published Docker images,
+so rebuild the Docker image chain to pick up the new revision.
 The "Check nixpkgs source" step in the
 [Test Nix flake workflow](../../../.github/workflows/test_nix_flake.yml)
 fails if [`distro/nixpkgs.nix`](../../../distro/nixpkgs.nix) resolves to a different source than the flake.
@@ -77,6 +78,24 @@ through a separate nixpkgs input, because that Dockerfile checks the spelling wi
 The other tools that the Dockerfile installs with `cargo install`
 come from the main nixpkgs input and may be older or newer than the Docker versions.
 The shell omits klint, because no build or check target invokes it.
+
+## Docker builds
+
+The [OSDK Docker image](../../../osdk/tools/docker/Dockerfile) installs Nix with flakes enabled,
+registers the `nixpkgs` and `nixos` channels from `flake.lock`,
+copies the flake files into `/usr/local/share/aster-nix`,
+and links [`install-aster-nix-pkg`](../install-aster-nix-pkg) into `/usr/local/bin`.
+Downstream Dockerfiles and container shells can run
+`install-aster-nix-pkg [--gc] <package> <dest>`
+to install any package defined under `tools/dev_env/nix` (such as `qemu` and `vdso`).
+The script pins each output under `/nix/var/nix/gcroots/` and links `<dest>` to it.
+
+Preserve those named roots when changing cleanup steps in the
+[prebuilt Nix packages Docker image](../docker/prebuilt-nix-packages/Dockerfile),
+which removes automatic roots before building the test packages.
+Do not run garbage collection after the final `initramfs_pkgs`
+build or in downstream Dockerfiles.
+That build leaves unrooted dependencies such as `stdenvNoCC` in the store for CI.
 
 ## Validation
 

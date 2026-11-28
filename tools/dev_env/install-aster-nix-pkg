@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# SPDX-License-Identifier: MPL-2.0
+
+set -euo pipefail
+
+show_help() {
+    cat <<'EOF'
+Build an Asterinas Nix flake package, pin it under /nix/var/nix/gcroots/<package>,
+and link <dest> to the installed output.
+
+Usage:
+  install-aster-nix-pkg [--gc] <package> <dest>
+  install-aster-nix-pkg [-h | --help]
+
+Arguments:
+  <package>   Package output name defined under tools/dev_env/nix (e.g., qemu, vdso).
+  <dest>      Destination path linked to the installed package.
+
+Options:
+  --gc        Run 'nix-store --gc' after installing the package.
+  -h, --help  Show this help message.
+
+Examples:
+  install-aster-nix-pkg --gc qemu /usr/local/qemu
+  install-aster-nix-pkg vdso /root/linux_vdso
+EOF
+}
+
+run_gc=false
+
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        --gc)
+            run_gc=true
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            echo "Error: unknown option '$1'." >&2
+            show_help >&2
+            exit 2
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [[ "$#" -ne 2 ]]; then
+    show_help >&2
+    exit 2
+fi
+
+pkg="$1"
+dest="$2"
+
+script_dir="$(dirname "$(realpath "$0")")"
+flake_dir="$(realpath "${script_dir}/../..")"
+
+# `prebuilt-nix-packages` deletes `/nix/var/nix/gcroots/auto/*`.
+# A named root keeps this output alive across that cleanup.
+gc_root="/nix/var/nix/gcroots/${pkg}"
+nix build --accept-flake-config --no-update-lock-file \
+    --out-link "${gc_root}" "${flake_dir}#${pkg}"
+
+mkdir -p -- "$(dirname -- "${dest}")"
+ln -sfT -- "${gc_root}" "${dest}"
+
+if [[ "${run_gc}" == true ]]; then
+    nix-store --gc
+fi
