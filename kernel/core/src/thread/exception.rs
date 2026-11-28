@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#[cfg(not(target_arch = "loongarch64"))]
-use ostd::arch::cpu::context::CpuException;
-#[cfg(target_arch = "loongarch64")]
-use ostd::arch::cpu::context::CpuExceptionInfo as CpuException;
-use ostd::{arch::cpu::context::UserContext, task::Task};
+use ostd::{
+    arch::cpu::context::{CpuException, UserContext},
+    task::Task,
+};
 
 use crate::{
     prelude::*,
