@@ -2,6 +2,8 @@
 
 //! Manages the kernel heap using slab or buddy allocation strategies.
 
+#[cfg(ktest)]
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{
     alloc::{AllocError, GlobalAlloc, Layout},
     ptr::NonNull,
@@ -93,6 +95,14 @@ fn handle_alloc_error(layout: Layout) -> ! {
 #[global_allocator]
 static HEAP_ALLOCATOR: AllocDispatch = AllocDispatch;
 
+#[cfg(ktest)]
+static NR_LARGE_SLOT_REQUESTS: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(ktest)]
+pub(crate) fn nr_large_slot_requests() -> usize {
+    NR_LARGE_SLOT_REQUESTS.load(Ordering::Relaxed)
+}
+
 struct AllocDispatch;
 
 // TODO: Somehow restrict unwinding in the user-provided global allocator.
@@ -102,6 +112,11 @@ unsafe impl GlobalAlloc for AllocDispatch {
         let Some(required_slot) = slot_size_from_layout(layout) else {
             abort_with_message!("Heap allocation size not found for layout = {:#x?}", layout);
         };
+
+        #[cfg(ktest)]
+        if matches!(required_slot, SlotInfo::LargeSlot(_)) {
+            NR_LARGE_SLOT_REQUESTS.fetch_add(1, Ordering::Relaxed);
+        }
 
         let res = get_global_heap_allocator().alloc(layout);
         let Ok(slot) = res else {

@@ -10,6 +10,8 @@ pub(crate) struct BuddySet<const MAX_ORDER: BuddyOrder> {
     total_size: usize,
     /// The lists of free buddy chunks for each orders.
     lists: [LinkedList<FreeHeadMeta>; MAX_ORDER],
+    #[cfg(ktest)]
+    nr_alloc_attempts: usize,
 }
 
 impl<const MAX_ORDER: BuddyOrder> BuddySet<MAX_ORDER> {
@@ -18,12 +20,24 @@ impl<const MAX_ORDER: BuddyOrder> BuddySet<MAX_ORDER> {
         Self {
             total_size: 0,
             lists: [const { LinkedList::new() }; MAX_ORDER],
+            #[cfg(ktest)]
+            nr_alloc_attempts: 0,
         }
     }
 
     /// Gets the total size of free chunks.
     pub(crate) fn total_size(&self) -> usize {
         self.total_size
+    }
+
+    #[cfg(ktest)]
+    pub(crate) fn nr_alloc_attempts(&self) -> usize {
+        self.nr_alloc_attempts
+    }
+
+    #[cfg(ktest)]
+    pub(crate) fn reset_alloc_attempts(&mut self) {
+        self.nr_alloc_attempts = 0;
     }
 
     /// Inserts a free chunk into the set.
@@ -56,11 +70,51 @@ impl<const MAX_ORDER: BuddyOrder> BuddySet<MAX_ORDER> {
         self.total_size += inserted_size;
     }
 
+    /// Removes and returns a free chunk of `order` without splitting larger chunks.
+    pub(crate) fn alloc_exact_chunk(&mut self, order: BuddyOrder) -> Option<Paddr> {
+        #[cfg(ktest)]
+        {
+            self.nr_alloc_attempts += 1;
+        }
+        self.pop_exact_chunk(order)
+    }
+
+    /// Removes and returns the smallest free chunk with order at least `min_order`
+    /// without splitting.
+    pub(crate) fn pop_smallest_chunk_at_least(
+        &mut self,
+        min_order: BuddyOrder,
+    ) -> Option<(Paddr, BuddyOrder)> {
+        #[cfg(ktest)]
+        {
+            self.nr_alloc_attempts += 1;
+        }
+        for order in min_order..MAX_ORDER {
+            if let Some(paddr) = self.pop_exact_chunk(order) {
+                return Some((paddr, order));
+            }
+        }
+        None
+    }
+
+    fn pop_exact_chunk(&mut self, order: BuddyOrder) -> Option<Paddr> {
+        let head = self.lists.get_mut(order)?.pop_front()?;
+        debug_assert_eq!(head.meta().order(), order);
+        self.total_size -= size_of_order(order);
+        let paddr = head.paddr();
+        head.reset_as_unused();
+        Some(paddr)
+    }
+
     /// Allocates a chunk from the set.
     ///
     /// The function will choose and remove a buddy chunk of the given order
     /// from the set. The address of the chunk will be returned.
     pub(crate) fn alloc_chunk(&mut self, order: BuddyOrder) -> Option<Paddr> {
+        #[cfg(ktest)]
+        {
+            self.nr_alloc_attempts += 1;
+        }
         // Find the first non-empty size class larger than the requested order.
         let mut non_empty = None;
         for (i, list) in self.lists.iter_mut().enumerate().skip(order) {
